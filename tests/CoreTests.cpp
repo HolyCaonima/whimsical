@@ -147,19 +147,31 @@ int main() {
         box.publish(a);
         a.tick = 2;
         box.publish(a);
-        Frame received;
-        check(box.consume(received) && received.tick == 2, "Mailbox must consume latest snapshot");
+        FrameRef received;
+        uint64_t seen = 0;
+        check(box.acquire(received, seen) == FrameStatus::Fresh && received->tick == 2,
+              "Mailbox must deliver the latest snapshot and drop the unread one");
+        // The renderer must be able to outrun the simulation: acquiring again reports that
+        // nothing is new while leaving the caller's snapshot intact to re-present.
+        check(box.acquire(received, seen) == FrameStatus::Repeat && received && received->tick == 2,
+              "Acquire without a new publish must repeat, not block or clear");
+        a.tick = 3;
+        box.publish(a);
+        check(box.acquire(received, seen) == FrameStatus::Fresh && received->tick == 3,
+              "A later publish must be observed as fresh");
         box.close();
-        check(!box.consume(received), "Closed mailbox must wake and exit");
+        check(box.acquire(received, seen) == FrameStatus::Closed, "Closed mailbox must wake and exit");
         FrameMailbox waiting;
         auto task = std::async(std::launch::async, [&] {
-            Frame f;
-            return waiting.consume(f);
+            FrameRef f;
+            uint64_t cursor = 0;
+            return waiting.acquire(f, cursor);
         });
         waiting.close();
-        check(!task.get(), "Closing empty mailbox must unblock consumer");
+        check(task.get() == FrameStatus::Closed, "Closing empty mailbox must unblock consumer");
         std::cout << "PASS: JS scene/locomotion, A* clearance, blocked goal, swept collision, camera ray, "
-                     "click-to-interact/facing/door collision, deselection, bounded mailbox and shutdown\n";
+                     "click-to-interact/facing/door collision, deselection, decoupled mailbox and "
+                     "shutdown\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "FAIL: " << e.what() << "\n";

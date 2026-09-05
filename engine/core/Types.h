@@ -2,6 +2,7 @@
 #include "Math.h"
 #include <vector>
 #include <array>
+#include <memory>
 #include <string>
 #include <cstdint>
 namespace afterlight {
@@ -71,6 +72,9 @@ struct Frame {
     bool resetHistory = false, hasDestination = false;
     int debugView = 0;
 };
+// Snapshots are immutable once published and shared by reference count, so neither
+// thread deep-copies a Frame and the renderer can hold on to older ones for free.
+using FrameRef = std::shared_ptr<const Frame>;
 inline mat4 transform(const RenderObject& e) {
     return glm::translate(mat4(1), e.position) * glm::rotate(mat4(1), e.yaw, vec3(0, 1, 0)) *
            glm::scale(mat4(1), e.scale);

@@ -9,12 +9,37 @@
 namespace afterlight {
 // A CPU-generated HUD texture; all GDI resources belong to the render thread.
 // No HWND drawing or input ownership crosses the engine/render thread boundary.
+//
+// The overlay is a full-resolution CPU raster target, so redrawing it every frame would
+// make the engine's cost scale with resolution rather than with the scene. It is instead
+// keyed on a signature of everything it actually displays: `draw` reports whether the
+// upload buffer was rewritten, and the renderer skips the GPU upload when it was not.
+// Steady-state repaint rate is ~2 Hz, driven by the statistics interval.
 class DebugHud {
+    // FNV-style mixer over exactly the values the overlay renders.
+    struct Signature {
+        uint64_t value = 1469598103934665603ull;
+        void mix(uint64_t v) {
+            value ^= v + 0x9e3779b97f4a7c15ull + (value << 6) + (value >> 2);
+        }
+        void text(const std::string& s) {
+            mix(s.size());
+            for (char c : s)
+                mix(uint64_t(uint8_t(c)));
+        }
+        void real(double v) {
+            uint64_t bits = 0;
+            std::memcpy(&bits, &v, sizeof(bits));
+            mix(bits);
+        }
+    };
     HDC dc_ = nullptr;
     HBITMAP bitmap_ = nullptr;
     HGDIOBJ oldBitmap_ = nullptr;
     uint8_t* pixels_ = nullptr;
     uint32_t w_ = 0, h_ = 0;
+    uint64_t signature_ = 0;
+    bool signatureValid_ = false;
     void rectangle(int x, int y, int w, int h, COLORREF color) {
         RECT r{x, y, x + w, y + h};
         HBRUSH b = CreateSolidBrush(color);
@@ -32,6 +57,47 @@ class DebugHud {
         SelectObject(dc_, previous);
         DeleteObject(font);
     }
+    static std::string presentLabel(const RenderStatistics& statistics) {
+        return std::string("Present ") + statistics.present +
+               (statistics.vsync ? "  |  VSync ON" : "  |  VSync OFF");
+    }
+    // Mirrors every value the overlay draws. Minimap geometry is quantized to the same
+    // integer pixels used when drawing, so sub-pixel movement does not force a repaint.
+    uint64_t contentSignature(const Frame& f, const RenderStatistics& statistics, bool enabled) const {
+        Signature s;
+        s.mix(uint64_t(enabled));
+        s.mix(uint64_t(w_));
+        s.mix(uint64_t(h_));
+        if (!enabled)
+            return s.value;
+        s.mix(uint64_t(f.debugView));
+        s.mix(uint64_t(f.selected));
+        s.mix(uint64_t(f.hovered));
+        s.mix(uint64_t(f.physicsDebug));
+        s.text(f.locomotion);
+        s.text(f.message);
+        if (f.hovered && f.hovered != f.selected && f.hovered <= f.entities.size())
+            s.text(f.entities[f.hovered - 1].name);
+        s.mix(uint64_t(int64_t(f.player.x * 5.2f)));
+        s.mix(uint64_t(int64_t(f.player.z * 5.2f)));
+        s.mix(f.path.size());
+        for (auto point : f.path) {
+            s.mix(uint64_t(int64_t(point.x * 5.2f)));
+            s.mix(uint64_t(int64_t(point.z * 5.2f)));
+        }
+        s.mix(f.mapObstacles.size());
+        for (const auto& o : f.mapObstacles) {
+            s.mix(uint64_t(int64_t(o.position.x * 5.2f)));
+            s.mix(uint64_t(int64_t(o.position.z * 5.2f)));
+            s.mix(uint64_t(int64_t(o.size.x * 2.6f)));
+            s.mix(uint64_t(int64_t(o.size.z * 2.6f)));
+        }
+        s.real(statistics.fps);
+        s.real(statistics.frameMs);
+        s.real(statistics.gpuMs);
+        s.text(presentLabel(statistics));
+        return s.value;
+    }
 
   public:
     ~DebugHud() {
@@ -46,6 +112,7 @@ class DebugHud {
         dc_ = nullptr;
         bitmap_ = nullptr;
         pixels_ = nullptr;
+        signatureValid_ = false;
     }
     void resize(uint32_t width, uint32_t height) {
         reset();
@@ -64,116 +131,130 @@ class DebugHud {
         oldBitmap_ = SelectObject(dc_, bitmap_);
         SetBkMode(dc_, TRANSPARENT);
     }
-    void draw(const Frame& f, void* output, const RenderStatistics& statistics, bool enabled) {
+    // Returns true when `output` was rewritten and the caller must upload it to the GPU.
+    bool draw(const Frame& f, void* output, const RenderStatistics& statistics, bool enabled) {
+        if (!pixels_)
+            return false;
+        // The physics wireframe tracks live poses, so it cannot be signature-cached.
+        const bool live = enabled && f.physicsDebug;
+        const uint64_t signature = contentSignature(f, statistics, enabled);
+        if (signatureValid_ && signature == signature_ && !live)
+            return false;
+        signature_ = signature;
+        signatureValid_ = true;
+        if (!enabled) {
+            std::memset(output, 0, size_t(w_) * h_ * 4);
+            return true;
+        }
         std::memset(pixels_, 0, size_t(w_) * h_ * 4);
-        if (enabled) {
-            if (f.physicsDebug) {
-                mat4 vp = f.camera.projection(float(w_) / h_) * f.camera.view();
-                for (const auto& line : f.physicsLines) {
-                    vec4 a = vp * vec4(line.a, 1), b = vp * vec4(line.b, 1);
-                    if (a.w <= .1f || b.w <= .1f)
-                        continue;
-                    vec2 pa = (vec2(a) / a.w * .5f + .5f) * vec2(w_, h_),
-                         pb = (vec2(b) / b.w * .5f + .5f) * vec2(w_, h_);
-                    auto pen = CreatePen(
-                        PS_SOLID, 1,
-                        RGB(int(line.color.r * 255), int(line.color.g * 255), int(line.color.b * 255)));
-                    auto old = SelectObject(dc_, pen);
-                    MoveToEx(dc_, int(pa.x), int(pa.y), nullptr);
-                    LineTo(dc_, int(pb.x), int(pb.y));
-                    SelectObject(dc_, old);
-                    DeleteObject(pen);
-                }
+        if (f.physicsDebug) {
+            mat4 vp = f.camera.projection(float(w_) / h_) * f.camera.view();
+            for (const auto& line : f.physicsLines) {
+                vec4 a = vp * vec4(line.a, 1), b = vp * vec4(line.b, 1);
+                if (a.w <= .1f || b.w <= .1f)
+                    continue;
+                vec2 pa = (vec2(a) / a.w * .5f + .5f) * vec2(w_, h_),
+                     pb = (vec2(b) / b.w * .5f + .5f) * vec2(w_, h_);
+                auto pen =
+                    CreatePen(PS_SOLID, 1,
+                              RGB(int(line.color.r * 255), int(line.color.g * 255), int(line.color.b * 255)));
+                auto old = SelectObject(dc_, pen);
+                MoveToEx(dc_, int(pa.x), int(pa.y), nullptr);
+                LineTo(dc_, int(pb.x), int(pb.y));
+                SelectObject(dc_, old);
+                DeleteObject(pen);
             }
-            int w = int(w_), h = int(h_);
-            const COLORREF muted = RGB(134, 158, 147), gold = RGB(184, 171, 122), ink = RGB(15, 29, 29),
-                           border = RGB(73, 93, 84), mint = RGB(117, 218, 187);
-            rectangle(18, 17, 352, 70, ink);
-            rectangle(18, 102, 244, 99, ink);
-            rectangle(26, 28, 3, 49, gold);
-            text(42, 23, 29, "A F T E R L I G H T", RGB(235, 233, 212));
-            text(44, 58, 10, "A   W O R L D   W O R T H   R E P A I R I N G", muted);
-            rectangle(28, 110, 42, 2, gold);
-            text(28, 125, 11, "LOWER DISTRICT   /   04", muted);
-            text(27, 144, 25, "The Rain Court", RGB(235, 240, 221), true);
-            text(28, 179, 11, "AFTER THE RAIN     17:42", gold);
-            if (w > 800) {
-                int x = w - 238;
-                rectangle(x, 24, 210, 205, ink);
-                rectangle(x, 24, 210, 2, gold);
-                text(x + 14, 40, 10, "LOCAL SIGNAL                  N", muted);
-                for (const auto& e : f.mapObstacles) {
-                    int px = x + 105 + int(e.position.x * 5.2f), py = 133 + int(e.position.z * 5.2f);
-                    rectangle(px - int(e.size.x * 2.6f), py - int(e.size.z * 2.6f),
-                              std::max(2, int(e.size.x * 5.2f)), std::max(2, int(e.size.z * 5.2f)), border);
-                }
-                int px = x + 105 + int(f.player.x * 5.2f), py = 133 + int(f.player.z * 5.2f);
-                rectangle(px - 3, py - 3, 6, 6, mint);
-                rectangle(x + 12, 200, 186, 1, border);
-                text(x + 14, 210, 9, "THE RAIN COURT          04", muted);
-                if (!f.path.empty()) {
-                    auto pen = CreatePen(PS_SOLID, 1, gold);
-                    auto old = SelectObject(dc_, pen);
-                    MoveToEx(dc_, px, py, nullptr);
-                    for (auto point : f.path)
-                        LineTo(dc_, x + 105 + int(point.x * 5.2f), 133 + int(point.z * 5.2f));
-                    SelectObject(dc_, old);
-                    DeleteObject(pen);
-                }
+        }
+        int w = int(w_), h = int(h_);
+        const COLORREF muted = RGB(134, 158, 147), gold = RGB(184, 171, 122), ink = RGB(15, 29, 29),
+                       border = RGB(73, 93, 84), mint = RGB(117, 218, 187);
+        rectangle(18, 17, 352, 70, ink);
+        rectangle(18, 102, 244, 99, ink);
+        rectangle(26, 28, 3, 49, gold);
+        text(42, 23, 29, "A F T E R L I G H T", RGB(235, 233, 212));
+        text(44, 58, 10, "A   W O R L D   W O R T H   R E P A I R I N G", muted);
+        rectangle(28, 110, 42, 2, gold);
+        text(28, 125, 11, "LOWER DISTRICT   /   04", muted);
+        text(27, 144, 25, "The Rain Court", RGB(235, 240, 221), true);
+        text(28, 179, 11, "AFTER THE RAIN     17:42", gold);
+        if (w > 800) {
+            int x = w - 238;
+            rectangle(x, 24, 210, 205, ink);
+            rectangle(x, 24, 210, 2, gold);
+            text(x + 14, 40, 10, "LOCAL SIGNAL                  N", muted);
+            for (const auto& e : f.mapObstacles) {
+                int px = x + 105 + int(e.position.x * 5.2f), py = 133 + int(e.position.z * 5.2f);
+                rectangle(px - int(e.size.x * 2.6f), py - int(e.size.z * 2.6f),
+                          std::max(2, int(e.size.x * 5.2f)), std::max(2, int(e.size.z * 5.2f)), border);
             }
-            rectangle(28, h - 174, 320, 103, ink);
-            rectangle(28, h - 174, 320, 1, border);
-            rectangle(28, h - 174, 2, 103, gold);
-            rectangle(44, h - 149, 42, 57, RGB(37, 68, 61));
-            text(54, h - 138, 28, "K", mint, true);
-            text(101, h - 158, 10, f.selected ? "ACTIVE COMPANION" : "COMPANION / UNSELECTED", muted);
-            text(100, h - 142, 26, "Kiln", RGB(239, 240, 222), true);
-            text(166, h - 130, 11, "/  " + f.locomotion, mint);
-            text(101, h - 105, 11, "A warm core. A curious mind.", muted);
-            text(30, h - 59, 12, f.message, RGB(218, 208, 162));
-            if (f.hovered && f.hovered != f.selected && f.hovered <= f.entities.size())
-                text(w / 2 - 100, h - 91, 14, "CLICK / E    " + f.entities[f.hovered - 1].name, gold, true);
-            rectangle(0, h - 32, w, 32, RGB(12, 23, 24));
-            text(28, h - 25, 11,
-                 "WASD  Move     CLICK  Walk / interact     SHIFT  Run     CTRL  Crouch     E  Use",
-                 RGB(193, 209, 196));
-            if (w > 1000)
-                text(w - 469, h - 25, 10, "MMB  Orbit   WHEEL  Zoom   F  Follow   F1  Views   ESC  Stop",
-                     muted);
-            static const char* modes[] = {"LIT",          "ALBEDO",          "NORMALS",
-                                          "VIEW DEPTH",   "DIRECT RT (RAW)", "INDIRECT RT (RAW)",
-                                          "RAW RADIANCE", "MOTION"};
-            int statsY = w > 800 ? 235 : 24;
-            rectangle(w - 238, statsY, 210, 99, ink);
-            text(w - 224, statsY + 7, 10, modes[std::clamp(f.debugView, 0, 7)], muted);
-            std::ostringstream fps, timing;
-            if (statistics.fps >= 0) {
-                fps << std::fixed << std::setprecision(1) << statistics.fps << " FPS";
-                timing << std::fixed << std::setprecision(2) << "Frame " << statistics.frameMs << " ms   GPU "
-                       << statistics.gpuMs << " ms";
-            } else {
-                fps << "-- FPS";
-                timing << "Measuring frame time...";
+            int px = x + 105 + int(f.player.x * 5.2f), py = 133 + int(f.player.z * 5.2f);
+            rectangle(px - 3, py - 3, 6, 6, mint);
+            rectangle(x + 12, 200, 186, 1, border);
+            text(x + 14, 210, 9, "THE RAIN COURT          04", muted);
+            if (!f.path.empty()) {
+                auto pen = CreatePen(PS_SOLID, 1, gold);
+                auto old = SelectObject(dc_, pen);
+                MoveToEx(dc_, px, py, nullptr);
+                for (auto point : f.path)
+                    LineTo(dc_, x + 105 + int(point.x * 5.2f), 133 + int(point.z * 5.2f));
+                SelectObject(dc_, old);
+                DeleteObject(pen);
             }
-            text(w - 224, statsY + 24, 24, fps.str(), mint, true);
-            text(w - 224, statsY + 56, 10, timing.str(), muted);
-            text(w - 224, statsY + 77, 10, "60 FPS target  |  VSync ON", gold);
-            if (f.physicsDebug) {
-                rectangle(w - 238, statsY + 104, 210, 42, ink);
-                text(w - 224, statsY + 109, 10, "F2  PHYSICS SCENE", mint);
-                text(w - 224, statsY + 128, 9, "BLUE Ground  GOLD Solid  PINK Trigger", muted);
-            }
+        }
+        rectangle(28, h - 174, 320, 103, ink);
+        rectangle(28, h - 174, 320, 1, border);
+        rectangle(28, h - 174, 2, 103, gold);
+        rectangle(44, h - 149, 42, 57, RGB(37, 68, 61));
+        text(54, h - 138, 28, "K", mint, true);
+        text(101, h - 158, 10, f.selected ? "ACTIVE COMPANION" : "COMPANION / UNSELECTED", muted);
+        text(100, h - 142, 26, "Kiln", RGB(239, 240, 222), true);
+        text(166, h - 130, 11, "/  " + f.locomotion, mint);
+        text(101, h - 105, 11, "A warm core. A curious mind.", muted);
+        text(30, h - 59, 12, f.message, RGB(218, 208, 162));
+        if (f.hovered && f.hovered != f.selected && f.hovered <= f.entities.size())
+            text(w / 2 - 100, h - 91, 14, "CLICK / E    " + f.entities[f.hovered - 1].name, gold, true);
+        rectangle(0, h - 32, w, 32, RGB(12, 23, 24));
+        text(28, h - 25, 11,
+             "WASD  Move     CLICK  Walk / interact     SHIFT  Run     CTRL  Crouch     E  Use",
+             RGB(193, 209, 196));
+        if (w > 1000)
+            text(w - 469, h - 25, 10, "MMB  Orbit   WHEEL  Zoom   F  Follow   F1  Views   ESC  Stop", muted);
+        static const char* modes[] = {"LIT",          "ALBEDO",          "NORMALS",
+                                      "VIEW DEPTH",   "DIRECT RT (RAW)", "INDIRECT RT (RAW)",
+                                      "RAW RADIANCE", "MOTION"};
+        int statsY = w > 800 ? 235 : 24;
+        rectangle(w - 238, statsY, 210, 99, ink);
+        text(w - 224, statsY + 7, 10, modes[std::clamp(f.debugView, 0, 7)], muted);
+        std::ostringstream fps, timing;
+        if (statistics.fps >= 0) {
+            fps << std::fixed << std::setprecision(1) << statistics.fps << " FPS";
+            timing << std::fixed << std::setprecision(2) << "Frame " << statistics.frameMs << " ms   GPU "
+                   << statistics.gpuMs << " ms";
+        } else {
+            fps << "-- FPS";
+            timing << "Measuring frame time...";
+        }
+        text(w - 224, statsY + 24, 24, fps.str(), mint, true);
+        text(w - 224, statsY + 56, 10, timing.str(), muted);
+        text(w - 224, statsY + 77, 10, presentLabel(statistics), gold);
+        if (f.physicsDebug) {
+            rectangle(w - 238, statsY + 104, 210, 42, ink);
+            text(w - 224, statsY + 109, 10, "F2  PHYSICS SCENE", mint);
+            text(w - 224, statsY + 128, 9, "BLUE Ground  GOLD Solid  PINK Trigger", muted);
         }
         GdiFlush();
-        auto* dest = static_cast<uint8_t*>(output);
-        for (size_t i = 0; i < size_t(w_) * h_; i++) {
-            auto* src = pixels_ + i * 4;
-            auto* dst = dest + i * 4;
-            dst[0] = src[2];
-            dst[1] = src[1];
-            dst[2] = src[0];
-            dst[3] = (src[0] | src[1] | src[2]) ? 245 : 0;
+        // One 32-bit load and one 32-bit store per pixel. `output` is host-visible device
+        // memory, which is write-combined on discrete GPUs: byte-sized stores there defeat
+        // write combining and cost roughly an order of magnitude more than whole words.
+        const auto* source = reinterpret_cast<const uint32_t*>(pixels_);
+        auto* destination = static_cast<uint32_t*>(output);
+        for (size_t i = 0, n = size_t(w_) * h_; i < n; i++) {
+            const uint32_t bgr = source[i] & 0x00ffffffu; // GDI DIB order is B, G, R, unused
+            const uint32_t alpha = bgr ? 245u : 0u;
+            destination[i] = ((bgr & 0x00ff0000u) >> 16) | (bgr & 0x0000ff00u) |
+                             ((bgr & 0x000000ffu) << 16) | (alpha << 24);
         }
+        return true;
     }
 };
 } // namespace afterlight

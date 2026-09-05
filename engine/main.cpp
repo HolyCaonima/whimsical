@@ -52,13 +52,28 @@ int main(int argc, char** argv) {
                 options.auditMotion = true;
             else if (arg == "--no-validation")
                 options.validation = false;
-            else if (arg == "--demo")
+            else if (arg == "--validation")
+                options.validation = true;
+            else if (arg == "--present") {
+                if (i + 1 >= argc)
+                    throw std::runtime_error("Missing value for --present");
+                std::string mode = argv[++i];
+                if (mode == "fifo")
+                    options.present = PresentMode::Fifo;
+                else if (mode == "mailbox")
+                    options.present = PresentMode::Mailbox;
+                else if (mode == "immediate")
+                    options.present = PresentMode::Immediate;
+                else
+                    throw std::runtime_error("--present expects fifo, mailbox or immediate");
+            } else if (arg == "--demo")
                 demo = true;
             else if (arg == "--smoke")
                 smoke = true;
             else if (arg == "--help") {
                 std::cout << "Afterlight [--frames N] [--capture] [--width 1280] [--height 800] [--view "
-                             "0..7] [--no-hud] [--no-validation] [--demo] [--smoke] [--audit NAME] "
+                             "0..7] [--no-hud] [--validation] [--no-validation] [--present "
+                             "fifo|mailbox|immediate] [--demo] [--smoke] [--audit NAME] "
                              "[--audit-motion] [--physics-debug]\n";
                 return 0;
             } else
@@ -80,6 +95,9 @@ int main(int argc, char** argv) {
         if (smoke) {
             options.maxFrames = 160;
             options.capture = true;
+            // The smoke scenario is the project's correctness gate, so it always pays for
+            // validation regardless of the build configuration default.
+            options.validation = true;
         }
         std::cout << "AFTERLIGHT | C++ engine / JavaScript gameplay / Vulkan RT\n";
         Window window(width, height);
@@ -102,8 +120,13 @@ int main(int argc, char** argv) {
         std::thread renderThread([&] {
             try {
                 Renderer renderer(window.handle(), options);
-                Frame frame;
-                while (mailbox.consume(frame)) {
+                FrameRef frame;
+                uint64_t seen = 0;
+                for (;;) {
+                    // Only blocks before the first snapshot: afterwards the newest one is
+                    // re-presented rather than stalling for the next simulation tick.
+                    if (mailbox.acquire(frame, seen) == FrameStatus::Closed)
+                        break;
                     bool more = renderer.render(frame);
                     rendered.store(renderer.frames());
                     const auto stats = renderer.statistics();
@@ -119,6 +142,7 @@ int main(int argc, char** argv) {
             }
             finished.store(true);
             mailbox.close();
+            window.wake(); // Release the simulation thread from its pacing wait at once.
         });
         using Clock = std::chrono::steady_clock;
         auto previous = Clock::now(), lastTitle = previous;
@@ -208,7 +232,14 @@ int main(int argc, char** argv) {
                     window.title(title.str());
                     lastTitle = now;
                 }
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                // Sleep exactly until the next fixed step is due instead of polling, and
+                // wake early for input or for the render thread finishing. Deadlines are
+                // measured from after this iteration's work, not from the top of it.
+                const auto worked = Clock::now();
+                const double spent = std::chrono::duration<double>(worked - now).count();
+                const double untilStep = step - accumulator - spent;
+                const double untilTitle = .5 - std::chrono::duration<double>(worked - lastTitle).count();
+                window.waitForMessages(uint32_t(std::max(0., std::min(untilStep, untilTitle)) * 1000));
             }
         } catch (const std::exception& e) {
             mainError = e.what();

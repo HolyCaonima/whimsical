@@ -16,6 +16,12 @@ class Window {
         return hwnd_;
     }
     bool pump();
+    // Sleeps until a message arrives or the timeout expires, whichever comes first.
+    // Frame pacing depends on this actually honouring millisecond timeouts, which is why
+    // the window raises the process timer resolution for its lifetime.
+    void waitForMessages(uint32_t milliseconds) const;
+    // Wakes a thread blocked in waitForMessages. Safe to call from any thread.
+    void wake() const;
     Input input() const {
         return input_;
     }

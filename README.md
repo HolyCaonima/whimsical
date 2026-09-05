@@ -8,7 +8,7 @@
 
 双击根目录 `Run.cmd`。当前机器的可执行文件是 `build/bin/Release/Afterlight.exe`。
 
-右上角和标题栏显示实时 **FPS**、**Frame ms**（包含线程与呈现等待的整帧间隔）、**GPU ms**（Vulkan timestamp），约每半秒更新。启动及重建窗口尺寸后的统计预热显示 `-- FPS`。当前渲染等待 60 Hz 场景快照，并使用 FIFO 垂直同步，因此通常不超过 60 FPS；面板显示 `60 FPS target | VSync ON`。累计帧数只保留在日志和截图报告中。
+右上角和标题栏显示实时 **FPS**、**Frame ms**（包含线程与呈现等待的整帧间隔）、**GPU ms**（Vulkan timestamp），约每半秒更新。启动及重建窗口尺寸后的统计预热显示 `-- FPS`。默认使用 FIFO 垂直同步，因此通常不超过 60 FPS；面板显示当前呈现模式与 VSync 状态。渲染帧率不再被 60 Hz 仿真锁死——渲染线程在没有新快照时重新呈现最新快照，用 `--present immediate` 或 `--present mailbox` 即可跑出显示器刷新率以上的真实帧成本。累计帧数只保留在日志和截图报告中。
 
 | 操作 | 行为 |
 | --- | --- |
@@ -52,9 +52,14 @@ powershell -ExecutionPolicy Bypass -File tools/build.ps1 -Test
 
 # 1280×800 默认；也可指定尺寸、调试视图和无 HUD 截图
 .\build\bin\Release\Afterlight.exe --view 5 --no-hud --frames 60 --capture
+
+# 解除 vsync 量化，测量真实的每帧成本
+.\build\bin\Release\Afterlight.exe --present immediate --frames 360 --capture
 ```
 
-截图写入 `captures/frame.bmp`；GPU 测量和 validation 状态写入 `captures/render-report.json`。`--capture` 未指定帧数时默认 90 帧。`--no-validation` 可用于去掉 validation 的 CPU 开销。
+截图写入 `captures/frame.bmp`；GPU 测量和 validation 状态写入 `captures/render-report.json`。`--capture` 未指定帧数时默认 90 帧。
+
+Release 构建默认**关闭** validation（每帧约 1 ms CPU，足以把贴着预算的帧推过一次 vblank），Debug 构建默认开启。用 `--validation` 显式开启；`--smoke` 作为正确性关卡始终开启。`--present fifo|mailbox|immediate` 选择呈现模式，默认 `fifo`。
 
 ## 目录约定
 
@@ -110,6 +115,8 @@ NRD 4.17.3 实际参与 GPU 计算，使用 RELAX 的原生 SPIR-V、资源池�
 这是可继续开发的第一版基础，不是大型游戏的最终渲染器。DI/GI 的算法结构参考 ReSTIR，自写实现没有接入 NVIDIA RTXDI SDK，也不声称达到 MegaLights 的算法、规模或质量。当前 GI 是 **一次二次表面命中上的漫反射重采样**；镜面间接光使用独立 GGX VNDF 路径和 NRD，尚无 ReSTIR PT、多跳路径重采样或无偏 MIS。历史长度与 GI Jacobian 有限幅，属于有偏实时方案。
 
 灯光是具有球形位置扰动的解析灯，用于柔和光追阴影；发光材质支持二次光线命中，但还没有 emissive mesh light importance sampling。几何 BLAS 只为两个基础 mesh 构建，TLAS 每帧更新。当前采用一帧 GPU in flight 和保守 pass barrier，先保证资源与线程所有权正确；还没有 async compute、自动资源别名、流式场景或 GPU-driven indirect draw。
+
+一帧在飞是**实测后的选择**而非遗留：在 `--present immediate` 下，整帧时间中的非 GPU 部分为 0.42–0.52 ms（1280×800 至 2560×1440），即 CPU 录制与 GPU 执行重叠最多只能省下这个量。而多帧在飞需要把 TLAS、descriptor set 和全部 host-visible 上传缓冲按帧复制——在带时域历史与 reservoir 复用的 ReSTIR 管线里，这个同步风险显著大于 0.5 ms 的收益。等 CPU 侧成本重新变得显著时再做。
 
 3C 包含加速、刹车、原地转向、行走、跑步、蹲行、交互和程序姿态。独立 Physics Scene 存储 box/capsule、查询层与生命周期；角色移动、root motion、蹲起净空和 0.25 m 庭院导航共用该场景的查询。动画关节附属碰撞体支持原生及 JS 更新。当前为查询／运动学后端，未包含受力积分、刚体堆叠和 ragdoll；楼梯、跳跃／翻越、坡面、多层导航、骨骼资源加载／混合和多角色控制仍需扩展。
 

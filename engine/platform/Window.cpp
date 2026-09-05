@@ -1,9 +1,14 @@
 #include "Window.h"
 #include <windowsx.h>
+#include <mmsystem.h>
 #include <stdexcept>
 namespace afterlight {
 Window::Window(uint32_t width, uint32_t height) {
     SetProcessDPIAware();
+    // Windows defaults to a 15.6 ms timer tick, which quantizes every sub-frame wait the
+    // simulation performs. Without this the publish cadence depends on whether some other
+    // process happens to have raised the global timer resolution.
+    timeBeginPeriod(1);
     input_.width = width;
     input_.height = height;
     WNDCLASSW wc{};
@@ -25,6 +30,7 @@ Window::Window(uint32_t width, uint32_t height) {
 Window::~Window() {
     if (hwnd_)
         DestroyWindow(hwnd_);
+    timeEndPeriod(1);
 }
 LRESULT CALLBACK Window::procedure(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     auto* w = reinterpret_cast<Window*>(GetWindowLongPtrW(h, GWLP_USERDATA));
@@ -119,6 +125,17 @@ bool Window::pump() {
         DispatchMessageW(&msg);
     }
     return running_;
+}
+void Window::waitForMessages(uint32_t milliseconds) const {
+    if (!milliseconds)
+        return;
+    // MWMO_INPUTAVAILABLE also returns for messages already queued but not yet removed,
+    // so a message that arrived between pump() and this call cannot be missed.
+    MsgWaitForMultipleObjectsEx(0, nullptr, milliseconds, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+}
+void Window::wake() const {
+    if (hwnd_)
+        PostMessageW(hwnd_, WM_NULL, 0, 0);
 }
 void Window::consumeEdges() {
     input_.pressed.fill(false);

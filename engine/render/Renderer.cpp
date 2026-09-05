@@ -62,6 +62,7 @@ struct Renderer::Impl {
     uint32_t statisticsIntervals = 0;
     double statisticsGpuSum = 0;
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+    VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
     std::vector<Image> swapImages;
     std::vector<VkSemaphore> finished;
     VkSemaphore acquired = VK_NULL_HANDLE;
@@ -88,7 +89,7 @@ struct Renderer::Impl {
     Image depth, captureImage;
     std::unique_ptr<NrdDenoiser> denoiser;
     DebugHud hud;
-    Frame previous;
+    FrameRef previous;
     bool historyValid = false;
     bool resizePending = false;
     std::chrono::steady_clock::time_point previousRenderTime = std::chrono::steady_clock::now();
@@ -347,6 +348,29 @@ struct Renderer::Impl {
         vkDestroyShaderModule(vk.device, fragment, nullptr);
         VK_CHECK(result);
     }
+    static const char* presentName(VkPresentModeKHR mode) {
+        return mode == VK_PRESENT_MODE_MAILBOX_KHR     ? "MAILBOX"
+               : mode == VK_PRESENT_MODE_IMMEDIATE_KHR ? "IMMEDIATE"
+                                                       : "FIFO";
+    }
+    // FIFO is the only mode Vulkan guarantees, so an unsupported request degrades to it
+    // rather than failing to start.
+    VkPresentModeKHR selectPresentMode() const {
+        VkPresentModeKHR wanted = options.present == PresentMode::Mailbox ? VK_PRESENT_MODE_MAILBOX_KHR
+                                  : options.present == PresentMode::Immediate
+                                      ? VK_PRESENT_MODE_IMMEDIATE_KHR
+                                      : VK_PRESENT_MODE_FIFO_KHR;
+        if (wanted == VK_PRESENT_MODE_FIFO_KHR)
+            return wanted;
+        uint32_t count = 0;
+        VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(vk.physical, vk.surface, &count, nullptr));
+        std::vector<VkPresentModeKHR> modes(count);
+        VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(vk.physical, vk.surface, &count, modes.data()));
+        if (std::find(modes.begin(), modes.end(), wanted) != modes.end())
+            return wanted;
+        std::cout << "[Render] " << presentName(wanted) << " present mode unsupported; using FIFO\n";
+        return VK_PRESENT_MODE_FIFO_KHR;
+    }
     void resize(uint32_t requestedWidth, uint32_t requestedHeight) {
         VK_CHECK(vkDeviceWaitIdle(vk.device));
         VkSurfaceCapabilitiesKHR caps;
@@ -381,7 +405,8 @@ struct Renderer::Impl {
         sc.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
         sc.preTransform = caps.currentTransform;
         sc.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-        sc.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+        presentMode = selectPresentMode();
+        sc.presentMode = presentMode;
         sc.clipped = VK_TRUE;
         sc.oldSwapchain = swapchain;
         VkSwapchainKHR next;
@@ -445,6 +470,8 @@ struct Renderer::Impl {
         historyValid = false;
         resizePending = false;
         statistics = {};
+        statistics.present = presentName(presentMode);
+        statistics.vsync = presentMode == VK_PRESENT_MODE_FIFO_KHR;
         statisticsStart = {};
         statisticsIntervals = 0;
         statisticsGpuSum = 0;
@@ -645,7 +672,7 @@ struct Renderer::Impl {
                << ",\n  \"width\": " << width << ", \"height\": " << height << ",\n  \"gpuMs\": " << gpuMs
                << ",\n  \"fps\": " << statistics.fps << ",\n  \"frameMs\": " << statistics.frameMs
                << ",\n  \"gpuAverageMs\": " << statistics.gpuMs
-               << ",\n  \"simulationHz\": 60,\n  \"presentMode\": \"FIFO\""
+               << ",\n  \"simulationHz\": 60,\n  \"presentMode\": \"" << presentName(presentMode) << "\""
                << ",\n  \"validationActive\": " << (vk.validationActive ? "true" : "false")
                << ",\n  \"validationErrors\": " << vk.validationErrors.load()
                << ",\n  \"meanRgb\": " << double(sum) / (double(width) * height * 3) << ",\n  \"redRange\": ["
@@ -673,13 +700,14 @@ struct Renderer::Impl {
             statisticsGpuSum = 0;
         }
     }
-    bool render(const Frame& sourceFrame) {
-        Frame diagnosticFrame;
+    bool render(const FrameRef& sourceFrame) {
+        FrameRef frameRef = sourceFrame;
         if (options.auditMotion) {
-            diagnosticFrame = sourceFrame;
-            diagnosticFrame.camera.yaw += .04f * std::sin(float(frameNumber) * .017f);
+            Frame diagnostic = *sourceFrame;
+            diagnostic.camera.yaw += .04f * std::sin(float(frameNumber) * .017f);
+            frameRef = std::make_shared<const Frame>(std::move(diagnostic));
         }
-        const Frame& frame = options.auditMotion ? diagnosticFrame : sourceFrame;
+        const Frame& frame = *frameRef;
         if (!frame.input.width || !frame.input.height)
             return true;
         if (frame.entities.empty() || frame.entities.size() > MaxInstances ||
@@ -710,14 +738,14 @@ struct Renderer::Impl {
             float(std::chrono::duration<double, std::milli>(now - previousRenderTime).count()), 1.f, 100.f);
         previousRenderTime = now;
         bool reset = !historyValid || frame.resetHistory ||
-                     glm::distance(frame.camera.eye(), previous.camera.eye()) > 4.f;
+                     glm::distance(frame.camera.eye(), previous->camera.eye()) > 4.f;
         if (historyValid) {
-            if (frame.lights.size() != previous.lights.size() ||
-                frame.materials.size() != previous.materials.size())
+            if (frame.lights.size() != previous->lights.size() ||
+                frame.materials.size() != previous->materials.size())
                 reset = true;
-            else if (std::memcmp(frame.lights.data(), previous.lights.data(),
+            else if (std::memcmp(frame.lights.data(), previous->lights.data(),
                                  frame.lights.size() * sizeof(Light)) ||
-                     std::memcmp(frame.materials.data(), previous.materials.data(),
+                     std::memcmp(frame.materials.data(), previous->materials.data(),
                                  frame.materials.size() * sizeof(Material)))
                 reset = true;
         }
@@ -725,7 +753,7 @@ struct Renderer::Impl {
         data.view = frame.camera.view();
         data.vp = frame.camera.projection(float(width) / height) * data.view;
         data.previousVp =
-            reset ? data.vp : previous.camera.projection(float(width) / height) * previous.camera.view();
+            reset ? data.vp : previous->camera.projection(float(width) / height) * previous->camera.view();
         data.inverseVp = glm::inverse(data.vp);
         data.eyeTime = vec4(frame.camera.eye(), float(frame.time));
         data.resolution = {float(width), float(height), float(frame.debugView), float(frame.hovered)};
@@ -740,8 +768,8 @@ struct Renderer::Impl {
             auto& entity = frame.entities[i];
             auto model = transform(entity);
             auto previousModel = model;
-            if (!reset && i < previous.entities.size() && previous.entities[i].id == entity.id)
-                previousModel = transform(previous.entities[i]);
+            if (!reset && i < previous->entities.size() && previous->entities[i].id == entity.id)
+                previousModel = transform(previous->entities[i]);
             gpuInstances[i] = {model,
                                previousModel,
                                {entity.material, meshes[uint32_t(entity.shape)].firstIndex, entity.id,
@@ -758,7 +786,9 @@ struct Renderer::Impl {
         }
         std::memcpy(materialData.mapped, frame.materials.data(), frame.materials.size() * sizeof(Material));
         std::memcpy(lightData.mapped, frame.lights.data(), frame.lights.size() * sizeof(Light));
-        hud.draw(frame, hudUpload.mapped, statistics, options.hud);
+        // A history reset clears every screen image, including the overlay, so the upload
+        // has to be replayed even when the overlay content itself did not change.
+        const bool hudDirty = hud.draw(frame, hudUpload.mapped, statistics, options.hud) || !historyValid;
         VK_CHECK(vkResetCommandBuffer(command, 0));
         VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -777,12 +807,15 @@ struct Renderer::Impl {
                 vkCmdFillBuffer(command, buffer.handle, 0, VK_WHOLE_SIZE, 0);
             VulkanContext::barrier(command);
         }
-        vk.transition(command, images[28], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-        VkBufferImageCopy upload{};
-        upload.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        upload.imageExtent = {width, height, 1};
-        vkCmdCopyBufferToImage(command, hudUpload.handle, images[28].handle, images[28].layout, 1, &upload);
-        vk.transition(command, images[28], VK_IMAGE_LAYOUT_GENERAL);
+        if (hudDirty) {
+            vk.transition(command, images[28], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+            VkBufferImageCopy upload{};
+            upload.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            upload.imageExtent = {width, height, 1};
+            vkCmdCopyBufferToImage(command, hudUpload.handle, images[28].handle, images[28].layout, 1,
+                                   &upload);
+            vk.transition(command, images[28], VK_IMAGE_LAYOUT_GENERAL);
+        }
         // TLAS allocation precedes descriptor writes; actual construction is recorded before raster/compute.
         buildTLAS(command, frame);
         VulkanContext::barrier(command);
@@ -858,7 +891,7 @@ struct Renderer::Impl {
             resizePending = true;
         else
             VK_CHECK(result);
-        previous = frame;
+        previous = frameRef;
         historyValid = true;
         frameNumber++;
         if (auditFrame) {
@@ -883,7 +916,7 @@ Renderer::Renderer(HWND window, const RenderOptions& options)
     impl_->initialize();
 }
 Renderer::~Renderer() = default;
-bool Renderer::render(const Frame& f) {
+bool Renderer::render(const FrameRef& f) {
     return impl_->render(f);
 }
 uint64_t Renderer::frames() const {

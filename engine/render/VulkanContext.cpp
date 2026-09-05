@@ -63,7 +63,10 @@ void VulkanContext::initialize(HWND hwnd, bool validation) {
     if (validationActive)
         VK_CHECK(vkCreateDebugUtilsMessengerEXT(instance, &dbg, nullptr, &debug));
     std::cout << "Validation layer: "
-              << (validationActive ? "enabled" : "not installed (runtime checks still active)") << "\n";
+              << (validationActive        ? "enabled"
+                  : validation            ? "not installed (runtime checks still active)"
+                                          : "off by default in Release (pass --validation)")
+              << "\n";
     VkWin32SurfaceCreateInfoKHR surf{VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR};
     surf.hinstance = GetModuleHandleW(nullptr);
     surf.hwnd = hwnd;

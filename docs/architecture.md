@@ -4,9 +4,13 @@
 
 引擎主线程拥有 Win32 窗口消息、Input、World、PhysicsScene、Navigation 查询和唯一 JS heap。simulation 使用 60 Hz 固定步长，长帧最多补进 100 ms。输入按下边沿、滚轮和鼠标 delta 仅由第一个 simulation tick 消费，补帧不会重复点击。
 
-每次模拟完成，把值拷贝到 `Frame`，经单槽 `FrameMailbox` 发布。槽位已占用时替换旧快照；主线程不等待 GPU。渲染线程读到快照后只访问自己的副本，不读取 World 或 JS 对象。上一次**真正渲染**的快照用于物体与相机运动向量，不能拿上一个 simulation tick 代替。
+主线程按固定步长睡到下一次 tick 到期，不做轮询；`Window` 在构造时申请 1 ms 定时器精度，避免节拍被系统默认的 15.6 ms 粒度量化。渲染线程结束时会唤醒主线程，关闭延迟不依赖超时。
 
-渲染线程创建、使用和销毁 Vulkan 对象，包括 descriptor、swapchain、BLAS/TLAS、NRD pools 和 HUD 的离屏 GDI 位图。一个 GPU frame in flight，fence 完成后才能更新 host-visible buffer 或 descriptor pool。present 完成 semaphore 按 swapchain image 分配。
+每次模拟完成，把值拷贝到 `Frame`，包成不可变快照经单槽 `FrameMailbox` 发布。槽位已占用时替换旧快照；主线程不等待 GPU。快照按引用计数移交，跨线程不发生深拷贝，渲染线程也因此能零成本保留上一帧。`acquire` **不清空槽位**：只有在首个快照到达前才阻塞，之后没有新快照时返回 `Repeat`，渲染线程重新呈现最新快照而不是空等下一次 60 Hz tick。渲染帧率由显示器和 GPU 决定，不被仿真频率锁死。渲染线程只访问快照，不读取 World 或 JS 对象。上一次**真正渲染**的快照用于物体与相机运动向量，不能拿上一个 simulation tick 代替。
+
+渲染线程创建、使用和销毁 Vulkan 对象，包括 descriptor、swapchain、BLAS/TLAS、NRD pools 和 HUD 的离屏 GDI 位图。一个 GPU frame in flight，fence 完成后才能更新 host-visible buffer 或 descriptor pool。present 完成 semaphore 按 swapchain image 分配。呈现模式由 `--present` 选择，默认 FIFO；`mailbox` 与 `immediate` 用于在没有 vblank 量化的情况下测量真实帧成本，设备不支持时回退 FIFO。
+
+HUD 是与 swapchain 同分辨率的 CPU 光栅目标，因此**不能**每帧重画：`DebugHud::draw` 对其显示的全部内容取签名，只在内容变化时重绘并回报是否需要上传，渲染线程据此跳过整屏 buffer→image 拷贝。稳定状态下重绘频率约 2 Hz，由统计刷新间隔驱动；`--physics-debug` 的线框跟随实时姿态，该模式下每帧重绘。写入映射缓冲必须使用 32 位整字：该内存在独显上是写合并的，逐字节写会瓦解写合并。
 
 关闭路径：主线程停止发布 → mailbox.close 唤醒渲染线程 → join → GPU idle / 资源析构完成 → 销毁窗口。渲染线程异常也会关闭 mailbox，主线程读到 finished 后 join 并报告错误。零尺寸窗口不执行 GPU 帧，恢复／resize 时等待 GPU 并重新创建屏幕资源和 NRD 历史。
 

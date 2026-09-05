@@ -69,3 +69,30 @@ Release 构建成功，自有代码无编译 warning。CTest 的 `core_gameplay`
 运行 `Afterlight.exe --smoke --physics-debug --width 960 --height 600`，完成 160 GPU 帧以及点击移动、镜头变换、resize 到 1100×700、最小化恢复、取消指令。Vulkan 和 synchronization validation 报告 0 errors，正常关闭。物理线框截图已打开检查，见 `captures/physics-scene.png` 与 `captures/physics-scene-report.json`，日志在 `build/physics-smoke.log`。本次没有改动光照 shader 或 NRD 算法。
 
 查询后端当前采用缓存 AABB 粗筛和 box/capsule 窄相，未做大型场景 BVH、动力学堆叠／约束、三角网格碰撞、多层导航或骨骼动画资源载入的验证。
+
+## 帧成本结构与 CPU 瓶颈修复（2026-09-05）
+
+起因是整帧时间稳定为 GPU 时间的三倍。固定场景只改分辨率测量，发现"帧时间减 GPU 时间"除以像素数在五个分辨率下是同一个常数（9.5–11.2 ms/百万像素），即存在一条与场景无关、只随分辨率增长的 CPU 开销。
+
+定位到四处，逐条实测：
+
+1. **Release 构建从未开启优化。** `CMakeCache.txt` 中 `CMAKE_CXX_FLAGS_RELEASE`、`CMAKE_C_FLAGS_RELEASE` 及全部 `*_LINKER_FLAGS_RELEASE` 均为空字符串，生成的 vcxproj 里 `<Optimization>` 在所有配置下为空，编译命令行既无 `/O2` 也无 `/DNDEBUG`。CMakeLists 现在在缺少 `/O2` 时显式补齐 Release 与 RelWithDebInfo 的标志。这条同时说明此前所有性能数字都测在未优化二进制上。
+2. **HUD 每帧全屏重画。** `DebugHud::draw` 无条件 `memset` 整屏并逐像素写入映射缓冲，`enabled` 只挡住了 GDI 绘制，不挡这两步——实测 `--no-hud` 对帧率没有任何影响（1100×700 为 59.94 对 60.11，2560×1440 为 18.69 对 18.93）。现改为对显示内容取签名，仅在变化时重绘并上传。
+3. **逐字节写入写合并内存。** 上传缓冲是 `HOST_VISIBLE | HOST_COHERENT`，在独显上即写合并内存，原实现每像素做四次字节写。改为单次 32 位整字读写。
+4. **仿真硬锁渲染帧率。** `FrameMailbox::consume` 阻塞等待新快照并清空槽位，渲染帧率因此恒 ≤ 60 Hz。改为不可变快照按引用计数移交、`acquire` 不清空槽位，并新增 `--present fifo|mailbox|immediate`，使帧成本可以脱离 vblank 量化测量。
+
+结果（RTX 3080 / 60 Hz，`--frames 360 --capture`，均为开启优化后的构建）：
+
+| 分辨率 | 修复前 FIFO | 修复后 FIFO | 修复前非 GPU 时间 | 修复后非 GPU 时间（immediate） |
+| --- | --- | --- | --- | --- |
+| 1280×800 | 60.06 FPS | 59.95 FPS | 11.22 ms | 0.42 ms |
+| 1600×1000 | 28.66 FPS | 59.98 FPS | 22.80 ms | 0.43 ms |
+| 1920×1200 | 18.59 FPS | 59.97 FPS | 34.95 ms | 0.47 ms |
+| 2240×1320 | 12.26 FPS | 59.97 FPS | 55.34 ms | 0.48 ms |
+| 2560×1440 | 10.90 FPS | 59.98 FPS | 61.30 ms | 0.52 ms |
+
+修复前同一配置重复测量在 10.9–23.0 FPS 之间漂移（CPU 打满总线时 GPU timestamp 也随之波动），修复后五个分辨率均稳定锁 60。非 GPU 时间从"随像素线性增长"变为恒定 0.42–0.52 ms，整帧时间与 GPU 时间之比从约 3.0 降到 1.05，即引擎现在确实是 GPU bound。`--present immediate` 下的未封顶帧率为 275.7 / 186.0 / 130.2 / 105.2 / 86.5 FPS。
+
+基于同一组数据决定**不做**多帧在飞：可回收的上限就是那 0.42–0.52 ms，而代价是把 TLAS、descriptor set 和全部 host-visible 上传缓冲按帧复制，在带时域历史的 ReSTIR 管线中风险不成比例。
+
+回归验证：`core_gameplay` 与 `physics_scene` 通过；`--smoke`（960×600，含点击、镜头、resize、最小化恢复、取消指令）160 帧 0 validation errors 正常关闭；`--demo`、`--physics-debug`、`--no-hud`、`--present mailbox` 与 `--validation` 组合均正常退出。诊断读回按文档命令复跑，静止基础色视图 26 帧的时域方差与相邻帧差仍为 0，`--audit-motion` 的基础色相邻帧亮度差 RMS 仍为 **0.00460471**，与本文上一节记录逐位一致，说明快照改为引用计数移交后确定性未变。
