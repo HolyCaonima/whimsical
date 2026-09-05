@@ -1,0 +1,76 @@
+#version 460
+#extension GL_EXT_ray_query : require
+#extension GL_GOOGLE_include_directive : require
+#define COMPUTE_PASS
+#include "common.glsl"
+layout(local_size_x = 8, local_size_y = 8) in;
+vec3 aces(vec3 c) {
+    return clamp((c * (2.51 * c + .03)) / (c * (2.43 * c + .59) + .14), 0, 1);
+}
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (!inBounds(p))
+        return;
+    Surface s = surfaceAt(p);
+    vec2 uv = (vec2(p) + .5) / g.resolution.xy;
+    vec3 color;
+    if (s.id == 0) {
+        vec4 world = g.inverseViewProjection * vec4(uv * 2 - 1, 1, 1);
+        color = sky(normalize(world.xyz / world.w - g.eyeTime.xyz)) * .32;
+    } else
+        color = imageLoad(denoisedDiffuse, p).rgb * s.albedo * (1 - s.metallic) +
+                imageLoad(denoisedSpecular, p).rgb + s.emission;
+    int debug = int(g.resolution.z);
+    if (debug == 1)
+        color = s.albedo;
+    if (debug == 2)
+        color = s.n * .5 + .5;
+    if (debug == 3)
+        color = vec3(imageLoad(gViewZ, p).r / 50);
+    if (debug == 4)
+        color = imageLoad(directDebug, p).rgb;
+    if (debug == 5)
+        color = imageLoad(indirectDebug, p).rgb;
+    if (debug == 6)
+        color = imageLoad(rawDiffuse, p).rgb * s.albedo * (1 - s.metallic) + imageLoad(rawSpecular, p).rgb +
+                s.emission;
+    if (debug == 7)
+        color = vec3(.5) + vec3(imageLoad(gMotion, p).xy * 15, 0);
+    if (debug == 0 || debug == 4 || debug == 5 || debug == 6)
+        color = pow(aces(max(color, vec3(0)) * 1.15), vec3(1 / 2.2));
+    if (debug == 0 && s.id != 0) {
+        float fog = 1 - exp(-length(g.eyeTime.xyz - s.p) * .007);
+        color = mix(color, vec3(.12, .17, .18), fog * .4);
+    }
+    if (s.id != 0 && s.n.y > .8 && s.p.y < .12) {
+        float ring = abs(length(s.p.xz - g.player.xz) - .68);
+        if (g.player.w > 0 && ring < .035)
+            color = mix(color, vec3(.38, .94, .79), .9);
+        if (g.destination.w > 0) {
+            float d = length(s.p.xz - g.destination.xz), r = .32 + .07 * sin(g.eyeTime.w * 5);
+            if (abs(d - r) < .025 || d < .055)
+                color = vec3(.95, .77, .36);
+        }
+    }
+    // Selected and interactable silhouettes, computed from the G-buffer entity IDs.
+    if (debug == 0) {
+        for (int i = 0; i < 4; i++) {
+            ivec2 q = clamp(p + ivec2(i == 0   ? 1
+                                      : i == 1 ? -1
+                                               : 0,
+                                      i == 2   ? 1
+                                      : i == 3 ? -1
+                                               : 0),
+                            ivec2(0), ivec2(g.resolution.xy) - 1);
+            uint id = uint(imageLoad(gPosition, q).w + .5);
+            if (g.player.w > 0 && id == uint(g.player.w) && s.id != id)
+                color = vec3(.55, 1, .86);
+            if (g.resolution.w > 0 && id == uint(g.resolution.w) && s.id != id)
+                color = vec3(1, .8, .38);
+        }
+    }
+    color *= 1 - .18 * pow(length((uv - .5) * 1.2), 2);
+    vec4 hud = imageLoad(hudImage, p);
+    color = mix(color, hud.rgb, hud.a);
+    imageStore(finalImage, p, vec4(color, 1));
+}

@@ -1,0 +1,35 @@
+#version 460
+#extension GL_EXT_ray_query : require
+#extension GL_GOOGLE_include_directive : require
+#define COMPUTE_PASS
+#include "common.glsl"
+layout(local_size_x = 8, local_size_y = 8) in;
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (!inBounds(p))
+        return;
+    uint index = indexOf(p);
+    Surface s = surfaceAt(p);
+    vec3 direct = vec3(0), specular = vec3(0), indirect = vec3(0);
+    float hitDistance = 150;
+    if (s.id != 0) {
+        DIReservoir di = currentDI[index];
+        if (di.stats.w > 0 && visible(s.p, s.n, di.sampleLight.xyz)) {
+            directSignal(s, di.sampleLight, direct, specular);
+            direct *= di.stats.x;
+            specular *= di.stats.x;
+        }
+        GIReservoir gi = currentGI[index];
+        if (gi.stats.w > 0) {
+            vec3 end = gi.normalKind.w < 0 ? s.p + gi.positionDistance.xyz * 150 : gi.positionDistance.xyz;
+            hitDistance = distance(end, s.p);
+            if (visible(s.p, s.n, end))
+                indirect = giSignal(s, gi) * gi.stats.x;
+        }
+    }
+    vec4 spec = imageLoad(rawSpecular, p);
+    imageStore(rawDiffuse, p, vec4(clamp(direct + indirect, vec3(0), vec3(60000)), hitDistance));
+    imageStore(rawSpecular, p, vec4(clamp(spec.rgb + specular, vec3(0), vec3(60000)), spec.w));
+    imageStore(directDebug, p, vec4(direct * s.albedo * (1 - s.metallic) + specular, 1));
+    imageStore(indirectDebug, p, vec4(indirect * s.albedo * (1 - s.metallic) + spec.rgb, 1));
+}

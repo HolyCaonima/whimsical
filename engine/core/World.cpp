@@ -1,0 +1,244 @@
+#include "World.h"
+#include "debug/PhysicsDebug.h"
+#include <stdexcept>
+#include <algorithm>
+#include <cmath>
+namespace afterlight {
+const GameObject& World::entity(uint32_t id) const {
+    if (!id || id > objects_.size() || !objects_[id - 1].alive)
+        throw std::out_of_range("Invalid object");
+    return objects_[id - 1];
+}
+GameObject& World::mutableObject(uint32_t id) {
+    return const_cast<GameObject&>(entity(id));
+}
+uint32_t World::spawn(std::string name, Shape shape, vec3 position, vec3 scale, uint32_t material,
+                      bool blocking, bool interactable) {
+    if (material >= materials.size())
+        throw std::out_of_range("Invalid material");
+    GameObject o;
+    o.id = uint32_t(objects_.size() + 1);
+    o.name = std::move(name);
+    o.position = position;
+    o.render.shape = shape;
+    o.render.scale = scale;
+    o.render.material = material;
+    o.interactable = interactable;
+    PhysicsBody b;
+    b.owner = o.id;
+    b.pose.position = position;
+    b.shape = shape == Shape::Box ? ColliderShape::box(scale * .5f)
+                                  : ColliderShape::capsule(.4f * std::max(scale.x, scale.z), 2 * scale.y);
+    b.layer = shape == Shape::Capsule ? CollisionLayer::Character : CollisionLayer::World;
+    b.motion = shape == Shape::Capsule || interactable ? BodyMotion::Kinematic : BodyMotion::Static;
+    b.blocking = blocking || shape == Shape::Capsule;
+    b.pickable = blocking || interactable || shape == Shape::Capsule;
+    o.physical = physics_.create(b);
+    objects_.push_back(o);
+    return o.id;
+}
+void World::syncPose(GameObject& o) {
+    PhysicsPose pose{o.position, glm::angleAxis(o.yaw, vec3(0, 1, 0))};
+    physics_.setPose(o.physical, pose);
+    animationCollision_.update(o.id, pose, o.joints);
+}
+void World::setPose(uint32_t id, vec3 p, float yaw, float height) {
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) || !std::isfinite(yaw) ||
+        !std::isfinite(height) || height <= 0)
+        throw std::invalid_argument("Invalid object pose");
+    auto& o = mutableObject(id);
+    o.position = p;
+    o.yaw = yaw;
+    o.render.scale.y = height;
+    physics_.setMotion(o.physical, BodyMotion::Kinematic);
+    syncPose(o);
+}
+void World::setVisualPose(uint32_t id, vec3 offset, vec3 scale) {
+    if (!std::isfinite(offset.x) || !std::isfinite(offset.y) || !std::isfinite(offset.z) ||
+        !std::isfinite(scale.x) || !std::isfinite(scale.y) || !std::isfinite(scale.z) ||
+        glm::any(glm::lessThanEqual(scale, vec3(0))))
+        throw std::invalid_argument("Invalid visual pose");
+    auto& o = mutableObject(id);
+    o.render.offset = offset;
+    o.render.animationScale = scale;
+}
+void World::setMaterial(uint32_t id, uint32_t material) {
+    if (material >= materials.size())
+        throw std::out_of_range("Invalid material");
+    mutableObject(id).render.material = material;
+}
+void World::configureCollider(uint32_t id, uint32_t layer, bool blocking, bool walkable, bool pickable) {
+    physics_.setProperties(entity(id).physical, layer, blocking, walkable, pickable);
+}
+void World::setColliderShape(uint32_t id, const ColliderShape& shape) {
+    physics_.setShape(entity(id).physical, shape);
+}
+void World::setSolid(uint32_t id, bool solid) {
+    auto h = entity(id).physical;
+    const auto b = physics_.body(h);
+    physics_.setProperties(h, b.layer, solid, b.walkable, b.pickable);
+}
+void World::setEnabled(uint32_t id, bool enabled) {
+    auto& o = mutableObject(id);
+    o.enabled = enabled;
+    physics_.setEnabled(o.physical, enabled);
+    animationCollision_.setEnabled(id, enabled);
+}
+void World::setVisible(uint32_t id, bool visible) {
+    mutableObject(id).render.visible = visible;
+}
+void World::destroy(uint32_t id) {
+    auto& o = mutableObject(id);
+    physics_.destroy(o.physical);
+    animationCollision_.remove(id);
+    o.alive = o.enabled = false;
+    o.physical = {};
+    if (selected == id)
+        selected = 0;
+    if (hovered == id)
+        hovered = 0;
+    if (playerId == id) {
+        playerId = 0;
+        path.clear();
+        hasDestination = false;
+    }
+    resetHistory = true;
+}
+NavigationAgent World::agent(uint32_t id) const {
+    const auto& b = physics_.body(entity(id).physical);
+    if (b.shape.type != ColliderType::Capsule)
+        throw std::invalid_argument("Movement requires a capsule body");
+    return {b.shape.radius, b.shape.height(), id};
+}
+vec3 World::feet(uint32_t id) const {
+    auto a = agent(id);
+    return physics_.body(entity(id).physical).pose.position - vec3(0, a.height * .5f, 0);
+}
+vec3 World::moveCharacter(uint32_t id, vec3 delta) {
+    auto& o = mutableObject(id);
+    auto a = agent(id);
+    QueryFilter filter;
+    filter.mask = CollisionLayer::World | CollisionLayer::Character;
+    filter.ignoreOwner = id;
+    filter.blockingOnly = true;
+    vec3 start = physics_.body(o.physical).pose.position;
+    auto move = physics_.moveAndSlide({start, a.radius, a.height}, delta, filter);
+    vec3 accepted = start;
+    int steps = std::max(1, int(std::ceil(glm::length(move.applied) / .08f)));
+    for (int i = 1; i <= steps; ++i) {
+        vec3 p = glm::mix(start, move.position, float(i) / steps);
+        if (!Navigation::canStand(physics_, p - vec3(0, a.height * .5f, 0), a, navigation))
+            break;
+        accepted = p;
+    }
+    o.position = accepted;
+    syncPose(o);
+    return o.position;
+}
+vec3 World::rootMotion(uint32_t id, vec3 localDelta, float deltaYaw) {
+    if (!std::isfinite(deltaYaw))
+        throw std::invalid_argument("Invalid root rotation");
+    auto rotation = glm::angleAxis(entity(id).yaw, vec3(0, 1, 0));
+    vec3 p = moveCharacter(id, rotation * localDelta);
+    auto& o = mutableObject(id);
+    o.yaw += deltaYaw;
+    syncPose(o);
+    return p;
+}
+float World::setCharacterHeight(uint32_t id, float height) {
+    auto& o = mutableObject(id);
+    physics_.resizeCharacter(o.physical, height);
+    o.position = physics_.body(o.physical).pose.position;
+    syncPose(o);
+    return physics_.body(o.physical).shape.height();
+}
+BodyHandle World::addAnimationCollider(uint32_t id, uint32_t joint, const ColliderShape& shape,
+                                       PhysicsPose local, bool blocking) {
+    auto& o = mutableObject(id);
+    if (joint >= o.joints.size())
+        throw std::out_of_range("Publish animation joints before adding collider");
+    auto h = animationCollision_.bind(id, joint, shape, local, blocking);
+    syncPose(o);
+    animationCollision_.setEnabled(id, o.enabled);
+    return h;
+}
+void World::setAnimationJoints(uint32_t id, std::vector<PhysicsPose> joints) {
+    auto& o = mutableObject(id);
+    animationCollision_.update(id, {o.position, glm::angleAxis(o.yaw, vec3(0, 1, 0))}, joints);
+    o.joints = std::move(joints);
+}
+std::vector<vec3> World::findPath(uint32_t id, vec3 target) const {
+    return Navigation::findPath(physics_, feet(id), target, agent(id), navigation);
+}
+static vec3 rayDirection(const Camera& camera, float x, float y, const Input& input) {
+    auto inv = glm::inverse(camera.projection(float(std::max(input.width, 1u)) / std::max(input.height, 1u)) *
+                            camera.view());
+    auto v = inv * vec4(2 * x / std::max(input.width, 1u) - 1, 2 * y / std::max(input.height, 1u) - 1, 1, 1);
+    return glm::normalize(vec3(v) / v.w - camera.eye());
+}
+std::optional<vec3> World::groundAt(float x, float y, const Input& input) const {
+    QueryFilter filter;
+    filter.walkableOnly = true;
+    filter.mask = CollisionLayer::World;
+    auto hit = physics_.raycast(camera.eye(), rayDirection(camera, x, y, input), 160, filter);
+    if (!hit)
+        return {};
+    return hit->position;
+}
+uint32_t World::pick(float x, float y, const Input& input) const {
+    QueryFilter filter;
+    filter.pickableOnly = true;
+    auto hit = physics_.raycast(camera.eye(), rayDirection(camera, x, y, input), 160, filter);
+    if (!hit || !hit->owner || hit->owner > objects_.size())
+        return 0;
+    const auto& o = entity(hit->owner);
+    return o.interactable || o.id == playerId ? o.id : 0;
+}
+Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug, bool physicsDebug) {
+    Frame f;
+    f.entities.reserve(objects_.size());
+    for (const auto& o : objects_) {
+        RenderObject r;
+        r.id = o.id;
+        r.name = o.name;
+        r.shape = o.render.shape;
+        r.position = o.position + glm::angleAxis(o.yaw, vec3(0, 1, 0)) * o.render.offset;
+        r.yaw = o.yaw;
+        r.scale = o.render.scale * o.render.animationScale;
+        r.material = o.render.material;
+        r.enabled = o.alive && o.enabled && o.render.visible;
+        r.interactable = o.interactable;
+        f.entities.push_back(r);
+    }
+    QueryFilter obstacles;
+    obstacles.blockingOnly = true;
+    for (auto handle : physics_.bodies(obstacles)) {
+        const auto& b = physics_.body(handle);
+        if (b.walkable || b.owner == playerId)
+            continue;
+        auto box = physics_.bounds(handle);
+        f.mapObstacles.push_back({(box.min + box.max) * .5f, box.max - box.min});
+    }
+    f.materials = materials;
+    f.lights = lights;
+    f.camera = camera;
+    f.input = input;
+    if (playerId)
+        f.player = entity(playerId).position;
+    f.selected = selected;
+    f.hovered = hovered;
+    f.locomotion = state;
+    f.message = message;
+    f.destination = destination;
+    f.hasDestination = hasDestination;
+    f.path = path;
+    f.tick = tick;
+    f.time = time;
+    f.resetHistory = resetHistory;
+    f.debugView = debug;
+    if (physicsDebug)
+        appendPhysicsDebug(physics_, f);
+    resetHistory = false;
+    return f;
+}
+} // namespace afterlight

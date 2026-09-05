@@ -1,0 +1,64 @@
+#version 460
+#extension GL_EXT_ray_query : require
+#extension GL_GOOGLE_include_directive : require
+#define COMPUTE_PASS
+#include "common.glsl"
+layout(local_size_x = 8, local_size_y = 8) in;
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (!inBounds(p))
+        return;
+    uint index = indexOf(p);
+    rng = hash(index + g.counts.z * 192641u);
+    DIReservoir di;
+    di.sampleLight = vec4(0);
+    di.stats = vec4(0);
+    GIReservoir gi;
+    gi.positionDistance = gi.normalKind = gi.radiancePdf = gi.stats = vec4(0);
+    Surface s = surfaceAt(p);
+    imageStore(rawSpecular, p, vec4(0));
+    if (s.id == 0) {
+        candidateDI[index] = di;
+        candidateGI[index] = gi;
+        return;
+    }
+    for (int c = 0; c < 8; c++) {
+        vec4 sampleLight = lightSample();
+        float target = diTarget(s, sampleLight);
+        diAdd(di, sampleLight, target * float(g.counts.y), 1, target);
+    }
+    diFinalize(di);
+    candidateDI[index] = di;
+    vec3 direction = cosineDirection(s.n);
+    float pdf = max(dot(s.n, direction) / PI, 1e-6), hitDistance;
+    Surface secondary;
+    GIReservoir fresh;
+    fresh.stats = vec4(0);
+    fresh.radiancePdf = vec4(0, 0, 0, pdf);
+    if (traceSurface(s.p + s.n * .012, direction, secondary, hitDistance)) {
+        fresh.positionDistance = vec4(secondary.p, hitDistance);
+        fresh.normalKind = vec4(secondary.n, float(secondary.id));
+        fresh.radiancePdf.rgb = secondaryLighting(secondary);
+    } else {
+        fresh.positionDistance = vec4(direction, 150);
+        fresh.normalKind = vec4(0, 0, 0, -1);
+        fresh.radiancePdf.rgb = sky(direction);
+    }
+    float target = giTarget(s, fresh);
+    giAdd(gi, fresh, target / pdf, 1, target);
+    giFinalize(gi);
+    candidateGI[index] = gi;
+    vec3 v = safeNormalize(g.eyeTime.xyz - s.p);
+    float specPdf;
+    direction = sampleSpecular(s, v, specPdf);
+    vec3 spec = vec3(0);
+    float specDistance = 0;
+    if (dot(direction, s.n) > 0 && specPdf > 1e-7) {
+        if (traceSurface(s.p + s.n * .012, direction, secondary, specDistance))
+            spec = secondaryLighting(secondary);
+        else
+            spec = sky(direction);
+        spec *= specularBrdf(s, v, direction) * max(dot(s.n, direction), 0) / specPdf;
+    }
+    imageStore(rawSpecular, p, vec4(clamp(spec, vec3(0), vec3(60000)), specDistance));
+}

@@ -1,0 +1,1 @@
+{"box":{"generator":"unit_box","dimensions":[1,1,1]},"capsule":{"generator":"capsule","radius":0.4,"height":2.0,"segments":24,"hemisphereRings":8},"units":"meters","upAxis":"Y","forwardAxis":"+Z"}
