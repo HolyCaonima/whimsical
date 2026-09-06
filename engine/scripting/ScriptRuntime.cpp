@@ -2,7 +2,8 @@
 #include "core/CpuProfile.h"
 #include "navigation/Navigation.h"
 #include "scene/ScenePersistence.h"
-#include "ui/AnimationInspector.h"
+#include "UiBindings.h"
+#include "uiCore/UiCore.h"
 #include <iostream>
 #include <stdexcept>
 namespace afterlight {
@@ -505,8 +506,8 @@ static duk_ret_t callNative(duk_context* c) {
     }
     duk_throw_raw(c);
 }
-ScriptRuntime::ScriptRuntime(World& w, AssetManager& a)
-    : world_(w), assets_(a), owner_(std::this_thread::get_id()) {
+ScriptRuntime::ScriptRuntime(World& w, AssetManager& a, ui::UiCore* ui)
+    : world_(w), assets_(a), owner_(std::this_thread::get_id()), ui_(ui) {
     createContext();
 }
 void ScriptRuntime::createContext() {
@@ -579,8 +580,13 @@ void ScriptRuntime::createContext() {
         duk_put_prop_string(context_, -2, b.name);
     }
     duk_put_global_string(context_, "Engine");
+    if (ui_) {
+        uiBindings_ = std::make_unique<UiBindings>(context_, *ui_, [this](const auto& text) { log(text); });
+        uiBindings_->setVisible(hudEnabled_);
+    }
 }
 ScriptRuntime::~ScriptRuntime() {
+    uiBindings_.reset();
     if (context_)
         duk_destroy_heap(context_);
 }
@@ -628,10 +634,21 @@ void ScriptRuntime::startScripts() {
     else
         duk_pop(context_);
 }
+void ScriptRuntime::setHudEnabled(bool enabled) {
+    hudEnabled_ = enabled;
+    if (uiBindings_)
+        uiBindings_->setVisible(enabled);
+}
+void ScriptRuntime::processUiInput(Input& input) {
+    if (ui_)
+        ui_->processInput(input);
+    processSceneRequest();
+}
 void ScriptRuntime::loadScene(const AssetPath& path) {
     if (std::this_thread::get_id() != owner_)
         throw std::logic_error("Scene loading requires the owner thread");
     ScenePersistence::load(world_, assets_, path);
+    uiBindings_.reset();
     duk_destroy_heap(context_);
     context_ = nullptr;
     createContext();
@@ -652,11 +669,7 @@ void ScriptRuntime::tick(float dt, const Input& rawInput) {
     if (std::this_thread::get_id() != owner_)
         throw std::runtime_error("JS accessed outside engine thread");
     Input input = rawInput;
-    bool captured = hudEnabled_ && ui::animationInspectorInput(world_, input);
-    if (captured) {
-        input.left = input.right = input.middle = input.leftPressed = input.rightPressed = false;
-        input.deltaX = input.deltaY = input.wheel = 0;
-    }
+    bool captured = input.pointerCaptured;
     world_.hovered = captured ? 0 : world_.pick(input.mouseX, input.mouseY, input);
     auto ground = world_.groundAt(input.mouseX, input.mouseY, input);
     duk_get_global_string(context_, "fixedUpdate");
@@ -671,6 +684,8 @@ void ScriptRuntime::tick(float dt, const Input& rawInput) {
     duk_push_object(context_);
     duk_push_boolean(context_, captured);
     duk_put_prop_string(context_, -2, "pointerCaptured");
+    duk_push_boolean(context_, input.keyboardCaptured);
+    duk_put_prop_string(context_, -2, "keyboardCaptured");
     for (auto pair : {std::pair<const char*, const std::array<bool, 256>*>{"keys", &input.keys},
                       {"pressed", &input.pressed}}) {
         duk_push_array(context_);

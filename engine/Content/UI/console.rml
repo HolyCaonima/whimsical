@@ -1,0 +1,19 @@
+<rml><head><style>
+body { width: 100%; height: 60%; min-height: 240px; font-family: LatoLatin; font-size: 14px; color: #cad7e3; background-color: #0e141cfa; border-bottom: 2px #5ad2b1; padding: 14px 18px; box-sizing: border-box; z-index: 100; }
+h1 { color: #72e3c3; font-size: 17px; margin: 0px 0px 9px; }
+.help { font-size: 12px; margin-bottom: 12px; }
+#content { position: absolute; left: 18px; right: 18px; top: 68px; bottom: 48px; display: flex; flex-direction: column; }
+#lines { flex: 1; overflow: hidden; clip: always; position: relative; }
+#log-content { position: absolute; left: 0px; right: 0px; bottom: 0px; }
+.line, .error { line-height: 18px; white-space: pre-wrap; flex-shrink: 0; }
+.error { color: #ff9482; }
+#suggestions { flex-shrink: 0; color: #72e3c3; }
+.selected { background-color: #2a4d4c; color: #e2fff2; }
+.selected, .suggestion { height: 20px; }
+#input { position: absolute; bottom: 10px; left: 18px; right: 18px; height: 26px; padding-left: 4px; background-color: #1b2530; color: #eef4fa; font-size: 16px; white-space: pre; overflow: hidden; }
+.caret { color: #72e3c3; }
+#scroll { position: absolute; top: 15px; right: 18px; }
+</style></head><body>
+<h1>AFTERLIGHT / CONSOLE</h1><div class="help">~ / F10 Toggle | Esc Close | Up / Down Select / History | Enter Execute | Tab Complete</div>
+<div id="scroll"/><div id="content"><div id="lines"><div id="log-content"/></div><div id="suggestions"/></div><div id="input"/>
+</body></rml>

@@ -2,7 +2,8 @@
 #include "animation/Animation.h"
 #include "animation/ai4animation/Controller.h"
 #include "scripting/ScriptRuntime.h"
-#include "ui/AnimationInspector.h"
+#include "ui/EngineUi.h"
+#include "render/Renderer.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -61,21 +62,27 @@ static void framework() {
 }
 static void scene() {
     World world;
-    ScriptRuntime scripts(world, testAssets());
+    ui::UiCore uiCore(testAssets().project().content());
+    ui::EngineUi engineUi(uiCore, world);
+    ScriptRuntime scripts(world, testAssets(), &uiCore);
     scripts.initialize();
     auto player = world.playerId;
     auto view = world.inspectAnimation(player);
     check(view.schema.size() == 1 && view.schema[0].options.size() == 11,
           "Biped asset must declare eleven styles without Idle");
     check(view.values.at("locomotion.style") == "BigSteps", "Asset must supply the initial style");
-    auto layout = ui::animationInspectorLayout(view, 1280, 800);
-    check(layout.controls.size() == 1, "HUD must discover enum control from asset schema");
+    engineUi.sync(world.snapshot(Input{}, 0, 0, 0), RenderStatistics{});
+    uiCore.snapshot();
+    auto* button = engineUi.tools().GetElementById("next-0");
+    check(button != nullptr, "RML must discover enum control from asset schema");
+    auto position = button->GetAbsoluteOffset(Rml::BoxArea::Border);
     Input click;
-    click.mouseX = float(layout.controls[0].next.x + 5);
-    click.mouseY = float(layout.controls[0].next.y + 5);
+    click.mouseX = position.x + 5;
+    click.mouseY = position.y + 5;
     click.leftPressed = true;
     click.wheel = 2;
     auto before = world.snapshot(click, 0, 0, 0);
+    scripts.processUiInput(click);
     scripts.tick(1.f / 60, click);
     check(world.inspectAnimation(player).values.at("locomotion.style") == "Chicken",
           "UI next must change style");
@@ -119,6 +126,7 @@ static void scene() {
     auto z = zombie.skeleton().toModel(zombie.output().localPose);
     check(z[18].position.y > n[18].position.y + .15f, "Zombie style must raise the wrist in the solved pose");
     scripts.setHudEnabled(false);
+    engineUi.tools().Hide();
     auto selectedStyle = world.inspectAnimation(player).values.at("locomotion.style");
     scripts.tick(1.f / 60, click);
     check(world.inspectAnimation(player).values.at("locomotion.style") == selectedStyle,
@@ -126,9 +134,14 @@ static void scene() {
     world.detachAnimation(player);
     check(!world.snapshot(neutral, 1, 0, 0).animationInspection.entity,
           "Detach must remove stale UI controls");
-    check(ui::animationInspectorLayout(view, 1280, 700).controls.size() == 1,
+    engineUi.tools().Show();
+    uiCore.resize(1280, 700);
+    uiCore.snapshot();
+    check(engineUi.tools().GetElementById("next-0")->IsVisible(),
           "Resize must retain usable inspector controls");
-    check(ui::animationInspectorLayout(view, 400, 300).panel.width == 0,
+    uiCore.resize(400, 300);
+    uiCore.snapshot();
+    check(!engineUi.tools().GetElementById("animation")->IsVisible(),
           "Compact windows must not leave invisible hit regions");
 }
 int main() {

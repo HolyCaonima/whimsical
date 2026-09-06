@@ -8,15 +8,15 @@
 
 每次模拟完成，把值拷贝到 `Frame`，包成不可变快照经单槽 `FrameMailbox` 发布。槽位已占用时替换旧快照；主线程不等待 GPU。被替换的快照如果从未被取走，它携带的场景事件会**折叠进新快照**（`SceneDelta::prepend`）：渲染线程靠事件链增量更新，链上缺一环就只能重扫整个场景，因此丢帧只应该丢掉延迟，不该丢掉事件。合并与写入在同一把锁内完成——若消费者能在两者之间取走旧快照，它拿到的 delta 会比自己的镜像更靠前，反而触发一次本可避免的重扫。快照按引用计数移交，跨线程不发生深拷贝，渲染线程也因此能零成本保留上一帧。`acquire` **不清空槽位**：只有在首个快照到达前才阻塞，之后没有新快照时返回 `Repeat`，渲染线程重新呈现最新快照而不是空等下一次 60 Hz tick。渲染帧率由显示器和 GPU 决定，不被仿真频率锁死。渲染线程只访问快照，不读取 World 或 JS 对象。上一次**真正渲染**的快照用于物体与相机运动向量，不能拿上一个 simulation tick 代替。
 
-渲染线程创建、使用和销毁 Vulkan 对象，包括 descriptor、swapchain、BLAS/TLAS、NRD pools 和 HUD 的离屏 GDI 位图。一个 GPU frame in flight，fence 完成后才能更新 host-visible buffer 或 descriptor pool。present 完成 semaphore 按 swapchain image 分配。呈现模式由 `--present` 选择，默认 FIFO；`mailbox` 与 `immediate` 用于在没有 vblank 量化的情况下测量真实帧成本，设备不支持时回退 FIFO。
+渲染线程创建、使用和销毁 Vulkan 对象，包括 descriptor、swapchain、BLAS/TLAS、NRD pools 和 UI 几何/纹理资源。一个 GPU frame in flight，fence 完成后才能更新 host-visible buffer 或 descriptor pool。present 完成 semaphore 按 swapchain image 分配。呈现模式由 `--present` 选择，默认 FIFO；`mailbox` 与 `immediate` 用于在没有 vblank 量化的情况下测量真实帧成本，设备不支持时回退 FIFO。
 
-HUD 是与 swapchain 同分辨率的 CPU 光栅目标，因此**不能**每帧重画：`DebugHud::draw` 对其显示的全部内容取签名，只在内容变化时重绘并回报是否需要上传，渲染线程据此跳过整屏 buffer→image 拷贝。稳定状态下重绘频率约 2 Hz，由统计刷新间隔驱动；`--physics-debug` 的线框跟随实时姿态，该模式下每帧重绘。写入映射缓冲必须使用 32 位整字：该内存在独显上是写合并的，逐字节写会瓦解写合并。
+uiCore 在主线程拥有 RmlUi Context、文档、DOM 和输入。EngineUi 与项目 Engine.ui 绑定复用同一布局/事件系统。每次发布时记录不可变 UiFrame，完整绘制列表持有几何和纹理的共享引用，跨线程无需传递 RmlUi 或 JS 指针。Vulkan UiRenderer 缓存资源，在 frame fence 后回收失效资源，并以预乘 alpha 绘制到 UI 目标后参与合成；不再有 GDI 光栅或整屏 CPU HUD 上传。项目文档及回调跟随 JS realm 重建，引擎工具持续存在。详见 [UI Core](ui-core.md)。
 
 关闭路径：主线程停止发布 → mailbox.close 唤醒渲染线程 → join → GPU idle / 资源析构完成 → 销毁窗口。渲染线程异常也会关闭 mailbox，主线程读到 finished 后 join 并报告错误。零尺寸窗口不执行 GPU 帧，恢复／resize 时等待 GPU 并重新创建屏幕资源和 NRD 历史。
 
 ## 常驻 RenderScene 与 proxy
 
-运行参数由主线程拥有的 `ConsoleRegistry` 管理，`EngineSettings` 注册引擎变量并把实际生效值装入已有 `Frame`。渲染线程不直接访问可变注册表；控制台编辑器同样只发布展示快照，由现有 HUD 绘制和缓存。变量、命令、配置优先级及重启语义见 [CVar 与控制台](console.md)。CVar 的 cfg 是进程运行配置，独立于内容资产。
+运行参数由主线程拥有的 `ConsoleRegistry` 管理，`EngineSettings` 注册引擎变量并把实际生效值装入已有 `Frame`。渲染线程不直接访问可变注册表；控制台编辑器发布展示数据，由主线程 EngineUi 更新 RML 文档。变量、命令、配置优先级及重启语义见 [CVar 与控制台](console.md)。CVar 的 cfg 是进程运行配置，独立于内容资产。
 
 `RenderScene` 是常驻的、按槽位寻址的可绘制物描述，`World` 之外的渲染状态只经它流转。每个 `GameObject` 持有一个 `proxy` 槽位；槽位在对象销毁后进入自由列表待复用，`proxies_` 本身只增不减，因此**槽位在所属 proxy 生命周期内稳定，销毁后可以复用**，可以直接当作 GPU instance buffer、TLAS instance 和 `gl_InstanceIndex` 的下标，三者天然对齐，无需任何映射表。
 

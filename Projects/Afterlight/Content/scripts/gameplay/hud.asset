@@ -1,0 +1,20 @@
+ALAS1
+{"id":"ce81fd3e59674d7db7d52b9111d3ecaa","name":"hud","version":1,"type":"Script","storage":"embedded","metadata":{}}
+// Project-owned UI. A host running gameplay without a viewport does not install Engine.ui.
+var GameplayHud = {
+    document: Engine.ui ? Engine.ui.loadDocument('/Game/UI/hud.rml').show() : null,
+    previous: {},
+    text: function(id, value) {
+        if (this.previous[id] === value) return;
+        this.previous[id] = value;
+        this.document.getElementById(id).setText(value);
+    },
+    tick: function(input) {
+        if (!this.document) return;
+        this.text('state', '/ ' + Locomotion.state);
+        this.text('selection', Controller.selected ? 'ACTIVE COMPANION' : 'COMPANION / UNSELECTED');
+        this.text('message', Controller.message);
+        var object = Interactions.objects[input.picked];
+        this.text('hover', object ? 'CLICK / E ' + object.name : '');
+    }
+};

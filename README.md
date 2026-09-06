@@ -4,6 +4,8 @@
 
 当前关卡是 **The Rain Court**：用 PBR box 搭建庭院、建筑和障碍。主角 Kiln 为双足人，四足狗 Ash 会寻路跟随；两者使用 AI4Animation 的原始蒙皮模型和 ONNX 动画求解器。
 
+UI 由独立 **uiCore / RmlUi** 驱动：项目 JS 通过 `Engine.ui` 操作文档、DOM 和事件，控制台与动画检查器共用 RmlUi 布局和 Vulkan UI 后端。接口、线程边界、示例及当前后端能力见 [UI Core](docs/ui-core.md)。
+
 ## 直接运行
 
 新增 **蜜芽庭院 / Honeybud Court**：双击 `RunHoneybud.cmd` 体验通过 Blender MCP 制作的暖色庭院。包含可复用静态模型、布艺/木纹/PBR 纹理、陶瓷喷泉与原有角色导航；源文件、重建流程和资产管线见 [美术资产说明](docs/honeybud-art-pipeline.md)。
@@ -85,6 +87,9 @@ engine/
   navigation/             膨胀障碍栅格 A*、路径平滑、连续碰撞移动
   animation/              统一骨架/姿态/求解器框架、AI4Animation 原生运行时和 ONNX 推理
   scripting/              Duktape runtime 和 C++ ↔ JS binding
+  uiCore/                 RmlUi Context、输入、文档与不可变 UI 绘制快照
+  ui/                     RML 引擎工具：控制台、动画检查器、统计与小地图
+  Content/UI/             引擎 RML / RCSS
   render/                 Vulkan、几何、BLAS/TLAS、pass graph、NRD、HUD
     shaders/              G-buffer / DI / GI / reuse / resolve / composite
 Projects/Afterlight/       可整体搬迁的独立项目
@@ -96,6 +101,7 @@ Projects/Afterlight/       可整体搬迁的独立项目
     materials/            PBR 材质配置资产
     physics/              碰撞配置资产
     scripts/              3C、通用玩法、Map 初始化脚本，均为内嵌 Script 资产
+    UI/                   项目 HUD 的 RML / RCSS，由项目 JS 驱动
 tests/                    原生核心、独立物理场景与真实 JS 接口测试
 tools/                    固定依赖下载、构建、验证脚本
 docs/                     架构、渲染约定、第三方来源、验证记录

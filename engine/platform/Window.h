@@ -1,5 +1,5 @@
 #pragma once
-#include "core/Types.h"
+#include "core/Input.h"
 #include <windows.h>
 namespace afterlight {
 class Window {
@@ -9,6 +9,7 @@ class Window {
     bool mouseKnown_ = false;
     wchar_t highSurrogate_ = 0;
     void appendCharacter(wchar_t);
+    void uiEvent(ui::InputEvent::Type, uint32_t code = 0, float x = 0, float y = 0);
     static LRESULT CALLBACK procedure(HWND, UINT, WPARAM, LPARAM);
 
   public:

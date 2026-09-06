@@ -4,7 +4,7 @@
 #include "scripting/ScriptRuntime.h"
 #include "platform/Window.h"
 #include "render/Renderer.h"
-#include "ui/AnimationInspector.h"
+#include "ui/EngineUi.h"
 #include "ui/Console.h"
 #include "core/EngineSettings.h"
 #include "debug/ConsoleSmoke.h"
@@ -186,7 +186,9 @@ int main(int argc, char** argv) {
                           });
         loadConfigs();
         World world;
-        ScriptRuntime scripts(world, assets);
+        ui::UiCore uiCore(assets.project().content());
+        ui::EngineUi engineUi(uiCore, world);
+        ScriptRuntime scripts(world, assets, &uiCore);
         scripts.setLogSink([&](const auto& text) { console.log(text); });
         if (mapPath.empty())
             scripts.initialize();
@@ -433,6 +435,15 @@ int main(int argc, char** argv) {
                 settings.decorate(frame);
                 frame.gpuProfileRequest = gpuProfileRequest;
                 frame.console = console.view();
+                RenderStatistics statistics;
+                statistics.fps = renderFps.load();
+                statistics.frameMs = renderFrameMs.load();
+                statistics.cpuMs = renderCpuMs.load();
+                statistics.gpuMs = renderGpuMs.load();
+                statistics.vsync = renderVsync.load();
+                statistics.present = present.c_str();
+                engineUi.sync(frame, statistics);
+                frame.ui = engineUi.snapshot(frame);
             }
             if (gameCpuProfiler) {
                 CpuProfile report;
@@ -462,6 +473,8 @@ int main(int argc, char** argv) {
                     Input input = window.input();
                     if (consoleSmoke)
                         consoleCheck.update(rendered.load(), window, console, variables);
+                    if (smoke || demo)
+                        input.uiEvents.clear(); // These scenarios inject aggregate input below.
                     if (demo) {
                         auto f = rendered.load();
                         input.keys['W'] = f >= 15 && f < 65;
@@ -470,12 +483,12 @@ int main(int argc, char** argv) {
                     if (smoke) {
                         auto f = rendered.load();
                         if (!smokeAnimationClicked && options.hud && f >= 25) {
-                            auto layout = ui::animationInspectorLayout(world.inspectAnimation(world.selected),
-                                                                       input.width, input.height);
-                            if (!layout.controls.empty()) {
-                                const auto& button = layout.controls[0].previous;
-                                input.mouseX = float(button.x + button.width / 2);
-                                input.mouseY = float(button.y + button.height / 2);
+                            auto* button = engineUi.tools().GetElementById("previous-0");
+                            if (button) {
+                                auto position = button->GetAbsoluteOffset(Rml::BoxArea::Border);
+                                auto size = button->GetBox().GetSize(Rml::BoxArea::Border);
+                                input.mouseX = position.x + size.x / 2;
+                                input.mouseY = position.y + size.y / 2;
                                 input.leftPressed = true;
                                 std::cout << "[Smoke] Animation attribute selector\n";
                             }
@@ -530,7 +543,11 @@ int main(int argc, char** argv) {
                     if (input.pressed[VK_F2])
                         variables.set("p.DebugDraw", settings.physicsDebug() ? "false" : "true",
                                       CVarSource::Console);
-                    scripts.setHudEnabled(settings.hud());
+                    {
+                        CpuScope scope("UI / Input");
+                        scripts.setHudEnabled(settings.hud());
+                        scripts.processUiInput(input);
+                    }
                     const double gameStep = step * settings.timeScale();
                     if (options.audit.empty() && gameStep > 0) {
                         CpuScope scope("Script / Gameplay Tick");

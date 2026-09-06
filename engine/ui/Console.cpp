@@ -175,6 +175,8 @@ bool Console::handle(Input& in) {
         }
     }
     in.keys.fill(false);
+    in.uiEvents.clear();
+    in.pointerCaptured = in.keyboardCaptured = true;
     in.pressed.fill(false);
     in.text.clear();
     in.left = in.right = in.middle = in.leftPressed = in.rightPressed = false;

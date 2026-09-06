@@ -1,0 +1,9 @@
+/* Host defaults, applied before each document's own RCSS. */
+body, div, p, h1, h2, h3, form { display: block; }
+body { font-family: LatoLatin; font-size: 14px; }
+strong { font-weight: bold; }
+em { font-style: italic; }
+button, input, select, textarea { display: inline-block; }
+table { display: table; }
+tr { display: table-row; }
+td { display: table-cell; }

@@ -6,7 +6,7 @@
 #include "animation/SkinnedMesh.h"
 #include "assets/StaticMesh.h"
 #include <map>
-#include "DebugHud.h"
+#include "UiRenderer.h"
 #include "RenderAudit.h"
 #include <fstream>
 #include <iostream>
@@ -83,7 +83,7 @@ struct Renderer::Impl {
     VkPipeline raster = VK_NULL_HANDLE;
     std::array<VkPipeline, 4> compute{};
     Buffer globals, instanceData, materialData, lightData, vertexData, indexData, tlasInstances, tlasScratch,
-        hudUpload, readback, auditReadback;
+        readback, auditReadback;
     RenderAudit audit;
     std::array<Buffer, 6> reservoirs;
     std::vector<AccelerationStructure> blas;
@@ -111,7 +111,7 @@ struct Renderer::Impl {
     std::array<Image, 29> images;
     Image depth, captureImage;
     std::unique_ptr<NrdDenoiser> denoiser;
-    DebugHud hud;
+    std::unique_ptr<UiRenderer> uiRenderer;
     FrameRef previous;
     // Persistent mirror of the render scene. The renderer keeps its own copy of every
     // slot's model matrix because the GPU-side instance buffer lives in write-combined
@@ -139,7 +139,7 @@ struct Renderer::Impl {
         vkDeviceWaitIdle(vk.device);
         profiler.reset();
         denoiser.reset();
-        hud.reset();
+        uiRenderer.reset();
         for (auto& b : reservoirs)
             vk.destroy(b);
         for (auto& i : images)
@@ -151,7 +151,7 @@ struct Renderer::Impl {
         if (materialSampler)
             vkDestroySampler(vk.device, materialSampler, nullptr);
         for (auto b : {&globals, &instanceData, &materialData, &lightData, &vertexData, &indexData,
-                       &tlasInstances, &tlasScratch, &hudUpload, &readback, &auditReadback})
+                       &tlasInstances, &tlasScratch, &readback, &auditReadback})
             vk.destroy(*b);
         for (auto& a : blas)
             destroyAS(a);
@@ -684,7 +684,6 @@ struct Renderer::Impl {
         vk.destroy(captureImage);
         for (auto& b : reservoirs)
             vk.destroy(b);
-        vk.destroy(hudUpload);
         vk.destroy(readback);
         vk.destroy(auditReadback);
         audit = {};
@@ -694,8 +693,9 @@ struct Renderer::Impl {
                                        : b == 11         ? VK_FORMAT_R32_SFLOAT
                                        : b == 28         ? VK_FORMAT_R8G8B8A8_UNORM
                                                          : VK_FORMAT_R16G16B16A16_SFLOAT;
-                images[b] = vk.image(width, height, imageFormat,
-                                     ColorUsage | (b <= 12 ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : 0));
+                images[b] =
+                    vk.image(width, height, imageFormat,
+                             ColorUsage | (b <= 12 || b == 28 ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : 0));
             }
         depth = vk.image(width, height, VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
         captureImage = vk.image(width, height, VK_FORMAT_R8G8B8A8_UNORM,
@@ -706,11 +706,9 @@ struct Renderer::Impl {
             reservoirs[i] = vk.buffer(pixels * (i < 3 ? 32 : 64), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                                                                       VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
                                                                       VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-        hudUpload = vk.buffer(pixels * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true);
         readback = vk.buffer(pixels * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
         if (!options.audit.empty())
             auditReadback = vk.buffer(pixels * 8 * 3, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
-        hud.resize(width, height);
         denoiser->resize(width, height);
         historyValid = false;
         resizePending = false;
@@ -1212,12 +1210,11 @@ struct Renderer::Impl {
         if (lightsChanged)
             std::memcpy(lightData.mapped, frame.lights.data(), frame.lights.size() * sizeof(Light));
         uploadScope.finish();
-        // A history reset clears every screen image, including the overlay, so the upload
-        // has to be replayed even when the overlay content itself did not change.
-        bool hudDirty;
         {
-            CpuScope scope("HUD / Console Draw");
-            hudDirty = hud.draw(frame, hudUpload.mapped, statistics, frame.hudEnabled) || !historyValid;
+            CpuScope scope("UI / Prepare Resources");
+            if (!uiRenderer)
+                uiRenderer = std::make_unique<UiRenderer>(vk);
+            uiRenderer->prepare(frame.ui.get());
         }
         CpuScope recordScope("Record GPU Commands");
         VK_CHECK(vkResetCommandBuffer(command, 0));
@@ -1242,16 +1239,10 @@ struct Renderer::Impl {
                 vkCmdFillBuffer(command, buffer.handle, 0, VK_WHOLE_SIZE, 0);
             VulkanContext::barrier(command);
         }
-        if (hudDirty) {
-            CpuScope cpuScope("HUD Texture Upload");
-            GpuScope scope(*profiler, command, "HUD Texture Upload");
-            vk.transition(command, images[28], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-            VkBufferImageCopy upload{};
-            upload.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-            upload.imageExtent = {width, height, 1};
-            vkCmdCopyBufferToImage(command, hudUpload.handle, images[28].handle, images[28].layout, 1,
-                                   &upload);
-            vk.transition(command, images[28], VK_IMAGE_LAYOUT_GENERAL);
+        {
+            CpuScope cpuScope("UI / Draw");
+            GpuScope scope(*profiler, command, "RmlUi Overlay");
+            uiRenderer->draw(command, images[28], frame.ui.get());
         }
         // TLAS allocation precedes descriptor writes; actual construction is recorded before raster/compute.
         if (skinGeometryDirty) {

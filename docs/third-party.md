@@ -21,3 +21,12 @@
 AI4AnimationPy 的完整源代码、训练与数据工具、原始模型单独放在 `external/AI4AnimationPy/`，固定提交 `bfb5866681f7ea6dac9984be05181de5955eb48b`，来源为 [facebookresearch/ai4animationpy](https://github.com/facebookresearch/ai4animationpy)。版权归 Meta Platforms, Inc. and affiliates，采用 **CC BY-NC 4.0**；移植的运行时与导出的 ONNX 模型沿用该许可，不能当作可自由商用的 MIT 依赖。原文件的逐项校验记录见 `external/AI4AnimationPy.provenance.json`，运行时映射和改动见 [animation](animation.md)。
 
 本机另外从 LunarG Vulkan SDK 1.3.290.0 官方安装包中提取了 validation layer、spirv-val 和 vulkaninfo，仅放在 `third_party/validation/`；没有运行系统安装过程。运行时如果该目录存在且用户未指定 `VK_LAYER_PATH`，程序在进程范围内使用它，启用 validation 和 synchronization validation。
+
+## UI dependencies
+
+- RmlUi 6.1: https://github.com/mikke89/RmlUi/tree/6.1 — MIT.
+- FreeType 2.13.3: https://github.com/freetype/freetype/tree/VER-2-13-3 — FreeType License / GPLv2; this integration uses the FreeType License option.
+- LatoLatin Regular/Bold are copied unmodified from RmlUi 6.1 sample assets into `engine/Content/Fonts`; the accompanying `LICENSE.txt` preserves the SIL OFL notice.
+- Windows WIC and the optional installed Microsoft YaHei fallback are system resources; no Windows font is redistributed.
+
+RmlUi and FreeType archives are version-pinned and SHA-256 checked by `tools/dependencies.lock.json`.

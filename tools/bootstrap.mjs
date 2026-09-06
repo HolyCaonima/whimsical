@@ -5,6 +5,8 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 const root = path.resolve(import.meta.dirname, '..');
 const deps = [
+  ['rmlui', 'https://github.com/mikke89/RmlUi/archive/refs/tags/6.1.zip', 'RmlUi-6.1'],
+  ['freetype', 'https://github.com/freetype/freetype/archive/refs/tags/VER-2-13-3.zip', 'freetype-VER-2-13-3'],
   ['onnxruntime', 'https://github.com/microsoft/onnxruntime/releases/download/v1.20.1/onnxruntime-win-x64-1.20.1.zip', 'onnxruntime-win-x64-1.20.1'],
   ['cmake', 'https://github.com/Kitware/CMake/releases/download/v3.31.8/cmake-3.31.8-windows-x86_64.zip', 'cmake-3.31.8-windows-x86_64'],
   ['vulkan', 'https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.3.290.zip', 'Vulkan-Headers-1.3.290'],

@@ -42,5 +42,13 @@
   "onnxruntime": {
     "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.20.1/onnxruntime-win-x64-1.20.1.zip",
     "sha256": "78d447051e48bd2e1e778bba378bec4ece11191c9e538cf7b2c4a4565e8f5581"
+  },
+  "freetype": {
+    "url": "https://github.com/freetype/freetype/archive/refs/tags/VER-2-13-3.zip",
+    "sha256": "a7165cb405dfce349ae64d6f59efb2567565ca8edbacbeff2a8d0e4cfa779cf5"
+  },
+  "rmlui": {
+    "url": "https://github.com/mikke89/RmlUi/archive/refs/tags/6.1.zip",
+    "sha256": "4e3561190cf7e6867388d5c89e15604f4f7bd83e112316ac0832a6a2d061eace"
   }
 }

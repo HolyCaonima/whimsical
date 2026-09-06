@@ -1,0 +1,8 @@
+<rml><head><link type="text/rcss" href="tools.rcss"/></head><body>
+<div id="animation" class="panel interactive">
+  <div id="animation-title" class="mint"/><div id="solver"/><div class="hint">Move to compare</div><div id="attributes"/>
+</div>
+<div id="minimap" class="panel"><div>LOCAL SIGNAL / N</div><div id="map"/></div>
+<div id="stats" class="panel"><div id="view"/><div id="fps"/><div id="timing"/><div id="present"/>
+<div id="physics-label">F2 PHYSICS SCENE<br/>BLUE Ground / GOLD Solid / PINK Trigger</div></div>
+</body></rml>

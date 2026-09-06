@@ -100,7 +100,7 @@ variables.command("game.inspect", "Inspect game state", [](const auto& args) {
 
 `ConsoleValue` 支持 bool、int、double、string；可指定数值范围、字符串候选、ReadOnly、Archive、Restart 标记。Restart 变量在 `finishStartup()` 后只更新请求值，`get<T>()` 继续返回 active 值。需要保留调用来源的命令可使用 `(args, CVarSource)` 形式的回调；内置 reset 也遵守调用来源优先级。
 
-渲染线程不查询 registry：`EngineSettings::decorate` 将曝光、HUD 等当前值装入已有不可变 `Frame`，控制台也只发布展示快照。渲染器通过统一 Globals 把曝光送入 shader。`ui::Console` 管输入和日志，`DebugHud` 只负责绘制，继续按内容签名缓存上传；关闭控制台不会引入逐帧全屏 HUD 重画。
+渲染线程不查询 registry：`EngineSettings::decorate` 将曝光、HUD 等当前值装入已有不可变 `Frame`，控制台也只发布展示快照。渲染器通过统一 Globals 把曝光送入 shader。`ui::Console` 管输入和日志，`EngineUi` 将展示数据写入 RML 控制台文档；uiCore 录制几何快照，由 Vulkan UiRenderer 绘制。Console 保留最高输入优先级，RmlUi 文档使用同一套字体、裁剪与合成后端，详见 [UI Core](ui-core.md)。
 
 ## 验证
 

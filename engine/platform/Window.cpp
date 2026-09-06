@@ -3,6 +3,11 @@
 #include <mmsystem.h>
 #include <stdexcept>
 namespace afterlight {
+void Window::uiEvent(ui::InputEvent::Type type, uint32_t code, float x, float y) {
+    const auto& keys = input_.keys;
+    int modifiers = (keys[VK_SHIFT] ? 1 : 0) | (keys[VK_CONTROL] ? 2 : 0) | (keys[VK_MENU] ? 4 : 0);
+    input_.uiEvents.push_back({type, code, x, y, modifiers});
+}
 Window::Window(uint32_t width, uint32_t height) {
     SetProcessDPIAware();
     // Windows defaults to a 15.6 ms timer tick, which quantizes every sub-frame wait the
@@ -54,6 +59,7 @@ LRESULT CALLBACK Window::procedure(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         i.focused = true;
         return 0;
     case WM_KILLFOCUS:
+        w->uiEvent(ui::InputEvent::Type::FocusLost);
         i.focused = false;
         i.keys.fill(false);
         i.pressed.fill(false);
@@ -63,7 +69,8 @@ LRESULT CALLBACK Window::procedure(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         w->mouseKnown_ = false;
         ReleaseCapture();
         return 0;
-    case WM_CHAR:
+    case WM_CHAR: {
+        const auto charactersBefore = i.text.size();
         if (wp == 22) { // Ctrl+V, copied as text rather than executed by the platform layer.
             if (OpenClipboard(h)) {
                 auto data = GetClipboardData(CF_UNICODETEXT);
@@ -79,21 +86,28 @@ LRESULT CALLBACK Window::procedure(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             }
         } else
             w->appendCharacter(wchar_t(wp));
+        // RmlUi handles Ctrl+V through the system clipboard; Console consumes the text snapshot.
+        if (wp != 22 && i.text.size() > charactersBefore && i.text.back() >= 32)
+            w->uiEvent(ui::InputEvent::Type::Text, uint32_t(i.text.back()));
         return 0;
+    }
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
         if (wp < 256) {
             if (!i.keys[wp])
                 i.pressed[wp] = true;
             i.keys[wp] = true;
+            w->uiEvent(ui::InputEvent::Type::KeyDown, uint32_t(wp));
         }
         if (wp == VK_F4 && (GetKeyState(VK_MENU) & 0x8000))
             w->running_ = false;
         return 0;
     case WM_KEYUP:
     case WM_SYSKEYUP:
-        if (wp < 256)
+        if (wp < 256) {
             i.keys[wp] = false;
+            w->uiEvent(ui::InputEvent::Type::KeyUp, uint32_t(wp));
+        }
         return 0;
     case WM_MOUSEMOVE: {
         float x = float(GET_X_LPARAM(lp)), y = float(GET_Y_LPARAM(lp));
@@ -104,32 +118,40 @@ LRESULT CALLBACK Window::procedure(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         i.mouseX = x;
         i.mouseY = y;
         w->mouseKnown_ = true;
+        w->uiEvent(ui::InputEvent::Type::MouseMove, 0, x, y);
         return 0;
     }
     case WM_MOUSEWHEEL:
         i.wheel += float(GET_WHEEL_DELTA_WPARAM(wp)) / WHEEL_DELTA;
+        w->uiEvent(ui::InputEvent::Type::Wheel, 0, float(GET_WHEEL_DELTA_WPARAM(wp)) / WHEEL_DELTA);
         return 0;
     case WM_LBUTTONDOWN:
         i.left = true;
         i.leftPressed = true;
+        w->uiEvent(ui::InputEvent::Type::MouseDown, 0, float(GET_X_LPARAM(lp)), float(GET_Y_LPARAM(lp)));
         SetFocus(h);
         return 0;
     case WM_LBUTTONUP:
         i.left = false;
+        w->uiEvent(ui::InputEvent::Type::MouseUp, 0, float(GET_X_LPARAM(lp)), float(GET_Y_LPARAM(lp)));
         return 0;
     case WM_RBUTTONDOWN:
         i.right = true;
         i.rightPressed = true;
+        w->uiEvent(ui::InputEvent::Type::MouseDown, 1, float(GET_X_LPARAM(lp)), float(GET_Y_LPARAM(lp)));
         return 0;
     case WM_RBUTTONUP:
         i.right = false;
+        w->uiEvent(ui::InputEvent::Type::MouseUp, 1, float(GET_X_LPARAM(lp)), float(GET_Y_LPARAM(lp)));
         return 0;
     case WM_MBUTTONDOWN:
         i.middle = true;
+        w->uiEvent(ui::InputEvent::Type::MouseDown, 2, float(GET_X_LPARAM(lp)), float(GET_Y_LPARAM(lp)));
         SetCapture(h);
         return 0;
     case WM_MBUTTONUP:
         i.middle = false;
+        w->uiEvent(ui::InputEvent::Type::MouseUp, 2, float(GET_X_LPARAM(lp)), float(GET_Y_LPARAM(lp)));
         ReleaseCapture();
         return 0;
     case WM_ERASEBKGND:
@@ -157,6 +179,7 @@ void Window::wake() const {
         PostMessageW(hwnd_, WM_NULL, 0, 0);
 }
 void Window::consumeEdges() {
+    input_.uiEvents.clear();
     input_.text.clear();
     input_.pressed.fill(false);
     input_.leftPressed = input_.rightPressed = false;
@@ -177,6 +200,7 @@ void Window::appendCharacter(wchar_t c) {
     input_.text.push_back(value);
 }
 void Window::releaseGameInput() {
+    input_.uiEvents.clear();
     input_.keys.fill(false);
     input_.pressed.fill(false);
     input_.left = input_.right = input_.middle = input_.leftPressed = input_.rightPressed = false;

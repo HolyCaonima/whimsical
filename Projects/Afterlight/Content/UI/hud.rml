@@ -1,0 +1,7 @@
+<rml><head><link type="text/rcss" href="hud.rcss"/></head><body>
+<div id="brand" class="panel"><div class="title">A F T E R L I G H T</div><div class="subtitle">A WORLD WORTH REPAIRING</div></div>
+<div id="place" class="panel"><div class="subtitle">LOWER DISTRICT / 04</div><div class="heading">The Rain Court</div><div class="gold">AFTER THE RAIN / 17:42</div></div>
+<div id="companion" class="panel"><div class="portrait">K</div><div class="details"><div id="selection" class="subtitle"/><div class="heading">Kiln <span id="state"/></div><div>A warm core. A curious mind.</div></div></div>
+<div id="message"/><div id="hover"/>
+<div id="help">WASD Move | CLICK Walk / interact | SHIFT Run | CTRL Crouch | E Use | MMB Orbit | WHEEL Zoom | F Follow | F10 Console</div>
+</body></rml>

@@ -1,5 +1,6 @@
 #pragma once
 #include "ConsoleTypes.h"
+#include "Input.h"
 #include "Math.h"
 #include "animation/Animation.h"
 #include <vector>
@@ -8,6 +9,9 @@
 #include <string>
 #include <cstdint>
 namespace afterlight {
+namespace ui {
+struct UiFrame;
+}
 struct SkinnedMesh;
 struct StaticMesh;
 struct TextureAsset;
@@ -104,14 +108,6 @@ struct Camera {
         return p;
     }
 };
-struct Input {
-    std::u32string text;
-    std::array<bool, 256> keys{}, pressed{};
-    bool left = false, right = false, middle = false, leftPressed = false, rightPressed = false,
-         focused = true;
-    float mouseX = 0, mouseY = 0, deltaX = 0, deltaY = 0, wheel = 0;
-    uint32_t width = 1280, height = 800;
-};
 struct AnimationInspection {
     uint32_t entity = 0;
     std::string name, solver;
@@ -119,6 +115,7 @@ struct AnimationInspection {
     animation::AttributeValues values;
 };
 struct Frame {
+    std::shared_ptr<const ui::UiFrame> ui;
     uint64_t gpuProfileRequest = 0;
     std::shared_ptr<const CpuProfile> cpuProfile;
     ConsoleView console;
