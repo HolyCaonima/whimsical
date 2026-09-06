@@ -105,7 +105,9 @@ clearCache、重扫、保存不销毁 World、Solver 或 Frame 持有的旧资�
 
 ## Scene Save/Load
 
-SceneDocument 保存：对象 ID/显示名/位置/yaw/启用/交互；RenderComponent 的 primitive、scale/offset/animationScale、材质索引和可见性；主碰撞体 shape/motion/layer/查询属性；关节碰撞体 joint/local/shape/blocking；动画与 mesh 引用、root-motion 选项、rootOffset 和实例属性；材质值表、灯表、相机、导航（含 planeTolerance）；player Object ID、命名 Object 引用、Map 脚本引用和显式 gameplay JSON data。
+SceneDocument 保存：对象 ID/显示名/位置/旋转/启用/交互；RenderComponent 的 primitive、scale/offset/animationScale、材质索引和可见性；主碰撞体 shape/motion/layer/查询属性；关节碰撞体 joint/local/shape/blocking；动画与 mesh 引用、root-motion 选项、rootOffset 和实例属性；材质值表、灯表、相机、导航（含 planeTolerance）；player Object ID、命名 Object 引用、Map 脚本引用和显式 gameplay JSON data。
+
+Map 的 SceneDocument 载荷现写入 `version: 2`：对象朝向改为 `rotation: [x,y,z,w]` 单位四元数，贯通碰撞、渲染与动画；相机仍保留 yaw/pitch。加载器兼容 `version: 1` 的对象 yaw，读取时转换为绕 Y 轴的四元数；保存后统一写为 v2，不保留第二份可修改的 yaw。原有项目无需批量改写，旧版引擎不能读取 v2 Map。外层 ALAS1 资产信封版本仍为 1。
 
 材质可作为 Map 内嵌值，类似对象内的 ColliderShape，不把每个临时材质强制变成独立文件。复用的材质配置仍是注册的 Data 资产。
 

@@ -13,10 +13,10 @@ static void check(bool condition, const char* reason) {
         throw std::runtime_error(reason);
 }
 static void tickAnimated(ScriptRuntime& scripts, World& world, const Input& input) {
-    float yaw = world.entity(world.playerId).yaw;
+    float yaw = world.entity(world.playerId).yaw();
     scripts.tick(1.f / 60, input);
     auto direction = world.animationOutput(world.playerId).rootMotion.rotation * vec3(0, 0, 1);
-    check(std::abs(world.entity(world.playerId).yaw - yaw - std::atan2(direction.x, direction.z)) < 1e-5f,
+    check(std::abs(std::remainder(world.entity(world.playerId).yaw() - yaw - std::atan2(direction.x, direction.z), 2 * Pi)) < 1e-5f,
           "Player movement and interaction must consume animated root rotation without scripted yaw");
 }
 int main() {
@@ -51,15 +51,15 @@ int main() {
         check(glm::distance(initial, w.entity(w.playerId).position) > 2, "JS manual locomotion failed");
         input.keys.fill(false);
         input.keys['D'] = true;
-        float turnStart = w.entity(w.playerId).yaw, previousTurn = 0, maxTurnChange = 0;
+        float turnStart = w.entity(w.playerId).yaw(), previousTurn = 0, maxTurnChange = 0;
         for (int i = 0; i < 90; ++i) {
-            float yaw = w.entity(w.playerId).yaw;
+            float yaw = w.entity(w.playerId).yaw();
             tickAnimated(js, w, input);
-            float turn = w.entity(w.playerId).yaw - yaw;
+            float turn = std::remainder(w.entity(w.playerId).yaw() - yaw, 2 * Pi);
             maxTurnChange = std::max(maxTurnChange, std::abs(turn - previousTurn));
             previousTurn = turn;
         }
-        check(std::abs(w.entity(w.playerId).yaw - turnStart) > .5f,
+        check(std::abs(w.entity(w.playerId).yaw() - turnStart) > .5f,
               "A manual direction change must turn the animated player");
         check(maxTurnChange < glm::radians(4.f), "Player turn rate must not snap to the scripted turn limit");
         input.keys.fill(false);

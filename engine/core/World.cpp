@@ -93,9 +93,9 @@ uint32_t World::spawn(std::string name, Shape shape, vec3 position, vec3 scale, 
 }
 ProxyTransform World::proxyTransform(const GameObject& o) {
     ProxyTransform t;
-    t.position = o.position + glm::angleAxis(o.yaw, vec3(0, 1, 0)) * o.render.offset;
+    t.position = o.position + o.rotation * o.render.offset;
     t.scale = o.render.scale * o.render.animationScale;
-    t.yaw = o.yaw;
+    t.rotation = o.rotation;
     return t;
 }
 void World::publishTransform(const GameObject& o) {
@@ -111,7 +111,7 @@ void World::publishAttributes(const GameObject& o) {
     scene_.setAttributes(o.proxy, a);
 }
 void World::syncPose(GameObject& o) {
-    PhysicsPose pose{o.position, glm::angleAxis(o.yaw, vec3(0, 1, 0))};
+    PhysicsPose pose{o.position, o.rotation};
     physics_.setPose(o.physical, pose);
     animationCollision_.update(o.id, pose, o.joints);
     publishTransform(o);
@@ -122,10 +122,20 @@ void World::setPose(uint32_t id, vec3 p, float yaw, float height) {
         throw std::invalid_argument("Invalid object pose");
     auto& o = mutableObject(id);
     o.position = p;
-    o.yaw = yaw;
+    o.rotation = glm::angleAxis(yaw, vec3(0, 1, 0));
     o.render.scale.y = height;
     physics_.setMotion(o.physical, BodyMotion::Kinematic);
     syncPose(o);
+}
+void World::setTransform(uint32_t id, const PhysicsPose& pose) {
+    auto& o = mutableObject(id);
+    // PhysicsScene validates before either physical or visual state is changed.
+    physics_.setPose(o.physical, pose);
+    physics_.setMotion(o.physical, BodyMotion::Kinematic);
+    o.position = pose.position;
+    o.rotation = pose.rotation;
+    animationCollision_.update(id, pose, o.joints);
+    publishTransform(o);
 }
 void World::setVisualPose(uint32_t id, vec3 offset, vec3 scale) {
     if (!std::isfinite(offset.x) || !std::isfinite(offset.y) || !std::isfinite(offset.z) ||
@@ -198,6 +208,8 @@ NavigationAgent World::agent(uint32_t id) const {
     const auto& b = physics_.body(entity(id).physical);
     if (b.shape.type != ColliderType::Capsule)
         throw std::invalid_argument("Movement requires a capsule body");
+    if (glm::distance(b.pose.rotation * vec3(0, 1, 0), vec3(0, 1, 0)) > .001f)
+        throw std::invalid_argument("Grounded movement requires an upright capsule; use moveBody for rigid motion");
     return {b.shape.radius, b.shape.height(), id};
 }
 vec3 World::feet(uint32_t id) const {
@@ -228,12 +240,23 @@ vec3 World::moveCharacter(uint32_t id, vec3 delta) {
 vec3 World::rootMotion(uint32_t id, vec3 localDelta, float deltaYaw) {
     if (!std::isfinite(deltaYaw))
         throw std::invalid_argument("Invalid root rotation");
-    auto rotation = glm::angleAxis(entity(id).yaw, vec3(0, 1, 0));
+    auto rotation = entity(id).rotation;
     vec3 p = moveCharacter(id, rotation * localDelta);
     auto& o = mutableObject(id);
-    o.yaw += deltaYaw;
+    o.rotation = glm::normalize(rotation * glm::angleAxis(deltaYaw, vec3(0, 1, 0)));
     syncPose(o);
     return p;
+}
+BodyMoveResult World::moveBody(uint32_t id, vec3 delta, quat targetRotation, uint32_t mask) {
+    const auto& o = entity(id);
+    const auto& body = physics_.body(o.physical);
+    QueryFilter filter;
+    filter.mask = mask;
+    filter.ignoreOwner = id;
+    filter.blockingOnly = true;
+    auto result = physics_.moveAndSlide({body.shape, body.pose}, delta, targetRotation, filter);
+    setTransform(id, result.pose);
+    return result;
 }
 float World::setCharacterHeight(uint32_t id, float height) {
     auto& o = mutableObject(id);
@@ -258,7 +281,7 @@ BodyHandle World::addAnimationCollider(uint32_t id, uint32_t joint, const Collid
 }
 void World::setAnimationJoints(uint32_t id, std::vector<PhysicsPose> joints) {
     auto& o = mutableObject(id);
-    animationCollision_.update(id, {o.position, glm::angleAxis(o.yaw, vec3(0, 1, 0))}, joints);
+    animationCollision_.update(id, {o.position, o.rotation}, joints);
     o.joints = std::move(joints);
 }
 void World::attachAnimation(uint32_t id, std::shared_ptr<const animation::Skeleton> skeleton,
@@ -347,7 +370,7 @@ void World::updateAnimations(float dt) {
         auto& a = entry.second;
         if (!o.enabled)
             continue;
-        animation::Transform objectRoot{o.position, glm::angleAxis(o.yaw, vec3(0, 1, 0))};
+        animation::Transform objectRoot{o.position, o.rotation};
         auto root = animation::compose(objectRoot, {a.rootOffset, quat(1, 0, 0, 0)});
         const auto& output = a.instance->evaluate(dt, root, a.input);
         if (a.applyRootMotion) {
@@ -407,7 +430,7 @@ Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug,
             continue;
         const auto& skeleton = entry.second.instance->skeleton();
         auto model = skeleton.toModel(entry.second.instance->output().localPose);
-        animation::Transform root{o.position, glm::angleAxis(o.yaw, vec3(0, 1, 0))};
+        animation::Transform root{o.position, o.rotation};
         root = animation::compose(root, {entry.second.rootOffset, quat(1, 0, 0, 0)});
         Frame::SkeletonPose pose;
         pose.owner = o.id;

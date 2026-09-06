@@ -56,6 +56,13 @@ static void pushVec(duk_context* c, vec3 p) {
     value(c, "y", p.y);
     value(c, "z", p.z);
 }
+static void pushRotation(duk_context* c, quat q) {
+    duk_push_object(c);
+    value(c, "x", q.x);
+    value(c, "y", q.y);
+    value(c, "z", q.z);
+    value(c, "w", q.w);
+}
 static vec3 readVec(duk_context* c, int idx) {
     idx = duk_normalize_index(c, idx);
     vec3 p;
@@ -78,6 +85,12 @@ static bool boolProp(duk_context* c, int idx, const char* name, bool fallback) {
     duk_pop(c);
     return result;
 }
+static quat readRotation(duk_context* c, int idx) {
+    idx = duk_normalize_index(c, idx);
+    duk_require_object_coercible(c, idx);
+    return quat(float(numberProp(c, idx, "w", 1)), float(numberProp(c, idx, "x", 0)),
+                float(numberProp(c, idx, "y", 0)), float(numberProp(c, idx, "z", 0)));
+}
 static PhysicsPose readPhysicsPose(duk_context* c, int idx) {
     idx = duk_normalize_index(c, idx);
     PhysicsPose p;
@@ -87,9 +100,7 @@ static PhysicsPose readPhysicsPose(duk_context* c, int idx) {
     duk_pop(c);
     duk_get_prop_string(c, idx, "rotation");
     if (duk_is_object(c, -1)) {
-        int q = duk_normalize_index(c, -1);
-        p.rotation = quat(float(numberProp(c, q, "w", 1)), float(numberProp(c, q, "x", 0)),
-                          float(numberProp(c, q, "y", 0)), float(numberProp(c, q, "z", 0)));
+        p.rotation = readRotation(c, -1);
     }
     duk_pop(c);
     return p;
@@ -123,6 +134,25 @@ static void pushHit(duk_context* c, const PhysicsHit& hit) {
     pushVec(c, hit.normal);
     duk_put_prop_string(c, -2, "normal");
 }
+static QueryFilter readFilter(duk_context* c, int idx) {
+    QueryFilter f;
+    if (duk_is_undefined(c, idx))
+        return f;
+    idx = duk_normalize_index(c, idx);
+    f.mask = uint32_t(numberProp(c, idx, "mask", CollisionLayer::All));
+    f.ignoreOwner = uint32_t(numberProp(c, idx, "ignoreOwner", 0));
+    f.blockingOnly = boolProp(c, idx, "blockingOnly", false);
+    f.walkableOnly = boolProp(c, idx, "walkableOnly", false);
+    f.pickableOnly = boolProp(c, idx, "pickableOnly", false);
+    return f;
+}
+static void pushPose(duk_context* c, const PhysicsPose& p) {
+    duk_push_object(c);
+    pushVec(c, p.position);
+    duk_put_prop_string(c, -2, "position");
+    pushRotation(c, p.rotation);
+    duk_put_prop_string(c, -2, "rotation");
+}
 enum Op {
     SceneLoad,
     SceneSave,
@@ -138,6 +168,10 @@ enum Op {
     AddLight,
     GetPose,
     SetPose,
+    SetTransform,
+    MoveBody,
+    ShapeSweep,
+    ShapeOverlap,
     Move,
     FindPath,
     SetPlayer,
@@ -205,12 +239,54 @@ static duk_ret_t callNative(duk_context* c) {
         case GetPose: {
             const auto& e = w.entity(duk_require_uint(c, 0));
             pushVec(c, e.position);
-            value(c, "yaw", e.yaw);
+            value(c, "yaw", e.yaw());
+            pushRotation(c, e.rotation);
+            duk_put_prop_string(c, -2, "rotation");
             return 1;
         }
         case SetPose: {
             w.setPose(duk_require_uint(c, 0), {num(c, 1), num(c, 2), num(c, 3)}, num(c, 4), num(c, 5));
             return 0;
+        }
+        case SetTransform:
+            w.setTransform(duk_require_uint(c, 0), readPhysicsPose(c, 1));
+            return 0;
+        case MoveBody: {
+            uint32_t id = duk_require_uint(c, 0);
+            quat target = duk_is_undefined(c, 2) ? w.entity(id).rotation : readRotation(c, 2);
+            auto result = w.moveBody(id, readVec(c, 1), target,
+                                     duk_get_uint_default(c, 3, CollisionLayer::All));
+            pushPose(c, result.pose);
+            pushVec(c, result.applied);
+            duk_put_prop_string(c, -2, "applied");
+            duk_push_boolean(c, result.blocked);
+            duk_put_prop_string(c, -2, "blocked");
+            duk_push_array(c);
+            for (duk_uarridx_t i = 0; i < result.contacts.size(); ++i) {
+                pushHit(c, result.contacts[i]);
+                duk_put_prop_index(c, -2, i);
+            }
+            duk_put_prop_string(c, -2, "contacts");
+            return 1;
+        }
+        case ShapeSweep: {
+            ShapeQuery query{readShape(c, 0), readPhysicsPose(c, 0)};
+            quat target = duk_is_undefined(c, 2) ? query.pose.rotation : readRotation(c, 2);
+            auto hit = w.physics().sweepShape(query, readVec(c, 1), target, readFilter(c, 3));
+            if (hit)
+                pushHit(c, *hit);
+            else
+                duk_push_null(c);
+            return 1;
+        }
+        case ShapeOverlap: {
+            auto hits = w.physics().overlapShape({readShape(c, 0), readPhysicsPose(c, 0)}, readFilter(c, 1));
+            duk_push_array(c);
+            for (duk_uarridx_t i = 0; i < hits.size(); ++i) {
+                pushHit(c, hits[i]);
+                duk_put_prop_index(c, -2, i);
+            }
+            return 1;
         }
         case Move: {
             pushVec(c, w.moveCharacter(duk_require_uint(c, 0), vec3(num(c, 1), 0, num(c, 2))));
@@ -542,6 +618,10 @@ void ScriptRuntime::createContext() {
                                 {"light", AddLight, 8},
                                 {"position", GetPose, 1},
                                 {"pose", SetPose, 6},
+                                {"transform", SetTransform, 2},
+                                {"moveBody", MoveBody, 4},
+                                {"physicsShapeSweep", ShapeSweep, 4},
+                                {"physicsShapeOverlap", ShapeOverlap, 2},
                                 {"move", Move, 3},
                                 {"findPath", FindPath, 2},
                                 {"setPlayer", SetPlayer, 1},

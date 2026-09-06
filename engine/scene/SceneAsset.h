@@ -17,7 +17,7 @@ struct SceneAnimation {
 struct SceneObject {
     std::string id, name;
     vec3 position{0};
-    float yaw = 0;
+    quat rotation{1, 0, 0, 0};
     RenderComponent render;
     std::optional<AssetRef> staticMesh;
     ColliderShape collider;

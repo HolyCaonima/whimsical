@@ -23,7 +23,7 @@ SceneDocument ScenePersistence::capture(const World& world, const AssetManager& 
         o.id = object.persistentId;
         o.name = object.name;
         o.position = object.position;
-        o.yaw = object.yaw;
+        o.rotation = object.rotation;
         o.render = object.render;
         if (object.staticMesh)
             o.staticMesh = assets.resolve(object.staticMesh->reference());
@@ -90,7 +90,7 @@ void ScenePersistence::instantiate(World& world, const SceneDocument& s, AssetMa
         auto id = world.spawn(o.name, o.render.shape, o.position, o.render.scale, o.render.material,
                               o.blocking, o.interactable, o.id);
         auto& object = world.mutableObject(id);
-        object.yaw = o.yaw;
+        object.rotation = o.rotation;
         object.render = o.render;
         if (o.staticMesh)
             world.setStaticMesh(id, assets.load<StaticMesh>(*o.staticMesh));

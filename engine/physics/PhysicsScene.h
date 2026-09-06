@@ -62,6 +62,17 @@ struct MoveResult {
     bool blocked = false;
     std::vector<PhysicsHit> contacts;
 };
+// A rigid query shape may translate and rotate; it is independent of character grounding.
+struct ShapeQuery {
+    ColliderShape shape;
+    PhysicsPose pose;
+};
+struct BodyMoveResult {
+    PhysicsPose pose;
+    vec3 applied{0};
+    bool blocked = false;
+    std::vector<PhysicsHit> contacts;
+};
 
 // Main-thread spatial authority. No render objects, meshes, materials, Vulkan or World dependencies.
 // This backend implements scene queries and kinematic motion, not force-driven rigid-body dynamics.
@@ -106,6 +117,11 @@ class PhysicsScene {
     std::vector<PhysicsHit> overlapCapsule(const CapsuleQuery&, QueryFilter = {}) const;
     std::optional<PhysicsHit> sweepCapsule(const CapsuleQuery&, vec3 delta, QueryFilter = {}) const;
     MoveResult moveAndSlide(const CapsuleQuery&, vec3 delta, QueryFilter = {}) const;
+    std::vector<PhysicsHit> overlapShape(const ShapeQuery&, QueryFilter = {}) const;
+    std::optional<PhysicsHit> sweepShape(const ShapeQuery&, vec3 delta, quat targetRotation,
+                                        QueryFilter = {}) const;
+    BodyMoveResult moveAndSlide(const ShapeQuery&, vec3 delta, quat targetRotation,
+                                QueryFilter = {}) const;
     // Keep feet fixed; reject expansion into ceilings or other bodies.
     bool resizeCharacter(BodyHandle, float height);
 };

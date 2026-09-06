@@ -14,7 +14,11 @@ struct GameObject {
     uint32_t id = 0;
     std::string name, persistentId;
     vec3 position{0};
-    float yaw = 0;
+    quat rotation{1, 0, 0, 0};
+    float yaw() const {
+        auto forward = rotation * vec3(0, 0, 1);
+        return std::atan2(forward.x, forward.z);
+    }
     RenderComponent render;
     std::shared_ptr<const StaticMesh> staticMesh;
     BodyHandle physical;
@@ -88,6 +92,7 @@ class World {
     void setEnabled(uint32_t, bool);
     void setVisible(uint32_t, bool);
     void setPose(uint32_t, vec3 position, float yaw, float renderHeight);
+    void setTransform(uint32_t, const PhysicsPose&);
     void setVisualPose(uint32_t, vec3 offset, vec3 scale);
     void setMaterial(uint32_t, uint32_t);
     void setSolid(uint32_t, bool);
@@ -96,6 +101,8 @@ class World {
     NavigationAgent agent(uint32_t) const;
     vec3 feet(uint32_t) const;
     vec3 moveCharacter(uint32_t, vec3 delta);
+    BodyMoveResult moveBody(uint32_t, vec3 delta, quat targetRotation,
+                            uint32_t mask = CollisionLayer::All);
     vec3 rootMotion(uint32_t, vec3 localDelta, float deltaYaw);
     float setCharacterHeight(uint32_t, float height);
     BodyHandle addAnimationCollider(uint32_t, uint32_t joint, const ColliderShape&, PhysicsPose local,

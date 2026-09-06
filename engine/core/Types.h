@@ -35,9 +35,9 @@ struct RenderComponent {
 struct ProxyTransform {
     vec3 position{0};
     vec3 scale{1};
-    float yaw = 0;
+    quat rotation{1, 0, 0, 0};
     bool operator==(const ProxyTransform& o) const {
-        return position == o.position && scale == o.scale && yaw == o.yaw;
+        return position == o.position && scale == o.scale && rotation == o.rotation;
     }
     bool operator!=(const ProxyTransform& o) const {
         return !(*this == o);
@@ -173,7 +173,7 @@ struct Frame {
 // thread deep-copies a Frame and the renderer can hold on to older ones for free.
 using FrameRef = std::shared_ptr<const Frame>;
 inline mat4 transform(const ProxyTransform& t) {
-    return glm::translate(mat4(1), t.position) * glm::rotate(mat4(1), t.yaw, vec3(0, 1, 0)) *
+    return glm::translate(mat4(1), t.position) * glm::mat4_cast(t.rotation) *
            glm::scale(mat4(1), t.scale);
 }
 } // namespace afterlight

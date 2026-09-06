@@ -43,7 +43,7 @@ static ColliderShape shape(const Json& j) {
 }
 Json SceneDocument::json() const {
     validate();
-    Json j{{"version", 1},
+    Json j{{"version", 2},
            {"scripts", Json::array()},
            {"objects", Json::array()},
            {"materials", Json::array()},
@@ -80,7 +80,7 @@ Json SceneDocument::json() const {
         Json item{{"id", o.id},
                   {"name", o.name},
                   {"position", vector(o.position)},
-                  {"yaw", o.yaw},
+                  {"rotation", vector(vec4(o.rotation.x, o.rotation.y, o.rotation.z, o.rotation.w))},
                   {"enabled", o.enabled},
                   {"interactable", o.interactable},
                   {"render",
@@ -125,7 +125,8 @@ Json SceneDocument::json() const {
     return j;
 }
 SceneDocument SceneDocument::fromJson(const Json& j) {
-    if (j.at("version").uint() != 1)
+    auto version = j.at("version").uint();
+    if (version != 1 && version != 2)
         throw std::invalid_argument("Unsupported Map version");
     SceneDocument s;
     for (const auto& script : j.at("scripts").elements())
@@ -160,7 +161,11 @@ SceneDocument SceneDocument::fromJson(const Json& j) {
         o.id = item.at("id").string();
         o.name = item.at("name").string();
         o.position = vector3(item.at("position"));
-        o.yaw = float(item.at("yaw").number());
+        if (version == 2) {
+            auto q = vector4(item.at("rotation"));
+            o.rotation = quat(q.w, q.x, q.y, q.z);
+        } else
+            o.rotation = glm::angleAxis(float(item.at("yaw").number()), vec3(0, 1, 0));
         o.enabled = item.at("enabled").boolean();
         o.interactable = item.at("interactable").boolean();
         const auto& r = item.at("render");
@@ -219,7 +224,9 @@ void SceneDocument::validate() const {
         validatePersistentId(o.id);
         if (!ids.insert(o.id).second)
             throw std::invalid_argument("Duplicate Map Object ID");
-        if (o.render.material >= materials.size() || !finite(o.position) || !std::isfinite(o.yaw) ||
+        float rotationLength = glm::length(o.rotation);
+        if (o.render.material >= materials.size() || !finite(o.position) ||
+            !std::isfinite(rotationLength) || std::abs(rotationLength - 1) > .001f ||
             !finite(o.render.scale) || !finite(o.render.offset) || !finite(o.render.animationScale) ||
             glm::any(glm::lessThanEqual(o.render.scale, vec3(0))) ||
             glm::any(glm::lessThanEqual(o.render.animationScale, vec3(0))))

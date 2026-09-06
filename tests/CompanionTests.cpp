@@ -31,10 +31,10 @@ int main(int argc, char** argv) {
         float previousTurn = 0, maxTurnChange = 0, previousBodyTurn = 0, maxBodyTurnChange = 0;
         vec3 previousBodyForward(0);
         auto tick = [&](int frame) {
-            float beforeYaw = world.entity(dog).yaw;
+            float beforeYaw = world.entity(dog).yaw();
             scripts.tick(1.f / 60, input);
             const auto& object = world.entity(dog);
-            float turn = object.yaw - beforeYaw;
+            float turn = std::remainder(object.yaw() - beforeYaw, 2 * Pi);
             maxTurnChange = std::max(maxTurnChange, std::abs(turn - previousTurn));
             previousTurn = turn;
             auto forward = world.animationOutput(dog).rootMotion.rotation * vec3(0, 0, 1);
@@ -42,7 +42,7 @@ int main(int argc, char** argv) {
             check(std::abs(turn - rootTurn) < 1e-5f,
                   "Following must apply the solver's root turn, without a separate scripted yaw");
             auto bodyForward =
-                glm::angleAxis(object.yaw, vec3(0, 1, 0)) * object.joints[0].rotation * vec3(0, 0, 1);
+                object.rotation * object.joints[0].rotation * vec3(0, 0, 1);
             if (frame > 0) {
                 float bodyTurn =
                     std::atan2(glm::cross(previousBodyForward, bodyForward).y,
@@ -53,7 +53,7 @@ int main(int argc, char** argv) {
             }
             previousBodyForward = bodyForward;
             if (trace)
-                trace << frame << ',' << object.position.x << ',' << object.position.z << ',' << object.yaw
+                trace << frame << ',' << object.position.x << ',' << object.position.z << ',' << object.yaw()
                       << ',' << rootTurn << ',' << std::atan2(bodyForward.x, bodyForward.z) << '\n';
         };
         for (int i = 0; i < 540; ++i) {
