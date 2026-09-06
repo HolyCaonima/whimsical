@@ -194,6 +194,7 @@ enum Op {
     PhysicsSweep,
     PhysicsOverlap,
     PhysicsRevision,
+    PhysicsBodies,
     AnimationJoints,
     AnimationCollider,
     AnimationAttach,
@@ -420,6 +421,31 @@ static duk_ret_t callNative(duk_context* c) {
         case Destroy:
             w.destroy(duk_require_uint(c, 0));
             return 0;
+        case PhysicsBodies: {
+            const auto& physics = w.physics();
+            duk_push_array(c);
+            duk_uarridx_t index = 0;
+            for (auto handle : physics.bodies(readFilter(c, 0))) {
+                const auto& body = physics.body(handle);
+                auto bounds = physics.bounds(handle);
+                duk_push_object(c);
+                value(c, "owner", body.owner);
+                value(c, "slot", handle.slot);
+                value(c, "generation", handle.generation);
+                value(c, "layer", body.layer);
+                pushVec(c, bounds.min);
+                duk_put_prop_string(c, -2, "min");
+                pushVec(c, bounds.max);
+                duk_put_prop_string(c, -2, "max");
+                for (auto property : {std::pair<const char*, bool>{"blocking", body.blocking},
+                                      {"walkable", body.walkable}, {"pickable", body.pickable}}) {
+                    duk_push_boolean(c, property.second);
+                    duk_put_prop_string(c, -2, property.first);
+                }
+                duk_put_prop_index(c, -2, index++);
+            }
+            return 1;
+        }
         case PhysicsRevision:
             duk_push_number(c, double(w.physics().revision()));
             return 1;
@@ -497,6 +523,7 @@ static duk_ret_t callNative(duk_context* c) {
             auto inspection = w.inspectAnimation(duk_require_uint(c, 0));
             duk_push_object(c);
             value(c, "solver", inspection.solver);
+            value(c, "name", inspection.name);
             duk_push_array(c);
             for (duk_uarridx_t i = 0; i < inspection.schema.size(); ++i) {
                 const auto& attribute = inspection.schema[i];
@@ -647,6 +674,7 @@ void ScriptRuntime::createContext() {
                                 {"physicsSweep", PhysicsSweep, 6},
                                 {"physicsOverlap", PhysicsOverlap, 5},
                                 {"physicsRevision", PhysicsRevision, 0},
+                                {"physicsBodies", PhysicsBodies, 1},
                                 {"animationJoints", AnimationJoints, 2},
                                 {"animationCollider", AnimationCollider, 3},
                                 {"animation", AnimationAttach, 3},
@@ -716,6 +744,20 @@ void ScriptRuntime::startScripts() {
         checkedCall(0);
     else
         duk_pop(context_);
+    updateUi(0);
+}
+void ScriptRuntime::updateUi(float dt) {
+    if (!ui_)
+        return;
+    if (std::this_thread::get_id() != owner_)
+        throw std::logic_error("UI updates require the owner thread");
+    duk_get_global_string(context_, "updateUI");
+    if (duk_is_function(context_, -1)) {
+        duk_push_number(context_, dt);
+        checkedCall(1);
+    } else
+        duk_pop(context_);
+    processSceneRequest();
 }
 void ScriptRuntime::setHudEnabled(bool enabled) {
     hudEnabled_ = enabled;
@@ -761,6 +803,7 @@ void ScriptRuntime::tick(float dt, const Input& rawInput) {
         inputScope.finish();
         world_.updateAnimations(dt);
         processSceneRequest();
+        updateUi(dt);
         return;
     }
     duk_push_number(context_, dt);
@@ -805,5 +848,6 @@ void ScriptRuntime::tick(float dt, const Input& rawInput) {
     }
     world_.updateAnimations(dt);
     processSceneRequest();
+    updateUi(dt);
 }
 } // namespace afterlight

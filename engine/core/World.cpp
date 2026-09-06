@@ -421,7 +421,6 @@ Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug,
     for (const auto& object : objects_)
         if (object.alive && object.staticMesh)
             f.staticMeshes.push_back({object.proxy, object.staticMesh});
-    f.animationInspection = inspectAnimation(selected);
     for (const auto& entry : animations_) {
         const auto& o = entity(entry.first);
         if (!o.enabled)
@@ -458,17 +457,6 @@ Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug,
     // slots it actually has to touch.
     f.proxies = scene_.proxies();
     f.delta = scene_.publish();
-    if (hovered && hovered <= objects_.size())
-        f.hoveredName = objects_[hovered - 1].name;
-    QueryFilter obstacles;
-    obstacles.blockingOnly = true;
-    for (auto handle : physics_.bodies(obstacles)) {
-        const auto& b = physics_.body(handle);
-        if (b.walkable || b.owner == playerId)
-            continue;
-        auto box = physics_.bounds(handle);
-        f.mapObstacles.push_back({(box.min + box.max) * .5f, box.max - box.min});
-    }
     f.materials = materials;
     f.lights = lights;
     f.camera = camera;
@@ -477,11 +465,8 @@ Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug,
         f.player = entity(playerId).position;
     f.selected = selected;
     f.hovered = hovered;
-    f.locomotion = state;
-    f.message = message;
     f.destination = destination;
     f.hasDestination = hasDestination;
-    f.path = path;
     f.tick = tick;
     f.time = time;
     f.resetHistory = resetHistory;

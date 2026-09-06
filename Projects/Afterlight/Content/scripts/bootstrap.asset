@@ -8,5 +8,6 @@ function fixedUpdate(dt, input) {
     Companion.tick(dt);
     CameraRig.tick(dt, input);
     Engine.status(Locomotion.state, Controller.message);
-    GameplayHud.tick(input);
+    GameplayHud.input = input;
 }
+function updateUI(dt) { GameplayHud.tick(dt); }

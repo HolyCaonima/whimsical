@@ -25,7 +25,7 @@ World：物理接受 root motion → FK → 关节碰撞体 / 不可变骨架与
 
 属性只在显式设置时改变；每帧输入、待机、移动、`resetAnimation` 都保留当前值。实例之间独立。低层 `setSolver` 替换的是同一资产契约下的实现，保留属性；挂接新 Asset 会重新采用新声明和默认值。新求解器可将相同语义属性映射到图参数、候选集筛选或匹配代价，但选项与具体资源匹配仍由该资产负责。
 
-选中角色时，左侧动画面板从 `Frame.animationInspection` 的不可变声明和值生成枚举选择器，左右箭头循环切换。UI 点击和滚轮由 ScriptRuntime 在 gameplay 前处理，不会同时触发移动或镜头缩放；键盘移动继续生效。静止时切换会保存选择，移动后观察该风格。面板跟随选中实体，未挂接动画时消失，`--no-hud` 时不拦截输入。绘制与命中区域共用 `engine/ui/AnimationInspector` 布局；小于 620×450 的窗口隐藏面板。
+Afterlight 选中角色时，项目 `scripts/ui/animation_panel.asset` 通过 `Engine.animationAttributes(id)` 读取声明和值，在项目 HUD 中生成枚举选择器；点击由项目 JS 调用 `Engine.animationAttribute`。位置、样式、选中策略和紧凑窗口下的隐藏规则均在项目中，引擎不再创建该面板或将属性复制进渲染 Frame。RmlUi 在 gameplay 前接管面板点击和滚轮，避免同时移动角色或缩放镜头；未挂接动画时清空控件，`--no-hud` 时不拦截输入。
 
 AI4Animation 在下一次 10 Hz 预测时读取所选风格，沿用既有序列混合；UI 不重置播放状态或强制混合不同枚举值。后续求解器自行定义切换时机。
 

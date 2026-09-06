@@ -16,8 +16,8 @@ EngineUi (native tools) ──────────────────�
 
 - `engine/uiCore`：通用文档加载、默认样式、字体、输入路由、几何录制，不调用 World 或 ScriptRuntime。
 - `engine/scripting/UiBindings`：Duktape realm 的 DOM 句柄、事件回调及项目文档所有权；独立于玩法绑定实现。
-- `engine/ui/EngineUi`：RML 控制台、动画属性检查器、帧统计与小地图。检查器从属性 schema 生成控件，通过 RmlUi click 事件修改 World。
-- `Projects/Afterlight/Content/UI` 和 `scripts/gameplay/hud.asset`：项目 HUD；内容和文字更新属于项目 JS。
+- `engine/ui/EngineUi`：仅拥有控制台和可选性能统计，不依赖 World，不查询角色或地图，也不处理玩法点击。
+- `Projects/Afterlight/Content/UI`、`scripts/gameplay/hud.asset` 和 `scripts/ui/`：项目拥有品牌、地点、角色卡片、操作提示、小地图和动画风格选择器的布局、数据筛选与事件。新项目不导入这些脚本，就不会出现 Afterlight 面板。
 - `engine/render/UiRenderer`：Vulkan 资源缓存与 UI pass；不包含 RmlUi 头文件，不访问 DOM、World 或 JS。
 
 RmlUi 全局初始化由共享服务管理，各 uiCore 有独立 Context 和录制器。`ScriptRuntime` 可选接收 uiCore，因此无窗口的玩法测试仍可运行。窗口应用始终安装 `Engine.ui`。所有文档 API 与 JS 回调在同一主线程执行。
@@ -79,13 +79,17 @@ popup.show(true); // Modal; blocks gameplay input outside the popup too.
 
 平台保留按顺序的鼠标、按键、重复按键与 Unicode 字符事件；每个 simulation tick 只消费一次。RmlUi 布局承担命中检测。指针在 UI 上、拖动从 UI 开始、表单持有键盘焦点或存在模态文档时，对应玩法输入被消费。JS fixedUpdate 获得 `pointerCaptured`、`keyboardCaptured` 标志。装饰型全屏 HUD 应设置 `body { pointer-events: none; }`，交互区域显式使用 `pointer-events: auto`。
 
-Console 保留现有命令编辑、历史、补全与优先输入权，展示改用 RML。`r.Hud` 同时控制引擎工具和项目文档的显示，不改变项目文档自己请求的 show/hide 状态；控制台独立显示。UI 使用真实时间更新，不受 `t.TimeScale 0` 停止。
+Console 保留现有命令编辑、历史、补全与优先输入权，展示改用 RML。`r.Hud` / `--no-hud` 只控制项目文档，不改变文档自己请求的 show/hide 状态。`r.Stats` 单独控制引擎性能面板，默认关闭；`p.DebugDraw` / F2 独立控制物理线框；控制台不依赖这些开关。
+
+项目可实现可选的 `updateUI(dt)`：场景 initialize 完成后以 dt=0 调用，之后在 gameplay tick 完成后刷新；游戏暂停或固定审计时由宿主继续调用。该回调不推进玩法，允许暂停时的按钮和数据变化及时反映到 UI。RmlUi 布局与输入继续使用真实时间。
+
+Afterlight 动画面板通过 `Engine.animationAttributes(id)` 读取名字、solver 与枚举属性，用 `Engine.animationAttribute` 提交修改。小地图通过通用 `Engine.physicsBodies(filter)` 获取启用碰撞体的世界 AABB 与查询属性，自行决定过滤、投影、颜色和刷新频率；角色位置与路径直接来自项目控制器。Frame 不再携带小地图障碍、动画检查器或文案等仅供面板使用的数据。
 
 ## 后端边界与验证
 
 当前 Vulkan 后端实现 RmlUi 基础渲染接口：编译几何、预乘 alpha、字体 atlas、WIC 图片解码（PNG/JPEG/BMP 等）、矩形裁剪及变换。**尚未实现**高级图层、filter、box-shadow、自定义 shader、非矩形 clip mask、SVG/Lottie 插件。需要这些效果时应扩展 UiFrame 的绘制协议与 Vulkan 后端。RmlUi 的 C++ DataModel/数据表达式尚未映射为 JS 数据模型，当前用 DOM API 驱动数据更新。Win32 已支持 Unicode 输入和系统剪贴板；未接入 IME 预编辑文本/候选窗定位 API。
 
-`ui_core_js` 覆盖真实 JS DOM 修改、事件修改玩法、输入捕获、文本编辑与重复键、模态窗口、失效句柄、回调中自移除、字体/裁剪快照、mailbox 丢帧、独立 Context、Map 重载与 HUD 开关。`animation_attributes` 使用实际 RML 布局坐标点击检查器。
+`ui_core_js` 覆盖真实 JS DOM 修改、事件修改玩法、输入捕获、文本编辑与重复键、模态窗口、失效句柄、回调中自移除、字体/裁剪快照、mailbox 丢帧、独立 Context、Map 重载与 HUD 开关。`animation_attributes` 使用项目 RML 的实际布局坐标点击风格选择器。`ui_core_js` 还验证真正空项目没有默认游戏面板、HUD/统计四种开关组合、独立控制台/物理调试、物理查询快照、动态小地图及暂停时 UI 更新。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/build.ps1 -Test
@@ -94,3 +98,9 @@ powershell -ExecutionPolicy Bypass -File tools/build.ps1 -Test
 ```
 
 接口约定参考 [RmlUi integration](https://mikke89.github.io/RmlUiDoc/pages/cpp_manual/integrating.html) 和 [RenderInterface](https://mikke89.github.io/RmlUiDoc/pages/cpp_manual/interfaces/render.html)，实现以仓库固定的 6.1 头文件为准。
+
+## 2026-09-06 项目 UI 所有权迁移验证
+
+Release 构建通过，13 项 CTest 全部通过。实际 Vulkan 运行分别检查项目 HUD、关闭项目 HUD 后单独显示统计、smoke 的缩放/最小化恢复/地图重载，以及 console-smoke；四次均正常退出，validation errors=0。截图和报告在 `captures/ui-ownership/`。
+
+空项目在 uiCore/ScriptRuntime 层验证了不会继承 Afterlight 面板；直接启动完全空的 3D 项目仍被 Renderer 的现有“无灯光/无实例”检查拒绝。该渲染能力边界未在本次 UI 迁移中修改，不能把 UI 层验证等同于完整空场景渲染支持。

@@ -4,17 +4,20 @@ ALAS1
 var GameplayHud = {
     document: Engine.ui ? Engine.ui.loadDocument('/Game/UI/hud.rml').show() : null,
     previous: {},
+    input: {picked: 0},
     text: function(id, value) {
         if (this.previous[id] === value) return;
         this.previous[id] = value;
         this.document.getElementById(id).setText(value);
     },
-    tick: function(input) {
+    tick: function(dt) {
         if (!this.document) return;
+        AnimationPanel.tick(this.document, Controller.selected ? Locomotion.id : 0);
+        Minimap.tick(this.document, dt);
         this.text('state', '/ ' + Locomotion.state);
         this.text('selection', Controller.selected ? 'ACTIVE COMPANION' : 'COMPANION / UNSELECTED');
         this.text('message', Controller.message);
-        var object = Interactions.objects[input.picked];
+        var object = Interactions.objects[this.input.picked];
         this.text('hover', object ? 'CLICK / E ' + object.name : '');
     }
 };

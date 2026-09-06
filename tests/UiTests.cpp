@@ -1,6 +1,9 @@
 #include "TestProject.h"
 #include "scripting/ScriptRuntime.h"
 #include "uiCore/UiCore.h"
+#include "ui/EngineUi.h"
+#include "core/EngineSettings.h"
+#include "render/Renderer.h"
 #include "core/FrameMailbox.h"
 #include <RmlUi/Core.h>
 #include <iostream>
@@ -11,9 +14,55 @@ static void check(bool value, const char* message) {
     if (!value)
         throw std::runtime_error(message);
 }
+static void ownership() {
+    auto root = std::filesystem::path(AFTERLIGHT_ROOT) / "build" / "ui-project-tests" / newPersistentId();
+    AssetManager assets(Project::create(root, "Empty UI host"));
+    registerEngineAssets(assets);
+    ui::UiCore ui(assets.project().content());
+    World world;
+    ui::EngineUi diagnostics(ui);
+    ScriptRuntime scripts(world, assets, &ui);
+    scripts.initialize();
+    ConsoleRegistry variables;
+    EngineSettings settings(variables, false);
+    Frame frame;
+    settings.decorate(frame);
+    diagnostics.sync(frame, RenderStatistics{});
+    check(diagnostics.snapshot(frame)->draws.empty(),
+          "An empty project must not inherit gameplay panels or visible diagnostics");
+    auto* stats = ui.context().GetDocument("engine-statistics");
+    check(!stats->GetElementById("minimap") && !stats->GetElementById("animation"),
+          "Engine documents must contain no game-specific controls");
+    scripts.execute("var own=Engine.ui.createDocument('<rml><head/><body id=\"own\" "
+                    "style=\"width:80px;height:60px;background-color:#fff;\"/></rml>').show();");
+    auto* own = ui.context().GetDocument("own");
+    for (bool hud : {false, true})
+        for (bool enabled : {false, true}) {
+            variables.set("r.Hud", hud ? "true" : "false", CVarSource::Console);
+            variables.set("r.Stats", enabled ? "true" : "false", CVarSource::Console);
+            settings.decorate(frame);
+            scripts.setHudEnabled(frame.hudEnabled);
+            diagnostics.sync(frame, RenderStatistics{});
+            check(own->IsVisible() == hud && stats->IsVisible() == enabled,
+                  "Project HUD and engine statistics must have independent visibility");
+        }
+    frame.hudEnabled = frame.statsEnabled = false;
+    scripts.setHudEnabled(false);
+    frame.console.open = true;
+    diagnostics.sync(frame, RenderStatistics{});
+    check(ui.context().GetDocument("engine-console")->IsVisible(),
+          "Console remains available with both overlays disabled");
+    frame.console.open = false;
+    frame.physicsDebug = true;
+    frame.physicsLines.push_back({{0, 0, 0}, {1, 0, 0}, {1, 0, 0}});
+    diagnostics.sync(frame, RenderStatistics{});
+    check(!diagnostics.snapshot(frame)->draws.empty(),
+          "Physics diagnostics must not depend on either UI visibility switch");
+}
 int main() {
     std::cout.setf(std::ios::unitbuf);
     try {
+        ownership();
         ui::UiCore ui(testAssets().project().content());
         World world;
         ScriptRuntime scripts(world, testAssets(), &ui);
@@ -134,6 +183,37 @@ var self=button.on('click',function(){button.off(self);button.remove();});
             check(!peer.snapshot()->draws.empty(), "Independent UI context");
         }
         scripts.initialize();
+        scripts.execute(R"JS(
+var probe = Engine.spawn('Spatial query', false, 30, 1, 30, 2, 2, 4, 0, true, false);
+Engine.collider(probe, {shape:'box',halfExtents:{x:1,y:1,z:2},layer:8,blocking:true});
+var frozen = Engine.physicsBodies({mask:8,blockingOnly:true});
+if (frozen.length !== 1 || frozen[0].owner !== probe || frozen[0].min.x !== 29 || frozen[0].max.z !== 32)
+    throw Error('body enumeration bounds');
+Engine.transform(probe, {position:{x:40,y:1,z:30},rotation:{x:0,y:Math.sin(Math.PI/4),z:0,w:Math.cos(Math.PI/4)}});
+var moved = Engine.physicsBodies({mask:8});
+if (Math.abs(moved[0].min.x-38) > .001 || frozen[0].min.x !== 29)
+    throw Error('rotated bounds or copied query results');
+if (Engine.physicsBodies({mask:8,ignoreOwner:probe}).length !== 0) throw Error('body filter');
+Engine.enabled(probe,false);
+if (Engine.physicsBodies({mask:8}).length !== 0) throw Error('disabled body');
+Engine.enabled(probe,true);
+Engine.destroy(probe);
+if (Engine.physicsBodies({mask:8}).length !== 0 || frozen[0].owner !== probe) throw Error('destroyed body');
+var oldMap = GameplayHud.document.getElementById('map-obstacles').getInnerRML();
+var wall = Engine.spawn('Map wall',false,5,1,2,2,2,2,0,true,false);
+updateUI(.11);
+if (GameplayHud.document.getElementById('map-obstacles').getInnerRML() === oldMap)
+    throw Error('project map must track new obstacles without a simulation tick');
+Engine.enabled(wall,false);
+updateUI(.11);
+if (GameplayHud.document.getElementById('map-obstacles').getInnerRML() !== oldMap)
+    throw Error('project map must discard disabled obstacles');
+Engine.destroy(wall);
+Engine.animationAttribute(Locomotion.id,'locomotion.style','Zombie');
+)JS");
+        scripts.updateUi(.1f);
+        scripts.execute("if(GameplayHud.document.getElementById('attributes').getInnerRML().indexOf('Zombie') < 0) "
+                        "throw Error('paused UI refresh');");
         auto count = ui.context().GetNumDocuments();
         for (int i = 0; i < 3; ++i) {
             scripts.loadScene(world.mapAsset().path);

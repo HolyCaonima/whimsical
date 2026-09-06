@@ -47,10 +47,11 @@ HUD、标题栏与 `stat` 的 `CPU (Render)` 是渲染线程从场景准备到�
 | 名称 | 类型 / 默认 | 行为 |
 |---|---|---|
 | `r.Exposure` | float / 1.15 | 0.05–8，下一帧调整色调映射曝光 |
-| `r.Hud` | bool / true | 显示游戏 HUD，不影响控制台 |
+| `r.Hud` | bool / true | 显示项目游戏 HUD，不影响开发工具 |
+| `r.Stats` | bool / false | 单独显示引擎性能统计面板 |
 | `r.DebugView` | int / 0 | 0–7；通过控制台设置，`help r.DebugView` 查看映射 |
 | `r.FullUpload` | bool / false | 下一帧强制重写渲染场景，用于性能对比 |
-| `p.DebugDraw` | bool / false | 与 F2 共用状态；通过 HUD 绘制物理线框 |
+| `p.DebugDraw` | bool / false | 与 F2 共用状态；独立于项目 HUD 和性能面板绘制物理线框 |
 | `t.TimeScale` | float / 1 | 0–4；0 暂停游戏逻辑，控制台、窗口、渲染继续运行 |
 | `r.Present` | string / fifo | fifo / mailbox / immediate，需要重启 |
 | `r.Validation` | bool / Release false | Vulkan 验证，需要重启；Debug 默认 true |

@@ -9,6 +9,8 @@
     "/Game/scripts/3c/controller",
     "/Game/scripts/gameplay/interactions",
     "/Game/scripts/gameplay/companion",
+    "/Game/scripts/ui/animation_panel",
+    "/Game/scripts/ui/minimap",
     "/Game/scripts/gameplay/hud",
     "/Game/scripts/bootstrap"
   ]

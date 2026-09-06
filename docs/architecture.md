@@ -10,7 +10,7 @@
 
 渲染线程创建、使用和销毁 Vulkan 对象，包括 descriptor、swapchain、BLAS/TLAS、NRD pools 和 UI 几何/纹理资源。一个 GPU frame in flight，fence 完成后才能更新 host-visible buffer 或 descriptor pool。present 完成 semaphore 按 swapchain image 分配。呈现模式由 `--present` 选择，默认 FIFO；`mailbox` 与 `immediate` 用于在没有 vblank 量化的情况下测量真实帧成本，设备不支持时回退 FIFO。
 
-uiCore 在主线程拥有 RmlUi Context、文档、DOM 和输入。EngineUi 与项目 Engine.ui 绑定复用同一布局/事件系统。每次发布时记录不可变 UiFrame，完整绘制列表持有几何和纹理的共享引用，跨线程无需传递 RmlUi 或 JS 指针。Vulkan UiRenderer 缓存资源，在 frame fence 后回收失效资源，并以预乘 alpha 绘制到 UI 目标后参与合成；不再有 GDI 光栅或整屏 CPU HUD 上传。项目文档及回调跟随 JS realm 重建，引擎工具持续存在。详见 [UI Core](ui-core.md)。
+uiCore 在主线程拥有 RmlUi Context、文档、DOM 和输入。EngineUi 只拥有控制台与可选性能统计，不依赖 World；项目 Engine.ui 绑定拥有全部玩法文档、布局和事件。两者复用同一布局/事件系统，显示开关独立。每次发布时记录不可变 UiFrame，完整绘制列表持有几何和纹理的共享引用，跨线程无需传递 RmlUi 或 JS 指针。Vulkan UiRenderer 缓存资源，在 frame fence 后回收失效资源，并以预乘 alpha 绘制到 UI 目标后参与合成；不再有 GDI 光栅或整屏 CPU HUD 上传。项目文档及回调跟随 JS realm 重建，引擎工具持续存在。详见 [UI Core](ui-core.md)。
 
 关闭路径：主线程停止发布 → mailbox.close 唤醒渲染线程 → join → GPU idle / 资源析构完成 → 销毁窗口。渲染线程异常也会关闭 mailbox，主线程读到 finished 后 join 并报告错误。零尺寸窗口不执行 GPU 帧，恢复／resize 时等待 GPU 并重新创建屏幕资源和 NRD 历史。
 

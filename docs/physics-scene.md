@@ -50,7 +50,7 @@ Box 和 Capsule 支持任意刚体旋转；角色查询体为竖直胶囊。提�
 
 树叶包围盒每边扩张 10 cm，物体小幅移动且仍被包含时不重新插入，但 PhysicsScene 的精确包围盒立即更新。物体超出余量或大形状明显缩小时，移除并重新插入原叶节点。批量重建保留叶索引和 BodyHandle，且不改变物理场景 revision；它只改变索引布局。`broadphaseStatistics()` 提供当前叶数、树高和累计重插入／重建次数。
 
-所有启用的物理体都进入树，包括不阻挡的装饰与 Trigger，以保留无过滤场景查询的语义；碰撞属性在候选阶段读取，改属性无需重建。`bodies()` 全量枚举、小地图障碍收集及调试线框生成仍是遍历；本次 BVH 加速的是空间查询。没有引入物理线程、跨线程变更队列或渲染器依赖。
+所有启用的物理体都进入树，包括不阻挡的装饰与 Trigger，以保留无过滤场景查询的语义；碰撞属性在候选阶段读取，改属性无需重建。`bodies()` 全量枚举、项目按需查询碰撞体及调试线框生成仍是遍历；本次 BVH 加速的是空间查询。没有引入物理线程、跨线程变更队列或渲染器依赖。
 
 默认查询层为 World=1、Character=2、Trigger=4，支持 mask 和 ignoreOwner。`blocking`、`walkable`、`pickable` 相互独立，触发体可被查询而不阻碍移动。
 
@@ -90,6 +90,7 @@ Box 和 Capsule 支持任意刚体旋转；角色查询体为竖直胶囊。提�
 | `Engine.physicsShapeSweep(query,delta,targetRotation?,filter?)` | Box / Capsule 的连续平移与旋转查询，返回命中或 null；不移动实体 |
 | `Engine.physicsShapeOverlap(query,filter?)` | Box / Capsule 在完整姿态下的重叠命中数组 |
 | `Engine.physicsRevision()` | 空间数据变更版本 |
+| `Engine.physicsBodies(filter?)` | 按通用 QueryFilter 枚举启用体，返回值拷贝 `{owner,slot,generation,layer,min,max,blocking,walkable,pickable}`；min/max 为世界 AABB，不含小地图规则 |
 | `Engine.animationJoints(id,poses)` | 提交相对对象根节点的关节刚体姿态 |
 | `Engine.animationCollider(id,joint,description)` | 创建附属 box/capsule，默认 Trigger；需先提交关节姿态 |
 | `Engine.navigation({min,max,cellSize})` | 地面查询范围与导航网格配置 |

@@ -115,14 +115,13 @@ struct Frame {
     uint64_t gpuProfileRequest = 0;
     std::shared_ptr<const CpuProfile> cpuProfile;
     ConsoleView console;
-    bool hudEnabled = true, forceFullUpload = false;
+    bool hudEnabled = true, statsEnabled = false, forceFullUpload = false;
     float exposure = 1.15f;
     struct StaticDraw {
         uint32_t slot = 0;
         std::shared_ptr<const StaticMesh> mesh;
     };
     std::vector<StaticDraw> staticMeshes;
-    AnimationInspection animationInspection;
     struct Skin {
         uint32_t slot = 0;
         std::shared_ptr<const SkinnedMesh> mesh;
@@ -146,19 +145,12 @@ struct Frame {
     SceneDelta delta;
     // Resolved here rather than stored per proxy: keeping proxies free of heap-owning
     // members is what makes publishing a snapshot a single flat copy.
-    std::string hoveredName;
-    struct MapObstacle {
-        vec3 position, size;
-    };
-    std::vector<MapObstacle> mapObstacles;
     std::vector<Material> materials;
     std::vector<Light> lights;
     Camera camera;
     Input input;
     vec3 player{0}, destination{0};
-    std::vector<vec3> path;
     uint32_t selected = 0, hovered = 0;
-    std::string locomotion = "Idle", message = "Select your companion";
     uint64_t tick = 0;
     double time = 0;
     bool resetHistory = false, hasDestination = false;

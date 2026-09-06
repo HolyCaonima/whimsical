@@ -1,0 +1,45 @@
+ALAS1
+{"id":"b1433b3e38624dd1b8dffb7b18ad542c","name":"animation_panel","version":1,"type":"Script","storage":"embedded","metadata":{}}
+// Presentation and interaction belong to Afterlight; the engine supplies attribute data only.
+var AnimationPanel = {
+    signature: '',
+    control: function(parent, entity, attribute, index) {
+        var row = parent.appendChild('div');
+        row.setClass('attribute', true);
+        var selected = 0;
+        for (var i = 0; i < attribute.options.length; ++i)
+            if (attribute.options[i].value === attribute.value) selected = i;
+        var label = row.appendChild('div');
+        label.setClass('label', true);
+        label.setText(attribute.label + ' ' + (selected + 1) + ' / ' + attribute.options.length);
+        function arrow(direction, name, caption) {
+            var button = row.appendChild('button');
+            button.setAttribute('id', name + '-' + index);
+            button.setText(caption);
+            button.on('click', function(event) {
+                var next = (selected + direction + attribute.options.length) % attribute.options.length;
+                Engine.animationAttribute(entity, attribute.key, attribute.options[next].value);
+                selected = next;
+                event.stopPropagation();
+            });
+        }
+        arrow(-1, 'previous', '<');
+        var value = row.appendChild('span');
+        value.setClass('value', true);
+        value.setText(attribute.options[selected].label);
+        arrow(1, 'next', '>');
+    },
+    tick: function(document, entity) {
+        var inspection = Engine.animationAttributes(entity);
+        var signature = entity + ':' + JSON.stringify(inspection);
+        if (signature === this.signature) return;
+        this.signature = signature;
+        document.getElementById('animation').setClass('empty', inspection.attributes.length === 0);
+        document.getElementById('animation-title').setText('ANIMATION / ' + inspection.name);
+        document.getElementById('solver').setText(inspection.solver);
+        var controls = document.getElementById('attributes');
+        controls.setInnerRML('');
+        for (var i = 0; i < inspection.attributes.length; ++i)
+            this.control(controls, entity, inspection.attributes[i], i);
+    }
+};

@@ -1,0 +1,47 @@
+ALAS1
+{"id":"a1c2485296f14c12ad5ba39c22a9fe83","name":"minimap","version":1,"type":"Script","storage":"embedded","metadata":{}}
+// Court-specific projection, filtering, colors and refresh policy live with the game.
+var Minimap = {
+    origin: {x: 98, y: 75},
+    scale: 5.2,
+    remaining: 0,
+    revision: -1,
+    previous: {},
+    rect: function(x, y, width, height, color) {
+        return '<div style="position:absolute;left:' + Math.floor(x) + 'px;top:' + Math.floor(y) +
+            'px;width:' + Math.max(2, Math.floor(width)) + 'px;height:' + Math.max(2, Math.floor(height)) +
+            'px;background-color:' + color + ';"/>';
+    },
+    rml: function(document, id, value) {
+        if (this.previous[id] === value) return;
+        this.previous[id] = value;
+        document.getElementById(id).setInnerRML(value);
+    },
+    tick: function(document, dt) {
+        this.remaining -= dt;
+        if (this.remaining > 0) return;
+        this.remaining = .1;
+        var revision = Engine.physicsRevision(), x = this.origin.x, y = this.origin.y, scale = this.scale;
+        if (revision !== this.revision) {
+            this.revision = revision;
+            var bodies = Engine.physicsBodies({mask: 1, blockingOnly: true, ignoreOwner: Locomotion.id});
+            var obstacles = '';
+            for (var i = 0; i < bodies.length; ++i) {
+                var body = bodies[i];
+                if (body.walkable) continue;
+                obstacles += this.rect(x + body.min.x * scale, y + body.min.z * scale,
+                    (body.max.x - body.min.x) * scale, (body.max.z - body.min.z) * scale, '#495d54');
+            }
+            this.rml(document, 'map-obstacles', obstacles);
+        }
+        var position = Engine.position(Locomotion.id), marker = document.getElementById('map-player');
+        marker.setProperty('left', Math.floor(x + position.x * scale - 3) + 'px');
+        marker.setProperty('top', Math.floor(y + position.z * scale - 3) + 'px');
+        var path = '';
+        for (var j = 0; j < Locomotion.path.length; ++j) {
+            var point = Locomotion.path[j];
+            path += this.rect(x + point.x * scale - 1, y + point.z * scale - 1, 3, 3, '#b8ab7a');
+        }
+        this.rml(document, 'map-path', path);
+    }
+};

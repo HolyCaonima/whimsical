@@ -38,6 +38,7 @@ class ScriptRuntime {
     void initialize();
     void setHudEnabled(bool);
     void processUiInput(Input&);
+    void updateUi(float dt);
     void execute(const std::string& source, const std::string& label = "runtime");
     void setLogSink(std::function<void(const std::string&)> sink) {
         logSink_ = std::move(sink);

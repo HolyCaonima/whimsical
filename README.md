@@ -4,7 +4,7 @@
 
 当前关卡是 **The Rain Court**：用 PBR box 搭建庭院、建筑和障碍。主角 Kiln 为双足人，四足狗 Ash 会寻路跟随；两者使用 AI4Animation 的原始蒙皮模型和 ONNX 动画求解器。
 
-UI 由独立 **uiCore / RmlUi** 驱动：项目 JS 通过 `Engine.ui` 操作文档、DOM 和事件，控制台与动画检查器共用 RmlUi 布局和 Vulkan UI 后端。接口、线程边界、示例及当前后端能力见 [UI Core](docs/ui-core.md)。
+UI 由独立 **uiCore / RmlUi** 驱动：项目 JS 通过 `Engine.ui` 操作文档、DOM 和事件，控制台与项目角色面板共用 RmlUi 布局和 Vulkan UI 后端。接口、线程边界、示例及当前后端能力见 [UI Core](docs/ui-core.md)。
 
 ## 直接运行
 
@@ -18,7 +18,7 @@ UI 由独立 **uiCore / RmlUi** 驱动：项目 JS 通过 `Engine.ui` 操作文�
 
 输入 `profileCPU` 抓取 Game / Render 线程的 CPU 阶段耗时，包含独立标注的等待阶段，以及 inclusive / self 读数；`profileCPU last` 查看最近报告，结果保存在 `captures/cpu-profile.json` / `.txt`。启动参数为 `--profile-cpu`。见 [CPU 分阶段计时](docs/cpu-profiling.md)。
 
-右上角和标题栏显示实时 **FPS**、**Frame ms**（包含线程与呈现等待的整帧间隔）、**CPU (Render) ms**（场景准备、CPU 蒙皮、HUD、命令录制与提交，不含常规帧同步/呈现等待）、**GPU ms**（Vulkan timestamp），约每半秒更新。启动及重建窗口尺寸后的统计预热显示 `-- FPS`。默认使用 FIFO 垂直同步，因此通常不超过 60 FPS；面板显示当前呈现模式与 VSync 状态。渲染帧率不再被 60 Hz 仿真锁死——渲染线程在没有新快照时重新呈现最新快照，用 `--present immediate` 或 `--present mailbox` 即可跑出显示器刷新率以上的真实帧成本。累计帧数只保留在日志和截图报告中。
+标题栏显示实时 **FPS**、**Frame ms**（包含线程与呈现等待的整帧间隔）、**CPU (Render) ms**（场景准备、CPU 蒙皮、HUD、命令录制与提交，不含常规帧同步/呈现等待）、**GPU ms**（Vulkan timestamp），约每半秒更新。启动及重建窗口尺寸后的统计预热显示 `-- FPS`。默认使用 FIFO 垂直同步，因此通常不超过 60 FPS；用 `r.Stats 1` 开启独立性能面板（默认关闭），显示当前呈现模式与 VSync 状态；`r.Hud` 只控制项目游戏界面。渲染帧率不再被 60 Hz 仿真锁死——渲染线程在没有新快照时重新呈现最新快照，用 `--present immediate` 或 `--present mailbox` 即可跑出显示器刷新率以上的真实帧成本。累计帧数只保留在日志和截图报告中。
 
 | 操作 | 行为 |
 | --- | --- |
@@ -88,7 +88,7 @@ engine/
   animation/              统一骨架/姿态/求解器框架、AI4Animation 原生运行时和 ONNX 推理
   scripting/              Duktape runtime 和 C++ ↔ JS binding
   uiCore/                 RmlUi Context、输入、文档与不可变 UI 绘制快照
-  ui/                     RML 引擎工具：控制台、动画检查器、统计与小地图
+  ui/                     RML 引擎调试工具：控制台和可选性能统计
   Content/UI/             引擎 RML / RCSS
   render/                 Vulkan、几何、BLAS/TLAS、pass graph、NRD、HUD
     shaders/              G-buffer / DI / GI / reuse / resolve / composite
@@ -101,7 +101,7 @@ Projects/Afterlight/       可整体搬迁的独立项目
     materials/            PBR 材质配置资产
     physics/              碰撞配置资产
     scripts/              3C、通用玩法、Map 初始化脚本，均为内嵌 Script 资产
-    UI/                   项目 HUD 的 RML / RCSS，由项目 JS 驱动
+    UI/                   项目 HUD 的 RML / RCSS：角色、小地图、动画选择器和提示，由项目 JS 驱动
 tests/                    原生核心、独立物理场景与真实 JS 接口测试
 tools/                    固定依赖下载、构建、验证脚本
 docs/                     架构、渲染约定、第三方来源、验证记录

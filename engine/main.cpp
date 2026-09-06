@@ -187,7 +187,7 @@ int main(int argc, char** argv) {
         loadConfigs();
         World world;
         ui::UiCore uiCore(assets.project().content());
-        ui::EngineUi engineUi(uiCore, world);
+        ui::EngineUi engineUi(uiCore);
         ScriptRuntime scripts(world, assets, &uiCore);
         scripts.setLogSink([&](const auto& text) { console.log(text); });
         if (mapPath.empty())
@@ -423,7 +423,6 @@ int main(int argc, char** argv) {
         constexpr double step = 1.0 / 60.0;
         std::string mainError;
         uint32_t smokeStage = 0;
-        bool smokeAnimationClicked = false;
         ConsoleSmoke consoleCheck;
         auto restoreAt = Clock::time_point::max();
         auto publish = [&] {
@@ -482,18 +481,6 @@ int main(int argc, char** argv) {
                     }
                     if (smoke) {
                         auto f = rendered.load();
-                        if (!smokeAnimationClicked && options.hud && f >= 25) {
-                            auto* button = engineUi.tools().GetElementById("previous-0");
-                            if (button) {
-                                auto position = button->GetAbsoluteOffset(Rml::BoxArea::Border);
-                                auto size = button->GetBox().GetSize(Rml::BoxArea::Border);
-                                input.mouseX = position.x + size.x / 2;
-                                input.mouseY = position.y + size.y / 2;
-                                input.leftPressed = true;
-                                std::cout << "[Smoke] Animation attribute selector\n";
-                            }
-                            smokeAnimationClicked = true;
-                        }
                         if (smokeStage == 0 && f >= 12) {
                             auto clip = world.camera.projection(float(input.width) / input.height) *
                                         world.camera.view() * vec4(-8, 0, 4, 1);
@@ -552,7 +539,8 @@ int main(int argc, char** argv) {
                     if (options.audit.empty() && gameStep > 0) {
                         CpuScope scope("Script / Gameplay Tick");
                         scripts.tick(float(gameStep), input);
-                    }
+                    } else
+                        scripts.updateUi(float(step));
                     for (size_t i = 0; i < stressMoving.size(); i++) {
                         const auto& prop = world.entity(stressMoving[i]);
                         world.setPose(stressMoving[i],

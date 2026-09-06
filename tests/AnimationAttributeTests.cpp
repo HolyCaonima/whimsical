@@ -2,8 +2,8 @@
 #include "animation/Animation.h"
 #include "animation/ai4animation/Controller.h"
 #include "scripting/ScriptRuntime.h"
-#include "ui/EngineUi.h"
-#include "render/Renderer.h"
+#include "uiCore/UiCore.h"
+#include <RmlUi/Core.h>
 #include <iostream>
 #include <stdexcept>
 
@@ -63,7 +63,6 @@ static void framework() {
 static void scene() {
     World world;
     ui::UiCore uiCore(testAssets().project().content());
-    ui::EngineUi engineUi(uiCore, world);
     ScriptRuntime scripts(world, testAssets(), &uiCore);
     scripts.initialize();
     auto player = world.playerId;
@@ -71,9 +70,11 @@ static void scene() {
     check(view.schema.size() == 1 && view.schema[0].options.size() == 11,
           "Biped asset must declare eleven styles without Idle");
     check(view.values.at("locomotion.style") == "BigSteps", "Asset must supply the initial style");
-    engineUi.sync(world.snapshot(Input{}, 0, 0, 0), RenderStatistics{});
+    scripts.tick(1.f / 60, Input{});
     uiCore.snapshot();
-    auto* button = engineUi.tools().GetElementById("next-0");
+    auto* hud = uiCore.context().GetDocument("afterlight-hud");
+    check(hud != nullptr, "Character controls must belong to the project document");
+    auto* button = hud->GetElementById("next-0");
     check(button != nullptr, "RML must discover enum control from asset schema");
     auto position = button->GetAbsoluteOffset(Rml::BoxArea::Border);
     Input click;
@@ -81,12 +82,12 @@ static void scene() {
     click.mouseY = position.y + 5;
     click.leftPressed = true;
     click.wheel = 2;
-    auto before = world.snapshot(click, 0, 0, 0);
+    auto before = world.inspectAnimation(player);
     scripts.processUiInput(click);
     scripts.tick(1.f / 60, click);
     check(world.inspectAnimation(player).values.at("locomotion.style") == "Chicken",
           "UI next must change style");
-    check(before.animationInspection.values.at("locomotion.style") == "BigSteps",
+    check(before.values.at("locomotion.style") == "BigSteps",
           "Published UI values must be immutable");
     check(world.path.empty(), "Style click must not issue a ground movement command");
     check(std::abs(world.camera.distance - 30) < .001f, "Wheel over animation UI must not zoom camera");
@@ -125,24 +126,29 @@ static void scene() {
     auto n = normal.skeleton().toModel(normal.output().localPose);
     auto z = zombie.skeleton().toModel(zombie.output().localPose);
     check(z[18].position.y > n[18].position.y + .15f, "Zombie style must raise the wrist in the solved pose");
-    scripts.setHudEnabled(false);
-    engineUi.tools().Hide();
-    auto selectedStyle = world.inspectAnimation(player).values.at("locomotion.style");
-    scripts.tick(1.f / 60, click);
-    check(world.inspectAnimation(player).values.at("locomotion.style") == selectedStyle,
-          "Hidden HUD must not intercept scene clicks");
-    world.detachAnimation(player);
-    check(!world.snapshot(neutral, 1, 0, 0).animationInspection.entity,
-          "Detach must remove stale UI controls");
-    engineUi.tools().Show();
     uiCore.resize(1280, 700);
     uiCore.snapshot();
-    check(engineUi.tools().GetElementById("next-0")->IsVisible(),
-          "Resize must retain usable inspector controls");
+    check(hud->GetElementById("next-0")->IsVisible(), "Resize must retain usable project controls");
     uiCore.resize(400, 300);
     uiCore.snapshot();
-    check(!engineUi.tools().GetElementById("animation")->IsVisible(),
+    check(!hud->GetElementById("animation")->IsVisible(),
           "Compact windows must not leave invisible hit regions");
+    scripts.setHudEnabled(false);
+    auto selectedStyle = world.inspectAnimation(player).values.at("locomotion.style");
+    scripts.processUiInput(click);
+    scripts.tick(1.f / 60, click);
+    check(world.inspectAnimation(player).values.at("locomotion.style") == selectedStyle,
+          "Hidden project HUD must not intercept scene clicks");
+    world.detachAnimation(player);
+    scripts.execute("AnimationPanel.tick(GameplayHud.document, Locomotion.id);");
+    check(hud->GetElementById("attributes")->GetNumChildren() == 0,
+          "Detach must remove stale project controls and their listeners");
+    scripts.loadScene(world.mapAsset().path);
+    scripts.tick(1.f / 60, neutral);
+    check(uiCore.snapshot()->draws.empty(), "Hidden project HUD must stay hidden after reload");
+    scripts.setHudEnabled(true);
+    scripts.execute("if (!GameplayHud.document.getElementById('next-0')) throw Error('reload controls');");
+
 }
 int main() {
     try {
