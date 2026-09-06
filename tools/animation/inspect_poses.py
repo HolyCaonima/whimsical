@@ -32,9 +32,9 @@ def load_skin(path):
 
 def render(directory):
     for kind, mesh in [('biped', 'biped'), ('quadruped', 'dog')]:
-        metadata = json.loads(read_asset(ROOT / 'game/Content/animations/ai4animation' / kind / 'metadata.asset')[1])
+        metadata = json.loads(read_asset(ROOT / 'Projects/Afterlight/Content/animations/ai4animation' / kind / 'metadata.asset')[1])
         names = [j['name'] for j in metadata['joints']]
-        bindings, inverse, vertices, triangles = load_skin(ROOT / 'game/Content/models' / (mesh + '.asset'))
+        bindings, inverse, vertices, triangles = load_skin(ROOT / 'Projects/Afterlight/Content/models' / (mesh + '.asset'))
         mapping = [names.index(n) for n in bindings]
         snapshots = json.loads((directory / (kind + '.json')).read_text())
         selected = [s for s in snapshots if s['frame'] in [0, 120, 225, 240]]

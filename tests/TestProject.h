@@ -4,7 +4,7 @@
 inline afterlight::AssetManager& testAssets() {
     static auto assets = [] {
         auto a = std::make_unique<afterlight::AssetManager>(
-            afterlight::Project(std::filesystem::path(AFTERLIGHT_ROOT) / "game"));
+            afterlight::Project(std::filesystem::path(AFTERLIGHT_ROOT) / "Projects" / "Afterlight"));
         afterlight::registerEngineAssets(*a);
         return a;
     }();

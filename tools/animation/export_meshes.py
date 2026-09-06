@@ -82,4 +82,4 @@ def export(source, controller, output):
 
 if __name__=='__main__':
     for name,path in [('biped','Geno/Model.glb'),('dog','Quadruped/Dog.glb')]:
-        export(UPSTREAM/'Demos/_ASSETS_'/path,ROOT/'game/Content/animations/ai4animation'/('biped' if name=='biped' else 'quadruped')/'metadata.asset',ROOT/'game/Content/models'/f'{name}.asset')
+        export(UPSTREAM/'Demos/_ASSETS_'/path,ROOT/'Projects/Afterlight/Content/animations/ai4animation'/('biped' if name=='biped' else 'quadruped')/'metadata.asset',ROOT/'Projects/Afterlight/Content/models'/f'{name}.asset')

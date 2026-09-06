@@ -79,7 +79,7 @@ engine/
   scripting/              Duktape runtime 和 C++ ↔ JS binding
   render/                 Vulkan、几何、BLAS/TLAS、pass graph、NRD、HUD
     shaders/              G-buffer / DI / GI / reuse / resolve / composite
-game/                     可整体搬迁的独立项目
+Projects/Afterlight/       可整体搬迁的独立项目
   .project                项目 ID、默认 Map、公共脚本加载顺序
   Content/                /Game 虚拟路径根
     Maps/                 RainCourt.asset：对象、材质、灯、相机、导航和玩法状态
@@ -131,7 +131,7 @@ NRD 4.17.3 实际参与 GPU 计算，使用 RELAX 的原生 SPIR-V、资源池�
 
 Animation 底层支持可替换 Solver、骨骼 FK、root motion/物理反馈、接触和 FABRIK。双足/四足 AI4Animation CxM 通过 ONNX Runtime 原生推理接入，与未来 clip graph、motion matching 处于同一层级。默认关卡已使用双足人和跟随狗，蒙皮网格同时参与光栅与光追。详细入口、模型导出、验证和上游非商业许可见 [Animation](docs/animation.md)。
 
-项目路径、资产格式、对象身份、保存与加载入口见 [Project / Asset / Scene](docs/projects-assets-scenes.md)。支持 `--project <目录或.project>` 与 `--map /Game/Maps/RainCourt`；默认运行 game 项目的默认 Map。
+项目路径、资产格式、对象身份、保存与加载入口见 [Project / Asset / Scene](docs/projects-assets-scenes.md)。支持 `--project <目录或.project>` 与 `--map /Game/Maps/RainCourt`；默认运行 Afterlight 项目的默认 Map。
 
 更多实现约定见 [架构](docs/architecture.md)、[Physics Scene](docs/physics-scene.md)、[渲染说明](docs/rendering.md)、[验证记录](docs/verification.md)。
 

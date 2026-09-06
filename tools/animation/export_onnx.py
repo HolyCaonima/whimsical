@@ -224,7 +224,7 @@ def export_rig(demo, dest):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--character", choices=["biped", "quadruped", "all"], default="all")
-    parser.add_argument("--output", type=Path, default=ROOT / "game/Content/animations/ai4animation")
+    parser.add_argument("--output", type=Path, default=ROOT / "Projects/Afterlight/Content/animations/ai4animation")
     parser.add_argument("--checkpoint", type=Path, help="Export a standalone upstream model; --output must be an .onnx path")
     parser.add_argument("--iterations", type=int, default=3, help="CxM denoising iterations baked into a standalone ONNX graph")
     args = parser.parse_args()

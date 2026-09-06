@@ -23,7 +23,7 @@ int main(int argc, char** argv) {
         bool demo = false, smoke = false;
         bool physicsDebug = false;
         uint32_t stress = 0;
-        std::filesystem::path projectPath = std::filesystem::path(AFTERLIGHT_ROOT) / "game";
+        std::filesystem::path projectPath = std::filesystem::path(AFTERLIGHT_ROOT) / "Projects" / "Afterlight";
         std::string mapPath;
         for (int i = 1; i < argc; i++) {
             std::string arg = argv[i];

@@ -203,8 +203,8 @@ static void registry(const fs::path& directory) {
           "Top-level scene request must run at the next owner boundary");
 }
 static void scene(const fs::path& directory) {
-    // Relocation test: no runtime content access may depend on the repository's game path.
-    fs::copy(fs::path(AFTERLIGHT_ROOT) / "game", directory, fs::copy_options::recursive);
+    // Relocation test: no runtime content access may depend on the example project's location.
+    fs::copy(fs::path(AFTERLIGHT_ROOT) / "Projects" / "Afterlight", directory, fs::copy_options::recursive);
     AssetManager assets{Project(directory)};
     registerEngineAssets(assets);
     auto path = assets.project().startupMap();

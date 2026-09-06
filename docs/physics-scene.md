@@ -23,8 +23,8 @@ flowchart LR
 | `engine/core/World.*` | 对象生命周期；统一提交物理和显示更新 |
 | `engine/animation/AnimationCollision.*` | 多个关节附属碰撞体，跟随动画的刚体姿态 |
 | `engine/navigation/Navigation.*` | 从物理地面和胶囊净空生成可通行数据，A* 和平滑路径 |
-| `game/Content/physics/profiles.asset` | ground / obstacle / decoration / character 配置 |
-| `game/Content/animations/locomotion.asset` | 站立／蹲行高度和 locomotion 参数 |
+| `Projects/Afterlight/Content/physics/profiles.asset` | ground / obstacle / decoration / character 配置 |
+| `Projects/Afterlight/Content/animations/locomotion.asset` | 站立／蹲行高度和 locomotion 参数 |
 | `engine/debug/PhysicsDebug.h` | 将物理形状转换成值类型线段快照，供 F2 显示 |
 
 物理句柄包含 slot 和 generation，删除后旧句柄失效。World 对外只开放 const 物理查询接口，变更通过对象 API 提交，避免不同场景的数据失配。Physics Scene 拒绝跨线程访问；渲染线程只接收 render proxy、地图标记和调试线段的值拷贝，不持有物理指针或句柄。

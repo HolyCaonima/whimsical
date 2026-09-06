@@ -47,7 +47,7 @@ AI4Animation 在下一次 10 Hz 预测时读取所选风格，沿用既有序列
 
 默认 Rain Court 的 Kiln 使用双足 ONNX 控制器与上游人体网格，Ash 使用四足 ONNX 控制器与狗网格。胶囊保留为不可见的运动学碰撞体。Locomotion 和 Companion 用实际移动速度、朝向与动作名驱动统一动画输入，二者均使用 `rootMotion:false`，由 gameplay 负责移动。Companion 定期寻路到主角后方，转向、加速追赶，并在靠近时减速停下；导航和连续扫掠复用 PhysicsScene。
 
-网格由 `export_meshes.py` 从原始 GLB 离线导出成 内嵌 `SKN1` 格式的 `.asset`：骨骼绑定、位置、法线、线性顶点颜色、四个关节索引/权重和三角形索引。原始皮肤骨架中不参与求解的骨骼映射到最近的求解器祖先，并保留绑定姿态修正。狗的 base-color 纹理离线采样为顶点颜色；当前未增加运行时纹理采样或 GPU 蒙皮。资产来源和几何数量见 `game/Content/models/characters.asset`。
+网格由 `export_meshes.py` 从原始 GLB 离线导出成 内嵌 `SKN1` 格式的 `.asset`：骨骼绑定、位置、法线、线性顶点颜色、四个关节索引/权重和三角形索引。原始皮肤骨架中不参与求解的骨骼映射到最近的求解器祖先，并保留绑定姿态修正。狗的 base-color 纹理离线采样为顶点颜色；当前未增加运行时纹理采样或 GPU 蒙皮。资产来源和几何数量见 `Projects/Afterlight/Content/models/characters.asset`。
 
 当前预训练双足资产提供 Idle 及多种移动风格，没有接入专门的蹲姿动画；Ctrl 仍改变移动速度和物理净空，人体网格保持该模型的直立姿态。
 

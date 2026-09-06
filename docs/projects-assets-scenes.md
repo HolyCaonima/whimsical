@@ -19,7 +19,7 @@ Renderer: Frame → GPU 资源
 ## Project 与路径
 
 ```text
-game/
+Projects/Afterlight/
   .project                    UTF-8 JSON：version/id/name/startupMap/scripts
   Content/
     Maps/RainCourt.asset
@@ -138,7 +138,7 @@ Engine.loadScene('/Game/Maps/MySave');
 
 JS load 延迟到当前受保护调用返回后执行，避免销毁正在执行的 heap。save 同步执行；sceneData 返回拷贝，修改后须 setSceneData。sceneObject 解析 Map 命名引用，cameraState 用于加载后初始化相机控制器。
 
-命令行：`Afterlight.exe --project <项目目录或.project> --map /Game/Maps/RainCourt`。默认 Project 是仓库 game，默认 Map 来自 startupMap。
+命令行：`Afterlight.exe --project <项目目录或.project> --map /Game/Maps/RainCourt`。默认 Project 是仓库 Projects/Afterlight，默认 Map 来自 startupMap。
 
 ## 验证和离线工具
 
