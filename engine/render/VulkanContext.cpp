@@ -27,8 +27,17 @@ void VulkanContext::initialize(HWND hwnd, bool validation) {
                            return !strcmp(l.layerName, "VK_LAYER_KHRONOS_validation");
                        });
     std::vector<const char*> extensions{VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
-    if (validationActive) {
+    uint32_t extensionCount = 0;
+    VK_CHECK(vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr));
+    std::vector<VkExtensionProperties> instanceExtensions(extensionCount);
+    VK_CHECK(vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, instanceExtensions.data()));
+    debugLabels = validationActive ||
+                  std::any_of(instanceExtensions.begin(), instanceExtensions.end(), [](const auto& e) {
+                      return !strcmp(e.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+                  });
+    if (debugLabels)
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    if (validationActive) {
         extensions.push_back(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
     }
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};

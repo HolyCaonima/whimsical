@@ -1,4 +1,5 @@
 #include "ScriptRuntime.h"
+#include "core/CpuProfile.h"
 #include "navigation/Navigation.h"
 #include "scene/ScenePersistence.h"
 #include "ui/AnimationInspector.h"
@@ -647,6 +648,7 @@ void ScriptRuntime::processSceneRequest() {
     loadScene(AssetPath(path));
 }
 void ScriptRuntime::tick(float dt, const Input& rawInput) {
+    CpuScope inputScope("Input / Picking / JS Arguments");
     if (std::this_thread::get_id() != owner_)
         throw std::runtime_error("JS accessed outside engine thread");
     Input input = rawInput;
@@ -660,6 +662,7 @@ void ScriptRuntime::tick(float dt, const Input& rawInput) {
     duk_get_global_string(context_, "fixedUpdate");
     if (duk_is_undefined(context_, -1)) {
         duk_pop(context_);
+        inputScope.finish();
         world_.updateAnimations(dt);
         processSceneRequest();
         return;
@@ -697,7 +700,11 @@ void ScriptRuntime::tick(float dt, const Input& rawInput) {
         duk_push_boolean(context_, b.second);
         duk_put_prop_string(context_, -2, b.first);
     }
-    checkedCall(2);
+    inputScope.finish();
+    {
+        CpuScope scope("JS fixedUpdate");
+        checkedCall(2);
+    }
     world_.updateAnimations(dt);
     processSceneRequest();
 }

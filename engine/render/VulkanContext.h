@@ -43,6 +43,7 @@ class VulkanContext {
     VkCommandPool commandPool = VK_NULL_HANDLE;
     std::atomic<uint32_t> validationErrors{0};
     bool validationActive = false;
+    bool debugLabels = false;
     void initialize(HWND, bool validation);
     ~VulkanContext();
     Buffer buffer(VkDeviceSize, VkBufferUsageFlags, bool host = false);

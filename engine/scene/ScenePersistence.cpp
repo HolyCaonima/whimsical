@@ -117,6 +117,7 @@ void ScenePersistence::instantiate(World& world, const SceneDocument& s, AssetMa
         world.setEnabled(id, o.enabled);
         world.publishAttributes(object);
     }
+    world.physics_.rebuildBroadphase();
     world.playerId = s.player.empty() ? 0 : world.findObject(s.player);
     world.selected = world.playerId;
     world.resetHistory = true;

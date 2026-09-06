@@ -12,7 +12,11 @@
 
 按 **~ 或 F10** 打开游戏内控制台：支持 CVar 查询/修改、类型与范围校验、多关键词模糊补全、上下键选择候选、命令历史、配置保存。可试 `r.Exposure 1.4`、`r.Hud 0`、`t.TimeScale 0`、`help`。控制台打开时接管游戏输入，关闭 HUD 后仍可使用。变量、启动覆盖及开发接口见 [CVar 与控制台](docs/console.md)。
 
-右上角和标题栏显示实时 **FPS**、**Frame ms**（包含线程与呈现等待的整帧间隔）、**GPU ms**（Vulkan timestamp），约每半秒更新。启动及重建窗口尺寸后的统计预热显示 `-- FPS`。默认使用 FIFO 垂直同步，因此通常不超过 60 FPS；面板显示当前呈现模式与 VSync 状态。渲染帧率不再被 60 Hz 仿真锁死——渲染线程在没有新快照时重新呈现最新快照，用 `--present immediate` 或 `--present mailbox` 即可跑出显示器刷新率以上的真实帧成本。累计帧数只保留在日志和截图报告中。
+输入 `profileGPU` 抓取下一帧的 GPU 阶段耗时，包含 RenderGraph、加速结构、NRD 子阶段和拷贝；结果输出到控制台及 `captures/gpu-profile.json` / `.txt`。启动时也可传 `--profile-gpu`。见 [GPU 分阶段计时](docs/gpu-profiling.md)。
+
+输入 `profileCPU` 抓取 Game / Render 线程的 CPU 阶段耗时，包含独立标注的等待阶段，以及 inclusive / self 读数；`profileCPU last` 查看最近报告，结果保存在 `captures/cpu-profile.json` / `.txt`。启动参数为 `--profile-cpu`。见 [CPU 分阶段计时](docs/cpu-profiling.md)。
+
+右上角和标题栏显示实时 **FPS**、**Frame ms**（包含线程与呈现等待的整帧间隔）、**CPU (Render) ms**（场景准备、CPU 蒙皮、HUD、命令录制与提交，不含常规帧同步/呈现等待）、**GPU ms**（Vulkan timestamp），约每半秒更新。启动及重建窗口尺寸后的统计预热显示 `-- FPS`。默认使用 FIFO 垂直同步，因此通常不超过 60 FPS；面板显示当前呈现模式与 VSync 状态。渲染帧率不再被 60 Hz 仿真锁死——渲染线程在没有新快照时重新呈现最新快照，用 `--present immediate` 或 `--present mailbox` 即可跑出显示器刷新率以上的真实帧成本。累计帧数只保留在日志和截图报告中。
 
 | 操作 | 行为 |
 | --- | --- |

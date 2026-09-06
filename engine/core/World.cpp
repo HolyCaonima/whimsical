@@ -1,4 +1,5 @@
 #include "World.h"
+#include "CpuProfile.h"
 #include "debug/PhysicsDebug.h"
 #include <stdexcept>
 #include <algorithm>
@@ -340,6 +341,7 @@ const animation::Output& World::animationOutput(uint32_t id) const {
     return animations_.at(id).instance->output();
 }
 void World::updateAnimations(float dt) {
+    CpuScope scope("Animation Evaluation / Root Motion / Joint Colliders");
     for (auto& entry : animations_) {
         auto& o = mutableObject(entry.first);
         auto& a = entry.second;
@@ -392,6 +394,7 @@ uint32_t World::pick(float x, float y, const Input& input) const {
     return o.interactable || o.id == playerId ? o.id : 0;
 }
 Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug, bool physicsDebug) {
+    CpuScope scope("World Snapshot");
     Frame f;
     for (const auto& object : objects_)
         if (object.alive && object.staticMesh)

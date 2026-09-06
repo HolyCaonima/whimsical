@@ -1,4 +1,6 @@
 #include "NrdDenoiser.h"
+#include "core/CpuProfile.h"
+#include "GpuProfiler.h"
 #include <cstring>
 #include <algorithm>
 #include <iostream>
@@ -190,7 +192,8 @@ void NrdDenoiser::resize(uint32_t w, uint32_t h) {
 }
 void NrdDenoiser::dispatch(VkCommandBuffer command,
                            const std::array<Image*, size_t(nrd::ResourceType::MAX_NUM)>& resources,
-                           const Camera& camera, uint32_t frame, bool reset, float ms) {
+                           const Camera& camera, uint32_t frame, bool reset, float ms,
+                           GpuProfiler& profiler) {
     VK_CHECK(vkResetDescriptorPool(vk_.device, pool_, 0));
     // NRD reconstructs texture UV with D3D convention; remove Vulkan's projection-Y flip.
     mat4 projection = camera.projection(float(width_) / height_);
@@ -235,6 +238,8 @@ void NrdDenoiser::dispatch(VkCommandBuffer command,
     auto offsets = nrd::GetLibraryDesc()->spirvBindingOffsets;
     for (uint32_t d = 0; d < count; d++) {
         const auto& job = dispatches[d];
+        CpuScope cpuScope(job.name);
+        GpuScope scope(profiler, command, job.name);
         auto& pipeline = pipelines_.at(job.pipelineIndex);
         VkDescriptorSetLayout layouts[]{pipeline.resources, constantsLayout_};
         VkDescriptorSet sets[2];

@@ -72,18 +72,18 @@ function(afterlight_copy_onnx TARGET)
     VERBATIM)
 endfunction()
 add_library(afterlight_core
-  engine/core/ConsoleRegistry.cpp engine/core/EngineSettings.cpp engine/ui/Console.cpp
+  engine/core/ConsoleRegistry.cpp engine/core/EngineSettings.cpp engine/core/GpuProfile.cpp engine/core/CpuProfile.cpp engine/ui/Console.cpp
   engine/assets/StaticMesh.cpp
   engine/assets/EngineAssets.cpp engine/scene/SceneAsset.cpp engine/scene/ScenePersistence.cpp
   engine/ui/AnimationInspector.cpp
   engine/core/World.cpp engine/core/RenderScene.cpp engine/navigation/Navigation.cpp engine/scripting/ScriptRuntime.cpp
-  engine/physics/PhysicsScene.cpp engine/animation/AnimationCollision.cpp
+  engine/physics/PhysicsScene.cpp engine/physics/DynamicAabbTree.cpp engine/animation/AnimationCollision.cpp
 )
 target_include_directories(afterlight_core PUBLIC engine "${DEPS}/glm")
 target_compile_definitions(afterlight_core PUBLIC GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_CTOR_INIT
   NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS AFTERLIGHT_ROOT="${CMAKE_SOURCE_DIR}")
 target_link_libraries(afterlight_core PUBLIC duktape afterlight_animation)
-add_executable(Afterlight engine/main.cpp engine/platform/Window.cpp engine/render/Renderer.cpp engine/render/VulkanContext.cpp engine/render/NrdDenoiser.cpp)
+add_executable(Afterlight engine/main.cpp engine/platform/Window.cpp engine/render/Renderer.cpp engine/render/VulkanContext.cpp engine/render/NrdDenoiser.cpp engine/render/GpuProfiler.cpp)
 target_link_libraries(Afterlight PRIVATE afterlight_core volk NRD user32 gdi32 winmm)
 afterlight_copy_onnx(Afterlight)
 target_compile_options(Afterlight PRIVATE /W4 /permissive- /utf-8)
@@ -121,6 +121,21 @@ target_link_libraries(physics_tests PRIVATE afterlight_core)
 afterlight_copy_onnx(physics_tests)
 target_compile_options(physics_tests PRIVATE /W4 /permissive- /utf-8)
 add_test(NAME physics_scene COMMAND physics_tests)
+add_executable(physics_bvh_tests tests/PhysicsBvhTests.cpp)
+target_link_libraries(physics_bvh_tests PRIVATE afterlight_core)
+afterlight_copy_onnx(physics_bvh_tests)
+target_compile_options(physics_bvh_tests PRIVATE /W4 /permissive- /utf-8)
+add_test(NAME physics_bvh COMMAND physics_bvh_tests)
+add_executable(gpu_profile_tests tests/GpuProfileTests.cpp)
+target_link_libraries(gpu_profile_tests PRIVATE afterlight_core)
+afterlight_copy_onnx(gpu_profile_tests)
+target_compile_options(gpu_profile_tests PRIVATE /W4 /permissive- /utf-8)
+add_test(NAME gpu_profile COMMAND gpu_profile_tests)
+add_executable(cpu_profile_tests tests/CpuProfileTests.cpp)
+target_link_libraries(cpu_profile_tests PRIVATE afterlight_core)
+afterlight_copy_onnx(cpu_profile_tests)
+target_compile_options(cpu_profile_tests PRIVATE /W4 /permissive- /utf-8)
+add_test(NAME cpu_profile COMMAND cpu_profile_tests)
 add_executable(animation_tests tests/AnimationTests.cpp)
 target_link_libraries(animation_tests PRIVATE afterlight_core)
 target_compile_options(animation_tests PRIVATE /W4 /permissive- /utf-8)

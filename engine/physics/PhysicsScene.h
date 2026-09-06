@@ -1,5 +1,6 @@
 #pragma once
 #include "core/Math.h"
+#include "DynamicAabbTree.h"
 #include <cstdint>
 #include <optional>
 #include <thread>
@@ -61,9 +62,6 @@ struct MoveResult {
     bool blocked = false;
     std::vector<PhysicsHit> contacts;
 };
-struct PhysicsBounds {
-    vec3 min{0}, max{0};
-};
 
 // Main-thread spatial authority. No render objects, meshes, materials, Vulkan or World dependencies.
 // This backend implements scene queries and kinematic motion, not force-driven rigid-body dynamics.
@@ -73,11 +71,13 @@ class PhysicsScene {
         PhysicsBounds bounds;
         uint32_t generation = 1;
         bool alive = false;
+        int leaf = -1;
     };
     std::vector<Slot> slots_;
     std::vector<uint32_t> free_;
     std::thread::id owner_ = std::this_thread::get_id();
     uint64_t revision_ = 0;
+    DynamicAabbTree broadphase_;
     void checkThread() const;
     Slot& require(BodyHandle);
     const Slot& require(BodyHandle) const;
@@ -99,6 +99,8 @@ class PhysicsScene {
     uint64_t revision() const;
     size_t size() const;
     PhysicsBounds bounds(BodyHandle) const;
+    void rebuildBroadphase();
+    BroadphaseStatistics broadphaseStatistics() const;
     std::vector<BodyHandle> bodies(QueryFilter = {}) const;
     std::optional<PhysicsHit> raycast(vec3 origin, vec3 direction, float maxDistance, QueryFilter = {}) const;
     std::vector<PhysicsHit> overlapCapsule(const CapsuleQuery&, QueryFilter = {}) const;

@@ -11,6 +11,7 @@ namespace afterlight {
 struct SkinnedMesh;
 struct StaticMesh;
 struct TextureAsset;
+struct CpuProfile;
 struct Material {
     vec4 albedoRoughness{.5f, .5f, .5f, .5f};
     vec4 emissionMetallic{0};
@@ -118,6 +119,8 @@ struct AnimationInspection {
     animation::AttributeValues values;
 };
 struct Frame {
+    uint64_t gpuProfileRequest = 0;
+    std::shared_ptr<const CpuProfile> cpuProfile;
     ConsoleView console;
     bool hudEnabled = true, forceFullUpload = false;
     float exposure = 1.15f;

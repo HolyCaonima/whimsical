@@ -251,11 +251,15 @@ BodyHandle PhysicsScene::create(const PhysicsBody& b) {
     s.body = b;
     s.bounds = bodyBounds(b);
     s.alive = true;
+    s.leaf = b.enabled ? broadphase_.insert(index, s.bounds) : -1;
     ++revision_;
     return {index, s.generation};
 }
 void PhysicsScene::destroy(BodyHandle h) {
     auto& s = require(h);
+    if (s.leaf != -1)
+        broadphase_.remove(s.leaf);
+    s.leaf = -1;
     s.alive = false;
     ++s.generation;
     if (!s.generation)
@@ -273,6 +277,8 @@ void PhysicsScene::setPose(BodyHandle h, const PhysicsPose& p) {
         return;
     s.body.pose = p;
     s.bounds = bodyBounds(s.body);
+    if (s.leaf != -1)
+        broadphase_.update(s.leaf, s.bounds);
     ++revision_;
 }
 void PhysicsScene::setShape(BodyHandle h, const ColliderShape& shape) {
@@ -280,6 +286,8 @@ void PhysicsScene::setShape(BodyHandle h, const ColliderShape& shape) {
     auto& s = require(h);
     s.body.shape = shape;
     s.bounds = bodyBounds(s.body);
+    if (s.leaf != -1)
+        broadphase_.update(s.leaf, s.bounds);
     ++revision_;
 }
 void PhysicsScene::setProperties(BodyHandle h, uint32_t layer, bool blocking, bool walkable, bool pickable) {
@@ -298,9 +306,16 @@ void PhysicsScene::setMotion(BodyHandle h, BodyMotion motion) {
     }
 }
 void PhysicsScene::setEnabled(BodyHandle h, bool enabled) {
-    auto& b = require(h).body;
+    auto& s = require(h);
+    auto& b = s.body;
     if (b.enabled != enabled) {
         b.enabled = enabled;
+        if (enabled)
+            s.leaf = broadphase_.insert(h.slot, s.bounds);
+        else {
+            broadphase_.remove(s.leaf);
+            s.leaf = -1;
+        }
         ++revision_;
     }
 }
@@ -314,6 +329,14 @@ size_t PhysicsScene::size() const {
 }
 PhysicsBounds PhysicsScene::bounds(BodyHandle h) const {
     return require(h).bounds;
+}
+void PhysicsScene::rebuildBroadphase() {
+    checkThread();
+    broadphase_.rebuild();
+}
+BroadphaseStatistics PhysicsScene::broadphaseStatistics() const {
+    checkThread();
+    return broadphase_.statistics();
 }
 bool PhysicsScene::accepts(const PhysicsBody& b, QueryFilter f) {
     return b.enabled && (b.layer & f.mask) && (!f.ignoreOwner || b.owner != f.ignoreOwner) &&
@@ -334,7 +357,7 @@ std::optional<PhysicsHit> PhysicsScene::raycast(vec3 o, vec3 d, float limit, Que
         throw std::invalid_argument("Invalid physics ray");
     d = glm::normalize(d);
     std::optional<PhysicsHit> result;
-    for (uint32_t i = 0; i < slots_.size(); ++i) {
+    for (uint32_t i : broadphase_.raycast(o, d, limit)) {
         const auto& s = slots_[i];
         if (!s.alive || !accepts(s.body, f))
             continue;
@@ -362,7 +385,7 @@ std::vector<PhysicsHit> PhysicsScene::overlapCapsule(const CapsuleQuery& c, Quer
     validate(c);
     std::vector<PhysicsHit> result;
     auto broad = capsuleBounds(c);
-    for (uint32_t i = 0; i < slots_.size(); ++i) {
+    for (uint32_t i : broadphase_.overlap(broad)) {
         const auto& s = slots_[i];
         if (!s.alive || !accepts(s.body, f) || !intersects(broad, s.bounds))
             continue;
@@ -384,7 +407,7 @@ std::optional<PhysicsHit> PhysicsScene::sweepCapsule(const CapsuleQuery& c, vec3
     auto broad = capsuleBounds(c, delta);
     std::optional<PhysicsHit> result;
     float closest = 1;
-    for (uint32_t i = 0; i < slots_.size(); ++i) {
+    for (uint32_t i : broadphase_.overlap(broad)) {
         const auto& s = slots_[i];
         if (!s.alive || !accepts(s.body, f) || !intersects(broad, s.bounds))
             continue;

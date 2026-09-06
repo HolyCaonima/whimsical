@@ -181,6 +181,7 @@ class DebugHud {
         }
         s.real(statistics.fps);
         s.real(statistics.frameMs);
+        s.real(statistics.cpuMs);
         s.real(statistics.gpuMs);
         s.text(presentLabel(statistics));
         return s.value;
@@ -312,24 +313,27 @@ class DebugHud {
                                           "VIEW DEPTH",   "DIRECT RT (RAW)", "INDIRECT RT (RAW)",
                                           "RAW RADIANCE", "MOTION"};
             int statsY = w > 800 ? 235 : 24;
-            rectangle(w - 238, statsY, 210, 99, ink);
+            rectangle(w - 238, statsY, 210, 117, ink);
             text(w - 224, statsY + 7, 10, modes[std::clamp(f.debugView, 0, 7)], muted);
-            std::ostringstream fps, timing;
+            std::ostringstream fps, timing, cpu;
             if (statistics.fps >= 0) {
                 fps << std::fixed << std::setprecision(1) << statistics.fps << " FPS";
                 timing << std::fixed << std::setprecision(2) << "Frame " << statistics.frameMs << " ms   GPU "
                        << statistics.gpuMs << " ms";
+                cpu << std::fixed << std::setprecision(2) << "CPU (Render) " << statistics.cpuMs << " ms";
             } else {
                 fps << "-- FPS";
                 timing << "Measuring frame time...";
+                cpu << "CPU (Render) -- ms";
             }
             text(w - 224, statsY + 24, 24, fps.str(), mint, true);
             text(w - 224, statsY + 56, 10, timing.str(), muted);
-            text(w - 224, statsY + 77, 10, presentLabel(statistics), gold);
+            text(w - 224, statsY + 74, 10, cpu.str(), muted);
+            text(w - 224, statsY + 95, 10, presentLabel(statistics), gold);
             if (f.physicsDebug) {
-                rectangle(w - 238, statsY + 104, 210, 42, ink);
-                text(w - 224, statsY + 109, 10, "F2  PHYSICS SCENE", mint);
-                text(w - 224, statsY + 128, 9, "BLUE Ground  GOLD Solid  PINK Trigger", muted);
+                rectangle(w - 238, statsY + 122, 210, 42, ink);
+                text(w - 224, statsY + 127, 10, "F2  PHYSICS SCENE", mint);
+                text(w - 224, statsY + 146, 9, "BLUE Ground  GOLD Solid  PINK Trigger", muted);
             }
             const auto& inspection = f.animationInspection;
             auto inspector = ui::animationInspectorLayout(inspection, w_, h_);

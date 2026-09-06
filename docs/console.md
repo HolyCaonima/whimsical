@@ -11,7 +11,11 @@ help r.Present              # 详细说明
 find render                 # 搜索名称和帮助
 find r. view                # 多关键词匹配，例如 r.DebugView
 reset r.Exposure            # 恢复注册时的默认值
-stat                        # 实时 FPS、CPU 帧耗时、GPU 耗时和对象数量
+stat                        # 实时 FPS、整帧间隔、CPU (Render)、GPU 耗时和对象数量
+profileCPU                  # 抓取下一次 Game 更新及对应渲染帧的 CPU 分阶段耗时
+profileCPU last             # 查看最近一次 CPU 报告
+profileGPU                  # 抓取下一帧的 GPU Scope 耗时，结果异步输出
+profileGPU last             # 查看最近一次 GPU 报告
 map.reload                  # 重载当前 Map，保留 CVar
 clear                       # 清空输出
 quit                        # 关闭引擎
@@ -27,6 +31,12 @@ quit                        # 关闭引擎
 - PageUp/PageDown 或滚轮：查看输出历史。保留 256 行日志、64 条命令历史，输入上限 1024 个 Unicode 字符。
 
 控制台显示命令结果、配置加载诊断以及 `Engine.log` 的脚本消息；不是操作系统 shell，也不转发任意 shell 命令。原有 Vulkan/驱动启动诊断继续写标准输出。
+
+`profileGPU` 输出可嵌套的 GPU 阶段耗时和整帧占比，同时保存 `captures/gpu-profile.txt` 与 `captures/gpu-profile.json`。也可通过 `--profile-gpu` 或 `--exec "profileGPU"` 从启动命令行抓取。范围与扩展方式见 [GPU 分阶段计时](gpu-profiling.md)。
+
+`profileCPU` 分别输出 Game / Render 线程的 inclusive 与 self 耗时，包含显式标注的等待阶段，保存 `captures/cpu-profile.txt` 与 `captures/cpu-profile.json`。也支持 `--profile-cpu` 和 `--exec "profileCPU"`。详细范围见 [CPU 分阶段计时](cpu-profiling.md)。
+
+HUD、标题栏与 `stat` 的 `CPU (Render)` 是渲染线程从场景准备到队列提交的实际墙钟耗时，每半秒取平均；包含 CPU 蒙皮、上传、HUD、命令录制及提交，不包含帧 fence、交换链 acquire、Present、主线程逻辑或帧率限制等待。场景资源更换时，该区间内同步资源上传的等待仍会被计入。它不是 `Frame - GPU`，也不是 CPU 占用率。`Frame` 仍表示包含等待的完整呈现间隔。
 
 名称候选和 `find` 支持按顺序匹配多个片段，忽略大小写及多余空白。例如输入 `r.  anim`，可以匹配已注册的 `r.xxx.xx.animaxxx`；输入 `r. view` 后按 Tab 可补全为 `r.DebugView`，再输入 ` 2` 并回车设置值。每个片段内部连续，片段之间可以跨过任意字符及点号层级；也可以从名称中间开始搜索。排序优先完整名称、连续前缀、连续子串，再到跨间隔匹配；同类优先间隔更小、位置更靠前、名称更短的结果，最后按名称排序。`find r. anim` 和 `find "r. anim"` 等价，名称命中优先于帮助文本命中。
 

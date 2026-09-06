@@ -20,6 +20,7 @@ flowchart LR
 | 位置 | 职责 |
 | --- | --- |
 | `engine/physics/PhysicsScene.*` | 碰撞体、句柄、AABB、查询、运动学扫掠／滑移 |
+| `engine/physics/DynamicAabbTree.*` | CPU BVH 构建、叶节点增量维护、空间候选筛选 |
 | `engine/core/World.*` | 对象生命周期；统一提交物理和显示更新 |
 | `engine/animation/AnimationCollision.*` | 多个关节附属碰撞体，跟随动画的刚体姿态 |
 | `engine/navigation/Navigation.*` | 从物理地面和胶囊净空生成可通行数据，A* 和平滑路径 |
@@ -36,6 +37,14 @@ flowchart LR
 Box 和 Capsule 支持任意刚体旋转；角色查询体为竖直胶囊。提供最近射线命中、胶囊重叠、连续扫掠和滑移。命中包含 owner、句柄、世界位置、法线、距离和扫掠比例。
 
 窄相使用线段到 OBB／线段到线段距离。扫掠采用保守推进，最多 64 次迭代，未收敛时保守阻挡；滑移最多处理 5 次接触，并保留 2 mm 间隙。地面相切不阻碍水平位移。没有初始穿透恢复，出生和脚本设置的姿态应保持有效。
+
+粗筛使用主线程拥有的动态 AABB Tree（二叉 BVH）。Raycast 遍历射线相交的树节点，Overlap 遍历查询胶囊包围盒相交的节点，Sweep 使用覆盖整段位移的胶囊包围盒。取得候选后仍检查物理属性和精确 AABB，再进入原有窄相。候选按 body slot 排序，保持射线等距命中、扫掠接触和重叠结果的既有顺序，不随树的旋转或重建改变。
+
+地图实例化结束调用一次 `rebuildBroadphase()`，按包围盒中心最长轴递归中位数划分，构建平衡树。运行中创建物理体直接插入叶节点；移动、旋转或改变形状只更新相关叶节点，删除和禁用移除叶节点，重新启用以最新包围盒插入。插入按包围盒表面积代价选择位置，沿祖先路径更新包围盒并做高度平衡旋转；不会逐帧全量重建。
+
+树叶包围盒每边扩张 10 cm，物体小幅移动且仍被包含时不重新插入，但 PhysicsScene 的精确包围盒立即更新。物体超出余量或大形状明显缩小时，移除并重新插入原叶节点。批量重建保留叶索引和 BodyHandle，且不改变物理场景 revision；它只改变索引布局。`broadphaseStatistics()` 提供当前叶数、树高和累计重插入／重建次数。
+
+所有启用的物理体都进入树，包括不阻挡的装饰与 Trigger，以保留无过滤场景查询的语义；碰撞属性在候选阶段读取，改属性无需重建。`bodies()` 全量枚举、小地图障碍收集及调试线框生成仍是遍历；本次 BVH 加速的是空间查询。没有引入物理线程、跨线程变更队列或渲染器依赖。
 
 默认查询层为 World=1、Character=2、Trigger=4，支持 mask 和 ignoreOwner。`blocking`、`walkable`、`pickable` 相互独立，触发体可被查询而不阻碍移动。
 
@@ -86,6 +95,8 @@ Engine.animationJoints(characterId, [{position: {x: 0, y: .2, z: .5}}]);
 Engine.animationCollider(characterId, 0, {shape: 'capsule', radius: .15, height: .6});
 ```
 
-这是已接入 gameplay 的查询与运动学物理后端。粗筛当前为缓存 AABB 的线性遍历；尚无力／质量／重力积分、刚体堆叠、约束求解、ragdoll、三角网格碰撞或 BVH。后续可替换 PhysicsScene 内部后端，保留导航、动画与 gameplay 的查询边界。
+这是已接入 gameplay 的查询与运动学物理后端，具备动态 BVH 粗筛；尚无力／质量／重力积分、刚体堆叠、约束求解、ragdoll 或三角网格碰撞。后续可替换 PhysicsScene 内部后端，保留导航、动画与 gameplay 的查询边界。
+
+`physics_bvh` 测试覆盖 4096 个顺序插入物体的树高和查询裁剪、批量构建、微小移动、远距离移动、缩放、禁用后修改再启用、删除／槽位复用及重建后的叶索引稳定性；随机更新后将空间候选与暴力包围盒查询对照，并将完整物理查询与逐物体独立检测的线性参考结果对照。原有 `physics_scene` 测试继续验证薄墙高速扫掠、滑移、导航、动画碰撞体和生命周期。
 
 F2 线框：蓝色为地面，金色为障碍，绿色为角色，粉色为触发体。也可运行 `Run.cmd --physics-debug`。线框从物理数据生成，用于核对显示与碰撞是否一致。

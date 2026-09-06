@@ -1,5 +1,8 @@
 #pragma once
 #include "core/Types.h"
+#include "core/GpuProfile.h"
+#include "core/CpuProfile.h"
+#include <optional>
 #include <windows.h>
 #include <memory>
 namespace afterlight {
@@ -28,17 +31,20 @@ struct RenderOptions {
 // What the last frame actually had to touch in the persistent scene. Exposed because
 // "a scene that did not change costs nothing" is a property worth being able to assert.
 struct SceneUpdateStatistics {
-    uint32_t slots = 0;      // Slot capacity, i.e. how much a full rebuild would cost.
-    uint32_t transforms = 0; // Slots whose transform half was rewritten.
-    uint32_t attributes = 0; // Slots whose mesh/material/visibility half was rewritten.
-    uint32_t structural = 0; // Slots created, destroyed or reused.
-    uint32_t settled = 0;    // Slots whose motion was folded forward after they stopped.
+    uint32_t slots = 0;          // Slot capacity, i.e. how much a full rebuild would cost.
+    uint32_t transforms = 0;     // Slots whose transform half was rewritten.
+    uint32_t attributes = 0;     // Slots whose mesh/material/visibility half was rewritten.
+    uint32_t structural = 0;     // Slots created, destroyed or reused.
+    uint32_t settled = 0;        // Slots whose motion was folded forward after they stopped.
     bool resynchronised = false; // A skipped snapshot forced a full rewrite.
     bool tlasRebuilt = false;    // Topology changed, so no incremental update was possible.
 };
 struct RenderStatistics {
     double fps = -1;
     double frameMs = 0;
+    // Render-thread wall time from scene preparation through queue submission.
+    // Excludes the frame fence, swapchain acquire and present waits; not game-thread time.
+    double cpuMs = 0;
     double gpuMs = 0;
     // Static string literal owned by the renderer; safe to copy by pointer.
     const char* present = "FIFO";
@@ -57,6 +63,8 @@ class Renderer {
     uint64_t frames() const;
     RenderStatistics statistics() const;
     SceneUpdateStatistics sceneStatistics() const;
+    std::optional<GpuProfile> takeGpuProfile(); // Render-thread result; caller publishes the value.
+    std::optional<CpuProfile> takeCpuProfile();
     uint32_t errors() const;
 };
 } // namespace afterlight

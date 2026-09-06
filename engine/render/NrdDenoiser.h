@@ -4,6 +4,7 @@
 #include <NRD.h>
 #include <array>
 namespace afterlight {
+class GpuProfiler;
 class NrdDenoiser {
     VulkanContext& vk_;
     nrd::Instance* instance_ = nullptr;
@@ -28,6 +29,6 @@ class NrdDenoiser {
     ~NrdDenoiser();
     void resize(uint32_t, uint32_t);
     void dispatch(VkCommandBuffer, const std::array<Image*, size_t(nrd::ResourceType::MAX_NUM)>&,
-                  const Camera&, uint32_t frame, bool reset, float frameMs);
+                  const Camera&, uint32_t frame, bool reset, float frameMs, GpuProfiler&);
 };
 } // namespace afterlight

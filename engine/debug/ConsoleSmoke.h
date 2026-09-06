@@ -28,7 +28,8 @@ class ConsoleSmoke {
             ++stage_;
         } else if (stage_ == 1 && frame >= 22) {
             check(console.isOpen(), "Console smoke: F10 did not open console");
-            text(hwnd, L"r.Hud 0\rr.  exp\t 0.75\rr.Exposure 999\rr. view\t 2\rfind r. view\r");
+            text(hwnd, L"r.Hud 0\rr.  exp\t 0.75\rr.Exposure 999\rr. view\t 2\rfind r. "
+                       L"view\rprofileGPU\rprofileGPU\rprofileCPU\rprofileCPU\r");
             ++stage_;
         } else if (stage_ == 2 && frame >= 42) {
             check(!vars.get<bool>("r.Hud") && vars.get<double>("r.Exposure") == .75 &&
@@ -53,7 +54,7 @@ class ConsoleSmoke {
             check(vars.get<double>("t.TimeScale") == 0 && vars.get<int>("r.DebugView") == 0 &&
                       vars.get<double>("r.Exposure") == .75,
                   "Console smoke: final commands failed");
-            text(hwnd, L"stat\rhelp r.Exposure\rr.");
+            text(hwnd, L"stat\rhelp r.Exposure\rprofileGPU\rprofileCPU\rr.");
             ++stage_;
         } else if (stage_ == 7 && frame >= 135) {
             key(hwnd, VK_DOWN);

@@ -17,6 +17,7 @@
 #include <iomanip>
 #include <algorithm>
 #include <cmath>
+#include <mutex>
 using namespace afterlight;
 int main(int argc, char** argv) {
     std::cout.setf(std::ios::unitbuf);
@@ -103,6 +104,10 @@ int main(int argc, char** argv) {
                 consoleOpen = true;
             else if (arg == "--console-smoke")
                 consoleSmoke = true;
+            else if (arg == "--profile-gpu")
+                startupCommands.push_back("profileGPU");
+            else if (arg == "--profile-cpu")
+                startupCommands.push_back("profileCPU");
             else if (arg == "--exec" || arg == "--cvar") {
                 if (i + 1 >= argc)
                     throw std::runtime_error("Missing value for " + arg);
@@ -113,7 +118,7 @@ int main(int argc, char** argv) {
                              "fifo|mailbox|immediate] [--demo] [--smoke] [--stress N] [--full-upload] "
                              "[--audit NAME] [--audit-motion] [--physics-debug] [--project DIR] [--map "
                              "/Game/Maps/Name] [--console] [--exec \"command\"] [--cvar \"name=value\"] "
-                             "[--console-smoke]\n";
+                             "[--console-smoke] [--profile-gpu] [--profile-cpu]\n";
                 return 0;
             } else
                 throw std::runtime_error("Unknown option " + arg);
@@ -215,8 +220,112 @@ int main(int argc, char** argv) {
         FrameMailbox mailbox;
         std::atomic<bool> finished{false};
         std::atomic<uint64_t> rendered{0};
-        std::atomic<double> renderFps{-1}, renderFrameMs{0}, renderGpuMs{0};
+        std::atomic<double> renderFps{-1}, renderFrameMs{0}, renderCpuMs{0}, renderGpuMs{0};
         std::atomic<bool> renderVsync{true};
+        uint64_t gpuProfileRequest = 0, gpuProfileCompleted = 0;
+        std::mutex gpuProfileMutex;
+        std::optional<GpuProfile> gpuProfileResult, lastGpuProfile;
+        uint64_t cpuProfileRequest = 0, cpuProfilePrepared = 0, cpuProfileCompleted = 0;
+        std::mutex cpuProfileMutex;
+        std::optional<CpuProfile> cpuProfileResult, lastCpuProfile;
+        std::unique_ptr<CpuProfiler> gameCpuProfiler;
+        std::shared_ptr<const CpuProfile> cpuSnapshot;
+        variables.command(
+            "profileCPU",
+            "profileCPU [last]: capture the next Game/Render CPU frame, or show the last report",
+            [&](const auto& args) {
+                if (args.size() == 1 && args[0] == "last")
+                    return lastCpuProfile ? lastCpuProfile->text()
+                                          : std::string("No CPU profile captured yet.");
+                if (!args.empty())
+                    throw std::runtime_error("Usage: profileCPU [last]");
+                if (cpuProfileRequest != cpuProfileCompleted)
+                    return std::string("CPU profile already pending; waiting for the next rendered frame.");
+                ++cpuProfileRequest;
+                return "CPU profile request " + std::to_string(cpuProfileRequest) +
+                       " queued for the next Game/Render frame.";
+            });
+        auto prepareCpuProfile = [&] {
+            if (cpuProfileRequest > cpuProfilePrepared)
+                gameCpuProfiler = std::make_unique<CpuProfiler>(true, "Game", "Game Update");
+        };
+        auto collectCpuProfile = [&] {
+            std::optional<CpuProfile> result;
+            {
+                std::lock_guard<std::mutex> lock(cpuProfileMutex);
+                result = std::move(cpuProfileResult);
+                cpuProfileResult.reset();
+            }
+            if (!result)
+                return false;
+            cpuProfileCompleted = result->request;
+            cpuSnapshot.reset();
+            lastCpuProfile = std::move(result);
+            const auto report = lastCpuProfile->text();
+            console.log(report);
+            std::cout << report;
+            try {
+                const auto directory = std::filesystem::path(AFTERLIGHT_ROOT) / "captures";
+                std::filesystem::create_directories(directory);
+                std::ofstream json(directory / "cpu-profile.json"), text(directory / "cpu-profile.txt");
+                json << lastCpuProfile->json();
+                text << report;
+                if (!json || !text)
+                    throw std::runtime_error("Could not save CPU profile files");
+                const auto saved = "CPU profile saved: " + (directory / "cpu-profile.json").generic_string();
+                console.log(saved);
+                std::cout << saved << '\n';
+            } catch (const std::exception& error) {
+                console.log(error.what(), true);
+                std::cerr << "[ProfileCPU] " << error.what() << '\n';
+            }
+            return true;
+        };
+        variables.command(
+            "profileGPU", "profileGPU [last]: capture the next GPU frame, or show the last report",
+            [&](const auto& args) {
+                if (args.size() == 1 && args[0] == "last")
+                    return lastGpuProfile ? lastGpuProfile->text()
+                                          : std::string("No GPU profile captured yet.");
+                if (!args.empty())
+                    throw std::runtime_error("Usage: profileGPU [last]");
+                if (gpuProfileRequest != gpuProfileCompleted)
+                    return std::string("GPU profile already pending; waiting for the next rendered frame.");
+                ++gpuProfileRequest;
+                return "GPU profile request " + std::to_string(gpuProfileRequest) +
+                       " queued for the next rendered frame.";
+            });
+        auto collectGpuProfile = [&] {
+            std::optional<GpuProfile> result;
+            {
+                std::lock_guard<std::mutex> lock(gpuProfileMutex);
+                result = std::move(gpuProfileResult);
+                gpuProfileResult.reset();
+            }
+            if (!result)
+                return false;
+            gpuProfileCompleted = result->request;
+            lastGpuProfile = std::move(result);
+            const auto report = lastGpuProfile->text();
+            console.log(report, !lastGpuProfile->error.empty());
+            std::cout << report;
+            try {
+                const auto directory = std::filesystem::path(AFTERLIGHT_ROOT) / "captures";
+                std::filesystem::create_directories(directory);
+                std::ofstream json(directory / "gpu-profile.json"), text(directory / "gpu-profile.txt");
+                json << lastGpuProfile->json();
+                text << report;
+                if (!json || !text)
+                    throw std::runtime_error("Could not save GPU profile files");
+                const auto saved = "GPU profile saved: " + (directory / "gpu-profile.json").generic_string();
+                console.log(saved);
+                std::cout << saved << '\n';
+            } catch (const std::exception& error) {
+                console.log(error.what(), true);
+                std::cerr << "[ProfileGPU] " << error.what() << '\n';
+            }
+            return true;
+        };
         bool quitRequested = false;
         variables.command("quit", "Close the running engine", [&](const auto& args) {
             if (!args.empty())
@@ -232,7 +341,7 @@ int main(int argc, char** argv) {
                               stressMoving.clear();
                               return "Map reloaded.";
                           });
-        variables.command("stat", "Show current frame/GPU timing and scene object count",
+        variables.command("stat", "Show current frame/CPU (Render)/GPU timing and scene object count",
                           [&](const auto& args) {
                               if (!args.empty())
                                   throw std::runtime_error("Usage: stat");
@@ -241,7 +350,8 @@ int main(int argc, char** argv) {
                                   out << "Frame timing warming up";
                               else
                                   out << "FPS " << renderFps.load() << " | Frame " << renderFrameMs.load()
-                                      << " ms | GPU " << renderGpuMs.load() << " ms";
+                                      << " ms | CPU (Render) " << renderCpuMs.load() << " ms | GPU "
+                                      << renderGpuMs.load() << " ms";
                               out << " | Scene objects "
                                   << std::count_if(world.objects().begin(), world.objects().end(),
                                                    [](const auto& object) { return object.alive; });
@@ -278,10 +388,19 @@ int main(int argc, char** argv) {
                     if (mailbox.acquire(frame, seen) == FrameStatus::Closed)
                         break;
                     bool more = renderer.render(frame);
+                    if (auto result = renderer.takeCpuProfile()) {
+                        std::lock_guard<std::mutex> lock(cpuProfileMutex);
+                        cpuProfileResult = std::move(result);
+                    }
+                    if (auto result = renderer.takeGpuProfile()) {
+                        std::lock_guard<std::mutex> lock(gpuProfileMutex);
+                        gpuProfileResult = std::move(result);
+                    }
                     rendered.store(renderer.frames());
                     const auto stats = renderer.statistics();
                     renderFps.store(stats.fps);
                     renderFrameMs.store(stats.frameMs);
+                    renderCpuMs.store(stats.cpuMs);
                     renderGpuMs.store(stats.gpuMs);
                     renderVsync.store(stats.vsync);
                     if (!more)
@@ -306,20 +425,40 @@ int main(int argc, char** argv) {
         ConsoleSmoke consoleCheck;
         auto restoreAt = Clock::time_point::max();
         auto publish = [&] {
-            auto frame =
-                world.snapshot(window.input(), tick, time, settings.debugView(), settings.physicsDebug());
-            settings.decorate(frame);
-            frame.console = console.view();
+            Frame frame;
+            {
+                CpuScope scope("Build Snapshot / Console View");
+                frame =
+                    world.snapshot(window.input(), tick, time, settings.debugView(), settings.physicsDebug());
+                settings.decorate(frame);
+                frame.gpuProfileRequest = gpuProfileRequest;
+                frame.console = console.view();
+            }
+            if (gameCpuProfiler) {
+                CpuProfile report;
+                report.request = cpuProfileRequest;
+                report.tick = tick;
+                report.threads.push_back(gameCpuProfiler->finish());
+                gameCpuProfiler.reset();
+                cpuSnapshot = std::make_shared<const CpuProfile>(std::move(report));
+                cpuProfilePrepared = cpuProfileRequest;
+            }
+            frame.cpuProfile = cpuSnapshot;
             mailbox.publish(std::move(frame));
         };
+        prepareCpuProfile();
         publish();
         try {
             while (window.pump() && !finished.load() && !quitRequested) {
                 auto now = Clock::now();
                 accumulator += std::min(std::chrono::duration<double>(now - previous).count(), .1);
                 previous = now;
-                bool changed = false;
+                bool changed = collectGpuProfile();
+                changed = collectCpuProfile() || changed;
+                if (accumulator >= step)
+                    prepareCpuProfile();
                 while (accumulator >= step) {
+                    CpuScope tickScope("Fixed Tick");
                     Input input = window.input();
                     if (consoleSmoke)
                         consoleCheck.update(rendered.load(), window, console, variables);
@@ -382,7 +521,10 @@ int main(int argc, char** argv) {
                         }
                     }
                     const bool wasOpen = console.isOpen();
-                    console.handle(input);
+                    {
+                        CpuScope scope("Console Input / Commands");
+                        console.handle(input);
+                    }
                     if (wasOpen != console.isOpen())
                         window.releaseGameInput();
                     if (input.pressed[VK_F2])
@@ -390,8 +532,10 @@ int main(int argc, char** argv) {
                                       CVarSource::Console);
                     scripts.setHudEnabled(settings.hud());
                     const double gameStep = step * settings.timeScale();
-                    if (options.audit.empty() && gameStep > 0)
+                    if (options.audit.empty() && gameStep > 0) {
+                        CpuScope scope("Script / Gameplay Tick");
                         scripts.tick(float(gameStep), input);
+                    }
                     for (size_t i = 0; i < stressMoving.size(); i++) {
                         const auto& prop = world.entity(stressMoving[i]);
                         world.setPose(stressMoving[i],
@@ -406,7 +550,7 @@ int main(int argc, char** argv) {
                     tick++;
                     changed = true;
                 }
-                if (changed)
+                if (changed || gameCpuProfiler)
                     publish();
                 if (now - lastTitle > std::chrono::milliseconds(500)) {
                     std::ostringstream title;
@@ -418,7 +562,8 @@ int main(int argc, char** argv) {
                         title << "Measuring FPS...";
                     else
                         title << std::fixed << std::setprecision(1) << fps << " FPS | "
-                              << std::setprecision(2) << "Frame " << renderFrameMs.load() << " ms | GPU "
+                              << std::setprecision(2) << "Frame " << renderFrameMs.load()
+                              << " ms | CPU (Render) " << renderCpuMs.load() << " ms | GPU "
                               << renderGpuMs.load() << " ms | "
                               << (renderVsync.load() ? "VSync ON" : "VSync OFF");
                     window.title(title.str());
@@ -438,6 +583,13 @@ int main(int argc, char** argv) {
         }
         mailbox.close();
         renderThread.join();
+        gameCpuProfiler.reset();
+        collectGpuProfile();
+        collectCpuProfile();
+        if (cpuProfileRequest != cpuProfileCompleted)
+            std::cout << "[ProfileCPU] Pending request was not captured before shutdown.\n";
+        if (gpuProfileRequest != gpuProfileCompleted)
+            std::cout << "[ProfileGPU] Pending request was not captured before shutdown.\n";
         if (!mainError.empty())
             throw std::runtime_error(mainError);
         if (!renderError.empty())

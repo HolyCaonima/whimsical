@@ -64,6 +64,9 @@ struct Renderer::Impl {
     std::chrono::steady_clock::time_point statisticsStart{};
     uint32_t statisticsIntervals = 0;
     double statisticsGpuSum = 0;
+    double statisticsCpuSum = 0;
+    uint64_t lastCpuProfileRequest = 0;
+    std::optional<CpuProfile> cpuProfileResult;
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
     std::vector<Image> swapImages;
@@ -71,7 +74,8 @@ struct Renderer::Impl {
     VkSemaphore acquired = VK_NULL_HANDLE;
     VkFence fence = VK_NULL_HANDLE;
     VkCommandBuffer command = VK_NULL_HANDLE;
-    VkQueryPool timestamps = VK_NULL_HANDLE;
+    std::unique_ptr<GpuProfiler> profiler;
+    uint64_t lastProfileRequest = 0;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
     VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
     VkDescriptorSet descriptors = VK_NULL_HANDLE;
@@ -133,6 +137,7 @@ struct Renderer::Impl {
         if (!vk.device)
             return;
         vkDeviceWaitIdle(vk.device);
+        profiler.reset();
         denoiser.reset();
         hud.reset();
         for (auto& b : reservoirs)
@@ -161,8 +166,6 @@ struct Renderer::Impl {
             vkDestroySemaphore(vk.device, acquired, nullptr);
         if (fence)
             vkDestroyFence(vk.device, fence, nullptr);
-        if (timestamps)
-            vkDestroyQueryPool(vk.device, timestamps, nullptr);
         for (auto p : compute)
             if (p)
                 vkDestroyPipeline(vk.device, p, nullptr);
@@ -225,10 +228,7 @@ struct Renderer::Impl {
         ca.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         ca.commandBufferCount = 1;
         VK_CHECK(vkAllocateCommandBuffers(vk.device, &ca, &command));
-        VkQueryPoolCreateInfo qi{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
-        qi.queryType = VK_QUERY_TYPE_TIMESTAMP;
-        qi.queryCount = 2;
-        VK_CHECK(vkCreateQueryPool(vk.device, &qi, nullptr, &timestamps));
+        profiler = std::make_unique<GpuProfiler>(vk);
     }
     uint32_t meshFor(uint32_t slot, const RenderProxy& p) const {
         auto mesh = staticSlots.find(slot);
@@ -720,6 +720,7 @@ struct Renderer::Impl {
         statisticsStart = {};
         statisticsIntervals = 0;
         statisticsGpuSum = 0;
+        statisticsCpuSum = 0;
         return true;
     }
     void updateDescriptors() {
@@ -942,6 +943,7 @@ struct Renderer::Impl {
         info.scratchData.deviceAddress = alignedScratch(tlasScratch);
         VkAccelerationStructureBuildRangeInfoKHR range{count, 0, 0, 0};
         const auto* rangePointer = &range;
+        GpuScope scope(*profiler, c, update ? "TLAS Refit" : "TLAS Build");
         vkCmdBuildAccelerationStructuresKHR(c, 1, &info, &rangePointer);
     }
     void rasterize(VkCommandBuffer c, const Frame& frame) {
@@ -1074,6 +1076,7 @@ struct Renderer::Impl {
                << ",\n  \"width\": " << width << ", \"height\": " << height << ",\n  \"gpuMs\": " << gpuMs
                << ",\n  \"fps\": " << statistics.fps << ",\n  \"frameMs\": " << statistics.frameMs
                << ",\n  \"gpuAverageMs\": " << statistics.gpuMs
+               << ",\n  \"cpuRenderAverageMs\": " << statistics.cpuMs
                << ",\n  \"simulationHz\": 60,\n  \"presentMode\": \"" << presentName(presentMode) << "\""
                << ",\n  \"validationActive\": " << (vk.validationActive ? "true" : "false")
                << ",\n  \"validationErrors\": " << vk.validationErrors.load()
@@ -1089,9 +1092,10 @@ struct Renderer::Impl {
                << ",\n  \"meanRgb\": " << double(sum) / (double(width) * height * 3) << ",\n  \"redRange\": ["
                << int(minimum) << "," << int(maximum) << "]\n}\n";
         std::cout << "Capture: " << (dir / "frame.bmp").string() << " | " << statistics.fps << " FPS | Frame "
-                  << statistics.frameMs << " ms | GPU " << statistics.gpuMs << " ms\n";
+                  << statistics.frameMs << " ms | CPU (Render) " << statistics.cpuMs << " ms | GPU "
+                  << statistics.gpuMs << " ms\n";
     }
-    void updateStatistics() {
+    void updateStatistics(double cpuMs) {
         const auto now = std::chrono::steady_clock::now();
         if (statisticsStart == std::chrono::steady_clock::time_point{}) {
             statisticsStart = now;
@@ -1099,6 +1103,7 @@ struct Renderer::Impl {
         }
         ++statisticsIntervals;
         statisticsGpuSum += gpuMs;
+        statisticsCpuSum += cpuMs;
         const double elapsed = std::chrono::duration<double>(now - statisticsStart).count();
         if (elapsed >= .5) {
             // Count actual frame intervals, including snapshot, GPU and present waits.
@@ -1106,12 +1111,17 @@ struct Renderer::Impl {
             statistics.fps = statisticsIntervals / elapsed;
             statistics.frameMs = elapsed * 1000 / statisticsIntervals;
             statistics.gpuMs = statisticsGpuSum / statisticsIntervals;
+            statistics.cpuMs = statisticsCpuSum / statisticsIntervals;
             statisticsStart = now;
             statisticsIntervals = 0;
             statisticsGpuSum = 0;
+            statisticsCpuSum = 0;
         }
     }
     bool render(const FrameRef& sourceFrame) {
+        const bool captureCpu =
+            sourceFrame->cpuProfile && sourceFrame->cpuProfile->request > lastCpuProfileRequest;
+        CpuProfiler cpuProfiler(captureCpu, "Render", "Render Frame");
         FrameRef frameRef = sourceFrame;
         if (options.auditMotion) {
             Frame diagnostic = *sourceFrame;
@@ -1124,19 +1134,27 @@ struct Renderer::Impl {
         if (frame.proxies.empty() || frame.proxies.size() > MaxInstances ||
             frame.materials.size() > MaxMaterials || frame.lights.empty() || frame.lights.size() > MaxLights)
             throw std::runtime_error("Scene capacity exceeded or scene has no lights/instances");
-        VK_CHECK(vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX));
-        if (frameNumber) {
-            uint64_t values[2]{};
-            if (vkGetQueryPoolResults(vk.device, timestamps, 0, 2, sizeof(values), values, sizeof(uint64_t),
-                                      VK_QUERY_RESULT_64_BIT) == VK_SUCCESS)
-                gpuMs = double(values[1] - values[0]) * vk.properties.limits.timestampPeriod / 1e6;
+        {
+            CpuScope scope("Wait / Previous GPU Fence");
+            VK_CHECK(vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX));
         }
-        if ((width != frame.input.width || height != frame.input.height || resizePending) &&
-            !resize(frame.input.width, frame.input.height))
-            return true;
+        {
+            CpuScope scope("Resolve GPU Timestamps");
+            profiler->resolve();
+        }
+        gpuMs = profiler->frameMs();
+        if (width != frame.input.width || height != frame.input.height || resizePending) {
+            CpuScope scope("Swapchain Resize / Resource Rebuild");
+            if (!resize(frame.input.width, frame.input.height))
+                return true;
+        }
         uint32_t swapIndex;
-        auto acquire =
-            vkAcquireNextImageKHR(vk.device, swapchain, UINT64_MAX, acquired, VK_NULL_HANDLE, &swapIndex);
+        VkResult acquire;
+        {
+            CpuScope scope("Wait / Acquire Swapchain Image");
+            acquire =
+                vkAcquireNextImageKHR(vk.device, swapchain, UINT64_MAX, acquired, VK_NULL_HANDLE, &swapIndex);
+        }
         if (acquire == VK_ERROR_OUT_OF_DATE_KHR) {
             resizePending = true;
             return true;
@@ -1145,11 +1163,17 @@ struct Renderer::Impl {
             VK_CHECK(acquire);
         else
             resizePending = true;
-        auto now = std::chrono::steady_clock::now();
+        const auto cpuStart = std::chrono::steady_clock::now();
+        CpuScope prepareScope("Prepare / Record / Submit");
         float frameMs = std::clamp(
-            float(std::chrono::duration<double, std::milli>(now - previousRenderTime).count()), 1.f, 100.f);
-        previousRenderTime = now;
-        updateSkins(frame);
+            float(std::chrono::duration<double, std::milli>(cpuStart - previousRenderTime).count()), 1.f,
+            100.f);
+        previousRenderTime = cpuStart;
+        {
+            CpuScope scope("CPU Skinning / Mesh Bindings");
+            updateSkins(frame);
+        }
+        CpuScope uploadScope("Scene / Globals / Material Upload");
         bool reset = !historyValid || frame.resetHistory ||
                      glm::distance(frame.camera.eye(), previous->camera.eye()) > 4.f;
         bool lightsChanged = !historyValid, materialsChanged = !historyValid;
@@ -1187,17 +1211,26 @@ struct Renderer::Impl {
                         frame.materials.size() * sizeof(Material));
         if (lightsChanged)
             std::memcpy(lightData.mapped, frame.lights.data(), frame.lights.size() * sizeof(Light));
+        uploadScope.finish();
         // A history reset clears every screen image, including the overlay, so the upload
         // has to be replayed even when the overlay content itself did not change.
-        const bool hudDirty =
-            hud.draw(frame, hudUpload.mapped, statistics, frame.hudEnabled) || !historyValid;
+        bool hudDirty;
+        {
+            CpuScope scope("HUD / Console Draw");
+            hudDirty = hud.draw(frame, hudUpload.mapped, statistics, frame.hudEnabled) || !historyValid;
+        }
+        CpuScope recordScope("Record GPU Commands");
         VK_CHECK(vkResetCommandBuffer(command, 0));
         VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         VK_CHECK(vkBeginCommandBuffer(command, &begin));
-        vkCmdResetQueryPool(command, timestamps, 0, 2);
-        vkCmdWriteTimestamp2(command, VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, timestamps, 0);
+        const auto request = frame.gpuProfileRequest > lastProfileRequest ? frame.gpuProfileRequest : 0;
+        profiler->beginFrame(command, request, frameNumber + 1, width, height);
+        if (request)
+            lastProfileRequest = request;
         if (!historyValid) {
+            CpuScope cpuScope("Initialize History / Reservoirs");
+            GpuScope scope(*profiler, command, "Initialize History / Reservoirs");
             VkClearColorValue clear{};
             VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             for (auto& image : images)
@@ -1210,6 +1243,8 @@ struct Renderer::Impl {
             VulkanContext::barrier(command);
         }
         if (hudDirty) {
+            CpuScope cpuScope("HUD Texture Upload");
+            GpuScope scope(*profiler, command, "HUD Texture Upload");
             vk.transition(command, images[28], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
             VkBufferImageCopy upload{};
             upload.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
@@ -1220,17 +1255,24 @@ struct Renderer::Impl {
         }
         // TLAS allocation precedes descriptor writes; actual construction is recorded before raster/compute.
         if (skinGeometryDirty) {
+            CpuScope cpuScope("Skinned BLAS Refit");
+            GpuScope scope(*profiler, command, "Skinned BLAS Refit");
             for (uint32_t m = firstSkinMesh; m < meshes.size(); ++m)
                 buildMeshAS(command, m, true);
             VulkanContext::barrier(command);
             skinGeometryDirty = false;
         }
-        buildTLAS(command, frame);
-        VulkanContext::barrier(command);
+        {
+            CpuScope cpuScope("Acceleration Structures / TLAS");
+            GpuScope scope(*profiler, command, "Acceleration Structures");
+            buildTLAS(command, frame);
+            VulkanContext::barrier(command);
+        }
         // Bindings name resources, not their contents. Nothing but a swapchain resize or
         // a rebuilt acceleration structure replaces a handle, so the set is written once
         // and then left alone instead of being rewritten 29 times a frame.
         if (descriptorsDirty) {
+            CpuScope scope("Update Descriptors");
             updateDescriptors();
             descriptorsDirty = false;
         }
@@ -1248,13 +1290,15 @@ struct Renderer::Impl {
             resources[size_t(nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST)] = &images[20];
             resources[size_t(nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST)] = &images[21];
             resources[size_t(nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST)] = &images[22];
-            denoiser->dispatch(c, resources, frame.camera, uint32_t(frameNumber), reset, frameMs);
+            denoiser->dispatch(c, resources, frame.camera, uint32_t(frameNumber), reset, frameMs, *profiler);
         });
         graph.add("Composition + Tone Map + HUD", [&](auto c) { dispatch(c, 3); });
         graph.add("History Store", [&](auto c) { copyHistory(c); });
-        graph.execute(command);
+        graph.execute(command, *profiler);
         bool auditFrame = !options.audit.empty() && frameNumber >= 64;
         if (auditFrame) {
+            CpuScope cpuScope("Audit Readback Commands");
+            GpuScope scope(*profiler, command, "Audit Readback");
             const uint32_t bindings[] = {26, 7, 23};
             for (uint32_t s = 0; s < 3; ++s) {
                 auto& image = images[bindings[s]];
@@ -1269,6 +1313,8 @@ struct Renderer::Impl {
         }
         bool last = options.maxFrames && frameNumber + 1 >= options.maxFrames;
         if (options.capture && last) {
+            CpuScope cpuScope("Screenshot Readback Commands");
+            GpuScope scope(*profiler, command, "Screenshot Readback");
             blit(command, images[23], captureImage);
             vk.transition(command, captureImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
             VkBufferImageCopy copy{};
@@ -1277,12 +1323,18 @@ struct Renderer::Impl {
             vkCmdCopyImageToBuffer(command, captureImage.handle, captureImage.layout, readback.handle, 1,
                                    &copy);
         }
-        blit(command, images[23], swapImages[swapIndex]);
-        vk.transition(command, swapImages[swapIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                      VK_PIPELINE_STAGE_2_NONE, 0);
-        vk.transition(command, images[23], VK_IMAGE_LAYOUT_GENERAL);
-        vkCmdWriteTimestamp2(command, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, timestamps, 1);
+        {
+            CpuScope cpuScope("Swapchain Blit / Present Transition");
+            GpuScope scope(*profiler, command, "Swapchain Blit / Present Transition");
+            blit(command, images[23], swapImages[swapIndex]);
+            vk.transition(command, swapImages[swapIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                          VK_PIPELINE_STAGE_2_NONE, 0);
+            vk.transition(command, images[23], VK_IMAGE_LAYOUT_GENERAL);
+        }
+        profiler->endFrame(command);
         VK_CHECK(vkEndCommandBuffer(command));
+        recordScope.finish();
+        CpuScope submitScope("Queue Submit");
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
         VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
         submit.waitSemaphoreCount = 1;
@@ -1294,13 +1346,23 @@ struct Renderer::Impl {
         submit.pSignalSemaphores = &finished[swapIndex];
         VK_CHECK(vkResetFences(vk.device, 1, &fence));
         VK_CHECK(vkQueueSubmit(vk.queue, 1, &submit, fence));
+        submitScope.finish();
+        prepareScope.finish();
+        // Measure CPU preparation/recording/submission directly, never Frame minus GPU.
+        // Keep swapchain pacing and the next frame's GPU fence outside this interval.
+        const double cpuMs =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - cpuStart).count();
         VkPresentInfoKHR present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
         present.waitSemaphoreCount = 1;
         present.pWaitSemaphores = &finished[swapIndex];
         present.swapchainCount = 1;
         present.pSwapchains = &swapchain;
         present.pImageIndices = &swapIndex;
-        auto result = vkQueuePresentKHR(vk.queue, &present);
+        VkResult result;
+        {
+            CpuScope scope("Wait / Present");
+            result = vkQueuePresentKHR(vk.queue, &present);
+        }
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
             resizePending = true;
         else
@@ -1309,20 +1371,30 @@ struct Renderer::Impl {
         historyValid = true;
         frameNumber++;
         if (auditFrame) {
+            CpuScope scope("Audit / Wait and Save");
             VK_CHECK(vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX));
             audit.add(static_cast<const uint16_t*>(auditReadback.mapped), size_t(width) * height);
             if (last)
                 audit.save(std::filesystem::path(AFTERLIGHT_ROOT) / "captures" / options.audit, width,
                            height);
         }
-        updateStatistics();
+        updateStatistics(cpuMs);
         if (last) {
+            CpuScope scope("Final Frame / Wait and Capture");
             VK_CHECK(vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX));
+            profiler->resolve();
+            gpuMs = profiler->frameMs();
             if (options.capture)
                 saveCapture();
-            return false;
         }
-        return true;
+        if (captureCpu) {
+            auto report = *frame.cpuProfile;
+            report.frame = frameNumber;
+            report.threads.push_back(cpuProfiler.finish());
+            lastCpuProfileRequest = report.request;
+            cpuProfileResult = std::move(report);
+        }
+        return !last;
     }
 };
 Renderer::Renderer(HWND window, const RenderOptions& options)
@@ -1341,6 +1413,14 @@ RenderStatistics Renderer::statistics() const {
 }
 SceneUpdateStatistics Renderer::sceneStatistics() const {
     return impl_->sceneStatistics;
+}
+std::optional<GpuProfile> Renderer::takeGpuProfile() {
+    return impl_->profiler->takeResult();
+}
+std::optional<CpuProfile> Renderer::takeCpuProfile() {
+    auto result = std::move(impl_->cpuProfileResult);
+    impl_->cpuProfileResult.reset();
+    return result;
 }
 uint32_t Renderer::errors() const {
     return impl_->vk.validationErrors.load();
