@@ -37,7 +37,7 @@ void main() {
     if (debug == 7)
         color = vec3(.5) + vec3(imageLoad(gMotion, p).xy * 15, 0);
     if (debug == 0 || debug == 4 || debug == 5 || debug == 6)
-        color = pow(aces(max(color, vec3(0)) * 1.15), vec3(1 / 2.2));
+        color = pow(aces(max(color, vec3(0)) * g.renderSettings.x), vec3(1 / 2.2));
     if (debug == 0 && s.id != 0) {
         float fog = 1 - exp(-length(g.eyeTime.xyz - s.p) * .007);
         color = mix(color, vec3(.12, .17, .18), fog * .4);

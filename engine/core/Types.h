@@ -1,4 +1,5 @@
 #pragma once
+#include "ConsoleTypes.h"
 #include "Math.h"
 #include "animation/Animation.h"
 #include <vector>
@@ -103,6 +104,7 @@ struct Camera {
     }
 };
 struct Input {
+    std::u32string text;
     std::array<bool, 256> keys{}, pressed{};
     bool left = false, right = false, middle = false, leftPressed = false, rightPressed = false,
          focused = true;
@@ -116,6 +118,9 @@ struct AnimationInspection {
     animation::AttributeValues values;
 };
 struct Frame {
+    ConsoleView console;
+    bool hudEnabled = true, forceFullUpload = false;
+    float exposure = 1.15f;
     struct StaticDraw {
         uint32_t slot = 0;
         std::shared_ptr<const StaticMesh> mesh;

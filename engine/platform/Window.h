@@ -7,6 +7,8 @@ class Window {
     Input input_;
     bool running_ = true;
     bool mouseKnown_ = false;
+    wchar_t highSurrogate_ = 0;
+    void appendCharacter(wchar_t);
     static LRESULT CALLBACK procedure(HWND, UINT, WPARAM, LPARAM);
 
   public:
@@ -26,6 +28,7 @@ class Window {
         return input_;
     }
     void consumeEdges();
+    void releaseGameInput();
     void title(const std::string&);
     void resizeClient(uint32_t, uint32_t);
     void minimize(bool);

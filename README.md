@@ -10,6 +10,8 @@
 
 双击根目录 `Run.cmd`。当前机器的可执行文件是 `build/bin/Release/Afterlight.exe`。
 
+按 **~ 或 F10** 打开游戏内控制台：支持 CVar 查询/修改、类型与范围校验、多关键词模糊补全、上下键选择候选、命令历史、配置保存。可试 `r.Exposure 1.4`、`r.Hud 0`、`t.TimeScale 0`、`help`。控制台打开时接管游戏输入，关闭 HUD 后仍可使用。变量、启动覆盖及开发接口见 [CVar 与控制台](docs/console.md)。
+
 右上角和标题栏显示实时 **FPS**、**Frame ms**（包含线程与呈现等待的整帧间隔）、**GPU ms**（Vulkan timestamp），约每半秒更新。启动及重建窗口尺寸后的统计预热显示 `-- FPS`。默认使用 FIFO 垂直同步，因此通常不超过 60 FPS；面板显示当前呈现模式与 VSync 状态。渲染帧率不再被 60 Hz 仿真锁死——渲染线程在没有新快照时重新呈现最新快照，用 `--present immediate` 或 `--present mailbox` 即可跑出显示器刷新率以上的真实帧成本。累计帧数只保留在日志和截图报告中。
 
 | 操作 | 行为 |
@@ -27,8 +29,8 @@
 | Q / R | 旋转镜头 |
 | 方向键；Alt + 屏幕边缘 | 平移镜头，脱离自动跟随 |
 | F 或 Space | 恢复平滑跟随 |
-| F1 | 在 Lit / Albedo / Normal / Depth / DI / GI / Raw / Motion 间切换 |
 | F2 | 显示／隐藏 Physics Scene 碰撞体线框；也可用 `--physics-debug` 启动 |
+| ~ / F10 | 打开／关闭控制台；Esc 关闭，上下键选择候选（空输入或无候选时浏览历史），Enter 执行；也支持 Tab 补全 |
 | Alt+F4 或窗口关闭 | 正常结束两条线程并释放资源 |
 
 庭院左侧的 **Power console** 会切换青色灯光和建筑门的开合／碰撞；前方的 **Supply cache** 可激活。悬停高亮、角色轮廓、目标环和小地图路径提供指令反馈。
@@ -137,4 +139,4 @@ Animation 底层支持可替换 Solver、骨骼 FK、root motion/物理反馈、
 
 更多实现约定见 [架构](docs/architecture.md)、[Physics Scene](docs/physics-scene.md)、[渲染说明](docs/rendering.md)、[验证记录](docs/verification.md)。
 
-排查闪烁时可运行 `Afterlight.exe --audit NAME --view 1 --capture`：固定场景，预热 64 帧后统计连续帧；加 `--audit-motion` 使用固定的镜头旋转轨迹。结果在 `captures/NAME/`。F1 按顺序切换诊断视图，第一次为 ALBEDO；DIRECT RT (RAW) / INDIRECT RT (RAW) 是降噪前的光照信号。
+排查闪烁时可运行 `Afterlight.exe --audit NAME --view 1 --capture`：固定场景，预热 64 帧后统计连续帧；加 `--audit-motion` 使用固定的镜头旋转轨迹。结果在 `captures/NAME/`。使用控制台 `r.DebugView 0..7` 设置诊断视图，1 为 ALBEDO；DIRECT RT (RAW) / INDIRECT RT (RAW) 是降噪前的光照信号。

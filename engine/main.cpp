@@ -5,6 +5,10 @@
 #include "platform/Window.h"
 #include "render/Renderer.h"
 #include "ui/AnimationInspector.h"
+#include "ui/Console.h"
+#include "core/EngineSettings.h"
+#include "debug/ConsoleSmoke.h"
+#include <fstream>
 #include <thread>
 #include <atomic>
 #include <chrono>
@@ -21,9 +25,11 @@ int main(int argc, char** argv) {
         uint32_t width = 1280, height = 800;
         int debugView = 0;
         bool demo = false, smoke = false;
-        bool physicsDebug = false;
+        bool consoleOpen = false, consoleSmoke = false;
+        std::vector<std::string> startupCommands;
         uint32_t stress = 0;
-        std::filesystem::path projectPath = std::filesystem::path(AFTERLIGHT_ROOT) / "Projects" / "Afterlight";
+        std::filesystem::path projectPath =
+            std::filesystem::path(AFTERLIGHT_ROOT) / "Projects" / "Afterlight";
         std::string mapPath;
         for (int i = 1; i < argc; i++) {
             std::string arg = argv[i];
@@ -45,15 +51,17 @@ int main(int argc, char** argv) {
                 width = uint32_t(std::clamp(number(), 640, 2560));
             else if (arg == "--height")
                 height = uint32_t(std::clamp(number(), 400, 1440));
-            else if (arg == "--view")
+            else if (arg == "--view") {
                 debugView = std::clamp(number(), 0, 7);
-            else if (arg == "--capture")
+                startupCommands.push_back("r.DebugView " + std::to_string(debugView));
+            } else if (arg == "--capture")
                 options.capture = true;
-            else if (arg == "--no-hud")
+            else if (arg == "--no-hud") {
                 options.hud = false;
-            else if (arg == "--physics-debug")
-                physicsDebug = true;
-            else if (arg == "--audit") {
+                startupCommands.push_back("r.Hud false");
+            } else if (arg == "--physics-debug") {
+                startupCommands.push_back("p.DebugDraw true");
+            } else if (arg == "--audit") {
                 if (i + 1 >= argc)
                     throw std::runtime_error("Missing audit name");
                 options.audit = argv[++i];
@@ -63,11 +71,13 @@ int main(int argc, char** argv) {
                     throw std::runtime_error("Audit name must be a simple directory name");
             } else if (arg == "--audit-motion")
                 options.auditMotion = true;
-            else if (arg == "--no-validation")
+            else if (arg == "--no-validation") {
                 options.validation = false;
-            else if (arg == "--validation")
+                startupCommands.push_back("r.Validation false");
+            } else if (arg == "--validation") {
                 options.validation = true;
-            else if (arg == "--present") {
+                startupCommands.push_back("r.Validation true");
+            } else if (arg == "--present") {
                 if (i + 1 >= argc)
                     throw std::runtime_error("Missing value for --present");
                 std::string mode = argv[++i];
@@ -79,20 +89,31 @@ int main(int argc, char** argv) {
                     options.present = PresentMode::Immediate;
                 else
                     throw std::runtime_error("--present expects fifo, mailbox or immediate");
+                startupCommands.push_back("r.Present " + mode);
             } else if (arg == "--demo")
                 demo = true;
             else if (arg == "--smoke")
                 smoke = true;
             else if (arg == "--stress")
                 stress = uint32_t(std::clamp(number(), 0, 900));
-            else if (arg == "--full-upload")
+            else if (arg == "--full-upload") {
                 options.fullUpload = true;
-            else if (arg == "--help") {
+                startupCommands.push_back("r.FullUpload true");
+            } else if (arg == "--console")
+                consoleOpen = true;
+            else if (arg == "--console-smoke")
+                consoleSmoke = true;
+            else if (arg == "--exec" || arg == "--cvar") {
+                if (i + 1 >= argc)
+                    throw std::runtime_error("Missing value for " + arg);
+                startupCommands.push_back(argv[++i]);
+            } else if (arg == "--help") {
                 std::cout << "Afterlight [--frames N] [--capture] [--width 1280] [--height 800] [--view "
                              "0..7] [--no-hud] [--validation] [--no-validation] [--present "
                              "fifo|mailbox|immediate] [--demo] [--smoke] [--stress N] [--full-upload] "
                              "[--audit NAME] [--audit-motion] [--physics-debug] [--project DIR] [--map "
-                             "/Game/Maps/Name]\n";
+                             "/Game/Maps/Name] [--console] [--exec \"command\"] [--cvar \"name=value\"] "
+                             "[--console-smoke]\n";
                 return 0;
             } else
                 throw std::runtime_error("Unknown option " + arg);
@@ -110,20 +131,58 @@ int main(int argc, char** argv) {
         }
         if (options.capture && !options.maxFrames)
             options.maxFrames = 90;
-        if (smoke) {
+        if (smoke || consoleSmoke) {
             options.maxFrames = 160;
             options.capture = true;
             // The smoke scenario is the project's correctness gate, so it always pays for
             // validation regardless of the build configuration default.
             options.validation = true;
         }
+        if (consoleSmoke && (smoke || demo || !options.audit.empty()))
+            throw std::runtime_error("--console-smoke requires its own run");
         std::cout << "AFTERLIGHT | C++ engine / JavaScript gameplay / Vulkan RT\n";
         Window window(width, height);
         AssetManager assets{Project(projectPath)};
         registerEngineAssets(assets);
+        ConsoleRegistry variables;
+        EngineSettings settings(variables, RenderOptions{}.validation);
+        ui::Console console(variables);
+        console.open(consoleOpen);
+        const auto savedConfig = assets.project().root() / "Saved" / "ConsoleVariables.cfg";
+        auto loadConfig = [&](const std::filesystem::path& path) {
+            if (!std::filesystem::exists(path))
+                return;
+            std::ifstream file(path);
+            if (!file)
+                throw std::runtime_error("Cannot open console config: " + path.string());
+            console.log("Config: " + path.string());
+            for (const auto& result : variables.load(file))
+                console.log(result.text, !result.ok);
+        };
+        auto loadConfigs = [&] {
+            loadConfig(assets.project().root() / "Config" / "ConsoleVariables.cfg");
+            loadConfig(savedConfig);
+        };
+        variables.command("cvar.save", "Save archive CVars to this project's Saved/ConsoleVariables.cfg",
+                          [&](const auto& args) {
+                              if (!args.empty())
+                                  throw std::runtime_error("Usage: cvar.save");
+                              std::filesystem::create_directories(savedConfig.parent_path());
+                              std::ofstream file(savedConfig);
+                              variables.save(file);
+                              return "Saved: " + savedConfig.string();
+                          });
+        variables.command("cvar.load", "Reload project and saved configs; higher-priority overrides remain",
+                          [&](const auto& args) {
+                              if (!args.empty())
+                                  throw std::runtime_error("Usage: cvar.load");
+                              loadConfigs();
+                              return "Configuration loaded; see assignment results above.";
+                          });
+        loadConfigs();
         World world;
         ScriptRuntime scripts(world, assets);
-        scripts.setHudEnabled(options.hud);
+        scripts.setLogSink([&](const auto& text) { console.log(text); });
         if (mapPath.empty())
             scripts.initialize();
         else
@@ -157,6 +216,55 @@ int main(int argc, char** argv) {
         std::atomic<bool> finished{false};
         std::atomic<uint64_t> rendered{0};
         std::atomic<double> renderFps{-1}, renderFrameMs{0}, renderGpuMs{0};
+        std::atomic<bool> renderVsync{true};
+        bool quitRequested = false;
+        variables.command("quit", "Close the running engine", [&](const auto& args) {
+            if (!args.empty())
+                throw std::runtime_error("Usage: quit");
+            quitRequested = true;
+            return "Shutting down.";
+        });
+        variables.command("map.reload", "Reload the current Map; retain console variables",
+                          [&](const auto& args) {
+                              if (!args.empty())
+                                  throw std::runtime_error("Usage: map.reload");
+                              scripts.loadScene(world.mapAsset().path);
+                              stressMoving.clear();
+                              return "Map reloaded.";
+                          });
+        variables.command("stat", "Show current frame/GPU timing and scene object count",
+                          [&](const auto& args) {
+                              if (!args.empty())
+                                  throw std::runtime_error("Usage: stat");
+                              std::ostringstream out;
+                              if (renderFps.load() < 0)
+                                  out << "Frame timing warming up";
+                              else
+                                  out << "FPS " << renderFps.load() << " | Frame " << renderFrameMs.load()
+                                      << " ms | GPU " << renderGpuMs.load() << " ms";
+                              out << " | Scene objects "
+                                  << std::count_if(world.objects().begin(), world.objects().end(),
+                                                   [](const auto& object) { return object.alive; });
+                              return out.str();
+                          });
+        for (const auto& command : startupCommands) {
+            auto result = console.execute(command, CVarSource::CommandLine);
+            if (!result.ok)
+                throw std::runtime_error("Startup console command: " + result.text);
+        }
+        if (smoke || consoleSmoke)
+            variables.set("r.Validation", "true", CVarSource::CommandLine);
+        if (!options.audit.empty())
+            variables.set("r.Hud", "false", CVarSource::CommandLine);
+        options.hud = settings.hud();
+        scripts.setHudEnabled(options.hud);
+        options.validation = variables.get<bool>("r.Validation");
+        auto present = variables.get<std::string>("r.Present");
+        options.present = present == "fifo"      ? PresentMode::Fifo
+                          : present == "mailbox" ? PresentMode::Mailbox
+                                                 : PresentMode::Immediate;
+        options.fullUpload = false; // The live Frame value is the single source of truth.
+        variables.finishStartup();
         std::string renderError;
         uint32_t validationErrors = 0;
         std::thread renderThread([&] {
@@ -175,6 +283,7 @@ int main(int argc, char** argv) {
                     renderFps.store(stats.fps);
                     renderFrameMs.store(stats.frameMs);
                     renderGpuMs.store(stats.gpuMs);
+                    renderVsync.store(stats.vsync);
                     if (!more)
                         break;
                 }
@@ -194,16 +303,26 @@ int main(int argc, char** argv) {
         std::string mainError;
         uint32_t smokeStage = 0;
         bool smokeAnimationClicked = false;
+        ConsoleSmoke consoleCheck;
         auto restoreAt = Clock::time_point::max();
-        mailbox.publish(world.snapshot(window.input(), tick, time, debugView, physicsDebug));
+        auto publish = [&] {
+            auto frame =
+                world.snapshot(window.input(), tick, time, settings.debugView(), settings.physicsDebug());
+            settings.decorate(frame);
+            frame.console = console.view();
+            mailbox.publish(std::move(frame));
+        };
+        publish();
         try {
-            while (window.pump() && !finished.load()) {
+            while (window.pump() && !finished.load() && !quitRequested) {
                 auto now = Clock::now();
                 accumulator += std::min(std::chrono::duration<double>(now - previous).count(), .1);
                 previous = now;
                 bool changed = false;
                 while (accumulator >= step) {
                     Input input = window.input();
+                    if (consoleSmoke)
+                        consoleCheck.update(rendered.load(), window, console, variables);
                     if (demo) {
                         auto f = rendered.load();
                         input.keys['W'] = f >= 15 && f < 65;
@@ -262,12 +381,17 @@ int main(int argc, char** argv) {
                             std::cout << "[Smoke] Reload Map / rebuild gameplay bindings\n";
                         }
                     }
-                    if (input.pressed[VK_F1])
-                        debugView = (debugView + 1) % 8;
+                    const bool wasOpen = console.isOpen();
+                    console.handle(input);
+                    if (wasOpen != console.isOpen())
+                        window.releaseGameInput();
                     if (input.pressed[VK_F2])
-                        physicsDebug = !physicsDebug;
-                    if (options.audit.empty())
-                        scripts.tick(float(step), input);
+                        variables.set("p.DebugDraw", settings.physicsDebug() ? "false" : "true",
+                                      CVarSource::Console);
+                    scripts.setHudEnabled(settings.hud());
+                    const double gameStep = step * settings.timeScale();
+                    if (options.audit.empty() && gameStep > 0)
+                        scripts.tick(float(gameStep), input);
                     for (size_t i = 0; i < stressMoving.size(); i++) {
                         const auto& prop = world.entity(stressMoving[i]);
                         world.setPose(stressMoving[i],
@@ -278,12 +402,12 @@ int main(int argc, char** argv) {
                     window.consumeEdges();
                     accumulator -= step;
                     if (options.audit.empty())
-                        time += step;
+                        time += gameStep;
                     tick++;
                     changed = true;
                 }
                 if (changed)
-                    mailbox.publish(world.snapshot(window.input(), tick, time, debugView, physicsDebug));
+                    publish();
                 if (now - lastTitle > std::chrono::milliseconds(500)) {
                     std::ostringstream title;
                     title << "AFTERLIGHT | The Rain Court | " << world.state << " | ";
@@ -295,7 +419,8 @@ int main(int argc, char** argv) {
                     else
                         title << std::fixed << std::setprecision(1) << fps << " FPS | "
                               << std::setprecision(2) << "Frame " << renderFrameMs.load() << " ms | GPU "
-                              << renderGpuMs.load() << " ms | 60 FPS target / VSync ON";
+                              << renderGpuMs.load() << " ms | "
+                              << (renderVsync.load() ? "VSync ON" : "VSync OFF");
                     window.title(title.str());
                     lastTitle = now;
                 }
@@ -319,6 +444,8 @@ int main(int argc, char** argv) {
             throw std::runtime_error(renderError);
         if (smoke && smokeStage != 7)
             throw std::runtime_error("Smoke scenario did not complete");
+        if (consoleSmoke && !consoleCheck.complete())
+            throw std::runtime_error("Console smoke scenario did not complete");
         std::cout << "Shutdown clean. Simulation ticks=" << tick << ", rendered frames=" << rendered.load()
                   << ", validation errors=" << validationErrors << "\n";
         return validationErrors ? 2 : 0;

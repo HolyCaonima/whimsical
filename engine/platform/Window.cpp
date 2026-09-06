@@ -57,9 +57,28 @@ LRESULT CALLBACK Window::procedure(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         i.focused = false;
         i.keys.fill(false);
         i.pressed.fill(false);
+        i.text.clear();
+        w->highSurrogate_ = 0;
         i.left = i.right = i.middle = false;
         w->mouseKnown_ = false;
         ReleaseCapture();
+        return 0;
+    case WM_CHAR:
+        if (wp == 22) { // Ctrl+V, copied as text rather than executed by the platform layer.
+            if (OpenClipboard(h)) {
+                auto data = GetClipboardData(CF_UNICODETEXT);
+                if (data) {
+                    auto* text = static_cast<const wchar_t*>(GlobalLock(data));
+                    if (text) {
+                        for (size_t n = 0; text[n] && n < 4096; ++n)
+                            w->appendCharacter(text[n] < 32 ? L' ' : text[n]);
+                        GlobalUnlock(data);
+                    }
+                }
+                CloseClipboard();
+            }
+        } else
+            w->appendCharacter(wchar_t(wp));
         return 0;
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
@@ -138,9 +157,31 @@ void Window::wake() const {
         PostMessageW(hwnd_, WM_NULL, 0, 0);
 }
 void Window::consumeEdges() {
+    input_.text.clear();
     input_.pressed.fill(false);
     input_.leftPressed = input_.rightPressed = false;
     input_.deltaX = input_.deltaY = input_.wheel = 0;
+}
+void Window::appendCharacter(wchar_t c) {
+    if (c >= 0xD800 && c <= 0xDBFF) {
+        highSurrogate_ = c;
+        return;
+    }
+    char32_t value = c;
+    if (c >= 0xDC00 && c <= 0xDFFF) {
+        if (!highSurrogate_)
+            return;
+        value = 0x10000 + ((highSurrogate_ - 0xD800) << 10) + c - 0xDC00;
+    }
+    highSurrogate_ = 0;
+    input_.text.push_back(value);
+}
+void Window::releaseGameInput() {
+    input_.keys.fill(false);
+    input_.pressed.fill(false);
+    input_.left = input_.right = input_.middle = input_.leftPressed = input_.rightPressed = false;
+    input_.deltaX = input_.deltaY = input_.wheel = 0;
+    ReleaseCapture();
 }
 void Window::title(const std::string& t) {
     SetWindowTextA(hwnd_, t.c_str());

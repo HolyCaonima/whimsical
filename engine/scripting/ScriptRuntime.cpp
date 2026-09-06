@@ -5,6 +5,11 @@
 #include <iostream>
 #include <stdexcept>
 namespace afterlight {
+void ScriptRuntime::log(const std::string& text) {
+    std::cout << "[JS] " << text << "\n";
+    if (logSink_)
+        logSink_("[JS] " + text);
+}
 static AssetManager& assets(duk_context* c) {
     duk_push_heap_stash(c);
     duk_get_prop_string(c, -1, "assets");
@@ -169,7 +174,7 @@ static duk_ret_t callNative(duk_context* c) {
     try {
         switch (duk_get_current_magic(c)) {
         case Log:
-            std::cout << "[JS] " << duk_safe_to_string(c, 0) << "\n";
+            runtime(c).log(duk_safe_to_string(c, 0));
             return 0;
         case MaterialAdd: {
             Material m;

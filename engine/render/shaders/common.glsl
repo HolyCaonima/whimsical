@@ -45,6 +45,7 @@ layout(set = 0, binding = 0, std140) uniform Globals {
     vec4 resolution;
     vec4 player;
     vec4 destination;
+    vec4 renderSettings;
     uvec4 counts;
 }
 g;

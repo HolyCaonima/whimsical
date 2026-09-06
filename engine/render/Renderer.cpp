@@ -21,14 +21,14 @@ constexpr VkImageUsageFlags ColorUsage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_U
                                          VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 struct alignas(16) Globals {
     mat4 vp, previousVp, view, inverseVp;
-    vec4 eyeTime, resolution, player, destination;
+    vec4 eyeTime, resolution, player, destination, renderSettings;
     glm::uvec4 counts;
 };
 struct alignas(16) GpuInstance {
     mat4 model, previousModel;
     glm::uvec4 info;
 };
-static_assert(sizeof(Globals) == 336 && sizeof(GpuInstance) == 144 && sizeof(Material) == 64 &&
+static_assert(sizeof(Globals) == 352 && sizeof(GpuInstance) == 144 && sizeof(Material) == 64 &&
                   sizeof(GpuVertex) == 96,
               "GPU layout mismatch");
 struct AccelerationStructure {
@@ -846,8 +846,8 @@ struct Renderer::Impl {
         // RenderScene::create, which marks them structural, so a chained delta already
         // carries every slot the mirror has not seen; rewriting the ones it has seen
         // would make spawning cost the whole scene.
-        const bool resync =
-            !mirrorValid || reset || options.fullUpload || (!repeat && frame.delta.base != mirrorRevision);
+        const bool resync = !mirrorValid || reset || options.fullUpload || frame.forceFullUpload ||
+                            (!repeat && frame.delta.base != mirrorRevision);
         if (resync) {
             // Resynchronising is about which slots to rewrite, not about forgetting where
             // they were. The mirror still holds every slot's previously rendered
@@ -1077,6 +1077,9 @@ struct Renderer::Impl {
                << ",\n  \"simulationHz\": 60,\n  \"presentMode\": \"" << presentName(presentMode) << "\""
                << ",\n  \"validationActive\": " << (vk.validationActive ? "true" : "false")
                << ",\n  \"validationErrors\": " << vk.validationErrors.load()
+               << ",\n  \"exposure\": " << previous->exposure << ", \"debugView\": " << previous->debugView
+               << ", \"hudEnabled\": " << (previous->hudEnabled ? "true" : "false")
+               << ", \"consoleOpen\": " << (previous->console.open ? "true" : "false")
                << ",\n  \"staticMeshInstances\": " << staticBindings.size()
                << ", \"staticMeshAssets\": " << firstSkinMesh - 2
                << ", \"textureAssets\": " << textureBindings.size()
@@ -1171,6 +1174,7 @@ struct Renderer::Impl {
         data.resolution = {float(width), float(height), float(frame.debugView), float(frame.hovered)};
         data.player = vec4(frame.player, float(frame.selected));
         data.destination = vec4(frame.destination, frame.hasDestination ? 1.f : 0.f);
+        data.renderSettings = {frame.exposure, 0, 0, 0};
         data.counts = {uint32_t(frame.proxies.size()), uint32_t(frame.lights.size()), uint32_t(frameNumber),
                        reset ? 0u : 1u};
         std::memcpy(globals.mapped, &data, sizeof(data));
@@ -1185,7 +1189,8 @@ struct Renderer::Impl {
             std::memcpy(lightData.mapped, frame.lights.data(), frame.lights.size() * sizeof(Light));
         // A history reset clears every screen image, including the overlay, so the upload
         // has to be replayed even when the overlay content itself did not change.
-        const bool hudDirty = hud.draw(frame, hudUpload.mapped, statistics, options.hud) || !historyValid;
+        const bool hudDirty =
+            hud.draw(frame, hudUpload.mapped, statistics, frame.hudEnabled) || !historyValid;
         VK_CHECK(vkResetCommandBuffer(command, 0));
         VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;

@@ -5,3 +5,4 @@
 *.log
 .vs/
 __pycache__/
+/Projects/*/Saved/

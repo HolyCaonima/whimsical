@@ -72,6 +72,7 @@ function(afterlight_copy_onnx TARGET)
     VERBATIM)
 endfunction()
 add_library(afterlight_core
+  engine/core/ConsoleRegistry.cpp engine/core/EngineSettings.cpp engine/ui/Console.cpp
   engine/assets/StaticMesh.cpp
   engine/assets/EngineAssets.cpp engine/scene/SceneAsset.cpp engine/scene/ScenePersistence.cpp
   engine/ui/AnimationInspector.cpp
@@ -101,6 +102,11 @@ add_custom_target(afterlight_shaders DEPENDS ${SPIRV})
 add_dependencies(Afterlight afterlight_shaders)
 target_compile_definitions(Afterlight PRIVATE AFTERLIGHT_SHADERS="${CMAKE_BINARY_DIR}/shaders")
 enable_testing()
+add_executable(console_tests tests/ConsoleTests.cpp)
+target_link_libraries(console_tests PRIVATE afterlight_core)
+target_compile_options(console_tests PRIVATE /W4 /permissive- /utf-8)
+afterlight_copy_onnx(console_tests)
+add_test(NAME console_system COMMAND console_tests)
 add_executable(asset_scene_tests tests/AssetSceneTests.cpp)
 target_link_libraries(asset_scene_tests PRIVATE afterlight_core)
 target_compile_options(asset_scene_tests PRIVATE /W4 /permissive- /utf-8)

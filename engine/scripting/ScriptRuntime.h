@@ -3,6 +3,7 @@
 #include "assets/AssetManager.h"
 #include <duktape.h>
 #include <thread>
+#include <functional>
 namespace afterlight {
 class ScriptRuntime {
     duk_context* context_ = nullptr;
@@ -14,6 +15,7 @@ class ScriptRuntime {
     std::string pendingScene_;
     std::thread::id owner_;
     bool hudEnabled_ = true;
+    std::function<void(const std::string&)> logSink_;
     void evaluateFile(const std::string&);
     void evaluateSource(const std::string& source, const std::string& label);
     void checkedCall(int args);
@@ -32,6 +34,10 @@ class ScriptRuntime {
         hudEnabled_ = enabled;
     }
     void execute(const std::string& source, const std::string& label = "runtime");
+    void setLogSink(std::function<void(const std::string&)> sink) {
+        logSink_ = std::move(sink);
+    }
+    void log(const std::string& text);
     void tick(float dt, const Input& input);
 };
 } // namespace afterlight
