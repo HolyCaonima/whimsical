@@ -1,5 +1,7 @@
 # NRD 接入与阴影边缘调查（2026-09-06）
 
+本文记录替换 DI 之前的 NRD 参数与输入修正。后续实际 RTXDI SDK 接入、动态阴影反馈及新增资源见 [RTXDI 集成](rtxdi-integration.md)。
+
 结论：阴影过度平滑可以复现，主要来自当前合并 DI/GI 信号与 RELAX 默认空间滤波参数不匹配。同时修正了 diffuse hit-distance 来源和缺失的 specular 材质解调。保持一个 `RELAX_DIFFUSE_SPECULAR`、一次 NRD dispatch 列表，不拆成两套 DI/GI 降噪器。
 
 ## 根因与修改

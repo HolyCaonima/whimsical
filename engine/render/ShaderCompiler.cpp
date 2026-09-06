@@ -5,6 +5,7 @@
 #include <sstream>
 #include <iomanip>
 #include <cstring>
+#include <regex>
 
 namespace afterlight {
 static std::string read(const std::filesystem::path& file) {
@@ -18,6 +19,23 @@ static void replace(std::string& source, const std::string& key, const std::stri
     if (position == std::string::npos)
         throw std::runtime_error("Missing shader link point: " + key);
     source.replace(position, key.size(), value);
+}
+// Included source, including the pinned SDK, participates in program caching.
+static std::string expandIncludes(const std::string& source, const std::filesystem::path& directory) {
+    static const std::regex include(R"(^\s*#include\s+["<]([^">]+)[">]\s*$)");
+    std::istringstream lines(source);
+    std::ostringstream result;
+    std::string line;
+    while (std::getline(lines, line)) {
+        std::smatch match;
+        if (std::regex_match(line, match, include)) {
+            auto path = directory / match[1].str();
+            if (match[1].str().rfind("Rtxdi/", 0) == 0)
+                path = std::filesystem::path(AFTERLIGHT_RTXDI_INCLUDES) / match[1].str();
+            result << expandIncludes(read(path), path.parent_path());
+        } else result << line << '\n';
+    }
+    return result.str();
 }
 std::string ShaderCompiler::surfaceLibrary(const ShaderSet& shaders, bool raster) {
     std::ostringstream code;
@@ -92,7 +110,7 @@ std::string ShaderCompiler::passSource(const std::filesystem::path& directory, c
     replace(common, "#include \"surface_link.glsl\"", surfaceLibrary(shaders, pass == "gbuffer.frag"));
     auto source = read(directory / pass);
     replace(source, "#include \"common.glsl\"", common);
-    return source;
+    return expandIncludes(source, directory);
 }
 const std::vector<uint32_t>& ShaderCompiler::compile(const std::string& pass, const ShaderSet& shaders) {
     auto source = passSource(AFTERLIGHT_SHADER_SOURCES, pass, shaders);

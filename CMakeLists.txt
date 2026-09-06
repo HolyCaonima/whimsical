@@ -21,7 +21,7 @@ if(MSVC)
   endif()
 endif()
 set(DEPS "${CMAKE_SOURCE_DIR}/third_party")
-if(NOT EXISTS "${DEPS}/nrd/Include/NRD.h")
+if(NOT EXISTS "${DEPS}/nrd/Include/NRD.h" OR NOT EXISTS "${DEPS}/rtxdi/Include/Rtxdi/DI/Reservoir.hlsli")
   message(FATAL_ERROR "Run node tools/bootstrap.mjs first")
 endif()
 if(NOT WIN32)
@@ -105,15 +105,17 @@ add_library(afterlight_shader_runtime engine/render/ShaderCompiler.cpp engine/re
 target_link_libraries(afterlight_shader_runtime PUBLIC afterlight_core)
 target_compile_options(afterlight_shader_runtime PRIVATE /W4 /permissive- /utf-8)
 target_compile_definitions(afterlight_shader_runtime PRIVATE
+  AFTERLIGHT_RTXDI_INCLUDES="${DEPS}/rtxdi/Include"
   AFTERLIGHT_SHADER_SOURCES="${CMAKE_SOURCE_DIR}/engine/render/shaders"
   AFTERLIGHT_GLSLANG="${DEPS}/glslang/bin/glslang.exe"
   AFTERLIGHT_SHADERS="${CMAKE_BINARY_DIR}/shaders")
 add_executable(Afterlight engine/main.cpp engine/platform/Window.cpp engine/render/Renderer.cpp engine/render/VulkanContext.cpp engine/render/NrdDenoiser.cpp engine/render/GpuProfiler.cpp engine/render/UiRenderer.cpp)
 target_link_libraries(Afterlight PRIVATE afterlight_shader_runtime volk NRD user32 gdi32 winmm)
+target_include_directories(Afterlight PRIVATE "${DEPS}/rtxdi/Include")
 afterlight_copy_onnx(Afterlight)
 target_compile_options(Afterlight PRIVATE /W4 /permissive- /utf-8)
 target_compile_options(afterlight_core PRIVATE /W4 /permissive- /utf-8)
-set(SHADER_FILES gbuffer.vert composite.comp ui.vert ui.frag)
+set(SHADER_FILES gbuffer.vert composite.comp di_confidence.comp di_gradient_filter.comp ui.vert ui.frag)
 set(SPIRV)
 foreach(SHADER IN LISTS SHADER_FILES)
   set(OUTPUT "${CMAKE_BINARY_DIR}/shaders/${SHADER}.spv")

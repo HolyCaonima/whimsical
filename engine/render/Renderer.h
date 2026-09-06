@@ -22,6 +22,8 @@ struct RenderOptions {
     bool hud = true;
     std::string audit;
     bool auditMotion = false;
+    // Deterministic shadow step: move this proxy +2 world X after 64 warmup frames.
+    int auditOccluder = -1;
     // Forces the renderer to rewrite every slot every frame, which is what it did before
     // the scene became persistent. Kept so the two behaviours can be measured against each
     // other in one binary, where the only difference is this flag.

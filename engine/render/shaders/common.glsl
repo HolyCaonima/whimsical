@@ -25,10 +25,6 @@ struct Vertex {
     vec4 tangent;
 };
 // stats = finalized contribution weight W, represented sample count M, selected target p-hat, validity.
-struct DIReservoir {
-    vec4 sampleLight;
-    vec4 stats;
-};
 struct GIReservoir {
     vec4 positionDistance;
     vec4 normalKind;
@@ -45,6 +41,7 @@ layout(set = 0, binding = 0, std140) uniform Globals {
     vec4 player;
     vec4 destination;
     vec4 renderSettings;
+    vec4 previousEye;
     uvec4 counts;
 }
 g;
@@ -76,15 +73,6 @@ layout(set = 0, binding = 9, rgba32f) uniform image2D gPosition;
 layout(set = 0, binding = 10, rgba16f) uniform image2D gMotion;
 layout(set = 0, binding = 11, r32f) uniform image2D gViewZ;
 layout(set = 0, binding = 12, rgba16f) uniform image2D gEmission;
-layout(set = 0, binding = 13, std430) buffer CurrentDI {
-    DIReservoir currentDI[];
-};
-layout(set = 0, binding = 14, std430) readonly buffer PreviousDI {
-    DIReservoir previousDI[];
-};
-layout(set = 0, binding = 15, std430) buffer CandidateDI {
-    DIReservoir candidateDI[];
-};
 layout(set = 0, binding = 16, std430) buffer CurrentGI {
     GIReservoir currentGI[];
 };
@@ -104,6 +92,15 @@ layout(set = 0, binding = 25, rgba32f) uniform image2D previousPosition;
 layout(set = 0, binding = 26, rgba16f) uniform image2D directDebug;
 layout(set = 0, binding = 27, rgba16f) uniform image2D indirectDebug;
 layout(set = 0, binding = 28, rgba8) uniform image2D hudImage;
+layout(set = 0, binding = 30, rgba16f) uniform image2D previousAlbedo;
+layout(set = 0, binding = 31, r32f) uniform image2D previousViewZ;
+layout(set = 0, binding = 32, rgba16f) uniform image2D diGradient;
+layout(set = 0, binding = 33, r16f) uniform image2D diffuseConfidence;
+layout(set = 0, binding = 34, r16f) uniform image2D specularConfidence;
+layout(set = 0, binding = 35, rgba16f) uniform image2D diLuminance;
+layout(set = 0, binding = 36, rgba16f) uniform image2D previousDiLuminance;
+layout(set = 0, binding = 37, rg16f) uniform image2D diConfidenceHistory;
+layout(set = 0, binding = 38, rgba16f) uniform image2D filteredDiGradient;
 uint rng;
 uint hash(uint x) {
     x ^= x >> 16;
@@ -262,46 +259,12 @@ vec3 specularBrdf(Surface s, vec3 v, vec3 l) {
     vec3 f0 = mix(vec3(.04), s.albedo, s.metallic), F = f0 + (1 - f0) * pow(1 - vh, 5);
     return D * G * F / max(4 * nv * nl, 1e-5);
 }
-void directSignal(Surface s, vec4 sampleLight, out vec3 diffuse, out vec3 specular) {
-    uint id = min(uint(sampleLight.w + .5), g.counts.y - 1);
-    Light l = lights[id];
-    vec3 delta = sampleLight.xyz - s.p;
-    float d2 = max(dot(delta, delta), .04);
-    vec3 direction = delta * inversesqrt(d2), v = safeNormalize(g.eyeTime.xyz - s.p);
-    vec3 radiance =
-        l.colorIntensity.rgb * l.colorIntensity.a / (d2 + l.positionRadius.a * l.positionRadius.a);
-    float nl = max(dot(s.n, direction), 0);
-    diffuse = radiance * (nl / PI);
-    specular = radiance * specularBrdf(s, v, direction) * nl;
-}
-float diTarget(Surface s, vec4 light) {
-    vec3 d, sp;
-    directSignal(s, light, d, sp);
-    return max(1e-8, luminance(d * s.albedo * (1 - s.metallic) + sp));
-}
 vec4 lightSample() {
     uint id = min(uint(random() * float(g.counts.y)), g.counts.y - 1);
     Light l = lights[id];
     float z = 1 - 2 * random(), a = 2 * PI * random();
     vec3 unit = vec3(sqrt(max(0, 1 - z * z)) * cos(a), z, sqrt(max(0, 1 - z * z)) * sin(a));
     return vec4(l.positionRadius.xyz + unit * l.positionRadius.w, float(id));
-}
-void diAdd(inout DIReservoir r, vec4 sampleLight, float weight, float m, float target) {
-    if (isnan(weight) || isinf(weight) || weight <= 0) {
-        r.stats.y += m;
-        return;
-    }
-    r.stats.x += weight;
-    r.stats.y += m;
-    if (random() * r.stats.x < weight) {
-        r.sampleLight = sampleLight;
-        r.stats.z = target;
-        r.stats.w = 1;
-    }
-}
-void diFinalize(inout DIReservoir r) {
-    r.stats.x = r.stats.z > 0 ? r.stats.x / max(r.stats.y * r.stats.z, 1e-12) : 0;
-    r.stats.y = min(r.stats.y, 32);
 }
 vec3 giDirection(Surface s, GIReservoir r) {
     return r.normalKind.w < 0 ? r.positionDistance.xyz : safeNormalize(r.positionDistance.xyz - s.p);
@@ -333,6 +296,7 @@ void giFinalize(inout GIReservoir r) {
 }
 #ifdef SURFACE_PASS
 vec3 secondaryLighting(Surface s) {
+    if (g.counts.y == 0) return s.emission;
     vec4 l = lightSample();
     vec3 direction = safeNormalize(l.xyz - s.p);
     float nl = max(dot(s.n, direction), 0), d2 = dot(l.xyz - s.p, l.xyz - s.p);
@@ -365,5 +329,8 @@ vec3 sampleSpecular(Surface s, vec3 viewDirection, out float pdf) {
     pdf = D * smithG1(nv, alpha) / (4 * nv);
     return direction;
 }
+#ifdef RTXDI_PASS
+#include "rtxdi_bridge.glsl"
+#endif
 #endif
 #endif

@@ -1,0 +1,107 @@
+--- a/Include/Rtxdi/DI/ReSTIRDIParameters.h
++++ b/Include/Rtxdi/DI/ReSTIRDIParameters.h
+@@ -16,6 +16,12 @@
+ #include "Rtxdi/RtxdiParameters.h"
+ #include "Rtxdi/RtxdiTypes.h"
+ 
++#if defined(RTXDI_GLSL)
++#define RTXDI_DI_FLAG bool
++#else
++#define RTXDI_DI_FLAG uint32_t
++#endif
++
+ #ifdef __cplusplus
+ enum class ReSTIRDI_LocalLightSamplingMode : uint32_t
+ {
+@@ -76,7 +82,7 @@
+     float brdfCutoff;
+     float brdfRayMinT;
+     ReSTIRDI_LocalLightSamplingMode localLightSamplingMode;
+-    uint32_t enableInitialVisibility;
++    RTXDI_DI_FLAG enableInitialVisibility;
+ 
+     uint32_t environmentMapImportanceSampling; // Only used in InitialSamplingFunctions.hlsli via RAB_EvaluateEnvironmentMapSamplingPdf
+     uint32_t pad1;
+@@ -109,11 +115,11 @@
+     // Allows the temporal resampling logic to skip the bias correction ray trace for light samples
+     // reused from the previous frame. Only safe to use when invisible light samples are discarded
+     // on the previous frame, then any sample coming from the previous frame can be assumed visible.
+-    uint32_t enableVisibilityShortcut;
++    RTXDI_DI_FLAG enableVisibilityShortcut;
+ 
+     // Enables permuting the pixels sampled from the previous frame in order to add temporal
+     // variation to the output signal and make it more denoiser friendly.
+-    uint32_t enablePermutationSampling;
++    RTXDI_DI_FLAG enablePermutationSampling;
+ 
+     // Random number for permutation sampling that is the same for all pixels in the frame
+     uint32_t uniformRandomNumber;
+@@ -153,10 +159,10 @@
+     uint32_t targetHistoryLength;
+ 
+     // Enables the comparison of surface materials before taking a surface into resampling.
+-    uint32_t enableMaterialSimilarityTest;
++    RTXDI_DI_FLAG enableMaterialSimilarityTest;
+ 
+     // Prevents samples which are from the current frame or have no reasonable temporal history merged being spread to neighbors
+-    uint32_t discountNaiveSamples;
++    RTXDI_DI_FLAG discountNaiveSamples;
+ 
+     uint32_t pad1;
+     uint32_t pad2;
+@@ -177,11 +183,11 @@
+ 
+     // Temporal parameters, see RTXDI_DITemporalResamplingParameters
+ 
+-    uint32_t enablePermutationSampling;
++    RTXDI_DI_FLAG enablePermutationSampling;
+ 
+     uint32_t uniformRandomNumber;
+ 
+-    uint32_t enableVisibilityShortcut;
++    RTXDI_DI_FLAG enableVisibilityShortcut;
+ 
+     // Spatial parameters, see RTXDI_DISpatialResamplingParameters
+ 
+@@ -191,19 +197,19 @@
+ 
+     float samplingRadius;
+ 
+-    uint32_t enableMaterialSimilarityTest;
+-
+-    uint32_t discountNaiveSamples;
++    RTXDI_DI_FLAG enableMaterialSimilarityTest;
++
++    RTXDI_DI_FLAG discountNaiveSamples;
+ };
+ 
+ struct RTXDI_ShadingParameters
+ {
+-    uint32_t enableFinalVisibility;
++    RTXDI_DI_FLAG enableFinalVisibility;
+     uint32_t reuseFinalVisibility;
+     uint32_t finalVisibilityMaxAge;
+     float finalVisibilityMaxDistance;
+ 
+-    uint32_t enableDenoiserInputPacking;
++    RTXDI_DI_FLAG enableDenoiserInputPacking;
+     uint32_t pad1;
+     uint32_t pad2;
+     uint32_t pad3;
+--- a/Include/Rtxdi/Utils/Math.hlsli
++++ b/Include/Rtxdi/Utils/Math.hlsli
+@@ -33,12 +33,12 @@
+ void SetBit(inout uint target, uint bit, bool value)
+ {
+     target &= ~(1u << bit);
+-    target |=  (value << bit);
++    target |=  (uint(value) << bit);
+ }
+ 
+ bool GetBit(uint target, uint bit)
+ {
+-    return (target >> bit) & 1;
++    return ((target >> bit) & 1) != 0;
+ }
+ 
+ // "Explodes" an integer, i.e. inserts a 0 between each bit.  Takes inputs up to 16 bit wide.

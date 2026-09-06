@@ -1,0 +1,50 @@
+#version 460
+#extension GL_EXT_ray_query : require
+#extension GL_GOOGLE_include_directive : require
+#define COMPUTE_PASS
+#define SURFACE_PASS
+#define RTXDI_PASS
+#include "common.glsl"
+layout(local_size_x=8,local_size_y=8) in;
+void main() {
+    ivec2 block=ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(block,imageSize(diGradient)))) return;
+    vec4 gradient=vec4(0);
+    if (g.counts.w!=0) {
+        // NRD samples confidence at previous UV. Generate it in previous-image
+        // coordinates, replaying the same reservoir sample on the current TLAS.
+        ivec2 selected=ivec2(-1);
+        float score=-1;
+        for (int y=0;y<3;++y) for (int x=0;x<3;++x) {
+            ivec2 p=block*3+ivec2(x,y);
+            if (!inBounds(p)) continue;
+            RTXDI_DIReservoir r=RTXDI_LoadDIReservoir(diBufferParams(),uvec2(p),3);
+            if (!RTXDI_IsValidDIReservoir(r)) continue;
+            vec2 old=imageLoad(previousDiLuminance,p).xy;
+            // Previously black shadows must also detect the occluder moving away.
+            float value=max(max(old.x,old.y),r.targetPdf*r.weightSum);
+            if (value>score) {score=value;selected=p;}
+        }
+        if (selected.x>=0) {
+            RAB_Surface s=RAB_GetGBufferSurface(selected,true);
+            RTXDI_DIReservoir r=RTXDI_LoadDIReservoir(diBufferParams(),uvec2(selected),3);
+            RAB_LightSample l=RAB_SamplePolymorphicLight(
+                RAB_LoadLightInfo(RTXDI_GetDIReservoirLightIndex(r),false),s,RTXDI_GetDIReservoirSampleUV(r));
+            vec2 now=vec2(0);
+            if (RAB_GetConservativeVisibility(s,l)) {
+                vec3 d,sp; diSignal(s,l,d,sp);
+                now=vec2(luminance(d*s.data.albedo*(1-s.data.metallic)),luminance(sp))*r.weightSum;
+            }
+            vec4 old=imageLoad(previousDiLuminance,selected);
+            now=unpackHalf2x16(packHalf2x16(now));
+            // Normalize by combined DI/GI energy, not DI alone.
+            gradient=vec4(abs(now-old.xy),max(old.zw,old.zw+now-old.xy));
+        } else if (g.renderSettings.z!=0 && g.counts.y>0 &&
+                   RAB_IsSurfaceValid(RAB_GetGBufferSurface(min(block*3+1,ivec2(g.resolution.xy)-1),true))) {
+            // A previously zero-power light has no valid reservoir to replay.
+            // Its parameter change is direct evidence that zero-light history expired.
+            gradient=vec4(1);
+        }
+    }
+    imageStore(diGradient,block,gradient);
+}

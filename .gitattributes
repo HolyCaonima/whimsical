@@ -4,3 +4,4 @@ external/AI4AnimationPy/** -text
 *.a4c binary
 *.golden binary
 *.skin binary
+tools/patches/*.patch text eol=lf

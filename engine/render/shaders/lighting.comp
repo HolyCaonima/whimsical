@@ -1,6 +1,7 @@
 #version 460
 #extension GL_EXT_ray_query : require
 #extension GL_GOOGLE_include_directive : require
+#define RTXDI_PASS
 #define COMPUTE_PASS
 #define SURFACE_PASS
 #include "common.glsl"
@@ -11,26 +12,18 @@ void main() {
         return;
     uint index = indexOf(p);
     rng = hash(index + g.counts.z * 192641u);
-    DIReservoir di;
-    di.sampleLight = vec4(0);
-    di.stats = vec4(0);
     GIReservoir gi;
     gi.positionDistance = gi.normalKind = gi.radiancePdf = gi.stats = vec4(0);
     Surface s = surfaceAt(p);
     imageStore(rawDiffuse, p, vec4(0));
     imageStore(rawSpecular, p, vec4(0));
     if (s.id == 0) {
-        candidateDI[index] = di;
+        RTXDI_StoreDIReservoir(RTXDI_EmptyDIReservoir(), diBufferParams(), uvec2(p), 1);
+        RTXDI_StoreDIReservoir(RTXDI_EmptyDIReservoir(), diBufferParams(), uvec2(p), 3);
         candidateGI[index] = gi;
         return;
     }
-    for (int c = 0; c < 8; c++) {
-        vec4 sampleLight = lightSample();
-        float target = diTarget(s, sampleLight);
-        diAdd(di, sampleLight, target * float(g.counts.y), 1, target);
-    }
-    diFinalize(di);
-    candidateDI[index] = di;
+    diInitial(p);
     vec3 direction = cosineDirection(s.n);
     float pdf = max(dot(s.n, direction) / PI, 1e-6), hitDistance;
     Surface secondary;

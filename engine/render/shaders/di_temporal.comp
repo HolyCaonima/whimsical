@@ -1,0 +1,42 @@
+#version 460
+#extension GL_EXT_ray_query : require
+#extension GL_GOOGLE_include_directive : require
+#define COMPUTE_PASS
+#define SURFACE_PASS
+#define RTXDI_PASS
+#include "common.glsl"
+#include "Rtxdi/DI/TemporalResampling.hlsli"
+layout(local_size_x=8,local_size_y=8) in;
+void main() {
+    ivec2 p=ivec2(gl_GlobalInvocationID.xy);
+    if (!inBounds(p) || g.counts.w==0) return;
+    RAB_Surface s=RAB_GetGBufferSurface(p,false);
+    if (!RAB_IsSurfaceValid(s)) return;
+    RTXDI_ReservoirBufferParameters buffers=diBufferParams();
+    RTXDI_DIReservoir initial=RTXDI_LoadDIReservoir(buffers,uvec2(p),1);
+    RTXDI_RandomSamplerState randomState=RTXDI_InitRandomSampler(uvec2(p),g.counts.z,2);
+    RTXDI_DITemporalResamplingParameters params;
+    params.maxHistoryLength=20;
+    params.biasCorrectionMode=RTXDI_BIAS_CORRECTION_RAY_TRACED;
+    params.depthThreshold=.01;
+    params.normalThreshold=.95;
+    params.enableVisibilityShortcut=false;
+    params.enablePermutationSampling=true;
+    params.uniformRandomNumber=hash(g.counts.z);
+    params.permutationSamplingThreshold=0;
+    vec4 motion=imageLoad(gMotion,p);
+    ivec2 previousPixel=ivec2(round(vec2(p)+motion.xy*g.resolution.xy));
+    if (inBounds(previousPixel)) {
+        float confidence=min(imageLoad(diffuseConfidence,previousPixel).x,
+                             imageLoad(specularConfidence,previousPixel).x);
+        // We do not keep a second TLAS. Visibility changes therefore invalidate
+        // old reservoir mass as well as NRD history, especially when shadows open.
+        params.maxHistoryLength=uint(20*confidence);
+    }
+    vec3 screenMotion=vec3(motion.xy*g.resolution.xy,motion.z-s.depth);
+    ivec2 temporalPosition;
+    RAB_LightSample selected=RAB_EmptyLightSample();
+    RTXDI_DIReservoir r=RTXDI_DITemporalResampling(uvec2(p),s,initial,randomState,
+        diRuntimeParams(),buffers,screenMotion,0,params,temporalPosition,selected);
+    RTXDI_StoreDIReservoir(r,buffers,uvec2(p),1);
+}

@@ -87,7 +87,7 @@ def run():
         report = json.loads((captures[case] / "render-report.json").read_text())
         assert report["validationActive"] and report["validationErrors"] == 0, report
         assert report["shaderAssets"] == 3 and report["rasterPrograms"] == 3, report
-        assert report["shaderCompilations"] == 6, report
+        assert report["shaderCompilations"] == 9, report
         assert json.loads((captures[case] / "audit.json").read_text())["nonFinite"] == 0
     for signal in ("albedo", "direct", "display"):
         values = {}

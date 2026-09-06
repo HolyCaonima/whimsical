@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 const root = path.resolve(import.meta.dirname, '..');
 const deps = [
+  ['rtxdi', 'https://github.com/NVIDIA-RTX/RTXDI-Library/archive/f12037fa8e97ebc08e9e3edfd2de528ed1772a4b.zip', 'RTXDI-Library-f12037fa8e97ebc08e9e3edfd2de528ed1772a4b'],
   ['rmlui', 'https://github.com/mikke89/RmlUi/archive/refs/tags/6.1.zip', 'RmlUi-6.1'],
   ['freetype', 'https://github.com/freetype/freetype/archive/refs/tags/VER-2-13-3.zip', 'freetype-VER-2-13-3'],
   ['onnxruntime', 'https://github.com/microsoft/onnxruntime/releases/download/v1.20.1/onnxruntime-win-x64-1.20.1.zip', 'onnxruntime-win-x64-1.20.1'],
@@ -45,6 +46,13 @@ for (let start=0; start<deps.length; start+=3) {
     await writeFile(path.join(destination,'.ready'),sha256+'\n');
     console.log('Ready '+name);
   }));
+}
+// Syntax-only GLSL compatibility for the pinned RTXDI headers (no algorithm changes).
+const rtxdiPatch = ['--directory=third_party/rtxdi', '--ignore-space-change', 'tools/patches/rtxdi-glsl.patch'];
+const patched = spawnSync('git', ['apply', '--reverse', '--check', ...rtxdiPatch], {cwd:root, windowsHide:true});
+if (patched.status !== 0) {
+  const result = spawnSync('git', ['apply', ...rtxdiPatch], {cwd:root, stdio:'inherit', windowsHide:true});
+  if (result.status !== 0) throw Error('RTXDI GLSL patch failed');
 }
 await writeFile(lockPath,JSON.stringify(lock,null,2)+'\n');
 console.log('All dependencies ready. Run tools/build.ps1');

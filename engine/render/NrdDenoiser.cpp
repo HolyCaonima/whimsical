@@ -221,6 +221,7 @@ void NrdDenoiser::dispatch(VkCommandBuffer command,
     common.resourceSize[1] = common.resourceSizePrev[1] = common.rectSize[1] = common.rectSizePrev[1] =
         uint16_t(height_);
     common.frameIndex = frame;
+    common.isHistoryConfidenceAvailable = true;
     common.timeDeltaBetweenFrames = std::max(ms, 1.f);
     common.denoisingRange = 150;
     common.accumulationMode =

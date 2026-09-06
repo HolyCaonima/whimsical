@@ -22,11 +22,16 @@ NRD 只消费 motion XY，`motionVectorScale.z=0`。GLM 用于 Vulkan raster 的
 
 ## DI / GI
 
-DI reservoir 保存球形位置扰动的解析灯样本、归一化 W、代表样本数 M 和选中样本 target。初始灯索引均匀采样，以 diffuse + specular BRDF luminance 做 RIS target。时域用 motion 重投影，并核对 entity ID、法线和之前 clip depth；空间阶段只读 initial reservoir，不在同一次 dispatch 内读写邻居的最终结果。最终选中灯重新执行当前 TLAS visibility。
+DI 直接编译固定版本的 NVIDIA RTXDI-Library（`f12037fa8e97ebc08e9e3edfd2de528ed1772a4b`），通过 `rtxdi_bridge.glsl` 的 RAB 接口接入当前 G-buffer、灯表、材质和 TLAS。Reservoir streaming、packing、时域／空间复用及 ray-traced MIS-like bias correction 使用 SDK 源码。初始 8 个候选来自 CPU 构建的 90% power / 10% uniform 离散灯分布；UV 量化后求 target，保留 engine 现有球形位置扰动的解析灯模型。初始可见性剔除保留 M，最终选中灯每帧重新查询当前 TLAS，不缓存旧阴影。
 
+时域启用 permutation sampling、最多 20 帧历史、深度／法线匹配；空间阶段读取完整的 temporal 输出，使用 4 个邻居，短历史区域增至 8 个。时域与空间是独立 dispatch，避免邻居读写竞争。灯槽在数量不变时保持索引对应，上一帧灯参数单独保留，参数动画不会全屏 reset；灯数量变化会重启历史。
+
+DI buffer 使用 SDK 的 16×16 block-linear 地址与 24 字节 packed reservoir，共四层：previous final、initial/temporal/replay、spatial/final、previous replay/initial probe。梯度 pass 在 initial sampling 覆写前读取 previous replay；帧末复制 final 和 replay。四层共 96 字节／对齐像素，与旧 DI 三个 32 字节 buffer 相同（尺寸向 16 对齐会产生少量 padding）。
+
+具体集成范围、梯度与验证见 [RTXDI 集成](rtxdi-integration.md)。
 GI initial sample 从当前 G-buffer 表面发射余弦半球 BRDF 光线。命中时保存二次位置、法线、实体 ID、该点的一次 next-event lighting 和 PDF；未命中时保存环境方向。GI temporal/spatial 重连接包含固体角 Jacobian，并追踪验证候选二次表面仍然存在、法线相容和可见。不可见候选以零权重计入 represented sample count，避免简单丢弃造成额外亮度偏差。
 
-当前方案使用受限历史与 Jacobian 支持域，相关样本与有限邻居存在偏差；还没有 production ReSTIR 的完整 bias correction / pairwise MIS。它是可运行、可测量和可替换的第一版算法。环境由实际 secondary ray miss 求值，不使用屏幕空间遮蔽或环境探针。
+GI 仍使用原有的受限历史与 Jacobian 支持域，相关样本与有限邻居存在偏差；本次仅替换 DI，不把它称为 SDK ReSTIR GI。环境由实际 secondary ray miss 求值，不使用屏幕空间遮蔽或环境探针。
 
 镜面间接光为独立的 GGX VNDF ray。二次表面的 shading 当前为 diffuse NEE 加 emission；这是一次 GI bounce 的基础，不等同多跳 glossy path tracing。
 
@@ -40,7 +45,7 @@ Diffuse hit distance 保留当前像素 initial cosine ray 的一跳距离，由
 
 RELAX 默认大半径预滤波会跨越同一平面上的投射阴影，其后 A-trous 无法恢复已经损失的边缘。参考 RTX Remix/RTXGI，当前 diffuse/specular prepass 半径为 0/20，`PhiLuminance` 为 0.5/0.35，diffuse fast history 为 4；保留 24 帧主历史、5 次 A-trous 和 anti-firefly。当前分别采样两个 lobe，没有 probabilistic lobe split，因此不需要开启 diffuse prepass 或 hit-distance reconstruction 来填补抽样空洞。这是一套针对合并信号的配置，不直接套用 Remix 的两套 DI/GI 配置。调查依据和验证见 [NRD 接入调查](nrd-integration-audit.md)。
 
-Resize、首帧、大相机跳变、灯光／材质变化会清理历史。NRD 帧号按实际 GPU render 递增；timeDelta 使用实际渲染帧间隔，GPU timestamp 只用来报告 pass 时间。
+Resize、首帧、大相机跳变、灯数量／材质变化会清理历史。NRD 帧号按实际 GPU render 递增；timeDelta 使用实际渲染帧间隔，GPU timestamp 只用来报告 pass 时间。
 
 ## 同步与资源生命周期
 
@@ -50,7 +55,7 @@ TLAS 只在拓扑变化时重建：`SceneDelta::topology` 是单调计数，槽�
 
 GPU fence 完成后再更新 CPU-visible 常量／实例／灯光数据；NRD descriptor pool 每帧重置前也已完成同一 fence。历史 image 和 reservoir 在当前帧末尾保存。Resize 等待 device idle，再重建 swapchain、screen-size images、reservoir 和 NRD pool。关闭时先 idle，再按依赖关系析构。
 
-当前 pipeline 的选择以正确性为先：保守 barrier、一帧 GPU in flight、host-visible geometry upload、逐实体 draw。实例数据不再逐帧全量写入：槽位由 `RenderScene` 稳定分配，渲染器按 `SceneDelta` 只写脏槽位，变换变化只触及 `GpuInstance` 前 128 字节的 `model`／`previousModel`，属性变化只触及末 16 字节的 `info`。资源上限是 1024 个 instance、256 个 material 和 256 个 light，超限明确报错。要做大型场景，下一步应增加 GPU allocator、staging 上传、chunk/streaming、draw batching、light importance distribution 和细粒度 graph dependency。
+当前 pipeline 的选择以正确性为先：保守 barrier、一帧 GPU in flight、host-visible geometry upload、逐实体 draw。实例数据不再逐帧全量写入：槽位由 `RenderScene` 稳定分配，渲染器按 `SceneDelta` 只写脏槽位，变换变化只触及 `GpuInstance` 前 128 字节的 `model`／`previousModel`，属性变化只触及末 16 字节的 `info`。资源上限是 1024 个 instance、256 个 material 和 256 个 light，超限明确报错。要做大型场景，下一步应增加 GPU allocator、staging 上传、chunk/streaming、draw batching、面向大量灯的 ReGIR 分布和细粒度 graph dependency。
 
 ## 参考来源
 
@@ -60,4 +65,4 @@ GPU fence 完成后再更新 CPU-visible 常量／实例／灯光数据；NRD de
 - [NVIDIA ReSTIR GI integration](https://github.com/NVIDIA-RTX/RTXDI/blob/main/Doc/RestirGI.md)
 - [NRD 源码和集成说明](https://github.com/NVIDIA-RTX/NRD)
 
-RTXDI 是设计参考，工程并未依赖或声称集成该 SDK。NRD 则是实际编译、链接和执行的依赖。
+RTXDI DI shader SDK 与 NRD 都是实际构建和执行的固定版本依赖。RTXDI 的 GLSL 补丁只处理 bool／uint 语法兼容，不改重采样算法。

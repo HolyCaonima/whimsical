@@ -14,19 +14,20 @@ with an SBT. `ShaderCompiler` therefore uses GLSL source linking:
 * Each Shader gets one GBuffer fragment program and graphics pipeline. The common vertex
   program already handles static and skinned geometry; there is no skinning permutation.
 * Each active Shader generation is linked once into a generated dispatch table in
-  `lighting.comp`, `reuse.comp` and `resolve.comp`. The table is keyed by a renderer-owned
+  the six `ShaderCompiler::surfacePasses` (lighting, GI reuse, DI temporal/spatial,
+  resolve and gradient replay). The table is keyed by a renderer-owned
   Shader index, not a Material index. The compute pipeline cache is keyed by the ordered
   set of immutable Shader generations. Adding another instance does not relink it.
-* Composite, UI and the GBuffer vertex program remain build-time programs; they do not
+* Composite, gradient filtering/confidence, UI and the GBuffer vertex program remain build-time programs; they do not
   evaluate authored surfaces. Lighting/BRDF/ReSTIR/NRD remain renderer responsibilities.
 
 This avoids changing the current query architecture or adding callable shader machinery.
 There is no Material compilation and no feature/permutation registry. The only surface
-variants are the raster and ray adapters, with the three ray-consuming pass entry points.
+variants are the raster and ray adapters, with six ray-consuming pass entry points.
 
 Runtime glslang compiles source with Vulkan 1.2 semantics. Its process is launched directly,
 without a shell or visible console. The SPIR-V cache uses the complete expanded source
-and pass as its key, including the surface contract and pass template. Compiler diagnostics
+and pass as its key, including the surface contract, pass template and recursively expanded pinned RTXDI headers. Compiler diagnostics
 map numbered GLSL source strings to Shader asset paths. Generated inputs, SPIR-V and logs
 are retained under `build/shaders/runtime-<id>` for inspection; cache reuse is in-process.
 The current development runtime needs the source tree and bundled glslang. Offline cooking,

@@ -2,6 +2,7 @@
 #include "assets/ShaderAsset.h"
 #include <filesystem>
 #include <map>
+#include <array>
 
 namespace afterlight {
 // Ray queries execute in compute shaders, so link the live Shader set into each
@@ -9,6 +10,8 @@ namespace afterlight {
 class ShaderCompiler {
   public:
     using ShaderSet = std::vector<std::shared_ptr<const ShaderAsset>>;
+    inline static constexpr std::array<const char*, 6> surfacePasses = {
+        "lighting.comp", "reuse.comp", "di_temporal.comp", "di_spatial.comp", "resolve.comp", "di_gradient.comp"};
     static std::string surfaceLibrary(const ShaderSet&, bool raster);
     static std::string passSource(const std::filesystem::path& directory, const std::string& pass,
                                   const ShaderSet&);

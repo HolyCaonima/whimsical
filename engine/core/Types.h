@@ -117,6 +117,7 @@ struct Frame {
     ConsoleView console;
     bool hudEnabled = true, statsEnabled = false, forceFullUpload = false;
     float exposure = 1.15f;
+    bool diHistoryConfidence = true;
     struct StaticDraw {
         uint32_t slot = 0;
         std::shared_ptr<const StaticMesh> mesh;

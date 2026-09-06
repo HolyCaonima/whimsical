@@ -50,5 +50,9 @@
   "rmlui": {
     "url": "https://github.com/mikke89/RmlUi/archive/refs/tags/6.1.zip",
     "sha256": "4e3561190cf7e6867388d5c89e15604f4f7bd83e112316ac0832a6a2d061eace"
+  },
+  "rtxdi": {
+    "url": "https://github.com/NVIDIA-RTX/RTXDI-Library/archive/f12037fa8e97ebc08e9e3edfd2de528ed1772a4b.zip",
+    "sha256": "f91de92d7c27f9824915ee5fcf62b0da664a6eb294edb659056ff3c462823f75"
   }
 }

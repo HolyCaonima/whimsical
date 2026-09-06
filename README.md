@@ -127,13 +127,13 @@ NRD RELAX_DIFFUSE_SPECULAR（原生 Vulkan dispatch）
 材质重调制 → tone map → 选择反馈 / HUD → swapchain
 ```
 
-DI 是自写的 ReSTIR DI 风格实现：8 个初始灯样本、时域历史和 4 个空间邻居，最终阴影使用硬件 ray query。GI 从 G-buffer 主表面的 BRDF secondary rays 出发，保存二次命中的位置、法线、实体 ID 和 radiance，再做时空重采样和重连接。没有 shadow map、SSAO、SSGI、lightmap 或 probe GI 替代这条路径。
+DI 接入固定版本 RTXDI-Library：8 个 power/uniform RIS 候选、SDK 时域复用、4/8 个空间邻居和 ray-traced bias correction，最终阴影使用当前 TLAS ray query。同样本可见性梯度反馈给一套合并 DI/GI 的 NRD。GI 从 G-buffer 主表面的 BRDF secondary rays 出发，保存二次命中的位置、法线、实体 ID 和 radiance，再做时空重采样和重连接。没有 shadow map、SSAO、SSGI、lightmap 或 probe GI 替代这条路径。
 
 NRD 4.17.3 实际参与 GPU 计算，使用 RELAX 的原生 SPIR-V、资源池、每 pass 常量、sampled/storage bindings 和两个 sampler；不是仅有接口占位。
 
 ## 当前实现边界
 
-这是可继续开发的第一版基础，不是大型游戏的最终渲染器。DI/GI 的算法结构参考 ReSTIR，自写实现没有接入 NVIDIA RTXDI SDK，也不声称达到 MegaLights 的算法、规模或质量。当前 GI 是 **一次二次表面命中上的漫反射重采样**；镜面间接光使用独立 GGX VNDF 路径和 NRD，尚无 ReSTIR PT、多跳路径重采样或无偏 MIS。历史长度与 GI Jacobian 有限幅，属于有偏实时方案。
+这是可继续开发的第一版基础，不是大型游戏的最终渲染器。DI 使用 NVIDIA RTXDI SDK，GI 保留自写实现；集成范围和当前近似见 [RTXDI 集成](docs/rtxdi-integration.md)。当前 GI 是 **一次二次表面命中上的漫反射重采样**；镜面间接光使用独立 GGX VNDF 路径和 NRD，尚无 ReSTIR PT、多跳路径重采样或 GI 的完整 MIS。历史长度与 GI Jacobian 有限幅，属于有偏实时方案。
 
 灯光是具有球形位置扰动的解析灯，用于柔和光追阴影；发光材质支持二次光线命中，但还没有 emissive mesh light importance sampling。基础 mesh 共享静态 BLAS，蒙皮角色各自持有动态 BLAS 并随姿态 refit；TLAS 在只有变换变化时走 `UPDATE`，在拓扑变化（槽位增长或改绑几何体）时重建。当前采用一帧 GPU in flight 和保守 pass barrier，还没有 async compute、自动资源别名、流式场景或 GPU-driven indirect draw。
 

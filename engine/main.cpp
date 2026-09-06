@@ -72,6 +72,8 @@ int main(int argc, char** argv) {
                     throw std::runtime_error("Audit name must be a simple directory name");
             } else if (arg == "--audit-motion")
                 options.auditMotion = true;
+            else if (arg == "--audit-occluder")
+                options.auditOccluder = number();
             else if (arg == "--no-validation") {
                 options.validation = false;
                 startupCommands.push_back("r.Validation false");
@@ -116,7 +118,7 @@ int main(int argc, char** argv) {
                 std::cout << "Afterlight [--frames N] [--capture] [--width 1280] [--height 800] [--view "
                              "0..7] [--no-hud] [--validation] [--no-validation] [--present "
                              "fifo|mailbox|immediate] [--demo] [--smoke] [--stress N] [--full-upload] "
-                             "[--audit NAME] [--audit-motion] [--physics-debug] [--project DIR] [--map "
+                             "[--audit NAME] [--audit-motion] [--audit-occluder SLOT] [--physics-debug] [--project DIR] [--map "
                              "/Game/Maps/Name] [--console] [--exec \"command\"] [--cvar \"name=value\"] "
                              "[--console-smoke] [--profile-gpu] [--profile-cpu]\n";
                 return 0;
@@ -125,6 +127,8 @@ int main(int argc, char** argv) {
         }
         if (options.auditMotion && options.audit.empty())
             throw std::runtime_error("--audit-motion requires --audit NAME");
+        if (options.auditOccluder >= 0 && options.audit.empty())
+            throw std::runtime_error("--audit-occluder requires --audit NAME");
         if (!options.audit.empty()) {
             if (!options.maxFrames)
                 options.maxFrames = 192;

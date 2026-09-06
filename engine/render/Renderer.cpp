@@ -15,21 +15,23 @@
 #include <chrono>
 #include <cstring>
 #include <algorithm>
+#include <Rtxdi/RtxdiParameters.h>
 namespace afterlight {
 namespace {
 constexpr uint32_t MaxInstances = 1024, MaxLights = 256, MaxMaterials = 256, MaxTextures = 64;
+static_assert(sizeof(RTXDI_PackedDIReservoir) == 24, "RTXDI packed reservoir ABI changed");
 constexpr VkImageUsageFlags ColorUsage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
                                          VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 struct alignas(16) Globals {
     mat4 vp, previousVp, view, inverseVp;
-    vec4 eyeTime, resolution, player, destination, renderSettings;
+    vec4 eyeTime, resolution, player, destination, renderSettings, previousEye;
     glm::uvec4 counts;
 };
 struct alignas(16) GpuInstance {
     mat4 model, previousModel;
     glm::uvec4 info;
 };
-static_assert(sizeof(Globals) == 352 && sizeof(GpuInstance) == 144 && sizeof(GpuMaterial) == 176 &&
+static_assert(sizeof(Globals) == 368 && sizeof(GpuInstance) == 144 && sizeof(GpuMaterial) == 176 &&
                   sizeof(GpuVertex) == 96,
               "GPU layout mismatch");
 struct AccelerationStructure {
@@ -92,8 +94,9 @@ struct Renderer::Impl {
     ShaderCompiler shaderCompiler;
     MaterialBindings materialBindings;
     std::map<std::shared_ptr<const ShaderAsset>, VkPipeline> rasterPrograms;
-    std::map<ShaderCompiler::ShaderSet, std::array<VkPipeline, 3>> computePrograms;
-    std::array<VkPipeline, 4> compute{};
+    std::map<ShaderCompiler::ShaderSet, std::array<VkPipeline, ShaderCompiler::surfacePasses.size()>> computePrograms;
+    enum Pass { Lighting, GiReuse, DiTemporal, DiSpatial, Resolve, DiGradient, Composite, DiConfidence, DiGradientFilter, PassCount };
+    std::array<VkPipeline, PassCount> compute{};
     Buffer globals, instanceData, materialData, lightData, vertexData, indexData, tlasInstances, tlasScratch,
         readback, auditReadback;
     RenderAudit audit;
@@ -120,7 +123,7 @@ struct Renderer::Impl {
     bool skinMotionPending = false, skinGeometryDirty = false;
     uint32_t vertexCount = 0;
     // Binding number -> image; unused bindings intentionally remain empty.
-    std::array<Image, 29> images;
+    std::array<Image, 39> images;
     Image depth, captureImage;
     std::unique_ptr<NrdDenoiser> denoiser;
     std::unique_ptr<UiRenderer> uiRenderer;
@@ -178,7 +181,8 @@ struct Renderer::Impl {
             vkDestroySemaphore(vk.device, acquired, nullptr);
         if (fence)
             vkDestroyFence(vk.device, fence, nullptr);
-        if (compute[3]) vkDestroyPipeline(vk.device, compute[3], nullptr);
+        for (auto i : {Composite, DiConfidence, DiGradientFilter})
+            if (compute[i]) vkDestroyPipeline(vk.device, compute[i], nullptr);
         for (const auto& programs : computePrograms)
             for (auto p : programs.second)
                 vkDestroyPipeline(vk.device, p, nullptr);
@@ -483,7 +487,7 @@ struct Renderer::Impl {
     }
     void createPipelines() {
         std::vector<VkDescriptorSetLayoutBinding> bindings;
-        for (uint32_t b = 0; b <= 29; b++) {
+        for (uint32_t b = 0; b <= 38; b++) {
             VkDescriptorType type = b == 29  ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
                                     : b == 0 ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
                                     : b <= 5 || (b >= 13 && b <= 18) ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
@@ -491,7 +495,7 @@ struct Renderer::Impl {
                                              : VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
             bindings.push_back(
                 {b, type, b == 29 ? MaxTextures : 1,
-                 VkShaderStageFlags(b <= 3 || b >= 29 ? VK_SHADER_STAGE_ALL : VK_SHADER_STAGE_COMPUTE_BIT),
+                 VkShaderStageFlags(b <= 3 || b == 29 ? VK_SHADER_STAGE_ALL : VK_SHADER_STAGE_COMPUTE_BIT),
                  nullptr});
         }
         VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
@@ -505,7 +509,7 @@ struct Renderer::Impl {
         VkDescriptorPoolSize poolSizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
                                             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 11},
                                             {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1},
-                                            {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 16},
+                                            {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 25},
                                             {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MaxTextures}};
         VkDescriptorPoolCreateInfo dp{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
         dp.maxSets = 1;
@@ -517,7 +521,9 @@ struct Renderer::Impl {
         da.descriptorSetCount = 1;
         da.pSetLayouts = &setLayout;
         VK_CHECK(vkAllocateDescriptorSets(vk.device, &da, &descriptors));
-        compute[3] = createComputePipeline(loadShader(vk, "composite.comp"));
+        compute[Composite] = createComputePipeline(loadShader(vk, "composite.comp"));
+        compute[DiGradientFilter] = createComputePipeline(loadShader(vk, "di_gradient_filter.comp"));
+        compute[DiConfidence] = createComputePipeline(loadShader(vk, "di_confidence.comp"));
     }
     VkPipeline createComputePipeline(VkShaderModule module) {
         VkComputePipelineCreateInfo cp{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
@@ -540,8 +546,8 @@ struct Renderer::Impl {
         }
         auto programs = computePrograms.find(bindings.shaders);
         if (programs == computePrograms.end()) {
-            std::array<VkPipeline, 3> pipelines{};
-            const char* names[] = {"lighting.comp", "reuse.comp", "resolve.comp"};
+            std::array<VkPipeline, ShaderCompiler::surfacePasses.size()> pipelines{};
+            const auto& names = ShaderCompiler::surfacePasses;
             try {
                 for (uint32_t i = 0; i < pipelines.size(); ++i) {
                     auto module = createShaderModule(vk, shaderCompiler.compile(names[i], bindings.shaders));
@@ -734,14 +740,16 @@ struct Renderer::Impl {
         vk.destroy(readback);
         vk.destroy(auditReadback);
         audit = {};
-        for (uint32_t b = 7; b <= 28; b++)
-            if (!(b >= 13 && b <= 18)) {
+        for (uint32_t b = 7; b <= 38; b++)
+            if (!(b >= 13 && b <= 18) && b != 29) {
                 VkFormat imageFormat = b == 9 || b == 25 ? VK_FORMAT_R32G32B32A32_SFLOAT
-                                       : b == 11         ? VK_FORMAT_R32_SFLOAT
+                                       : b == 11 || b == 31 ? VK_FORMAT_R32_SFLOAT
+                                       : b == 33 || b == 34 ? VK_FORMAT_R16_SFLOAT
+                                       : b == 37 ? VK_FORMAT_R16G16_SFLOAT
                                        : b == 28         ? VK_FORMAT_R8G8B8A8_UNORM
                                                          : VK_FORMAT_R16G16B16A16_SFLOAT;
                 images[b] =
-                    vk.image(width, height, imageFormat,
+                    vk.image(b == 32 || b == 38 ? (width + 2) / 3 : width, b == 32 || b == 38 ? (height + 2) / 3 : height, imageFormat,
                              ColorUsage | (b <= 12 || b == 28 ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : 0));
             }
         depth = vk.image(width, height, VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
@@ -749,10 +757,22 @@ struct Renderer::Impl {
                                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                                     VK_IMAGE_USAGE_SAMPLED_BIT);
         VkDeviceSize pixels = VkDeviceSize(width) * height;
-        for (uint32_t i = 0; i < 6; i++)
-            reservoirs[i] = vk.buffer(pixels * (i < 3 ? 32 : 64), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                                                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-                                                                      VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+        // RTXDI uses four packed 24-byte arrays, matching the old DI's 96 bytes/pixel.
+        const auto usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                           VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        constexpr uint32_t block = RTXDI_RESERVOIR_BLOCK_SIZE;
+        const VkDeviceSize diLayerBytes = VkDeviceSize((width + block - 1) / block) * ((height + block - 1) / block) *
+                                         block * block * sizeof(RTXDI_PackedDIReservoir);
+        reservoirs[0] = vk.buffer(diLayerBytes * 4, usage);
+        reservoirs[1] = vk.buffer(1024 * sizeof(vec2), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+        reservoirs[2] = vk.buffer(MaxLights * (sizeof(vec4) + sizeof(Light)), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+        auto* offsets = static_cast<vec2*>(reservoirs[1].mapped);
+        for (uint32_t i = 0; i < 1024; ++i) {
+            float radius = std::sqrt((i + .5f) / 1024.f), angle = i * 2.39996323f;
+            offsets[i] = radius * vec2(std::cos(angle), std::sin(angle));
+        }
+        for (uint32_t i = 3; i < 6; ++i)
+            reservoirs[i] = vk.buffer(pixels * 64, usage);
         readback = vk.buffer(pixels * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
         if (!options.audit.empty())
             auditReadback = vk.buffer(pixels * 8 * RenderAudit::signalCount, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
@@ -769,8 +789,8 @@ struct Renderer::Impl {
         return true;
     }
     void updateDescriptors() {
-        std::array<VkDescriptorBufferInfo, 29> buffers{};
-        std::array<VkDescriptorImageInfo, 29> textureInfo{};
+        std::array<VkDescriptorBufferInfo, 39> buffers{};
+        std::array<VkDescriptorImageInfo, 39> textureInfo{};
         std::vector<VkWriteDescriptorSet> writes;
         std::array<VkDescriptorImageInfo, MaxTextures> sampled{};
         for (uint32_t i = 0; i < MaxTextures; ++i)
@@ -782,7 +802,7 @@ struct Renderer::Impl {
         asWrite.accelerationStructureCount = 1;
         asWrite.pAccelerationStructures = &tlas.handle;
         Buffer* basics[] = {&globals, &instanceData, &materialData, &lightData, &vertexData, &indexData};
-        for (uint32_t b = 0; b <= 29; b++) {
+        for (uint32_t b = 0; b <= 38; b++) {
             VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
             w.dstSet = descriptors;
             w.dstBinding = b;
@@ -1064,10 +1084,12 @@ struct Renderer::Impl {
         vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_COMPUTE, compute[pipeline]);
         vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &descriptors, 0,
                                 nullptr);
-        vkCmdDispatch(c, (width + 7) / 8, (height + 7) / 8, 1);
+        uint32_t w = pipeline == DiGradient || pipeline == DiGradientFilter ? (width + 2) / 3 : width;
+        uint32_t h = pipeline == DiGradient || pipeline == DiGradientFilter ? (height + 2) / 3 : height;
+        vkCmdDispatch(c, (w + 7) / 8, (h + 7) / 8, 1);
     }
     void copyHistory(VkCommandBuffer c) {
-        for (auto pair : {std::pair<uint32_t, uint32_t>{8, 24}, {9, 25}}) {
+        for (auto pair : {std::pair<uint32_t, uint32_t>{8, 24}, {9, 25}, {7, 30}, {11, 31}, {35, 36}}) {
             auto& source = images[pair.first];
             auto& destination = images[pair.second];
             vk.transition(c, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
@@ -1080,10 +1102,11 @@ struct Renderer::Impl {
             vk.transition(c, source, VK_IMAGE_LAYOUT_GENERAL);
             vk.transition(c, destination, VK_IMAGE_LAYOUT_GENERAL);
         }
-        for (uint32_t i : {0u, 3u}) {
-            VkBufferCopy copy{0, 0, reservoirs[i].size};
-            vkCmdCopyBuffer(c, reservoirs[i].handle, reservoirs[i + 1].handle, 1, &copy);
-        }
+        const VkDeviceSize layer = reservoirs[0].size / 4;
+        VkBufferCopy diCopies[] = {{2 * layer, 0, layer}, {layer, 3 * layer, layer}};
+        vkCmdCopyBuffer(c, reservoirs[0].handle, reservoirs[0].handle, 2, diCopies);
+        VkBufferCopy giCopy{0, 0, reservoirs[3].size};
+        vkCmdCopyBuffer(c, reservoirs[3].handle, reservoirs[4].handle, 1, &giCopy);
     }
     void blit(VkCommandBuffer c, Image& source, Image& destination) {
         vk.transition(c, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
@@ -1183,17 +1206,22 @@ struct Renderer::Impl {
             sourceFrame->cpuProfile && sourceFrame->cpuProfile->request > lastCpuProfileRequest;
         CpuProfiler cpuProfiler(captureCpu, "Render", "Render Frame");
         FrameRef frameRef = sourceFrame;
-        if (options.auditMotion) {
+        if (options.auditMotion || options.auditOccluder >= 0) {
             Frame diagnostic = *sourceFrame;
-            diagnostic.camera.yaw += .04f * std::sin(float(frameNumber) * .017f);
+            if (options.auditMotion)
+                diagnostic.camera.yaw += .04f * std::sin(float(frameNumber) * .017f);
+            if (options.auditOccluder >= 0) {
+                diagnostic.proxies.at(size_t(options.auditOccluder)).transform.position.x += frameNumber >= 64 ? 2.f : 0.f;
+                diagnostic.forceFullUpload = true;
+            }
             frameRef = std::make_shared<const Frame>(std::move(diagnostic));
         }
         const Frame& frame = *frameRef;
         if (!frame.input.width || !frame.input.height)
             return true;
         if (frame.proxies.empty() || frame.proxies.size() > MaxInstances ||
-            frame.materials.size() > MaxMaterials || frame.lights.empty() || frame.lights.size() > MaxLights)
-            throw std::runtime_error("Scene capacity exceeded or scene has no lights/instances");
+            frame.materials.size() > MaxMaterials || frame.lights.size() > MaxLights)
+            throw std::runtime_error("Scene capacity exceeded or scene has no instances");
         {
             CpuScope scope("Wait / Previous GPU Fence");
             VK_CHECK(vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX));
@@ -1242,9 +1270,8 @@ struct Renderer::Impl {
                             std::memcmp(frame.lights.data(), previous->lights.data(),
                                         frame.lights.size() * sizeof(Light)) != 0;
             materialsChanged = !(frame.materials == previous->materials);
-            // Both are read by every shading pass, so changing either invalidates the
-            // temporal history that was accumulated under the old values.
-            reset = reset || lightsChanged || materialsChanged;
+            // Stable light slots permit parameter animation; topology changes restart history.
+            reset = reset || frame.lights.size() != previous->lights.size() || materialsChanged;
         }
         if (materialsChanged)
             updateMaterials(frame);
@@ -1255,10 +1282,11 @@ struct Renderer::Impl {
             reset ? data.vp : previous->camera.projection(float(width) / height) * previous->camera.view();
         data.inverseVp = glm::inverse(data.vp);
         data.eyeTime = vec4(frame.camera.eye(), float(frame.time));
+        data.previousEye = vec4(reset ? frame.camera.eye() : previous->camera.eye(), 0);
         data.resolution = {float(width), float(height), float(frame.debugView), float(frame.hovered)};
         data.player = vec4(frame.player, float(frame.selected));
         data.destination = vec4(frame.destination, frame.hasDestination ? 1.f : 0.f);
-        data.renderSettings = {frame.exposure, 0, 0, 0};
+        data.renderSettings = {frame.exposure, frame.diHistoryConfidence ? 1.f : 0.f, lightsChanged ? 1.f : 0.f, 0};
         data.counts = {uint32_t(frame.proxies.size()), uint32_t(frame.lights.size()), uint32_t(frameNumber),
                        reset ? 0u : 1u};
         std::memcpy(globals.mapped, &data, sizeof(data));
@@ -1268,6 +1296,21 @@ struct Renderer::Impl {
         // are worth uploading again.
         if (lightsChanged)
             std::memcpy(lightData.mapped, frame.lights.data(), frame.lights.size() * sizeof(Light));
+        // The discrete proposal is a power/uniform mixture. Keep every light reachable.
+        auto* distribution = static_cast<vec4*>(reservoirs[2].mapped);
+        float totalPower = 0;
+        for (const auto& light : frame.lights)
+            totalPower += glm::dot(vec3(light.colorIntensity), vec3(.2126f, .7152f, .0722f)) * light.colorIntensity.w;
+        float cdf = 0;
+        for (size_t i = 0; i < frame.lights.size(); ++i) {
+            const auto& light = frame.lights[i];
+            float power = glm::dot(vec3(light.colorIntensity), vec3(.2126f, .7152f, .0722f)) * light.colorIntensity.w;
+            float pdf = totalPower > 0 ? .9f * power / totalPower + .1f / frame.lights.size() : 1.f / frame.lights.size();
+            cdf += pdf;
+            distribution[i] = vec4(i + 1 == frame.lights.size() ? 1.f : cdf, pdf, 0, 0);
+        }
+        const auto& oldLights = reset ? frame.lights : previous->lights;
+        std::memcpy(distribution + MaxLights, oldLights.data(), oldLights.size() * sizeof(Light));
         uploadScope.finish();
         {
             CpuScope scope("UI / Prepare Resources");
@@ -1294,8 +1337,8 @@ struct Renderer::Impl {
                     vk.transition(command, image, VK_IMAGE_LAYOUT_GENERAL);
                     vkCmdClearColorImage(command, image.handle, image.layout, &clear, 1, &range);
                 }
-            for (auto& buffer : reservoirs)
-                vkCmdFillBuffer(command, buffer.handle, 0, VK_WHOLE_SIZE, 0);
+            for (auto i : {0, 3, 4, 5})
+                vkCmdFillBuffer(command, reservoirs[i].handle, 0, VK_WHOLE_SIZE, 0);
             VulkanContext::barrier(command);
         }
         {
@@ -1320,7 +1363,7 @@ struct Renderer::Impl {
         }
         // Bindings name resources, not their contents. Nothing but a swapchain resize or
         // a rebuilt acceleration structure replaces a handle, so the set is written once
-        // and then left alone instead of being rewritten 29 times a frame.
+        // and then left alone instead of being rewritten every frame.
         if (descriptorsDirty) {
             CpuScope scope("Update Descriptors");
             updateDescriptors();
@@ -1328,9 +1371,14 @@ struct Renderer::Impl {
         }
         RenderGraph graph;
         graph.add("GBuffer Raster", [&](auto c) { rasterize(c, frame); });
-        graph.add("ReSTIR Initial DI + Secondary GI + Specular", [&](auto c) { dispatch(c, 0); });
-        graph.add("ReSTIR Temporal + Spatial Reconnection", [&](auto c) { dispatch(c, 1); });
-        graph.add("Visibility + Radiance Resolve", [&](auto c) { dispatch(c, 2); });
+        graph.add("RTXDI Same Sample Gradient", [&](auto c) { dispatch(c, DiGradient); });
+        graph.add("RTXDI Gradient Filter", [&](auto c) { dispatch(c, DiGradientFilter); });
+        graph.add("RTXDI History Confidence", [&](auto c) { dispatch(c, DiConfidence); });
+        graph.add("RTXDI Initial + Secondary GI + Specular", [&](auto c) { dispatch(c, Lighting); });
+        graph.add("RTXDI Temporal Resampling", [&](auto c) { dispatch(c, DiTemporal); });
+        graph.add("RTXDI Spatial Resampling", [&](auto c) { dispatch(c, DiSpatial); });
+        graph.add("ReSTIR GI Reconnection", [&](auto c) { dispatch(c, GiReuse); });
+        graph.add("Visibility + Radiance Resolve", [&](auto c) { dispatch(c, Resolve); });
         graph.add("NRD RELAX Diffuse Specular", [&](auto c) {
             std::array<Image*, size_t(nrd::ResourceType::MAX_NUM)> resources{};
             resources[size_t(nrd::ResourceType::IN_MV)] = &images[10];
@@ -1340,9 +1388,11 @@ struct Renderer::Impl {
             resources[size_t(nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST)] = &images[20];
             resources[size_t(nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST)] = &images[21];
             resources[size_t(nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST)] = &images[22];
+            resources[size_t(nrd::ResourceType::IN_DIFF_CONFIDENCE)] = &images[33];
+            resources[size_t(nrd::ResourceType::IN_SPEC_CONFIDENCE)] = &images[34];
             denoiser->dispatch(c, resources, frame.camera, uint32_t(frameNumber), reset, frameMs, *profiler);
         });
-        graph.add("Composition + Tone Map + HUD", [&](auto c) { dispatch(c, 3); });
+        graph.add("Composition + Tone Map + HUD", [&](auto c) { dispatch(c, Composite); });
         graph.add("History Store", [&](auto c) { copyHistory(c); });
         graph.execute(command, *profiler);
         bool auditFrame = !options.audit.empty() && frameNumber >= 64;

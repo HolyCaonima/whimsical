@@ -79,7 +79,7 @@ int main() {
             auto& code = compiler.compile("gbuffer.frag", {shader});
             check(!code.empty() && code[0] == 0x07230203, "Raster Shader must compile to SPIR-V");
         }
-        for (const auto* pass : {"lighting.comp", "reuse.comp", "resolve.comp"})
+        for (const auto* pass : ShaderCompiler::surfacePasses)
             check(!compiler.compile(pass, shaders).empty(), "Linked ray-query passes must compile");
         auto count = compiler.compilationCount();
         second.properties[1].x = .2f;
@@ -104,13 +104,13 @@ return s;
         compiler.compile("gbuffer.frag", {custom});
         auto linked = shaders;
         linked.push_back(custom);
-        for (const auto* pass : {"lighting.comp", "reuse.comp", "resolve.comp"})
+        for (const auto* pass : ShaderCompiler::surfacePasses)
             compiler.compile(pass, linked);
-        check(compiler.compilationCount() == count + 4,
+        check(compiler.compilationCount() == count + 1 + ShaderCompiler::surfacePasses.size(),
               "New Shader must compile its raster pass and relink ray passes");
         custom->source += "\n// new source generation\n";
         compiler.compile("gbuffer.frag", {custom});
-        check(compiler.compilationCount() == count + 5, "Source changes must invalidate the program cache");
+        check(compiler.compilationCount() == count + 2 + ShaderCompiler::surfacePasses.size(), "Source changes must invalidate the program cache");
         auto broken = ShaderAsset::decode(shaders[0]->header().metadata, "this is invalid GLSL;");
         rejects([&] { compiler.compile("gbuffer.frag", {broken}); }, "Compiler errors must be surfaced");
         std::cout << "Shader assets, instance bindings and " << count << " surface programs verified\n";

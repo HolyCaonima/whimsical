@@ -1,0 +1,28 @@
+#version 460
+#extension GL_EXT_ray_query : require
+#extension GL_GOOGLE_include_directive : require
+#define COMPUTE_PASS
+#include "common.glsl"
+layout(local_size_x=8,local_size_y=8) in;
+void main() {
+    ivec2 p=ivec2(gl_GlobalInvocationID.xy);
+    if (!inBounds(p)) return;
+    vec2 pos=(vec2(p)+.5)/3-.5;
+    ivec2 base=ivec2(floor(pos)), last=imageSize(filteredDiGradient)-1;
+    vec2 fraction=fract(pos);
+    vec4 a=imageLoad(filteredDiGradient,clamp(base,ivec2(0),last));
+    vec4 b=imageLoad(filteredDiGradient,clamp(base+ivec2(1,0),ivec2(0),last));
+    vec4 c=imageLoad(filteredDiGradient,clamp(base+ivec2(0,1),ivec2(0),last));
+    vec4 d=imageLoad(filteredDiGradient,clamp(base+ivec2(1,1),ivec2(0),last));
+    vec4 gradient=mix(mix(a,b,fraction.x),mix(c,d,fraction.x),fraction.y);
+    vec2 confidence=pow(clamp(1-gradient.xy/(gradient.zw+.02),vec2(0),vec2(1)),vec2(8));
+    // RTXDI's short nonlinear confidence filter holds rejection while reservoirs
+    // settle. Respond immediately to a new change; recover over the next frames.
+    vec2 history=imageLoad(diConfidenceHistory,p).xy;
+    vec2 recovery=pow(mix(pow(history,vec2(.25)),pow(confidence,vec2(.25)),.5),vec2(4));
+    confidence=min(confidence,recovery);
+    if (g.counts.w==0) confidence=vec2(0);
+    if (g.renderSettings.y==0) confidence=vec2(1);
+    imageStore(diffuseConfidence,p,vec4(confidence.x));
+    imageStore(specularConfidence,p,vec4(confidence.y));
+}

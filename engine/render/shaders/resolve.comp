@@ -3,6 +3,7 @@
 #extension GL_GOOGLE_include_directive : require
 #define COMPUTE_PASS
 #define SURFACE_PASS
+#define RTXDI_PASS
 #include "common.glsl"
 layout(local_size_x = 8, local_size_y = 8) in;
 void main() {
@@ -11,14 +12,38 @@ void main() {
         return;
     uint index = indexOf(p);
     Surface s = surfaceAt(p);
+    // Persist confidence in this frame's surface coordinates. The next gradient
+    // pass is expressed in these coordinates, as is NRD's previous-UV lookup.
+    ivec2 prevPixel=ivec2(round(vec2(p)+imageLoad(gMotion,p).xy*g.resolution.xy));
+    vec2 confidence=vec2(0);
+    if (inBounds(prevPixel)) confidence=vec2(imageLoad(diffuseConfidence,prevPixel).x,
+                                           imageLoad(specularConfidence,prevPixel).x);
+    imageStore(diConfidenceHistory,p,vec4(confidence,0,0));
     vec3 direct = vec3(0), specular = vec3(0), indirect = vec3(0);
     float hitDistance = imageLoad(rawDiffuse, p).w;
+    RAB_Surface diSurface=RAB_GetGBufferSurface(p,false);
+    RTXDI_DIReservoir di=RTXDI_LoadDIReservoir(diBufferParams(),uvec2(p),2);
+    RTXDI_DIReservoir replay=RTXDI_LoadDIReservoir(diBufferParams(),uvec2(p),3);
+    vec2 replayLuminance=vec2(0);
     if (s.id != 0) {
-        DIReservoir di = currentDI[index];
-        if (di.stats.w > 0 && visible(s.p, s.n, di.sampleLight.xyz)) {
-            directSignal(s, di.sampleLight, direct, specular);
-            direct *= di.stats.x;
-            specular *= di.stats.x;
+        if (RTXDI_IsValidDIReservoir(di) && di.weightSum>0) {
+            RAB_LightSample light=RAB_SamplePolymorphicLight(
+                RAB_LoadLightInfo(RTXDI_GetDIReservoirLightIndex(di),false),diSurface,RTXDI_GetDIReservoirSampleUV(di));
+            bool lit=RAB_GetConservativeVisibility(diSurface,light);
+            if (lit) {
+                diSignal(diSurface,light,direct,specular);
+                direct*=di.weightSum;
+                specular*=di.weightSum;
+            }
+            RTXDI_StoreVisibilityInDIReservoir(di,vec3(lit ? 1 : 0),false);
+            replay=di;
+            RTXDI_StoreVisibilityInDIReservoir(di,vec3(lit ? 1 : 0),true);
+        }
+        if (RTXDI_IsValidDIReservoir(replay) && replay.packedVisibility != 0) {
+            RAB_LightSample light=RAB_SamplePolymorphicLight(
+                RAB_LoadLightInfo(RTXDI_GetDIReservoirLightIndex(replay),false),diSurface,RTXDI_GetDIReservoirSampleUV(replay));
+            vec3 d,sp; diSignal(diSurface,light,d,sp);
+            replayLuminance=vec2(luminance(d*s.albedo*(1-s.metallic)),luminance(sp))*replay.weightSum;
         }
         GIReservoir gi = currentGI[index];
         if (gi.stats.w > 0) {
@@ -28,6 +53,10 @@ void main() {
         }
     }
     vec4 spec = imageLoad(rawSpecular, p);
+    RTXDI_StoreDIReservoir(di,diBufferParams(),uvec2(p),2);
+    RTXDI_StoreDIReservoir(replay,diBufferParams(),uvec2(p),1);
+    imageStore(diLuminance,p,vec4(replayLuminance,
+        luminance((direct+indirect)*s.albedo*(1-s.metallic)),luminance(spec.rgb+specular)));
     imageStore(rawDiffuse, p, vec4(clamp(direct + indirect, vec3(0), vec3(60000)), hitDistance));
     imageStore(rawSpecular, p, vec4(clamp((spec.rgb + specular) / specularMaterialFactor(s),
                                         vec3(0), vec3(60000)), spec.w));

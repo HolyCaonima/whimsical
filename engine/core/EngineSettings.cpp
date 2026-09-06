@@ -8,6 +8,7 @@ EngineSettings::EngineSettings(ConsoleRegistry& v, bool validationDefault) : var
                "Render view: 0 lit, 1 albedo, 2 normals, 3 depth, 4 direct, 5 indirect, 6 raw, 7 motion",
                CVarNone, CVarRange{0, 7});
     v.variable("r.FullUpload", false, "Force full render scene uploads for profiling", CVarNone);
+    v.variable("r.DIHistoryConfidence", true, "RTXDI visibility feedback to reservoir and NRD histories", CVarNone);
     v.variable("r.Present", std::string("fifo"), "Vulkan present mode, applied when creating the renderer",
                CVarArchive | CVarRestart, {}, {"fifo", "mailbox", "immediate"});
     v.variable("r.Validation", validationDefault, "Vulkan validation at renderer creation", CVarRestart);
@@ -22,5 +23,6 @@ void EngineSettings::decorate(Frame& f) const {
     f.statsEnabled = vars_.get<bool>("r.Stats");
     f.exposure = float(vars_.get<double>("r.Exposure"));
     f.forceFullUpload = vars_.get<bool>("r.FullUpload");
+    f.diHistoryConfidence = vars_.get<bool>("r.DIHistoryConfidence");
 }
 } // namespace afterlight

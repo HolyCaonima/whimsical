@@ -19,8 +19,7 @@ import numpy as np
 from test_shader_surfaces import ROOT, read_asset, write_asset
 
 
-def run():
-    tag = "nrd-shadow-" + uuid.uuid4().hex[:8]
+def create_project(tag):
     project = ROOT / "build" / tag
     content = project / "Content"
     content.mkdir(parents=True)
@@ -44,6 +43,12 @@ def run():
         obj["render"].update(scale=scale, material=material)
         scene["objects"].append(obj)
     write_asset(content / "Test.asset", "Map", scene)
+    return project
+
+
+def run():
+    tag = "nrd-shadow-" + uuid.uuid4().hex[:8]
+    project = create_project(tag)
     args = [str(ROOT / "build/bin/Release/Afterlight.exe"), "--project", str(project),
             "--frames", "192", "--width", "640", "--height", "400", "--validation",
             "--present", "immediate", "--capture", "--audit", tag]
