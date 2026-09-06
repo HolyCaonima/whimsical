@@ -90,6 +90,22 @@ struct Renderer::Impl {
     std::unique_ptr<NrdDenoiser> denoiser;
     DebugHud hud;
     FrameRef previous;
+    // Persistent mirror of the render scene. The renderer keeps its own copy of every
+    // slot's model matrix because the GPU-side instance buffer lives in write-combined
+    // memory, where reading back what was written costs far more than storing it twice.
+    std::vector<mat4> shadowModel;
+    std::vector<uint64_t> motionFrame; // Stamp of the update in which a slot last moved.
+    std::vector<uint32_t> movedThisFrame, movedLastFrame;
+    uint64_t sceneStamp = 0;
+    uint64_t mirrorRevision = 0, mirrorTopology = 0;
+    uint32_t tlasCapacity = 0;
+    uint32_t mirrorCapacity = 0;
+    bool mirrorValid = false;
+    bool descriptorsDirty = true;
+    SceneUpdateStatistics sceneStatistics;
+    // Totals over the whole run, so the incremental path can be compared against what a
+    // full rebuild of every slot on every frame would have cost.
+    uint64_t sceneWrites = 0, sceneResyncs = 0, sceneTlasRebuilds = 0, sceneSlotFrames = 0;
     bool historyValid = false;
     bool resizePending = false;
     std::chrono::steady_clock::time_point previousRenderTime = std::chrono::steady_clock::now();
@@ -371,7 +387,10 @@ struct Renderer::Impl {
         std::cout << "[Render] " << presentName(wanted) << " present mode unsupported; using FIFO\n";
         return VK_PRESENT_MODE_FIFO_KHR;
     }
-    void resize(uint32_t requestedWidth, uint32_t requestedHeight) {
+    // Returns false when the surface currently has no area, which happens when the window
+    // is minimised between the simulation sampling its size and this query running on the
+    // render thread. Sizing resources to that would ask Vulkan for zero-extent images.
+    bool resize(uint32_t requestedWidth, uint32_t requestedHeight) {
         VK_CHECK(vkDeviceWaitIdle(vk.device));
         VkSurfaceCapabilitiesKHR caps;
         VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk.physical, vk.surface, &caps));
@@ -389,6 +408,11 @@ struct Renderer::Impl {
         if (extent.width == UINT32_MAX)
             extent = {std::clamp(requestedWidth, caps.minImageExtent.width, caps.maxImageExtent.width),
                       std::clamp(requestedHeight, caps.minImageExtent.height, caps.maxImageExtent.height)};
+        if (!extent.width || !extent.height) {
+            resizePending = true; // Retry once the window has area again.
+            return false;
+        }
+        descriptorsDirty = true; // Every screen-sized image is about to be replaced.
         width = extent.width;
         height = extent.height;
         uint32_t count = std::max(3u, caps.minImageCount);
@@ -475,6 +499,7 @@ struct Renderer::Impl {
         statisticsStart = {};
         statisticsIntervals = 0;
         statisticsGpuSum = 0;
+        return true;
     }
     void updateDescriptors() {
         std::array<VkDescriptorBufferInfo, 29> buffers{};
@@ -508,6 +533,130 @@ struct Renderer::Impl {
         }
         vkUpdateDescriptorSets(vk.device, uint32_t(writes.size()), writes.data(), 0, nullptr);
     }
+    GpuInstance* instances() {
+        return static_cast<GpuInstance*>(instanceData.mapped);
+    }
+    VkAccelerationStructureInstanceKHR* accelerationInstances() {
+        return static_cast<VkAccelerationStructureInstanceKHR*>(tlasInstances.mapped);
+    }
+    static VkTransformMatrixKHR rowMajor(const mat4& model) {
+        VkTransformMatrixKHR rows;
+        for (int r = 0; r < 3; r++)
+            for (int c = 0; c < 4; c++)
+                rows.matrix[r][c] = model[c][r];
+        return rows;
+    }
+    // Transform fast path: touches instance bytes [0, 128) and acceleration structure
+    // instance bytes [0, 48). Geometry binding, material, entity id and visibility mask
+    // are left exactly as they were, so moving an object never reconsiders what it is.
+    void writeTransform(uint32_t slot, const RenderProxy& p, bool zeroMotion) {
+        const mat4 model = transform(p.transform);
+        const mat4 before = zeroMotion ? model : shadowModel[slot];
+        auto& instance = instances()[slot];
+        instance.previousModel = before;
+        instance.model = model;
+        shadowModel[slot] = model;
+        accelerationInstances()[slot].transform = rowMajor(model);
+        // Only a slot that is actually reporting motion has to be settled once it stops.
+        if (before != model && motionFrame[slot] != sceneStamp) {
+            motionFrame[slot] = sceneStamp;
+            movedThisFrame.push_back(slot);
+        }
+        sceneStatistics.transforms++;
+    }
+    // Folds a slot's motion forward without moving it, so an object that moved on the
+    // previous frame and then stopped reports no motion instead of repeating the last
+    // one. Writes only the previous-transform half.
+    void settleMotion(uint32_t slot) {
+        instances()[slot].previousModel = shadowModel[slot];
+        sceneStatistics.settled++;
+    }
+    // Attribute path: the instance's trailing uvec4 plus the whole acceleration structure
+    // instance, which is where the visibility mask and geometry binding live.
+    void writeAttributes(uint32_t slot, const RenderProxy& p) {
+        instances()[slot].info = {p.attributes.material,
+                                  meshes[uint32_t(p.attributes.shape)].firstIndex,
+                                  p.attributes.entity, p.attributes.interactable ? 1u : 0u};
+        VkAccelerationStructureInstanceKHR a{};
+        a.transform = rowMajor(shadowModel[slot]);
+        a.instanceCustomIndex = slot;
+        a.mask = p.live && p.attributes.visible ? 0xffu : 0u;
+        a.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+        a.accelerationStructureReference = blas[uint32_t(p.attributes.shape)].address;
+        accelerationInstances()[slot] = a; // Built in cached memory, stored once.
+        sceneStatistics.attributes++;
+    }
+    void writeSlot(uint32_t slot, const RenderProxy& p, bool zeroMotion) {
+        writeTransform(slot, p, zeroMotion);
+        writeAttributes(slot, p);
+    }
+    // Brings the GPU mirror in line with a snapshot. The delta is applied when the mirror
+    // sits exactly at the revision the delta was built against; otherwise a snapshot was
+    // skipped and the only safe recovery is to rewrite every slot from the array, which
+    // costs exactly what the engine used to pay on every single frame.
+    void applyScene(const Frame& frame, bool reset) {
+        const uint32_t capacity = uint32_t(frame.proxies.size());
+        sceneStatistics = {};
+        sceneStatistics.slots = capacity;
+        if (capacity > shadowModel.size()) {
+            shadowModel.resize(capacity);
+            motionFrame.resize(capacity, 0);
+        }
+        ++sceneStamp;
+        movedThisFrame.clear();
+        // The renderer may outrun the simulation and be handed the same snapshot twice.
+        // Its scene state is already on the GPU; only motion needs attention.
+        const bool repeat =
+            mirrorValid && !reset && capacity == mirrorCapacity && frame.delta.revision == mirrorRevision;
+        // A reset discards temporal history, so every slot's previous transform has to be
+        // folded onto its current one. Otherwise the delta applies only when the mirror
+        // sits exactly at the revision the delta was built against; if a snapshot was
+        // skipped, the events that came with it are gone and the array is the only truth.
+        //
+        // Growth is deliberately not a resync trigger. Slots only ever appear through
+        // RenderScene::create, which marks them structural, so a chained delta already
+        // carries every slot the mirror has not seen; rewriting the ones it has seen
+        // would make spawning cost the whole scene.
+        const bool resync =
+            !mirrorValid || reset || options.fullUpload || (!repeat && frame.delta.base != mirrorRevision);
+        if (resync) {
+            // Resynchronising is about which slots to rewrite, not about forgetting where
+            // they were. The mirror still holds every slot's previously rendered
+            // transform, so motion vectors survive a skipped snapshot; only a slot the
+            // mirror has never written, or a discarded history, has no previous state.
+            const bool fresh = !mirrorValid || reset;
+            for (uint32_t slot = 0; slot < capacity; slot++)
+                writeSlot(slot, frame.proxies[slot], fresh || slot >= mirrorCapacity);
+        } else if (repeat) {
+            for (auto slot : movedLastFrame)
+                settleMotion(slot);
+        } else {
+            for (auto slot : frame.delta.moved)
+                writeTransform(slot, frame.proxies[slot], false);
+            for (auto slot : frame.delta.attributes)
+                writeAttributes(slot, frame.proxies[slot]);
+            // Structural changes rewrite both halves, so they run last and win. A slot
+            // that just appeared, or was handed to a different object, has no previous
+            // position worth interpolating from.
+            for (auto slot : frame.delta.structural) {
+                writeSlot(slot, frame.proxies[slot], true);
+                sceneStatistics.structural++;
+            }
+            // Anything that moved on the previous frame and has now stopped would keep
+            // reporting the motion it had then, smearing the denoiser behind it.
+            for (auto slot : movedLastFrame)
+                if (motionFrame[slot] != sceneStamp)
+                    settleMotion(slot);
+        }
+        movedLastFrame = movedThisFrame;
+        sceneStatistics.resynchronised = resync;
+        mirrorRevision = frame.delta.revision;
+        mirrorCapacity = capacity;
+        mirrorValid = true;
+        sceneWrites += sceneStatistics.transforms + sceneStatistics.attributes + sceneStatistics.settled;
+        sceneResyncs += resync;
+        sceneSlotFrames += capacity;
+    }
     void buildTLAS(VkCommandBuffer c, const Frame& frame) {
         VkAccelerationStructureGeometryKHR geometry{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR};
         geometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
@@ -521,22 +670,42 @@ struct Renderer::Impl {
         info.geometryCount = 1;
         info.pGeometries = &geometry;
         info.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-        uint32_t count = uint32_t(frame.entities.size());
-        bool update = tlas.handle && tlasCount == count;
-        if (!update) {
+        // The instance array is slot-addressed and covers dead slots too, so the primitive
+        // count only moves when the scene gains slots: hiding, showing, moving or
+        // destroying an object leaves it alone and takes the incremental path.
+        uint32_t count = uint32_t(frame.proxies.size());
+        // Storage and scratch depend only on how many instances the structure can hold, so
+        // reallocating is reserved for actually outgrowing it. Rebuilding reuses what is
+        // already there. Doing otherwise meant freeing and reallocating device memory on
+        // any frame that had to rebuild, which is the sort of churn that quietly makes a
+        // long session slower than a short one.
+        if (!tlas.handle || count > tlasCapacity) {
+            uint32_t capacity = std::max(count, 64u);
+            capacity = (capacity + 63) & ~63u; // Grow in blocks so spawning is not a cliff.
             destroyAS(tlas);
             vk.destroy(tlasScratch);
             VkAccelerationStructureBuildSizesInfoKHR sizes{
                 VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR};
             vkGetAccelerationStructureBuildSizesKHR(
-                vk.device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &info, &count, &sizes);
+                vk.device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &info, &capacity, &sizes);
             tlas = createAS(info.type, sizes.accelerationStructureSize);
             tlasScratch =
                 vk.buffer(std::max(sizes.buildScratchSize, sizes.updateScratchSize) +
                               vk.asProperties.minAccelerationStructureScratchOffsetAlignment,
                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
-            tlasCount = count;
+            tlasCapacity = capacity;
+            tlasCount = 0;
+            descriptorsDirty = true; // The descriptor set still points at the old handle.
         }
+        // Refitting cannot absorb a slot appearing or rebinding to different geometry.
+        // That arrives as a running count rather than a flag, so it is still detected when
+        // the snapshot carrying it was skipped, and no instance reference ever changes
+        // underneath an incremental update.
+        bool update = tlasCount == count && frame.delta.topology == mirrorTopology;
+        tlasCount = count;
+        mirrorTopology = frame.delta.topology;
+        sceneStatistics.tlasRebuilt = !update;
+        sceneTlasRebuilds += !update;
         info.mode = update ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR
                            : VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
         info.srcAccelerationStructure = update ? tlas.handle : VK_NULL_HANDLE;
@@ -589,11 +758,15 @@ struct Renderer::Impl {
         VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(c, 0, 1, &vertexData.handle, &offset);
         vkCmdBindIndexBuffer(c, indexData.handle, 0, VK_INDEX_TYPE_UINT32);
-        for (uint32_t i = 0; i < frame.entities.size(); i++)
-            if (frame.entities[i].enabled) {
-                auto& mesh = meshes[uint32_t(frame.entities[i].shape)];
-                vkCmdDrawIndexed(c, mesh.indexCount, 1, mesh.firstIndex, 0, i);
-            }
+        // The slot is the draw's instance index, so gl_InstanceIndex, the acceleration
+        // structure's custom index and the GPU instance entry all stay the same number.
+        for (uint32_t slot = 0; slot < frame.proxies.size(); slot++) {
+            const auto& p = frame.proxies[slot];
+            if (!p.live || !p.attributes.visible)
+                continue;
+            auto& mesh = meshes[uint32_t(p.attributes.shape)];
+            vkCmdDrawIndexed(c, mesh.indexCount, 1, mesh.firstIndex, 0, slot);
+        }
         vkCmdEndRendering(c);
         for (uint32_t b = 7; b <= 12; b++)
             vk.transition(c, images[b], VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
@@ -675,6 +848,10 @@ struct Renderer::Impl {
                << ",\n  \"simulationHz\": 60,\n  \"presentMode\": \"" << presentName(presentMode) << "\""
                << ",\n  \"validationActive\": " << (vk.validationActive ? "true" : "false")
                << ",\n  \"validationErrors\": " << vk.validationErrors.load()
+               << ",\n  \"sceneSlots\": " << sceneStatistics.slots
+               << ", \"sceneSlotWrites\": " << sceneWrites
+               << ", \"sceneSlotWritesIfRebuilt\": " << sceneSlotFrames
+               << ",\n  \"sceneResyncs\": " << sceneResyncs << ", \"tlasRebuilds\": " << sceneTlasRebuilds
                << ",\n  \"meanRgb\": " << double(sum) / (double(width) * height * 3) << ",\n  \"redRange\": ["
                << int(minimum) << "," << int(maximum) << "]\n}\n";
         std::cout << "Capture: " << (dir / "frame.bmp").string() << " | " << statistics.fps << " FPS | Frame "
@@ -710,7 +887,7 @@ struct Renderer::Impl {
         const Frame& frame = *frameRef;
         if (!frame.input.width || !frame.input.height)
             return true;
-        if (frame.entities.empty() || frame.entities.size() > MaxInstances ||
+        if (frame.proxies.empty() || frame.proxies.size() > MaxInstances ||
             frame.materials.size() > MaxMaterials || frame.lights.empty() || frame.lights.size() > MaxLights)
             throw std::runtime_error("Scene capacity exceeded or scene has no lights/instances");
         VK_CHECK(vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX));
@@ -720,8 +897,9 @@ struct Renderer::Impl {
                                       VK_QUERY_RESULT_64_BIT) == VK_SUCCESS)
                 gpuMs = double(values[1] - values[0]) * vk.properties.limits.timestampPeriod / 1e6;
         }
-        if (width != frame.input.width || height != frame.input.height || resizePending)
-            resize(frame.input.width, frame.input.height);
+        if ((width != frame.input.width || height != frame.input.height || resizePending) &&
+            !resize(frame.input.width, frame.input.height))
+            return true;
         uint32_t swapIndex;
         auto acquire =
             vkAcquireNextImageKHR(vk.device, swapchain, UINT64_MAX, acquired, VK_NULL_HANDLE, &swapIndex);
@@ -739,15 +917,17 @@ struct Renderer::Impl {
         previousRenderTime = now;
         bool reset = !historyValid || frame.resetHistory ||
                      glm::distance(frame.camera.eye(), previous->camera.eye()) > 4.f;
+        bool lightsChanged = !historyValid, materialsChanged = !historyValid;
         if (historyValid) {
-            if (frame.lights.size() != previous->lights.size() ||
-                frame.materials.size() != previous->materials.size())
-                reset = true;
-            else if (std::memcmp(frame.lights.data(), previous->lights.data(),
-                                 frame.lights.size() * sizeof(Light)) ||
-                     std::memcmp(frame.materials.data(), previous->materials.data(),
-                                 frame.materials.size() * sizeof(Material)))
-                reset = true;
+            lightsChanged = frame.lights.size() != previous->lights.size() ||
+                            std::memcmp(frame.lights.data(), previous->lights.data(),
+                                        frame.lights.size() * sizeof(Light)) != 0;
+            materialsChanged = frame.materials.size() != previous->materials.size() ||
+                               std::memcmp(frame.materials.data(), previous->materials.data(),
+                                           frame.materials.size() * sizeof(Material)) != 0;
+            // Both are read by every shading pass, so changing either invalidates the
+            // temporal history that was accumulated under the old values.
+            reset = reset || lightsChanged || materialsChanged;
         }
         Globals data{};
         data.view = frame.camera.view();
@@ -759,33 +939,18 @@ struct Renderer::Impl {
         data.resolution = {float(width), float(height), float(frame.debugView), float(frame.hovered)};
         data.player = vec4(frame.player, float(frame.selected));
         data.destination = vec4(frame.destination, frame.hasDestination ? 1.f : 0.f);
-        data.counts = {uint32_t(frame.entities.size()), uint32_t(frame.lights.size()), uint32_t(frameNumber),
+        data.counts = {uint32_t(frame.proxies.size()), uint32_t(frame.lights.size()), uint32_t(frameNumber),
                        reset ? 0u : 1u};
         std::memcpy(globals.mapped, &data, sizeof(data));
-        auto* gpuInstances = static_cast<GpuInstance*>(instanceData.mapped);
-        auto* accelerationInstances = static_cast<VkAccelerationStructureInstanceKHR*>(tlasInstances.mapped);
-        for (uint32_t i = 0; i < frame.entities.size(); i++) {
-            auto& entity = frame.entities[i];
-            auto model = transform(entity);
-            auto previousModel = model;
-            if (!reset && i < previous->entities.size() && previous->entities[i].id == entity.id)
-                previousModel = transform(previous->entities[i]);
-            gpuInstances[i] = {model,
-                               previousModel,
-                               {entity.material, meshes[uint32_t(entity.shape)].firstIndex, entity.id,
-                                entity.interactable ? 1u : 0u}};
-            VkAccelerationStructureInstanceKHR a{};
-            for (int r = 0; r < 3; r++)
-                for (int c = 0; c < 4; c++)
-                    a.transform.matrix[r][c] = model[c][r];
-            a.instanceCustomIndex = i;
-            a.mask = entity.enabled ? 0xff : 0;
-            a.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-            a.accelerationStructureReference = blas[uint32_t(entity.shape)].address;
-            accelerationInstances[i] = a;
-        }
-        std::memcpy(materialData.mapped, frame.materials.data(), frame.materials.size() * sizeof(Material));
-        std::memcpy(lightData.mapped, frame.lights.data(), frame.lights.size() * sizeof(Light));
+        applyScene(frame, reset);
+        // Materials and lights are compared against the previous snapshot anyway, to
+        // decide whether temporal history survives; the same answer decides whether they
+        // are worth uploading again.
+        if (materialsChanged)
+            std::memcpy(materialData.mapped, frame.materials.data(),
+                        frame.materials.size() * sizeof(Material));
+        if (lightsChanged)
+            std::memcpy(lightData.mapped, frame.lights.data(), frame.lights.size() * sizeof(Light));
         // A history reset clears every screen image, including the overlay, so the upload
         // has to be replayed even when the overlay content itself did not change.
         const bool hudDirty = hud.draw(frame, hudUpload.mapped, statistics, options.hud) || !historyValid;
@@ -819,7 +984,13 @@ struct Renderer::Impl {
         // TLAS allocation precedes descriptor writes; actual construction is recorded before raster/compute.
         buildTLAS(command, frame);
         VulkanContext::barrier(command);
-        updateDescriptors();
+        // Bindings name resources, not their contents. Nothing but a swapchain resize or
+        // a rebuilt acceleration structure replaces a handle, so the set is written once
+        // and then left alone instead of being rewritten 29 times a frame.
+        if (descriptorsDirty) {
+            updateDescriptors();
+            descriptorsDirty = false;
+        }
         RenderGraph graph;
         graph.add("GBuffer Raster", [&](auto c) { rasterize(c, frame); });
         graph.add("ReSTIR Initial DI + Secondary GI + Specular", [&](auto c) { dispatch(c, 0); });
@@ -924,6 +1095,9 @@ uint64_t Renderer::frames() const {
 }
 RenderStatistics Renderer::statistics() const {
     return impl_->statistics;
+}
+SceneUpdateStatistics Renderer::sceneStatistics() const {
+    return impl_->sceneStatistics;
 }
 uint32_t Renderer::errors() const {
     return impl_->vk.validationErrors.load();

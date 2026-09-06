@@ -139,8 +139,9 @@ int main() {
         world.setVisible(obstacle, false);
         world.setVisualPose(obstacle, {9, 9, 9}, {.01f, 5, 8});
         auto frame = world.snapshot({}, 1, 0, 0);
-        frame.entities[obstacle - 1].position = {100, 100, 100};
-        check(world.physics().revision() == physicsRevision && !frame.entities[obstacle - 1].enabled,
+        auto slot = world.entity(obstacle).proxy;
+        frame.proxies[slot].transform.position = {100, 100, 100};
+        check(world.physics().revision() == physicsRevision && !frame.proxies[slot].attributes.visible,
               "Render presentation must not mutate physical scene data");
         auto stopped = world.rootMotion(actor, {8, 0, 0}, .2f);
         check(stopped.x < -.4f, "Root motion must collide with an invisible independently authored collider");

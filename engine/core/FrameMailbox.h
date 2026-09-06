@@ -23,16 +23,25 @@ class FrameMailbox {
     std::mutex mutex_;
     std::condition_variable ready_;
     FrameRef latest_;
-    uint64_t sequence_ = 0;
+    uint64_t sequence_ = 0, delivered_ = 0;
     bool closed_ = false;
 
   public:
     void publish(Frame frame) {
-        // Allocate outside the lock; the simulation must not wait on the consumer.
-        auto shared = std::make_shared<const Frame>(std::move(frame));
+        // Allocate outside the lock; the simulation must not wait on the consumer. The
+        // snapshot is held mutably only until it is stored, while it is still unshared.
+        auto shared = std::make_shared<Frame>(std::move(frame));
         std::lock_guard<std::mutex> lock(mutex_);
         if (closed_)
             return;
+        // Replacing an unread snapshot must not discard what it had to say. Folding its
+        // events into this one keeps the delta chain unbroken across a drop, so the
+        // renderer applies two frames' worth of changes instead of rebuilding the scene.
+        // Merging and storing under one lock is what makes this correct: were the
+        // consumer able to take the old snapshot in between, it would be handed a delta
+        // reaching further back than its mirror and would rebuild anyway.
+        if (latest_ && delivered_ != sequence_)
+            shared->delta.prepend(latest_->delta);
         latest_ = std::move(shared);
         ++sequence_;
         ready_.notify_one();
@@ -47,6 +56,7 @@ class FrameMailbox {
         if (sequence_ == seen)
             return FrameStatus::Repeat;
         seen = sequence_;
+        delivered_ = sequence_;
         frame = latest_;
         return FrameStatus::Fresh;
     }

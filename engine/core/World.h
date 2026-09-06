@@ -1,5 +1,6 @@
 #pragma once
 #include "Types.h"
+#include "RenderScene.h"
 #include "physics/PhysicsScene.h"
 #include "animation/AnimationCollision.h"
 #include "navigation/Navigation.h"
@@ -17,15 +18,23 @@ struct GameObject {
     float yaw = 0;
     RenderComponent render;
     BodyHandle physical;
+    uint32_t proxy = 0; // Stable render slot, owned by the render scene.
     bool interactable = false, enabled = true, alive = true;
     std::vector<PhysicsPose> joints;
 };
 class World {
     std::vector<GameObject> objects_;
     PhysicsScene physics_;
+    RenderScene scene_;
     AnimationCollision animationCollision_{physics_};
     GameObject& mutableObject(uint32_t id);
     void syncPose(GameObject&);
+    // The two funnels every render-visible mutation goes through. Keeping the derivation
+    // of proxy state in one place each is what makes it impossible to change an object
+    // and silently forget to tell the renderer.
+    static ProxyTransform proxyTransform(const GameObject&);
+    void publishTransform(const GameObject&);
+    void publishAttributes(const GameObject&);
 
   public:
     std::vector<Material> materials;
@@ -43,6 +52,9 @@ class World {
     }
     const PhysicsScene& physics() const {
         return physics_;
+    }
+    const RenderScene& renderScene() const {
+        return scene_;
     }
     uint32_t spawn(std::string name, Shape, vec3 position, vec3 scale, uint32_t material, bool blocking,
                    bool interactable);

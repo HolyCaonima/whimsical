@@ -36,11 +36,11 @@ Resize、首帧、大相机跳变、灯光／材质变化会清理历史。NRD �
 
 ## 同步与资源生命周期
 
-`RenderGraph` 是明确顺序的 pass graph，记录每 pass 的 debug marker 和 memory barrier。纹理 layout 由对应 pass 进行显式 transition；读写 reservoir 的 dispatch 之间有内存可见性边界。场景静态 BLAS 初始化完成后释放 scratch，TLAS 使用支持 update 的存储与对齐 scratch，每帧更新实体姿态。
+`RenderGraph` 是明确顺序的 pass graph，记录每 pass 的 debug marker 和 memory barrier。纹理 layout 由对应 pass 进行显式 transition；读写 reservoir 的 dispatch 之间有内存可见性边界。场景静态 BLAS 初始化完成后释放 scratch，TLAS 使用支持 update 的存储与对齐 scratch。TLAS 只在拓扑变化时重建：`SceneDelta::topology` 是单调计数，槽位数增长或某个槽位改绑到不同几何体时递增，其余情况一律走 `UPDATE` 增量 refit。存储与 scratch 按 64 的块增长，只在容量真正不够时重新分配，避免姿态变化引发显存反复分配。
 
 GPU fence 完成后再更新 CPU-visible 常量／实例／灯光数据；NRD descriptor pool 每帧重置前也已完成同一 fence。历史 image 和 reservoir 在当前帧末尾保存。Resize 等待 device idle，再重建 swapchain、screen-size images、reservoir 和 NRD pool。关闭时先 idle，再按依赖关系析构。
 
-当前 pipeline 的选择以正确性为先：保守 barrier、一帧 GPU in flight、host-visible geometry upload、逐实体 draw。资源上限是 1024 个 instance、256 个 material 和 256 个 light，超限明确报错。要做大型场景，下一步应增加 GPU allocator、staging 上传、chunk/streaming、draw batching、light importance distribution 和细粒度 graph dependency。
+当前 pipeline 的选择以正确性为先：保守 barrier、一帧 GPU in flight、host-visible geometry upload、逐实体 draw。实例数据不再逐帧全量写入：槽位由 `RenderScene` 稳定分配，渲染器按 `SceneDelta` 只写脏槽位，变换变化只触及 `GpuInstance` 前 128 字节的 `model`／`previousModel`，属性变化只触及末 16 字节的 `info`。资源上限是 1024 个 instance、256 个 material 和 256 个 light，超限明确报错。要做大型场景，下一步应增加 GPU allocator、staging 上传、chunk/streaming、draw batching、light importance distribution 和细粒度 graph dependency。
 
 ## 参考来源
 

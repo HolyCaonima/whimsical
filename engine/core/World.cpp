@@ -34,13 +34,39 @@ uint32_t World::spawn(std::string name, Shape shape, vec3 position, vec3 scale, 
     b.blocking = blocking || shape == Shape::Capsule;
     b.pickable = blocking || interactable || shape == Shape::Capsule;
     o.physical = physics_.create(b);
+    ProxyAttributes attributes;
+    attributes.entity = o.id;
+    attributes.material = material;
+    attributes.shape = shape;
+    attributes.interactable = interactable;
+    o.proxy = scene_.create(proxyTransform(o), attributes);
     objects_.push_back(o);
     return o.id;
+}
+ProxyTransform World::proxyTransform(const GameObject& o) {
+    ProxyTransform t;
+    t.position = o.position + glm::angleAxis(o.yaw, vec3(0, 1, 0)) * o.render.offset;
+    t.scale = o.render.scale * o.render.animationScale;
+    t.yaw = o.yaw;
+    return t;
+}
+void World::publishTransform(const GameObject& o) {
+    scene_.setTransform(o.proxy, proxyTransform(o));
+}
+void World::publishAttributes(const GameObject& o) {
+    ProxyAttributes a;
+    a.entity = o.id;
+    a.material = o.render.material;
+    a.shape = o.render.shape;
+    a.visible = o.alive && o.enabled && o.render.visible;
+    a.interactable = o.interactable;
+    scene_.setAttributes(o.proxy, a);
 }
 void World::syncPose(GameObject& o) {
     PhysicsPose pose{o.position, glm::angleAxis(o.yaw, vec3(0, 1, 0))};
     physics_.setPose(o.physical, pose);
     animationCollision_.update(o.id, pose, o.joints);
+    publishTransform(o);
 }
 void World::setPose(uint32_t id, vec3 p, float yaw, float height) {
     if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) || !std::isfinite(yaw) ||
@@ -61,11 +87,14 @@ void World::setVisualPose(uint32_t id, vec3 offset, vec3 scale) {
     auto& o = mutableObject(id);
     o.render.offset = offset;
     o.render.animationScale = scale;
+    publishTransform(o);
 }
 void World::setMaterial(uint32_t id, uint32_t material) {
     if (material >= materials.size())
         throw std::out_of_range("Invalid material");
-    mutableObject(id).render.material = material;
+    auto& o = mutableObject(id);
+    o.render.material = material;
+    publishAttributes(o);
 }
 void World::configureCollider(uint32_t id, uint32_t layer, bool blocking, bool walkable, bool pickable) {
     physics_.setProperties(entity(id).physical, layer, blocking, walkable, pickable);
@@ -83,9 +112,12 @@ void World::setEnabled(uint32_t id, bool enabled) {
     o.enabled = enabled;
     physics_.setEnabled(o.physical, enabled);
     animationCollision_.setEnabled(id, enabled);
+    publishAttributes(o);
 }
 void World::setVisible(uint32_t id, bool visible) {
-    mutableObject(id).render.visible = visible;
+    auto& o = mutableObject(id);
+    o.render.visible = visible;
+    publishAttributes(o);
 }
 void World::destroy(uint32_t id) {
     auto& o = mutableObject(id);
@@ -93,6 +125,7 @@ void World::destroy(uint32_t id) {
     animationCollision_.remove(id);
     o.alive = o.enabled = false;
     o.physical = {};
+    scene_.destroy(o.proxy);
     if (selected == id)
         selected = 0;
     if (hovered == id)
@@ -196,20 +229,13 @@ uint32_t World::pick(float x, float y, const Input& input) const {
 }
 Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug, bool physicsDebug) {
     Frame f;
-    f.entities.reserve(objects_.size());
-    for (const auto& o : objects_) {
-        RenderObject r;
-        r.id = o.id;
-        r.name = o.name;
-        r.shape = o.render.shape;
-        r.position = o.position + glm::angleAxis(o.yaw, vec3(0, 1, 0)) * o.render.offset;
-        r.yaw = o.yaw;
-        r.scale = o.render.scale * o.render.animationScale;
-        r.material = o.render.material;
-        r.enabled = o.alive && o.enabled && o.render.visible;
-        r.interactable = o.interactable;
-        f.entities.push_back(r);
-    }
+    // The proxy array is already the authoritative render state; publishing it is a flat
+    // copy of trivially copyable values, and the delta tells the renderer which of those
+    // slots it actually has to touch.
+    f.proxies = scene_.proxies();
+    f.delta = scene_.publish();
+    if (hovered && hovered <= objects_.size())
+        f.hoveredName = objects_[hovered - 1].name;
     QueryFilter obstacles;
     obstacles.blockingOnly = true;
     for (auto handle : physics_.bodies(obstacles)) {

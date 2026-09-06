@@ -76,8 +76,8 @@ class DebugHud {
         s.mix(uint64_t(f.physicsDebug));
         s.text(f.locomotion);
         s.text(f.message);
-        if (f.hovered && f.hovered != f.selected && f.hovered <= f.entities.size())
-            s.text(f.entities[f.hovered - 1].name);
+        if (f.hovered && f.hovered != f.selected)
+            s.text(f.hoveredName);
         s.mix(uint64_t(int64_t(f.player.x * 5.2f)));
         s.mix(uint64_t(int64_t(f.player.z * 5.2f)));
         s.mix(f.path.size());
@@ -211,8 +211,8 @@ class DebugHud {
         text(166, h - 130, 11, "/  " + f.locomotion, mint);
         text(101, h - 105, 11, "A warm core. A curious mind.", muted);
         text(30, h - 59, 12, f.message, RGB(218, 208, 162));
-        if (f.hovered && f.hovered != f.selected && f.hovered <= f.entities.size())
-            text(w / 2 - 100, h - 91, 14, "CLICK / E    " + f.entities[f.hovered - 1].name, gold, true);
+        if (f.hovered && f.hovered != f.selected)
+            text(w / 2 - 100, h - 91, 14, "CLICK / E    " + f.hoveredName, gold, true);
         rectangle(0, h - 32, w, 32, RGB(12, 23, 24));
         text(28, h - 25, 11,
              "WASD  Move     CLICK  Walk / interact     SHIFT  Run     CTRL  Crouch     E  Use",

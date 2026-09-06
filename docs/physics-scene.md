@@ -27,7 +27,7 @@ flowchart LR
 | `game/assets/animations/locomotion.json` | 站立／蹲行高度和 locomotion 参数 |
 | `engine/debug/PhysicsDebug.h` | 将物理形状转换成值类型线段快照，供 F2 显示 |
 
-物理句柄包含 slot 和 generation，删除后旧句柄失效。World 对外只开放 const 物理查询接口，变更通过对象 API 提交，避免不同场景的数据失配。Physics Scene 拒绝跨线程访问；渲染线程只接收 RenderObject、地图标记和调试线段的值拷贝，不持有物理指针或句柄。
+物理句柄包含 slot 和 generation，删除后旧句柄失效。World 对外只开放 const 物理查询接口，变更通过对象 API 提交，避免不同场景的数据失配。Physics Scene 拒绝跨线程访问；渲染线程只接收 render proxy、地图标记和调试线段的值拷贝，不持有物理指针或句柄。
 
 隐藏模型、换材质、改变视觉偏移不会改变碰撞。禁用对象同时禁用主碰撞体及所有动画附属体；删除会释放全部关联碰撞体。显示快照保留已删除对象的禁用槽位，以维持稳定的运动向量映射。
 

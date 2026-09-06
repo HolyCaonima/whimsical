@@ -55,9 +55,12 @@ powershell -ExecutionPolicy Bypass -File tools/build.ps1 -Test
 
 # 解除 vsync 量化，测量真实的每帧成本
 .\build\bin\Release\Afterlight.exe --present immediate --frames 360 --capture
+
+# 放大场景但保持每 tick 变化量恒定；加 --full-upload 退回逐帧全量重写以作对照
+.\build\bin\Release\Afterlight.exe --present immediate --frames 900 --capture --stress 900
 ```
 
-截图写入 `captures/frame.bmp`；GPU 测量和 validation 状态写入 `captures/render-report.json`。`--capture` 未指定帧数时默认 90 帧。
+截图写入 `captures/frame.bmp`；GPU 测量和 validation 状态写入 `captures/render-report.json`。`--capture` 未指定帧数时默认 90 帧。报告中的 `sceneSlotWrites` 与 `sceneSlotWritesIfRebuilt` 是同一场景下增量上传与全量重建的实际写入次数。
 
 Release 构建默认**关闭** validation（每帧约 1 ms CPU，足以把贴着预算的帧推过一次 vblank），Debug 构建默认开启。用 `--validation` 显式开启；`--smoke` 作为正确性关卡始终开启。`--present fifo|mailbox|immediate` 选择呈现模式，默认 `fifo`。
 
@@ -65,7 +68,7 @@ Release 构建默认**关闭** validation（每帧约 1 ms CPU，足以把贴着
 
 ```text
 engine/
-  core/                   世界、实体、材质、相机、不可变帧快照和 mailbox
+  core/                   世界、实体、材质、相机、持久化 RenderScene、不可变帧快照和 mailbox
   platform/               Win32 窗口、输入、焦点／尺寸事件
   navigation/             膨胀障碍栅格 A*、路径平滑、连续碰撞移动
   scripting/              Duktape runtime 和 C++ ↔ JS binding
@@ -114,7 +117,9 @@ NRD 4.17.3 实际参与 GPU 计算，使用 RELAX 的原生 SPIR-V、资源池�
 
 这是可继续开发的第一版基础，不是大型游戏的最终渲染器。DI/GI 的算法结构参考 ReSTIR，自写实现没有接入 NVIDIA RTXDI SDK，也不声称达到 MegaLights 的算法、规模或质量。当前 GI 是 **一次二次表面命中上的漫反射重采样**；镜面间接光使用独立 GGX VNDF 路径和 NRD，尚无 ReSTIR PT、多跳路径重采样或无偏 MIS。历史长度与 GI Jacobian 有限幅，属于有偏实时方案。
 
-灯光是具有球形位置扰动的解析灯，用于柔和光追阴影；发光材质支持二次光线命中，但还没有 emissive mesh light importance sampling。几何 BLAS 只为两个基础 mesh 构建，TLAS 每帧更新。当前采用一帧 GPU in flight 和保守 pass barrier，先保证资源与线程所有权正确；还没有 async compute、自动资源别名、流式场景或 GPU-driven indirect draw。
+灯光是具有球形位置扰动的解析灯，用于柔和光追阴影；发光材质支持二次光线命中，但还没有 emissive mesh light importance sampling。几何 BLAS 只为两个基础 mesh 构建；TLAS 在只有变换变化时走 `UPDATE`，仅在拓扑变化（槽位增长或改绑几何体）时重建。当前采用一帧 GPU in flight 和保守 pass barrier，先保证资源与线程所有权正确；还没有 async compute、自动资源别名、流式场景或 GPU-driven indirect draw。
+
+渲染场景是常驻的：`RenderScene` 给每个物体一个稳定槽位，`World` 的改动以增删改事件发布，渲染器只上传脏槽位，变换变化还有一条只写实例前 128 字节的快速路径。因此每帧代价随**变化量**而不是场景规模增长——场景放大 19.75 倍时帧时间增加 2.6%，实测见[验证记录](docs/verification.md)。注意这在当前 48 个物体的关卡上不会让帧变快，收益体现在规模上。
 
 一帧在飞是**实测后的选择**而非遗留：在 `--present immediate` 下，整帧时间中的非 GPU 部分为 0.42–0.52 ms（1280×800 至 2560×1440），即 CPU 录制与 GPU 执行重叠最多只能省下这个量。而多帧在飞需要把 TLAS、descriptor set 和全部 host-visible 上传缓冲按帧复制——在带时域历史与 reservoir 复用的 ReSTIR 管线里，这个同步风险显著大于 0.5 ms 的收益。等 CPU 侧成本重新变得显著时再做。
 

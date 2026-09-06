@@ -44,7 +44,7 @@ set(FETCHCONTENT_SOURCE_DIR_MATHLIB "${DEPS}/mathlib" CACHE PATH "" FORCE)
 set(FETCHCONTENT_SOURCE_DIR_SHADERMAKE "${DEPS}/shadermake" CACHE PATH "" FORCE)
 add_subdirectory("${DEPS}/nrd" "third_party/nrd")
 add_library(afterlight_core
-  engine/core/World.cpp engine/navigation/Navigation.cpp engine/scripting/ScriptRuntime.cpp
+  engine/core/World.cpp engine/core/RenderScene.cpp engine/navigation/Navigation.cpp engine/scripting/ScriptRuntime.cpp
   engine/physics/PhysicsScene.cpp engine/animation/AnimationCollision.cpp
 )
 target_include_directories(afterlight_core PUBLIC engine "${DEPS}/glm")

@@ -19,7 +19,22 @@ struct RenderOptions {
     bool hud = true;
     std::string audit;
     bool auditMotion = false;
+    // Forces the renderer to rewrite every slot every frame, which is what it did before
+    // the scene became persistent. Kept so the two behaviours can be measured against each
+    // other in one binary, where the only difference is this flag.
+    bool fullUpload = false;
     PresentMode present = PresentMode::Fifo;
+};
+// What the last frame actually had to touch in the persistent scene. Exposed because
+// "a scene that did not change costs nothing" is a property worth being able to assert.
+struct SceneUpdateStatistics {
+    uint32_t slots = 0;      // Slot capacity, i.e. how much a full rebuild would cost.
+    uint32_t transforms = 0; // Slots whose transform half was rewritten.
+    uint32_t attributes = 0; // Slots whose mesh/material/visibility half was rewritten.
+    uint32_t structural = 0; // Slots created, destroyed or reused.
+    uint32_t settled = 0;    // Slots whose motion was folded forward after they stopped.
+    bool resynchronised = false; // A skipped snapshot forced a full rewrite.
+    bool tlasRebuilt = false;    // Topology changed, so no incremental update was possible.
 };
 struct RenderStatistics {
     double fps = -1;
@@ -41,6 +56,7 @@ class Renderer {
     bool render(const FrameRef&);
     uint64_t frames() const;
     RenderStatistics statistics() const;
+    SceneUpdateStatistics sceneStatistics() const;
     uint32_t errors() const;
 };
 } // namespace afterlight

@@ -11,15 +11,64 @@ struct Material {
     vec4 emissionMetallic{0};
 };
 enum class Shape : uint32_t { Box, Capsule };
-// Render-only value snapshot. Physics owns separate shapes, poses, filters and lifetimes.
-struct RenderObject {
-    uint32_t id = 0;
-    Shape shape = Shape::Box;
-    vec3 position{0}, scale{1};
+// A renderable occupies a stable slot for its whole lifetime. Transform and attributes
+// are separate because a transform changes orders of magnitude more often, and the two
+// map onto disjoint halves of a GPU instance so each can be rewritten on its own.
+struct ProxyTransform {
+    vec3 position{0};
+    vec3 scale{1};
     float yaw = 0;
+    bool operator==(const ProxyTransform& o) const {
+        return position == o.position && scale == o.scale && yaw == o.yaw;
+    }
+    bool operator!=(const ProxyTransform& o) const {
+        return !(*this == o);
+    }
+};
+struct ProxyAttributes {
+    uint32_t entity = 0;
     uint32_t material = 0;
-    bool interactable = false, enabled = true;
-    std::string name;
+    Shape shape = Shape::Box;
+    bool visible = true;
+    bool interactable = false;
+    bool operator==(const ProxyAttributes& o) const {
+        return entity == o.entity && material == o.material && shape == o.shape &&
+               visible == o.visible && interactable == o.interactable;
+    }
+    bool operator!=(const ProxyAttributes& o) const {
+        return !(*this == o);
+    }
+};
+// Deliberately free of heap-owning members: publishing a snapshot is then one flat copy,
+// not one allocation per object.
+struct RenderProxy {
+    ProxyTransform transform;
+    ProxyAttributes attributes;
+    bool live = false;
+};
+// Slots touched since the previous published delta. `base` is the revision that delta
+// ended at, so a consumer whose mirror sits exactly at `base` may apply these lists and
+// otherwise must resynchronise from the proxy array.
+struct SceneDelta {
+    uint64_t base = 0, revision = 0;
+    // Appeared, disappeared, or reused: rewrite the instance whole, geometry included.
+    std::vector<uint32_t> structural;
+    std::vector<uint32_t> moved;      // transform only, the fast path
+    std::vector<uint32_t> attributes; // mesh, material, visibility, interactable
+    // Bumped when the slot count grows or a slot rebinds to different geometry, the one
+    // kind of change an incremental acceleration structure update cannot absorb. It is a
+    // running count rather than a per-delta flag so that it survives snapshots a consumer
+    // skipped: a flag raised in a snapshot nobody read would be lost, and the consumer
+    // would keep refitting a structure whose topology had moved out from under it.
+    uint64_t topology = 0;
+    bool empty() const {
+        return structural.empty() && moved.empty() && attributes.empty();
+    }
+    // Absorbs a delta that was published just before this one and never delivered, so the
+    // events it carried reach the consumer instead of dying with the snapshot. Without it
+    // a dropped snapshot leaves the consumer's mirror stranded at a revision no delta
+    // chains to, and its only recovery is to rewrite the entire scene.
+    void prepend(const SceneDelta& dropped);
 };
 struct alignas(16) Light {
     vec4 positionRadius{0, 5, 0, .4f};
@@ -54,7 +103,14 @@ struct Frame {
     };
     std::vector<DebugLine> physicsLines;
     bool physicsDebug = false;
-    std::vector<RenderObject> entities;
+    // The persistent scene, indexed by stable slot, plus the events that changed it since
+    // the previous snapshot. Values always come from `proxies`; `delta` only says which
+    // slots to look at, so a consumer that skipped snapshots can fall back to the array.
+    std::vector<RenderProxy> proxies;
+    SceneDelta delta;
+    // Resolved here rather than stored per proxy: keeping proxies free of heap-owning
+    // members is what makes publishing a snapshot a single flat copy.
+    std::string hoveredName;
     struct MapObstacle {
         vec3 position, size;
     };
@@ -75,8 +131,8 @@ struct Frame {
 // Snapshots are immutable once published and shared by reference count, so neither
 // thread deep-copies a Frame and the renderer can hold on to older ones for free.
 using FrameRef = std::shared_ptr<const Frame>;
-inline mat4 transform(const RenderObject& e) {
-    return glm::translate(mat4(1), e.position) * glm::rotate(mat4(1), e.yaw, vec3(0, 1, 0)) *
-           glm::scale(mat4(1), e.scale);
+inline mat4 transform(const ProxyTransform& t) {
+    return glm::translate(mat4(1), t.position) * glm::rotate(mat4(1), t.yaw, vec3(0, 1, 0)) *
+           glm::scale(mat4(1), t.scale);
 }
 } // namespace afterlight

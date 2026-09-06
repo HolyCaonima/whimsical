@@ -10,6 +10,7 @@
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
+#include <cmath>
 using namespace afterlight;
 int main(int argc, char** argv) {
     std::cout.setf(std::ios::unitbuf);
@@ -19,6 +20,7 @@ int main(int argc, char** argv) {
         int debugView = 0;
         bool demo = false, smoke = false;
         bool physicsDebug = false;
+        uint32_t stress = 0;
         for (int i = 1; i < argc; i++) {
             std::string arg = argv[i];
             auto number = [&]() {
@@ -70,11 +72,15 @@ int main(int argc, char** argv) {
                 demo = true;
             else if (arg == "--smoke")
                 smoke = true;
+            else if (arg == "--stress")
+                stress = uint32_t(std::clamp(number(), 0, 900));
+            else if (arg == "--full-upload")
+                options.fullUpload = true;
             else if (arg == "--help") {
                 std::cout << "Afterlight [--frames N] [--capture] [--width 1280] [--height 800] [--view "
                              "0..7] [--no-hud] [--validation] [--no-validation] [--present "
-                             "fifo|mailbox|immediate] [--demo] [--smoke] [--audit NAME] "
-                             "[--audit-motion] [--physics-debug]\n";
+                             "fifo|mailbox|immediate] [--demo] [--smoke] [--stress N] [--full-upload] "
+                             "[--audit NAME] [--audit-motion] [--physics-debug]\n";
                 return 0;
             } else
                 throw std::runtime_error("Unknown option " + arg);
@@ -104,6 +110,24 @@ int main(int argc, char** argv) {
         World world;
         ScriptRuntime scripts(world);
         scripts.initialize();
+        // A level-sized scene in which the number of objects that change each tick stays
+        // fixed no matter how many exist. That is the measurement that separates the two
+        // architectures: per-frame work proportional to the scene climbs with --stress,
+        // per-frame work proportional to the change does not.
+        std::vector<uint32_t> stressMoving;
+        if (stress) {
+            const auto side = uint32_t(std::ceil(std::sqrt(double(stress))));
+            for (uint32_t i = 0; i < stress; i++) {
+                const float x = -11.f + float(i % side) * 22.f / float(side);
+                const float z = -8.f + float(i / side) * 16.f / float(side);
+                const auto id =
+                    world.spawn("Stress prop", Shape::Box, {x, .3f, z}, {.25f, .6f, .25f}, 0, false, false);
+                if (stressMoving.size() < 8)
+                    stressMoving.push_back(id);
+            }
+            std::cout << "Stress scene: " << stress << " props, " << stressMoving.size()
+                      << " of them moving every tick\n";
+        }
         if (!options.audit.empty()) {
             Input neutral;
             neutral.width = width;
@@ -208,6 +232,13 @@ int main(int argc, char** argv) {
                         physicsDebug = !physicsDebug;
                     if (options.audit.empty())
                         scripts.tick(float(step), input);
+                    for (size_t i = 0; i < stressMoving.size(); i++) {
+                        const auto& prop = world.entity(stressMoving[i]);
+                        world.setPose(stressMoving[i],
+                                      {prop.position.x, .3f + .2f * float(std::sin(time * 2 + double(i))),
+                                       prop.position.z},
+                                      0, .6f);
+                    }
                     window.consumeEdges();
                     accumulator -= step;
                     if (options.audit.empty())

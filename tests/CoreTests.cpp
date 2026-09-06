@@ -2,6 +2,7 @@
 #include "core/FrameMailbox.h"
 #include "navigation/Navigation.h"
 #include "scripting/ScriptRuntime.h"
+#include <algorithm>
 #include <iostream>
 #include <stdexcept>
 #include <future>
@@ -141,6 +142,100 @@ int main() {
             gameplay.tick(1.f / 60, click);
         check(glm::distance(stopped, interactionWorld.entity(interactionWorld.playerId).position) < .1f,
               "Deselected character must ignore commands");
+        // The render scene is persistent: slots outlive the objects that move through
+        // them, and a change is reported as an event rather than rediscovered by
+        // comparing whole frames.
+        RenderScene scene;
+        ProxyTransform pose;
+        pose.position = {1, 2, 3};
+        ProxyAttributes look;
+        look.entity = 7;
+        auto first = scene.create(pose, look);
+        auto second = scene.create(pose, look);
+        auto opening = scene.publish();
+        check(opening.structural.size() == 2 && opening.topology && opening.moved.empty(),
+              "Creating proxies must be structural and must grow the slot capacity");
+        pose.position = {4, 2, 3};
+        scene.setTransform(first, pose);
+        auto motion = scene.publish();
+        check(motion.moved.size() == 1 && motion.moved[0] == first && motion.attributes.empty() &&
+                  motion.structural.empty() && motion.topology == opening.topology,
+              "Moving a proxy must take the transform path and nothing else");
+        check(motion.base == opening.revision, "Deltas must chain so a consumer can detect a gap");
+        scene.setTransform(first, pose); // Same value as it already holds.
+        auto idle = scene.publish();
+        check(idle.empty() && idle.base == idle.revision,
+              "A scene that did not actually change must produce no events at all");
+        scene.setMaterial(second, 3);
+        auto repaint = scene.publish();
+        check(repaint.attributes.size() == 1 && repaint.attributes[0] == second && repaint.moved.empty() &&
+                  repaint.topology == opening.topology,
+              "A material change must not be mistaken for a transform or a topology change");
+        scene.destroy(first);
+        auto removal = scene.publish();
+        check(removal.structural.size() == 1 && !scene.proxy(first).live &&
+                  !scene.proxy(first).attributes.visible && scene.proxy(second).attributes.entity == 7,
+              "Destroying a proxy must free its slot without renumbering any other");
+        check(scene.create(pose, look) == first && scene.capacity() == 2,
+              "A freed slot must be reused rather than growing the scene");
+        auto settled = scene.publish();
+        check(settled.topology == opening.topology,
+              "Reusing a slot for the same geometry must not force a rebuild");
+        ProxyAttributes capsule = look;
+        capsule.shape = Shape::Capsule;
+        scene.destroy(first);
+        scene.create(pose, capsule);
+        check(scene.publish().topology != settled.topology,
+              "Rebinding a slot to different geometry must be a topology change");
+        // Topology is reported as a running count rather than a per-delta flag, so a
+        // consumer that skipped the snapshot carrying the change still sees it. As a flag
+        // it would have been swallowed with that snapshot, leaving the consumer refitting
+        // an acceleration structure whose topology had moved out from under it.
+        auto skipped = scene.publish();
+        scene.create(pose, capsule);
+        scene.publish(); // Never delivered.
+        pose.position = {7, 2, 3};
+        scene.setTransform(second, pose);
+        check(scene.publish().topology != skipped.topology,
+              "A topology change must survive a snapshot the consumer never read");
+        // A consumer mirrors the scene by slot, so growth alone must never force it to
+        // rewrite the slots it already holds. That is only safe because every slot beyond
+        // its previous capacity arrives as a structural event; if creation ever stopped
+        // reporting itself, the consumer would draw whatever was left in those slots.
+        const auto known = scene.capacity();
+        for (int i = 0; i < 3; i++)
+            scene.create(pose, look);
+        pose.position = {9, 2, 3}; // Growth and movement in one delta, as a busy frame sees it.
+        scene.setTransform(second, pose);
+        const auto grown = scene.publish();
+        check(grown.moved.size() == 1, "Growth must not disturb the events reported for existing slots");
+        for (uint32_t slot = known; slot < scene.capacity(); slot++)
+            check(std::find(grown.structural.begin(), grown.structural.end(), slot) != grown.structural.end(),
+                  "Every newly created slot must be announced so growth stays incremental");
+        // The world has to publish those events on the caller's behalf; forgetting to
+        // would leave the renderer showing stale geometry with no way to notice.
+        World tracked;
+        ScriptRuntime trackedJs(tracked);
+        trackedJs.initialize();
+        auto opened = tracked.snapshot({}, 1, 0, 0);
+        check(opened.proxies.size() == tracked.objects().size() &&
+                  opened.delta.structural.size() == opened.proxies.size(),
+              "The first snapshot must present every proxy as newly created");
+        check(tracked.snapshot({}, 2, 0, 0).delta.empty(),
+              "Snapshotting a world nobody touched must carry no events");
+        auto slot = tracked.entity(tracked.playerId).proxy;
+        tracked.setPose(tracked.playerId, {5, 1, 5}, .5f, 2);
+        auto walked = tracked.snapshot({}, 3, 0, 0);
+        check(walked.delta.moved.size() == 1 && walked.delta.moved[0] == slot &&
+                  walked.delta.attributes.empty() && walked.delta.structural.empty(),
+              "Moving one object must dirty exactly one slot, and only its transform");
+        check(walked.proxies[slot].transform.position.x == 5.f,
+              "Events name slots; the values must come from the proxy array");
+        tracked.setVisible(tracked.playerId, false);
+        auto hidden = tracked.snapshot({}, 4, 0, 0);
+        check(hidden.delta.attributes.size() == 1 && hidden.delta.moved.empty() &&
+                  !hidden.proxies[slot].attributes.visible,
+              "Hiding an object must take the attribute path, not rebuild the proxy");
         FrameMailbox box;
         Frame a;
         a.tick = 1;
@@ -159,6 +254,35 @@ int main() {
         box.publish(a);
         check(box.acquire(received, seen) == FrameStatus::Fresh && received->tick == 3,
               "A later publish must be observed as fresh");
+        // Dropping a snapshot must cost its latency, not its events. The renderer mirrors
+        // the scene by applying deltas in order, so a gap in the chain forces it to
+        // rewrite every slot; the mailbox therefore folds an unread delta into its
+        // replacement and leaves the chain continuous.
+        Frame dropped;
+        dropped.delta.base = 10;
+        dropped.delta.revision = 11;
+        dropped.delta.moved = {4};
+        dropped.delta.structural = {7};
+        box.publish(dropped);
+        Frame replacement;
+        replacement.delta.base = 11;
+        replacement.delta.revision = 12;
+        replacement.delta.moved = {4, 5};
+        box.publish(replacement); // Replaces a snapshot the consumer never took.
+        check(box.acquire(received, seen) == FrameStatus::Fresh && received->delta.base == 10 &&
+                  received->delta.revision == 12,
+              "A dropped delta must extend the chain back to where the consumer still sits");
+        check(received->delta.moved == std::vector<uint32_t>{4, 5} &&
+                  received->delta.structural == std::vector<uint32_t>{7},
+              "Folded events must be the union of both deltas, counted once");
+        Frame following;
+        following.delta.base = 12;
+        following.delta.revision = 13;
+        following.delta.moved = {9};
+        box.publish(following);
+        check(box.acquire(received, seen) == FrameStatus::Fresh && received->delta.base == 12 &&
+                  received->delta.moved == std::vector<uint32_t>{9},
+              "A delivered snapshot must not be folded into the next one");
         box.close();
         check(box.acquire(received, seen) == FrameStatus::Closed, "Closed mailbox must wake and exit");
         FrameMailbox waiting;
