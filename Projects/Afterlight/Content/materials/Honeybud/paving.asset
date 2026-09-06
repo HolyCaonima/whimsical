@@ -1,0 +1,3 @@
+ALAS1
+{"id": "9955ccb62db647c585ec86eb00c82c7d", "name": "paving", "type": "Material", "version": 1, "storage": "embedded", "metadata": {}}
+{"albedoRoughness": [0.58, 0.32, 0.17, 0.86], "emissionMetallic": [0, 0, 0, 0], "surface": [2, 2, 0.5, 0], "baseColor": {"id": "6b5463398aee4f3b9e17c7b40e7006e2", "path": "/Game/textures/Honeybud/plaster_baseColor"}, "normal": {"id": "f5840581d5e048a6bbea2aaf86178f19", "path": "/Game/textures/Honeybud/plaster_normal"}, "orm": {"id": "551c1d81573c4213862c6579c012a947", "path": "/Game/textures/Honeybud/plaster_orm"}}

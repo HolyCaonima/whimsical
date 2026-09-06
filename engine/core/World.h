@@ -7,6 +7,7 @@
 #include "animation/SkinnedMesh.h"
 #include <map>
 #include "assets/Asset.h"
+#include "assets/MaterialAsset.h"
 #include "navigation/Navigation.h"
 namespace afterlight {
 struct GameObject {
@@ -15,6 +16,7 @@ struct GameObject {
     vec3 position{0};
     float yaw = 0;
     RenderComponent render;
+    std::shared_ptr<const StaticMesh> staticMesh;
     BodyHandle physical;
     uint32_t proxy = 0; // Stable render slot, owned by the render scene.
     bool interactable = false, enabled = true, alive = true;
@@ -60,6 +62,8 @@ class World {
     }
     void clearScene();
     std::vector<Material> materials;
+    std::map<uint32_t, std::shared_ptr<const MaterialAsset>> materialAssets;
+    std::vector<std::shared_ptr<const TextureAsset>> textures;
     std::vector<Light> lights;
     Camera camera;
     NavigationSettings navigation;
@@ -106,6 +110,7 @@ class World {
     void setAnimationAttribute(uint32_t, const std::string& key, const std::string& value);
     AnimationInspection inspectAnimation(uint32_t) const;
     void setSkinnedMesh(uint32_t, std::shared_ptr<const SkinnedMesh>);
+    void setStaticMesh(uint32_t, std::shared_ptr<const StaticMesh>);
     void setAnimationInput(uint32_t, animation::Input);
     void resetAnimation(uint32_t); // Teleport/reinitialization resets sequence and IK history.
     void setAnimationSolver(uint32_t, std::unique_ptr<animation::Solver>);

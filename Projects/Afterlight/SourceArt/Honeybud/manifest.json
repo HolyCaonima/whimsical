@@ -1,0 +1,4345 @@
+{
+  "name": "Honeybud Court",
+  "materials": {
+    "cream": {
+      "id": "0c509c65a8564e3dbed10151ce67d045",
+      "path": "/Game/materials/Honeybud/cream"
+    },
+    "ivory": {
+      "id": "f7f0038da9d34aeb80b93f30c3bc9092",
+      "path": "/Game/materials/Honeybud/ivory"
+    },
+    "rose": {
+      "id": "4b376f1663c449af88121ca63c10b0a6",
+      "path": "/Game/materials/Honeybud/rose"
+    },
+    "roof_light": {
+      "id": "913423580d054cdb99915840d9e59f86",
+      "path": "/Game/materials/Honeybud/roof_light"
+    },
+    "sage": {
+      "id": "a06ad6d054f9499c99eef546a2f654c1",
+      "path": "/Game/materials/Honeybud/sage"
+    },
+    "wood": {
+      "id": "95bc6f2dfd564e20836fdbd79bdaa870",
+      "path": "/Game/materials/Honeybud/wood"
+    },
+    "dark_wood": {
+      "id": "684d7960cbf34a4692890224bb832b4c",
+      "path": "/Game/materials/Honeybud/dark_wood"
+    },
+    "brass": {
+      "id": "782077b53cea49c9a7b5fc662ec412d1",
+      "path": "/Game/materials/Honeybud/brass"
+    },
+    "ceramic": {
+      "id": "6c5b47d687bb4fd9b5ae43be67cce189",
+      "path": "/Game/materials/Honeybud/ceramic"
+    },
+    "water": {
+      "id": "b6e80222096741b49e065ff4c817e58e",
+      "path": "/Game/materials/Honeybud/water"
+    },
+    "leaf": {
+      "id": "b5007bd89fd84c68965318ae6670755a",
+      "path": "/Game/materials/Honeybud/leaf"
+    },
+    "leaf_light": {
+      "id": "f4c46cdc2e6c4766b224fa9ea144b89d",
+      "path": "/Game/materials/Honeybud/leaf_light"
+    },
+    "grass": {
+      "id": "439b62f06beb4e0b9c4ea55ce2abf310",
+      "path": "/Game/materials/Honeybud/grass"
+    },
+    "petal": {
+      "id": "5b447be34b21414eb590e5bc7552027f",
+      "path": "/Game/materials/Honeybud/petal"
+    },
+    "lavender": {
+      "id": "b3c2a94c06b24d92a803af920a3def00",
+      "path": "/Game/materials/Honeybud/lavender"
+    },
+    "honey": {
+      "id": "5969433d46924818b89e8bee851b8d18",
+      "path": "/Game/materials/Honeybud/honey"
+    },
+    "linen": {
+      "id": "4a1818ae580e48e5847003e0bd092bb1",
+      "path": "/Game/materials/Honeybud/linen"
+    },
+    "blue_cloth": {
+      "id": "7bb2cf0f53f447ac8718f7991edaa132",
+      "path": "/Game/materials/Honeybud/blue_cloth"
+    },
+    "soil": {
+      "id": "8f802f1e213845dca4dc20b87d5bb7a3",
+      "path": "/Game/materials/Honeybud/soil"
+    },
+    "stone": {
+      "id": "788b47a945794610afa343951fdebc5c",
+      "path": "/Game/materials/Honeybud/stone"
+    },
+    "glow": {
+      "id": "35abfab494984fd29d2dd847567c2e2a",
+      "path": "/Game/materials/Honeybud/glow"
+    },
+    "ceramic_cup": {
+      "id": "395c8245ba2a4bbbbdd0e076a95d53b5",
+      "path": "/Game/materials/Honeybud/ceramic_cup"
+    },
+    "thread": {
+      "id": "fe6873a88a644527b74064f7f3c10f68",
+      "path": "/Game/materials/Honeybud/thread"
+    },
+    "twine": {
+      "id": "6c638fd39d1d4a568e435b0fe6734390",
+      "path": "/Game/materials/Honeybud/twine"
+    },
+    "patch": {
+      "id": "b26bd0271313459eaa93e42435673974",
+      "path": "/Game/materials/Honeybud/patch"
+    },
+    "rose_cloth": {
+      "id": "48373b2aecd345e4b488fc696cf8a17d",
+      "path": "/Game/materials/Honeybud/rose_cloth"
+    },
+    "petal_glaze": {
+      "id": "6902dc16687c4671b70fad7889400f76",
+      "path": "/Game/materials/Honeybud/petal_glaze"
+    },
+    "jam_glaze": {
+      "id": "7ff950f34fa2422e930b8ff574b7e9f7",
+      "path": "/Game/materials/Honeybud/jam_glaze"
+    },
+    "terracotta": {
+      "id": "9a3088c993704b78a8404a6f4127bf74",
+      "path": "/Game/materials/Honeybud/terracotta"
+    },
+    "paving": {
+      "id": "9955ccb62db647c585ec86eb00c82c7d",
+      "path": "/Game/materials/Honeybud/paving"
+    },
+    "leaf_vein": {
+      "id": "4a428d9b560641ebbdddf56d65c4b585",
+      "path": "/Game/materials/Honeybud/leaf_vein"
+    },
+    "pollen": {
+      "id": "c621cc8073a14ed49393a323f6a64ba1",
+      "path": "/Game/materials/Honeybud/pollen"
+    },
+    "water_highlight": {
+      "id": "613c26279123466a85191a329d92eeed",
+      "path": "/Game/materials/Honeybud/water_highlight"
+    },
+    "grass_blade": {
+      "id": "be7c6281cfe04bf99bc6f3621f23c0e8",
+      "path": "/Game/materials/Honeybud/grass_blade"
+    },
+    "apricot": {
+      "id": "64b43222fdda4ad0baf407ad3f409131",
+      "path": "/Game/materials/Honeybud/apricot"
+    },
+    "surround": {
+      "id": "5b5db9b7e12e4092b0723eb1ff950db9",
+      "path": "/Game/materials/Honeybud/surround"
+    },
+    "awning": {
+      "id": "44f944121b5b4f0088bad72ff5c315da",
+      "path": "/Game/materials/Honeybud/awning"
+    }
+  },
+  "kits": {
+    "cottage": [
+      {
+        "mesh": {
+          "id": "d98845c9b0754688970999c955151f32",
+          "path": "/Game/models/Honeybud/cottage__cream"
+        },
+        "material": "cream",
+        "triangles": 218
+      },
+      {
+        "mesh": {
+          "id": "a2a14f2e48664784933d66415da924c0",
+          "path": "/Game/models/Honeybud/cottage__stone"
+        },
+        "material": "stone",
+        "triangles": 1188
+      },
+      {
+        "mesh": {
+          "id": "a26baea2898546129a34a78ea133b754",
+          "path": "/Game/models/Honeybud/cottage__ivory"
+        },
+        "material": "ivory",
+        "triangles": 19604
+      },
+      {
+        "mesh": {
+          "id": "77c5eb4c30c7404e85411420f569e1a3",
+          "path": "/Game/models/Honeybud/cottage__dark_wood"
+        },
+        "material": "dark_wood",
+        "triangles": 324
+      },
+      {
+        "mesh": {
+          "id": "4b08a0cabe144c979ee683c4434993b6",
+          "path": "/Game/models/Honeybud/cottage__sage"
+        },
+        "material": "sage",
+        "triangles": 2484
+      },
+      {
+        "mesh": {
+          "id": "3f4c1da2b023478aa1749689c194d85c",
+          "path": "/Game/models/Honeybud/cottage__wood"
+        },
+        "material": "wood",
+        "triangles": 540
+      },
+      {
+        "mesh": {
+          "id": "1811227dd1d34192ae2e368f01ced032",
+          "path": "/Game/models/Honeybud/cottage__brass"
+        },
+        "material": "brass",
+        "triangles": 2796
+      },
+      {
+        "mesh": {
+          "id": "d8b4925a4f094d54a2e927b5f4756c44",
+          "path": "/Game/models/Honeybud/cottage__glow"
+        },
+        "material": "glow",
+        "triangles": 216
+      },
+      {
+        "mesh": {
+          "id": "d675e202c6f145c2b11c8aef963e2012",
+          "path": "/Game/models/Honeybud/cottage__roof_light"
+        },
+        "material": "roof_light",
+        "triangles": 3360
+      },
+      {
+        "mesh": {
+          "id": "7c4e379658ae4ab7bd422d6c6141f61c",
+          "path": "/Game/models/Honeybud/cottage__rose"
+        },
+        "material": "rose",
+        "triangles": 12672
+      },
+      {
+        "mesh": {
+          "id": "5b3878c3331b455eb427bfc3a2b9b824",
+          "path": "/Game/models/Honeybud/cottage__leaf"
+        },
+        "material": "leaf",
+        "triangles": 408
+      },
+      {
+        "mesh": {
+          "id": "9f2b46153ed14f7eb205cec9986ccad7",
+          "path": "/Game/models/Honeybud/cottage__terracotta"
+        },
+        "material": "terracotta",
+        "triangles": 432
+      },
+      {
+        "mesh": {
+          "id": "964c449a516f4789a0102d4e52f8c51f",
+          "path": "/Game/models/Honeybud/cottage__awning"
+        },
+        "material": "awning",
+        "triangles": 156
+      },
+      {
+        "mesh": {
+          "id": "e392834cb5e740cc9423411c2d703b5b",
+          "path": "/Game/models/Honeybud/cottage__thread"
+        },
+        "material": "thread",
+        "triangles": 64
+      }
+    ],
+    "petal_fountain": [
+      {
+        "mesh": {
+          "id": "49523a3aca84431fa3b8d4023dd9e9a7",
+          "path": "/Game/models/Honeybud/petal_fountain__ceramic"
+        },
+        "material": "ceramic",
+        "triangles": 1248
+      },
+      {
+        "mesh": {
+          "id": "29cc2e3b10f144548b79b10d54f439e5",
+          "path": "/Game/models/Honeybud/petal_fountain__terracotta"
+        },
+        "material": "terracotta",
+        "triangles": 864
+      },
+      {
+        "mesh": {
+          "id": "db67ce8b14f4475eb9b3142c75c10998",
+          "path": "/Game/models/Honeybud/petal_fountain__ivory"
+        },
+        "material": "ivory",
+        "triangles": 2496
+      },
+      {
+        "mesh": {
+          "id": "e838906cca2046fd94983729d60b89fd",
+          "path": "/Game/models/Honeybud/petal_fountain__water"
+        },
+        "material": "water",
+        "triangles": 2000
+      },
+      {
+        "mesh": {
+          "id": "4ebac706aa2049b081d0d80283b689d6",
+          "path": "/Game/models/Honeybud/petal_fountain__ceramic_cup"
+        },
+        "material": "ceramic_cup",
+        "triangles": 3072
+      },
+      {
+        "mesh": {
+          "id": "615f19564e7e4708bf1ab063cf273e7f",
+          "path": "/Game/models/Honeybud/petal_fountain__brass"
+        },
+        "material": "brass",
+        "triangles": 1600
+      },
+      {
+        "mesh": {
+          "id": "df080ee1ed4a4e97961f777b876eb65d",
+          "path": "/Game/models/Honeybud/petal_fountain__water_highlight"
+        },
+        "material": "water_highlight",
+        "triangles": 3456
+      }
+    ],
+    "pergola": [
+      {
+        "mesh": {
+          "id": "dacc671f29564ef5adf9ac889a451eb4",
+          "path": "/Game/models/Honeybud/pergola__wood"
+        },
+        "material": "wood",
+        "triangles": 2208
+      },
+      {
+        "mesh": {
+          "id": "10171118c65b44e0b493f73c130793e8",
+          "path": "/Game/models/Honeybud/pergola__ivory"
+        },
+        "material": "ivory",
+        "triangles": 1436
+      },
+      {
+        "mesh": {
+          "id": "511c276054de42bfb1df401a408f974b",
+          "path": "/Game/models/Honeybud/pergola__leaf"
+        },
+        "material": "leaf",
+        "triangles": 1736
+      },
+      {
+        "mesh": {
+          "id": "e1946f122e0a4edf9cc1a8d41df312cf",
+          "path": "/Game/models/Honeybud/pergola__brass"
+        },
+        "material": "brass",
+        "triangles": 864
+      }
+    ],
+    "cushion_bench": [
+      {
+        "mesh": {
+          "id": "aa2e5b8946594361812c6eaeb968f636",
+          "path": "/Game/models/Honeybud/cushion_bench__wood"
+        },
+        "material": "wood",
+        "triangles": 3712
+      },
+      {
+        "mesh": {
+          "id": "a12b0d0d12474d75909eeed70ffd52ef",
+          "path": "/Game/models/Honeybud/cushion_bench__sage"
+        },
+        "material": "sage",
+        "triangles": 396
+      },
+      {
+        "mesh": {
+          "id": "f6afa25690a44d28aa1edede13e14f0c",
+          "path": "/Game/models/Honeybud/cushion_bench__brass"
+        },
+        "material": "brass",
+        "triangles": 448
+      },
+      {
+        "mesh": {
+          "id": "1cd5f476b8664254b8cba197f56e69e7",
+          "path": "/Game/models/Honeybud/cushion_bench__linen"
+        },
+        "material": "linen",
+        "triangles": 1184
+      },
+      {
+        "mesh": {
+          "id": "ba5489fa189247af9c8e9a517e044efb",
+          "path": "/Game/models/Honeybud/cushion_bench__thread"
+        },
+        "material": "thread",
+        "triangles": 1952
+      },
+      {
+        "mesh": {
+          "id": "78f15d2bf181459da2fa36af7601b857",
+          "path": "/Game/models/Honeybud/cushion_bench__honey"
+        },
+        "material": "honey",
+        "triangles": 3128
+      },
+      {
+        "mesh": {
+          "id": "511b0e6d3c3b499290b4c2d2be1e48e5",
+          "path": "/Game/models/Honeybud/cushion_bench__blue_cloth"
+        },
+        "material": "blue_cloth",
+        "triangles": 1184
+      },
+      {
+        "mesh": {
+          "id": "0ab67171cc5843f5a44491539f597893",
+          "path": "/Game/models/Honeybud/cushion_bench__patch"
+        },
+        "material": "patch",
+        "triangles": 80
+      },
+      {
+        "mesh": {
+          "id": "89f6d96468754491bc68e33685ee9e4e",
+          "path": "/Game/models/Honeybud/cushion_bench__rose_cloth"
+        },
+        "material": "rose_cloth",
+        "triangles": 2384
+      }
+    ],
+    "jam_jar": [
+      {
+        "mesh": {
+          "id": "07bc111ee1544a4db7ae4926d5240f57",
+          "path": "/Game/models/Honeybud/jam_jar__jam_glaze"
+        },
+        "material": "jam_glaze",
+        "triangles": 672
+      },
+      {
+        "mesh": {
+          "id": "95b5c77a99f4483aaa3621351a570cd9",
+          "path": "/Game/models/Honeybud/jam_jar__blue_cloth"
+        },
+        "material": "blue_cloth",
+        "triangles": 640
+      },
+      {
+        "mesh": {
+          "id": "64df7231bee14b4c9d030a08fbeb3900",
+          "path": "/Game/models/Honeybud/jam_jar__thread"
+        },
+        "material": "thread",
+        "triangles": 960
+      },
+      {
+        "mesh": {
+          "id": "26a8e560ca1949bd986f99ec86d3c321",
+          "path": "/Game/models/Honeybud/jam_jar__twine"
+        },
+        "material": "twine",
+        "triangles": 1088
+      },
+      {
+        "mesh": {
+          "id": "002eb8a3b531475d8305baf3a8ad94a4",
+          "path": "/Game/models/Honeybud/jam_jar__linen"
+        },
+        "material": "linen",
+        "triangles": 108
+      },
+      {
+        "mesh": {
+          "id": "cd4ea09d374048b1921edbbf7f7281e0",
+          "path": "/Game/models/Honeybud/jam_jar__dark_wood"
+        },
+        "material": "dark_wood",
+        "triangles": 7556
+      },
+      {
+        "mesh": {
+          "id": "6398ab9bada64ea5be3f62ba003a7855",
+          "path": "/Game/models/Honeybud/jam_jar__patch"
+        },
+        "material": "patch",
+        "triangles": 448
+      }
+    ],
+    "tea_table": [
+      {
+        "mesh": {
+          "id": "6979d122132947a2a8402a2e496985a6",
+          "path": "/Game/models/Honeybud/tea_table__sage"
+        },
+        "material": "sage",
+        "triangles": 324
+      },
+      {
+        "mesh": {
+          "id": "73ddbcb889634ed6bbcb22fd59f18c00",
+          "path": "/Game/models/Honeybud/tea_table__wood"
+        },
+        "material": "wood",
+        "triangles": 1032
+      }
+    ],
+    "tea_cup": [
+      {
+        "mesh": {
+          "id": "57159c6de97047afa77add1653458949",
+          "path": "/Game/models/Honeybud/tea_cup__ivory"
+        },
+        "material": "ivory",
+        "triangles": 448
+      },
+      {
+        "mesh": {
+          "id": "646f55491c6641e298908529e6d98544",
+          "path": "/Game/models/Honeybud/tea_cup__ceramic"
+        },
+        "material": "ceramic",
+        "triangles": 764
+      },
+      {
+        "mesh": {
+          "id": "a69e03aa0b084ef1ad9a6694021b0adf",
+          "path": "/Game/models/Honeybud/tea_cup__dark_wood"
+        },
+        "material": "dark_wood",
+        "triangles": 380
+      }
+    ],
+    "fence": [
+      {
+        "mesh": {
+          "id": "478fdd76d0c44625aa0dbd26a8cc4af9",
+          "path": "/Game/models/Honeybud/fence__wood"
+        },
+        "material": "wood",
+        "triangles": 996
+      },
+      {
+        "mesh": {
+          "id": "2746b215091c40f5964088597dc233f2",
+          "path": "/Game/models/Honeybud/fence__ivory"
+        },
+        "material": "ivory",
+        "triangles": 216
+      }
+    ],
+    "planter": [
+      {
+        "mesh": {
+          "id": "6d4eca7dde104406b642cf8cdfc5711e",
+          "path": "/Game/models/Honeybud/planter__sage"
+        },
+        "material": "sage",
+        "triangles": 108
+      },
+      {
+        "mesh": {
+          "id": "502927873e1a401cb7b85741119239ff",
+          "path": "/Game/models/Honeybud/planter__soil"
+        },
+        "material": "soil",
+        "triangles": 108
+      },
+      {
+        "mesh": {
+          "id": "05d94ad07de04a3d971567ac6c0cc7c2",
+          "path": "/Game/models/Honeybud/planter__ivory"
+        },
+        "material": "ivory",
+        "triangles": 216
+      }
+    ],
+    "daisy": [
+      {
+        "mesh": {
+          "id": "4b8c1f451a404bcb9a3a6a78c4db7e5b",
+          "path": "/Game/models/Honeybud/daisy__leaf"
+        },
+        "material": "leaf",
+        "triangles": 232
+      },
+      {
+        "mesh": {
+          "id": "8e70b44d9fe24bb0b6fcd32ff735452e",
+          "path": "/Game/models/Honeybud/daisy__ivory"
+        },
+        "material": "ivory",
+        "triangles": 972
+      },
+      {
+        "mesh": {
+          "id": "89295afbd3604042a89ae91925f8d369",
+          "path": "/Game/models/Honeybud/daisy__honey"
+        },
+        "material": "honey",
+        "triangles": 224
+      }
+    ],
+    "pink_flower": [
+      {
+        "mesh": {
+          "id": "ced9fe7fbc774492b104af35d91ff3ca",
+          "path": "/Game/models/Honeybud/pink_flower__leaf"
+        },
+        "material": "leaf",
+        "triangles": 232
+      },
+      {
+        "mesh": {
+          "id": "47c61cc2efa14bee9d807985d4e761a6",
+          "path": "/Game/models/Honeybud/pink_flower__petal"
+        },
+        "material": "petal",
+        "triangles": 648
+      },
+      {
+        "mesh": {
+          "id": "25c9d580068a479f9b3ad58adc194c65",
+          "path": "/Game/models/Honeybud/pink_flower__honey"
+        },
+        "material": "honey",
+        "triangles": 224
+      }
+    ],
+    "violet": [
+      {
+        "mesh": {
+          "id": "faea67f49b364346a884d94b02ca3f35",
+          "path": "/Game/models/Honeybud/violet__leaf"
+        },
+        "material": "leaf",
+        "triangles": 232
+      },
+      {
+        "mesh": {
+          "id": "1958c045ac12421a8c39b8c3a6b835be",
+          "path": "/Game/models/Honeybud/violet__lavender"
+        },
+        "material": "lavender",
+        "triangles": 648
+      },
+      {
+        "mesh": {
+          "id": "7abd2b5117194015b8fa827242a36502",
+          "path": "/Game/models/Honeybud/violet__honey"
+        },
+        "material": "honey",
+        "triangles": 224
+      }
+    ],
+    "potted_plant": [
+      {
+        "mesh": {
+          "id": "1d5fc4d51370472fa21e23a6eadbcff0",
+          "path": "/Game/models/Honeybud/potted_plant__terracotta"
+        },
+        "material": "terracotta",
+        "triangles": 768
+      },
+      {
+        "mesh": {
+          "id": "e8c24b18bbc14ef6995f13b8cd3f5f8c",
+          "path": "/Game/models/Honeybud/potted_plant__ivory"
+        },
+        "material": "ivory",
+        "triangles": 384
+      },
+      {
+        "mesh": {
+          "id": "5ae6ff8b3e4e486fb56e4a50ba8fb077",
+          "path": "/Game/models/Honeybud/potted_plant__soil"
+        },
+        "material": "soil",
+        "triangles": 380
+      },
+      {
+        "mesh": {
+          "id": "96e07f859f34466c862c011795d221f7",
+          "path": "/Game/models/Honeybud/potted_plant__leaf_light"
+        },
+        "material": "leaf_light",
+        "triangles": 1088
+      }
+    ],
+    "shrub": [
+      {
+        "mesh": {
+          "id": "24b085dc71b944f88cddebe5503b197a",
+          "path": "/Game/models/Honeybud/shrub__leaf_light"
+        },
+        "material": "leaf_light",
+        "triangles": 2108
+      },
+      {
+        "mesh": {
+          "id": "421053fb80db477388b92cca59a077e6",
+          "path": "/Game/models/Honeybud/shrub__leaf"
+        },
+        "material": "leaf",
+        "triangles": 1564
+      },
+      {
+        "mesh": {
+          "id": "60a37e37605a435fb886669275c53702",
+          "path": "/Game/models/Honeybud/shrub__dark_wood"
+        },
+        "material": "dark_wood",
+        "triangles": 576
+      }
+    ],
+    "grass_tuft": [
+      {
+        "mesh": {
+          "id": "6ab52533c8bb492282a23ec3f5695142",
+          "path": "/Game/models/Honeybud/grass_tuft__leaf_light"
+        },
+        "material": "leaf_light",
+        "triangles": 384
+      }
+    ],
+    "stepping_stone": [
+      {
+        "mesh": {
+          "id": "7c0fc3fbf04f4ecf883d410a9ff21ce0",
+          "path": "/Game/models/Honeybud/stepping_stone__paving"
+        },
+        "material": "paving",
+        "triangles": 412
+      }
+    ],
+    "lantern": [
+      {
+        "mesh": {
+          "id": "e9968295e0de4727bf5035508a7a0cd2",
+          "path": "/Game/models/Honeybud/lantern__stone"
+        },
+        "material": "stone",
+        "triangles": 108
+      },
+      {
+        "mesh": {
+          "id": "69a79c658d5849989ff5bfa5f7be7f81",
+          "path": "/Game/models/Honeybud/lantern__brass"
+        },
+        "material": "brass",
+        "triangles": 1004
+      },
+      {
+        "mesh": {
+          "id": "a0be87f28fdc47cead54474c90e8a09b",
+          "path": "/Game/models/Honeybud/lantern__glow"
+        },
+        "material": "glow",
+        "triangles": 108
+      },
+      {
+        "mesh": {
+          "id": "9dee00c213884bd8b0e437c8ba0060b8",
+          "path": "/Game/models/Honeybud/lantern__sage"
+        },
+        "material": "sage",
+        "triangles": 256
+      }
+    ],
+    "garden_robot": [
+      {
+        "mesh": {
+          "id": "86cadd9c0cb04c979e0fce9b75e44ed8",
+          "path": "/Game/models/Honeybud/garden_robot__dark_wood"
+        },
+        "material": "dark_wood",
+        "triangles": 324
+      },
+      {
+        "mesh": {
+          "id": "260d5820114940aaa65834a8c2e6e3a6",
+          "path": "/Game/models/Honeybud/garden_robot__brass"
+        },
+        "material": "brass",
+        "triangles": 1584
+      },
+      {
+        "mesh": {
+          "id": "de16e5d02fde43df8749ce488c13b068",
+          "path": "/Game/models/Honeybud/garden_robot__sage"
+        },
+        "material": "sage",
+        "triangles": 108
+      },
+      {
+        "mesh": {
+          "id": "0bbe4ebb27294c3a87431dae886577a6",
+          "path": "/Game/models/Honeybud/garden_robot__wood"
+        },
+        "material": "wood",
+        "triangles": 108
+      },
+      {
+        "mesh": {
+          "id": "e706694b408d4bb4bf4b93da95547e22",
+          "path": "/Game/models/Honeybud/garden_robot__glow"
+        },
+        "material": "glow",
+        "triangles": 448
+      },
+      {
+        "mesh": {
+          "id": "67b41b1fa3594a8b96a928be60bfd86d",
+          "path": "/Game/models/Honeybud/garden_robot__ivory"
+        },
+        "material": "ivory",
+        "triangles": 512
+      }
+    ],
+    "garden_ground": [
+      {
+        "mesh": {
+          "id": "def1d4f3bc554871933171b1f9a0e0b5",
+          "path": "/Game/models/Honeybud/garden_ground__stone"
+        },
+        "material": "stone",
+        "triangles": 108
+      },
+      {
+        "mesh": {
+          "id": "79356a31de8c4f79b59248935d8dafa2",
+          "path": "/Game/models/Honeybud/garden_ground__grass"
+        },
+        "material": "grass",
+        "triangles": 108
+      }
+    ],
+    "grass_patch": [
+      {
+        "mesh": {
+          "id": "c1f1ad2dc03f49fb854c903d12b391da",
+          "path": "/Game/models/Honeybud/grass_patch__grass_blade"
+        },
+        "material": "grass_blade",
+        "triangles": 288
+      }
+    ],
+    "setting": [
+      {
+        "mesh": {
+          "id": "1846c85543704b2c89476f0396733664",
+          "path": "/Game/models/Honeybud/setting__apricot"
+        },
+        "material": "apricot",
+        "triangles": 108
+      },
+      {
+        "mesh": {
+          "id": "536a0b9d79cd48699043ea582e3d9bce",
+          "path": "/Game/models/Honeybud/setting__ivory"
+        },
+        "material": "ivory",
+        "triangles": 1676
+      },
+      {
+        "mesh": {
+          "id": "7db901fc87254eedaa769b45c68a7271",
+          "path": "/Game/models/Honeybud/setting__terracotta"
+        },
+        "material": "terracotta",
+        "triangles": 756
+      },
+      {
+        "mesh": {
+          "id": "bba6a4bbb6c142419ae4380b27ef983d",
+          "path": "/Game/models/Honeybud/setting__surround"
+        },
+        "material": "surround",
+        "triangles": 108
+      },
+      {
+        "mesh": {
+          "id": "d59a722e69804564a5cde6d56f929876",
+          "path": "/Game/models/Honeybud/setting__wood"
+        },
+        "material": "wood",
+        "triangles": 3024
+      }
+    ]
+  },
+  "placements": [
+    {
+      "kit": "garden_ground",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "cottage",
+      "position": [
+        1,
+        5.1,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "petal_fountain",
+      "position": [
+        -0.6,
+        -0.1,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "pergola",
+      "position": [
+        -6.2,
+        3.0,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "cushion_bench",
+      "position": [
+        -6.2,
+        3.35,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "cushion_bench",
+      "position": [
+        6.0,
+        1.6,
+        0
+      ],
+      "angle": -0.28,
+      "scale": 1
+    },
+    {
+      "kit": "tea_table",
+      "position": [
+        5.4,
+        -0.25,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "tea_cup",
+      "position": [
+        5.2,
+        -0.4,
+        0.93
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "jam_jar",
+      "position": [
+        5.66,
+        -0.1,
+        0.93
+      ],
+      "angle": 0,
+      "scale": 0.56
+    },
+    {
+      "kit": "jam_jar",
+      "position": [
+        -4.9,
+        1.5,
+        0
+      ],
+      "angle": 0,
+      "scale": 0.75
+    },
+    {
+      "kit": "jam_jar",
+      "position": [
+        -5.8,
+        1.4,
+        0
+      ],
+      "angle": 0,
+      "scale": 0.55
+    },
+    {
+      "kit": "garden_robot",
+      "position": [
+        -3.1,
+        -0.5,
+        0
+      ],
+      "angle": -0.3,
+      "scale": 1
+    },
+    {
+      "kit": "planter",
+      "position": [
+        -8.6,
+        -3.55,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -9.35,
+        -3.9,
+        0.51
+      ],
+      "angle": 0,
+      "scale": 0.7
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -9.35,
+        -3.1999999999999997,
+        0.51
+      ],
+      "angle": 0,
+      "scale": 0.7
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -8.6,
+        -3.9,
+        0.51
+      ],
+      "angle": 0,
+      "scale": 0.7
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -8.6,
+        -3.1999999999999997,
+        0.51
+      ],
+      "angle": 0,
+      "scale": 0.7
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -7.85,
+        -3.9,
+        0.51
+      ],
+      "angle": 0,
+      "scale": 0.7
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -7.85,
+        -3.1999999999999997,
+        0.51
+      ],
+      "angle": 0,
+      "scale": 0.7
+    },
+    {
+      "kit": "planter",
+      "position": [
+        -6.0,
+        -3.55,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -6.75,
+        -3.9,
+        0.51
+      ],
+      "angle": 0,
+      "scale": 0.7
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -6.75,
+        -3.1999999999999997,
+        0.51
+      ],
+      "angle": 0,
+      "scale": 0.7
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -6.0,
+        -3.9,
+        0.51
+      ],
+      "angle": 0,
+      "scale": 0.7
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -6.0,
+        -3.1999999999999997,
+        0.51
+      ],
+      "angle": 0,
+      "scale": 0.7
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -5.25,
+        -3.9,
+        0.51
+      ],
+      "angle": 0,
+      "scale": 0.7
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -5.25,
+        -3.1999999999999997,
+        0.51
+      ],
+      "angle": 0,
+      "scale": 0.7
+    },
+    {
+      "kit": "fence",
+      "position": [
+        -9,
+        8.1,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        -7,
+        8.1,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        -5,
+        8.1,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        -3,
+        8.1,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        -1,
+        8.1,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        1,
+        8.1,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        3,
+        8.1,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        5,
+        8.1,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        7,
+        8.1,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        9,
+        8.1,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        -10.0,
+        -6,
+        0
+      ],
+      "angle": 1.5707963267948966,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        10.0,
+        -6,
+        0
+      ],
+      "angle": 1.5707963267948966,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        -10.0,
+        -4,
+        0
+      ],
+      "angle": 1.5707963267948966,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        10.0,
+        -4,
+        0
+      ],
+      "angle": 1.5707963267948966,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        -10.0,
+        -2,
+        0
+      ],
+      "angle": 1.5707963267948966,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        10.0,
+        -2,
+        0
+      ],
+      "angle": 1.5707963267948966,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        -10.0,
+        0,
+        0
+      ],
+      "angle": 1.5707963267948966,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        10.0,
+        0,
+        0
+      ],
+      "angle": 1.5707963267948966,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        -10.0,
+        2,
+        0
+      ],
+      "angle": 1.5707963267948966,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        10.0,
+        2,
+        0
+      ],
+      "angle": 1.5707963267948966,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        -10.0,
+        4,
+        0
+      ],
+      "angle": 1.5707963267948966,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        10.0,
+        4,
+        0
+      ],
+      "angle": 1.5707963267948966,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        -10.0,
+        6,
+        0
+      ],
+      "angle": 1.5707963267948966,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        10.0,
+        6,
+        0
+      ],
+      "angle": 1.5707963267948966,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        -9,
+        -8.0,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        -7,
+        -8.0,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        -5,
+        -8.0,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        5,
+        -8.0,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        7,
+        -8.0,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "fence",
+      "position": [
+        9,
+        -8.0,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        0.48532799516407954,
+        -7.5,
+        0
+      ],
+      "angle": 2.0460136817639336,
+      "scale": 0.7756487302622779
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        1.2553279951640794,
+        -7.5,
+        0
+      ],
+      "angle": 1.853449046584207,
+      "scale": 0.9857375732742677
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        1.9153279951640796,
+        -7.5,
+        0
+      ],
+      "angle": 2.5036508657282694,
+      "scale": 0.8942049632215778
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        0.32447149819678955,
+        -6.8,
+        0
+      ],
+      "angle": 1.8931138958870297,
+      "scale": 0.8533843535376172
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        1.0944714981967896,
+        -6.8,
+        0
+      ],
+      "angle": 1.584055866057674,
+      "scale": 0.780199871324765
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        1.7544714981967895,
+        -6.8,
+        0
+      ],
+      "angle": 2.0488498014998893,
+      "scale": 0.9181871412899384
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        0.18273900099937757,
+        -6.1,
+        0
+      ],
+      "angle": 0.845773568569215,
+      "scale": 0.8560003962550957
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        0.9527390009993775,
+        -6.1,
+        0
+      ],
+      "angle": 2.2083946114010145,
+      "scale": 0.8742856845291807
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        1.6127390009993774,
+        -6.1,
+        0
+      ],
+      "angle": 2.8788481906096526,
+      "scale": 1.0219516701460951
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        0.07116992353278995,
+        -5.3999999999999995,
+        0
+      ],
+      "angle": 2.5150878142456286,
+      "scale": 0.7754877003704752
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        0.8411699235327899,
+        -5.3999999999999995,
+        0
+      ],
+      "angle": 0.22545789652322878,
+      "scale": 0.8308040751540419
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        1.5011699235327898,
+        -5.3999999999999995,
+        0
+      ],
+      "angle": 1.083321190958414,
+      "scale": 0.9473868095953644
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        -0.0015457165629572112,
+        -4.699999999999999,
+        0
+      ],
+      "angle": 2.4806593936933057,
+      "scale": 0.9075348167309535
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        0.7684542834370427,
+        -4.699999999999999,
+        0
+      ],
+      "angle": 1.9175731995370038,
+      "scale": 0.9104623340943477
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        1.4284542834370426,
+        -4.699999999999999,
+        0
+      ],
+      "angle": 0.10216978506206076,
+      "scale": 0.8974657450126993
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        -0.029744161824903137,
+        -3.999999999999999,
+        0
+      ],
+      "angle": 0.6397314482598784,
+      "scale": 0.866749595237122
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        0.7402558381750968,
+        -3.999999999999999,
+        0
+      ],
+      "angle": 0.026352122595425187,
+      "scale": 0.9336188127311746
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        1.400255838175097,
+        -3.999999999999999,
+        0
+      ],
+      "angle": 2.730669454356231,
+      "scale": 0.7692110532373492
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        -0.01122906007095914,
+        -3.299999999999999,
+        0
+      ],
+      "angle": 1.7402002265645546,
+      "scale": 0.7565746963820819
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        0.7587709399290408,
+        -3.299999999999999,
+        0
+      ],
+      "angle": 1.0556190206297051,
+      "scale": 0.7946000253397951
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        1.4187709399290407,
+        -3.299999999999999,
+        0
+      ],
+      "angle": 2.5817458485447053,
+      "scale": 0.9538474977298185
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        0.05255746365399705,
+        -2.5999999999999988,
+        0
+      ],
+      "angle": 2.689605517882999,
+      "scale": 0.8110299510213507
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        0.822557463653997,
+        -2.5999999999999988,
+        0
+      ],
+      "angle": 2.1566984946630394,
+      "scale": 0.9458591665597949
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        1.4825574636539969,
+        -2.5999999999999988,
+        0
+      ],
+      "angle": 1.532048970075527,
+      "scale": 1.0065342682933824
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        0.9266471329336694,
+        -1.8999999999999986,
+        0
+      ],
+      "angle": 1.874778718696597,
+      "scale": 0.8291862714017169
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        1.5866471329336695,
+        -1.8999999999999986,
+        0
+      ],
+      "angle": 2.15127846308644,
+      "scale": 0.8847463086253449
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        1.7229324946751103,
+        -1.1999999999999984,
+        0
+      ],
+      "angle": 0.6390975698766423,
+      "scale": 0.922985392046803
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        1.8807984015229637,
+        -0.4999999999999982,
+        0
+      ],
+      "angle": 0.14485898849564816,
+      "scale": 0.8757386445208766
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        2.047948816381504,
+        0.20000000000000195,
+        0
+      ],
+      "angle": 1.6702989857360482,
+      "scale": 0.7507106893859112
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        1.5513645399650544,
+        0.9000000000000021,
+        0
+      ],
+      "angle": 1.9457100534246887,
+      "scale": 0.7746950775692875
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        2.2113645399650546,
+        0.9000000000000021,
+        0
+      ],
+      "angle": 1.9492330431236424,
+      "scale": 0.8455163495107485
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        0.9283172648174355,
+        1.6000000000000014,
+        0
+      ],
+      "angle": 0.0883584491433449,
+      "scale": 1.0298123791948766
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        1.6983172648174354,
+        1.6000000000000014,
+        0
+      ],
+      "angle": 0.19251652608203562,
+      "scale": 0.7937610517134618
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        2.3583172648174355,
+        1.6000000000000014,
+        0
+      ],
+      "angle": 1.5172483397515815,
+      "scale": 0.8186304839620726
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        1.0473609720218198,
+        2.3000000000000025,
+        0
+      ],
+      "angle": 1.5912853022337639,
+      "scale": 0.8827276644653589
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        1.8173609720218198,
+        2.3000000000000025,
+        0
+      ],
+      "angle": 1.7295967157142664,
+      "scale": 0.9022155830701719
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        2.47736097202182,
+        2.3000000000000025,
+        0
+      ],
+      "angle": 0.8826869160588039,
+      "scale": 0.8092081143807425
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        1.1292234515803359,
+        3.0000000000000036,
+        0
+      ],
+      "angle": 2.0836390293957887,
+      "scale": 0.8701149937683377
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        1.899223451580336,
+        3.0000000000000036,
+        0
+      ],
+      "angle": 1.561586012108806,
+      "scale": 1.0064549949159796
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        2.559223451580336,
+        3.0000000000000036,
+        0
+      ],
+      "angle": 0.025453411579406837,
+      "scale": 0.8276562376249862
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        -8.7,
+        -0.9127047691139712,
+        0
+      ],
+      "angle": 1.6902029701283032,
+      "scale": 0.9
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        -7.85,
+        -0.9699986524620062,
+        0
+      ],
+      "angle": 0.16198267543814404,
+      "scale": 0.9
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        -7.0,
+        -0.9116877217821941,
+        0
+      ],
+      "angle": 2.2619252839309327,
+      "scale": 0.9
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        -6.15,
+        -0.7774253754950722,
+        0
+      ],
+      "angle": 1.2040052588218453,
+      "scale": 0.9
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        -5.300000000000001,
+        -0.6585145348219369,
+        0
+      ],
+      "angle": 0.9491120442926403,
+      "scale": 0.9
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        -4.450000000000001,
+        -0.6358185796944914,
+        0
+      ],
+      "angle": 0.5832996835804112,
+      "scale": 0.9
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        -3.6000000000000014,
+        -0.7247715246398749,
+        0
+      ],
+      "angle": 2.9004130954415785,
+      "scale": 0.9
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        -2.7500000000000018,
+        -0.8648823686488961,
+        0
+      ],
+      "angle": 0.13967112192418263,
+      "scale": 0.9
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        2.349999999999996,
+        -0.679049530025556,
+        0
+      ],
+      "angle": 2.464346123510499,
+      "scale": 0.9
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        3.1999999999999957,
+        -0.809923604382688,
+        0
+      ],
+      "angle": 2.1136677512396154,
+      "scale": 0.9
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        4.049999999999995,
+        -0.9340492932524527,
+        0
+      ],
+      "angle": 2.6924584187053986,
+      "scale": 0.9
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        4.899999999999995,
+        -0.9670169441461367,
+        0
+      ],
+      "angle": 2.1037351749178486,
+      "scale": 0.9
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        5.749999999999995,
+        -0.8864074431748747,
+        0
+      ],
+      "angle": 1.0408232678889615,
+      "scale": 0.9
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        6.599999999999994,
+        -0.7470379682027267,
+        0
+      ],
+      "angle": 1.6499265718403349,
+      "scale": 0.9
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        7.449999999999992,
+        -0.6436844601090755,
+        0
+      ],
+      "angle": 2.7648601814748477,
+      "scale": 0.9
+    },
+    {
+      "kit": "stepping_stone",
+      "position": [
+        8.299999999999994,
+        -0.6466307882614296,
+        0
+      ],
+      "angle": 0.12267223401395277,
+      "scale": 0.9
+    },
+    {
+      "kit": "potted_plant",
+      "position": [
+        -1.85,
+        3.4,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "potted_plant",
+      "position": [
+        3.8,
+        3.3,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "potted_plant",
+      "position": [
+        -7.85,
+        1.5,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "potted_plant",
+      "position": [
+        7.8,
+        1.8,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "lantern",
+      "position": [
+        -3.1,
+        -3,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "lantern",
+      "position": [
+        3.0,
+        -3.2,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "lantern",
+      "position": [
+        -8.1,
+        5.1,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "lantern",
+      "position": [
+        8.5,
+        5.2,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "shrub",
+      "position": [
+        -8,
+        6.5,
+        0
+      ],
+      "angle": 3.3997983796472555,
+      "scale": 1.1693717175946043
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        -7.604712102263174,
+        6.744435060766132,
+        0
+      ],
+      "angle": 3.838233635033493,
+      "scale": 1.1280996804711958
+    },
+    {
+      "kit": "violet",
+      "position": [
+        -7.97270613780531,
+        5.927791941615369,
+        0
+      ],
+      "angle": 3.5504929556847413,
+      "scale": 0.9000485703266596
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -7.11595747053472,
+        6.727213984864661,
+        0
+      ],
+      "angle": 2.142166836500798,
+      "scale": 0.7922663267058254
+    },
+    {
+      "kit": "shrub",
+      "position": [
+        -5,
+        6.2,
+        0
+      ],
+      "angle": 2.545267488364782,
+      "scale": 1.0445614872367874
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        -4.370103378071762,
+        6.0866952074124105,
+        0
+      ],
+      "angle": 0.4105895570960365,
+      "scale": 0.9011877493671729
+    },
+    {
+      "kit": "violet",
+      "position": [
+        -4.888645840101275,
+        5.766450483008766,
+        0
+      ],
+      "angle": 4.771614502710162,
+      "scale": 1.0225487704487861
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -4.729162425002845,
+        5.63700440742923,
+        0
+      ],
+      "angle": 0.8609665576727803,
+      "scale": 0.7194416324077509
+    },
+    {
+      "kit": "shrub",
+      "position": [
+        -3.5,
+        6.6,
+        0
+      ],
+      "angle": 2.93108437401371,
+      "scale": 1.2765337570185584
+    },
+    {
+      "kit": "violet",
+      "position": [
+        -3.3638810429168045,
+        6.488568356179189,
+        0
+      ],
+      "angle": 5.6312273818736855,
+      "scale": 0.7651582790109503
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -3.182482122844691,
+        6.944780477864383,
+        0
+      ],
+      "angle": 0.9926498901047767,
+      "scale": 0.8049479285462853
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -2.893931268619283,
+        6.169585592637951,
+        0
+      ],
+      "angle": 4.928594229636449,
+      "scale": 1.061435513927118
+    },
+    {
+      "kit": "shrub",
+      "position": [
+        5,
+        6.9,
+        0
+      ],
+      "angle": 1.0976147496092907,
+      "scale": 0.987630465921014
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        5.8345364257941865,
+        6.6595473881746905,
+        0
+      ],
+      "angle": 0.015276608511294976,
+      "scale": 1.03310622364553
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        5.676378409334895,
+        6.777611659335948,
+        0
+      ],
+      "angle": 3.242796200878888,
+      "scale": 0.9999044067850387
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        5.810336760669987,
+        6.527404724013292,
+        0
+      ],
+      "angle": 1.4963474833428134,
+      "scale": 1.0032853480853414
+    },
+    {
+      "kit": "shrub",
+      "position": [
+        7,
+        6.6,
+        0
+      ],
+      "angle": 0.23111839347502539,
+      "scale": 1.2279354140063354
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        7.803709932393822,
+        6.833268527138905,
+        0
+      ],
+      "angle": 3.4825152768247367,
+      "scale": 0.9070530002380232
+    },
+    {
+      "kit": "violet",
+      "position": [
+        7.516855409330322,
+        6.203574418847912,
+        0
+      ],
+      "angle": 0.38302311982454995,
+      "scale": 0.8119178348969529
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        6.909907742344964,
+        6.245601920712466,
+        0
+      ],
+      "angle": 0.983233188678186,
+      "scale": 1.0526136984645025
+    },
+    {
+      "kit": "shrub",
+      "position": [
+        8.7,
+        6.5,
+        0
+      ],
+      "angle": 2.3397931702521886,
+      "scale": 1.1757002473120504
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        9.053828087920305,
+        6.235906178944694,
+        0
+      ],
+      "angle": 4.47374904834652,
+      "scale": 1.123703878079892
+    },
+    {
+      "kit": "violet",
+      "position": [
+        9.461300676507014,
+        6.716200543726606,
+        0
+      ],
+      "angle": 2.8292738100925274,
+      "scale": 0.7170675533667793
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        8.732877133374071,
+        6.039534287496259,
+        0
+      ],
+      "angle": 3.1486646368965276,
+      "scale": 0.8120024086145979
+    },
+    {
+      "kit": "shrub",
+      "position": [
+        -8.9,
+        0.7,
+        0
+      ],
+      "angle": 1.0151657975412371,
+      "scale": 1.2674793221159144
+    },
+    {
+      "kit": "violet",
+      "position": [
+        -8.348168308751308,
+        0.3293098605437562,
+        0
+      ],
+      "angle": 4.864786250191987,
+      "scale": 0.8610444218495825
+    },
+    {
+      "kit": "violet",
+      "position": [
+        -9.084349412615724,
+        0.942300257825799,
+        0
+      ],
+      "angle": 3.566948018597701,
+      "scale": 0.9931622313679506
+    },
+    {
+      "kit": "violet",
+      "position": [
+        -8.881390222494304,
+        0.6106398691434829,
+        0
+      ],
+      "angle": 3.379094919131319,
+      "scale": 1.0234132548893378
+    },
+    {
+      "kit": "shrub",
+      "position": [
+        8.8,
+        3.6,
+        0
+      ],
+      "angle": 2.008874989270597,
+      "scale": 1.03024231343557
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        9.076385434903825,
+        3.5522454166181197,
+        0
+      ],
+      "angle": 3.182513792399471,
+      "scale": 0.7311991876048786
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        9.615394979560138,
+        3.8642119738664187,
+        0
+      ],
+      "angle": 2.4321017129156646,
+      "scale": 0.8301113412889631
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        9.428356664871952,
+        3.248501253783886,
+        0
+      ],
+      "angle": 1.3528991571640898,
+      "scale": 0.8959525704010067
+    },
+    {
+      "kit": "shrub",
+      "position": [
+        8.4,
+        -4.8,
+        0
+      ],
+      "angle": 3.7754375769059183,
+      "scale": 1.1797619633311431
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        8.02586804011427,
+        -5.024532256272252,
+        0
+      ],
+      "angle": 4.329585540078198,
+      "scale": 1.13804035598282
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        7.660796484019232,
+        -5.091667699176709,
+        0
+      ],
+      "angle": 5.320260101660021,
+      "scale": 1.0729671604507662
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        7.571372503382648,
+        -5.124935082815744,
+        0
+      ],
+      "angle": 4.968378066434527,
+      "scale": 0.7183613991092265
+    },
+    {
+      "kit": "shrub",
+      "position": [
+        6.5,
+        -5.9,
+        0
+      ],
+      "angle": 1.9934182417488135,
+      "scale": 1.218507915361638
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        6.2751273425247005,
+        -6.438885304065838,
+        0
+      ],
+      "angle": 3.3122056717533903,
+      "scale": 1.043173593423783
+    },
+    {
+      "kit": "violet",
+      "position": [
+        7.022406267732572,
+        -6.417031247871907,
+        0
+      ],
+      "angle": 0.9638603390572698,
+      "scale": 0.8417371493499618
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        6.2201082499349525,
+        -5.571284738543293,
+        0
+      ],
+      "angle": 3.7310363676862606,
+      "scale": 0.9371675555961986
+    },
+    {
+      "kit": "shrub",
+      "position": [
+        -8.6,
+        -6.0,
+        0
+      ],
+      "angle": 3.9825541607083266,
+      "scale": 1.1622988786048565
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -8.12261218292524,
+        -6.400502741421687,
+        0
+      ],
+      "angle": 3.227216981536854,
+      "scale": 0.9152344706610843
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -8.166697973002801,
+        -6.081000656848943,
+        0
+      ],
+      "angle": 2.136992546820231,
+      "scale": 0.9927528240725074
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        -8.107690092147726,
+        -6.05457380615244,
+        0
+      ],
+      "angle": 5.745652196418092,
+      "scale": 1.0985765763996769
+    },
+    {
+      "kit": "violet",
+      "position": [
+        -7.75,
+        1.67,
+        2.98
+      ],
+      "angle": 4.810178517564573,
+      "scale": 0.65
+    },
+    {
+      "kit": "violet",
+      "position": [
+        -6.7,
+        1.67,
+        2.98
+      ],
+      "angle": 4.5827435462267605,
+      "scale": 0.65
+    },
+    {
+      "kit": "violet",
+      "position": [
+        -5.7,
+        1.67,
+        2.98
+      ],
+      "angle": 4.306853169041148,
+      "scale": 0.65
+    },
+    {
+      "kit": "violet",
+      "position": [
+        -4.8,
+        1.67,
+        2.98
+      ],
+      "angle": 0.6979690418378159,
+      "scale": 0.65
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        1.6389016970042665,
+        -6.158016930618545,
+        0
+      ],
+      "angle": 4.350136764630815,
+      "scale": 0.9175415030204608
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        -9.248357866820339,
+        -6.208685318764876,
+        0
+      ],
+      "angle": 3.3668213669681317,
+      "scale": 0.7145550374793441
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        9.053026063040427,
+        7.710876887640772,
+        0
+      ],
+      "angle": 0.008349432416478564,
+      "scale": 0.6675707294532326
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        3.0004084992159363,
+        6.699045471858766,
+        0
+      ],
+      "angle": 0.9439009067879007,
+      "scale": 0.6475914291868073
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        1.9272304992366678,
+        -6.912951090748178,
+        0
+      ],
+      "angle": 2.9766713335287633,
+      "scale": 0.8690885448157808
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        7.4072064680494165,
+        6.557193627734313,
+        0
+      ],
+      "angle": 0.6805495153311949,
+      "scale": 0.6953991777886395
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        8.878317184739561,
+        -6.407195228076544,
+        0
+      ],
+      "angle": 4.305467307679493,
+      "scale": 0.9084827916914242
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        -7.2321648447966655,
+        -6.008492506848805,
+        0
+      ],
+      "angle": 1.3181400291518466,
+      "scale": 0.7345106500361722
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        -0.12627527532492167,
+        6.112815092755344,
+        0
+      ],
+      "angle": 5.8215751577276045,
+      "scale": 0.8297855024540355
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        -0.5957771417123965,
+        -6.2887967067125405,
+        0
+      ],
+      "angle": 0.32114124643526387,
+      "scale": 0.7714602555138046
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        -4.064464903268535,
+        -7.305534032167922,
+        0
+      ],
+      "angle": 2.213749176210166,
+      "scale": 0.7154601233198228
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        1.2951517374040389,
+        6.318417528390096,
+        0
+      ],
+      "angle": 3.1656052169032565,
+      "scale": 0.8982358406218065
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        0.39137439915024785,
+        6.745459801825869,
+        0
+      ],
+      "angle": 1.6068020501104703,
+      "scale": 0.9894785914313069
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        -0.9278277818175731,
+        -6.734332890482396,
+        0
+      ],
+      "angle": 2.714051901560242,
+      "scale": 0.7814349630329591
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        -6.0289633644936576,
+        -7.479153278645569,
+        0
+      ],
+      "angle": 5.951769482754718,
+      "scale": 0.803913489899979
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        5.40526742316348,
+        -6.439762540571287,
+        0
+      ],
+      "angle": 4.680804776399979,
+      "scale": 0.9715489289835392
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        -2.4297444207676007,
+        -6.133904159598018,
+        0
+      ],
+      "angle": 3.5916720797284256,
+      "scale": 0.7134002955568232
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        -0.9828633536961977,
+        6.247633678894982,
+        0
+      ],
+      "angle": 3.135436470143738,
+      "scale": 0.802079815818822
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        -2.6757015243064872,
+        5.902785200908738,
+        0
+      ],
+      "angle": 0.8748857959918412,
+      "scale": 0.7678502643977686
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        -3.952353451696636,
+        -6.369791857818279,
+        0
+      ],
+      "angle": 4.775465473879929,
+      "scale": 0.8262609117054748
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        -3.2770974166882896,
+        7.3890049897097265,
+        0
+      ],
+      "angle": 3.388306235704036,
+      "scale": 0.6172460823089215
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        6.210448231144806,
+        -6.723707384482131,
+        0
+      ],
+      "angle": 3.0617058927175,
+      "scale": 0.8298722124426237
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        8.47872237774017,
+        -7.059578552188222,
+        0
+      ],
+      "angle": 3.42514506572826,
+      "scale": 0.6990331899717789
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        -1.983819621468891,
+        6.22220491800602,
+        0
+      ],
+      "angle": 3.4464589804699957,
+      "scale": 0.6630538448303661
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        -1.7207655974912601,
+        -6.137797277587173,
+        0
+      ],
+      "angle": 3.7361500071293436,
+      "scale": 0.8573094992413077
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        5.90169354497365,
+        6.210365431802343,
+        0
+      ],
+      "angle": 2.23203752034747,
+      "scale": 0.9495233931023419
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        3.7860795409818575,
+        7.0470468489943725,
+        0
+      ],
+      "angle": 1.5339211074452213,
+      "scale": 0.7175345976440561
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        -7.21859004015664,
+        7.062377488615763,
+        0
+      ],
+      "angle": 2.762919425488243,
+      "scale": 0.8477440865256007
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        7.051490515447732,
+        6.237438164530475,
+        0
+      ],
+      "angle": 5.121020603224554,
+      "scale": 0.8478023948643143
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        4.054311658180493,
+        -7.233115496729273,
+        0
+      ],
+      "angle": 4.600775437288831,
+      "scale": 0.6200859728330371
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        -0.04651121924135104,
+        -6.452504118968875,
+        0
+      ],
+      "angle": 4.3578311826256035,
+      "scale": 0.8532944178597375
+    },
+    {
+      "kit": "grass_tuft",
+      "position": [
+        6.089969026909612,
+        -7.372989512655941,
+        0
+      ],
+      "angle": 2.211889352897635,
+      "scale": 0.8042452984401502
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -8.5,
+        6.5,
+        0
+      ],
+      "angle": 0.2,
+      "scale": 3.4
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        -4.4,
+        7.2,
+        0
+      ],
+      "angle": 0.2,
+      "scale": 3.8
+    },
+    {
+      "kit": "violet",
+      "position": [
+        7.5,
+        6.9,
+        0
+      ],
+      "angle": 0.2,
+      "scale": 4.0
+    },
+    {
+      "kit": "setting",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "angle": 0,
+      "scale": 1
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -9.486897143357526,
+        -6.777401246082624,
+        0
+      ],
+      "angle": 4.580381106191573,
+      "scale": 0.8377331347411121
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -9.229770036340916,
+        -6.11661637255352,
+        0
+      ],
+      "angle": 1.5582516011592435,
+      "scale": 0.8979862332394728
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -9.202785551820249,
+        6.253279877661541,
+        0
+      ],
+      "angle": 3.592541718175998,
+      "scale": 1.0004071989006045
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -9.29748721343245,
+        7.1443746185807875,
+        0
+      ],
+      "angle": 5.016989994289621,
+      "scale": 1.0701113132149211
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -8.397791623943103,
+        -6.971461617412093,
+        0
+      ],
+      "angle": 3.3306935336548342,
+      "scale": 0.9242965257573424
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -8.561133994416032,
+        -5.816391042876631,
+        0
+      ],
+      "angle": 2.4321428659503095,
+      "scale": 0.851689723102698
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -8.4441295646552,
+        5.935400637254647,
+        0
+      ],
+      "angle": 3.280670866968962,
+      "scale": 1.0260584303084537
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -8.335944771650084,
+        7.0934574151574,
+        0
+      ],
+      "angle": 0.31733574556919864,
+      "scale": 1.1023100913126056
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -7.677151221572271,
+        -6.955758123737729,
+        0
+      ],
+      "angle": 4.132580952576476,
+      "scale": 0.8795745043362022
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -7.689791549057719,
+        -6.1125365021769635,
+        0
+      ],
+      "angle": 1.8097909171376305,
+      "scale": 0.9018903705828063
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -7.528315200669932,
+        6.253005215831866,
+        0
+      ],
+      "angle": 4.990220268016967,
+      "scale": 1.0536561825349346
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -7.706716262050169,
+        6.979762383150939,
+        0
+      ],
+      "angle": 3.312021882597751,
+      "scale": 0.8045960330500399
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -6.826023347551864,
+        -6.772891954268823,
+        0
+      ],
+      "angle": 4.090368965370022,
+      "scale": 1.1133858657099276
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -6.680593371295334,
+        -5.920650518038405,
+        0
+      ],
+      "angle": 0.2055288263164174,
+      "scale": 0.8446270869981922
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -6.6103531790704055,
+        6.198576319529972,
+        0
+      ],
+      "angle": 4.846362786654858,
+      "scale": 0.8897633845896631
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -6.621390036353272,
+        7.028297985527229,
+        0
+      ],
+      "angle": 0.7582096229369549,
+      "scale": 0.8094192727029562
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -5.6825108660748045,
+        -6.6319645597051045,
+        0
+      ],
+      "angle": 4.458578263724713,
+      "scale": 0.9896386636689722
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -5.955085843165905,
+        -6.086624851212087,
+        0
+      ],
+      "angle": 4.4356307693006265,
+      "scale": 0.9082543385766957
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -5.741365976669856,
+        6.261141295457264,
+        0
+      ],
+      "angle": 0.8709590905837781,
+      "scale": 0.807708420787746
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -5.909712585669434,
+        7.213748825607876,
+        0
+      ],
+      "angle": 4.954364359926462,
+      "scale": 1.0612289450638612
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -5.070557103383561,
+        -6.857234701559946,
+        0
+      ],
+      "angle": 1.566012543084038,
+      "scale": 1.072809247525537
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -4.879917288530396,
+        -6.010472201353393,
+        0
+      ],
+      "angle": 5.382502230166322,
+      "scale": 0.8182011786692416
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -4.910916380784011,
+        6.175416227613611,
+        0
+      ],
+      "angle": 4.639637292218833,
+      "scale": 0.8381387427923825
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -5.085706167669833,
+        6.880855529677327,
+        0
+      ],
+      "angle": 2.801287500240518,
+      "scale": 0.8313965386635436
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -4.148409249086129,
+        -6.7835768318367915,
+        0
+      ],
+      "angle": 4.513729687836706,
+      "scale": 0.8614467585079528
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -4.197932076698565,
+        -5.942735674762796,
+        0
+      ],
+      "angle": 5.4269320373512615,
+      "scale": 0.9384560276061493
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -4.15251066870706,
+        6.272889501680211,
+        0
+      ],
+      "angle": 3.4931237470383194,
+      "scale": 1.1049138426285405
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -4.1195553543852945,
+        7.094807795188405,
+        0
+      ],
+      "angle": 5.989072682482762,
+      "scale": 1.0884372968045144
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -3.175598651744317,
+        -6.813450983315868,
+        0
+      ],
+      "angle": 3.6543635587212675,
+      "scale": 1.112106728581251
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -3.138713596547807,
+        -5.945821958920246,
+        0
+      ],
+      "angle": 5.505236770097976,
+      "scale": 1.0542789785977762
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -3.2719709049528105,
+        6.2063209162657,
+        0
+      ],
+      "angle": 6.114016472479559,
+      "scale": 1.001130241557467
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -3.1813803069471476,
+        7.06033119210346,
+        0
+      ],
+      "angle": 4.202107223572506,
+      "scale": 0.8257357581564049
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -2.179315122264943,
+        -6.914326745696241,
+        0
+      ],
+      "angle": 1.923695780182584,
+      "scale": 0.8199384998681203
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -2.4355941394333396,
+        -5.8550715354518506,
+        0
+      ],
+      "angle": 4.892463146131803,
+      "scale": 0.9866418623409261
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -2.210875126623382,
+        6.032724230245187,
+        0
+      ],
+      "angle": 5.188224506043652,
+      "scale": 1.0484858184651384
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -2.42029629662843,
+        7.002664031028514,
+        0
+      ],
+      "angle": 3.463977389723505,
+      "scale": 0.9035316174506175
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -1.5418355888731234,
+        -6.8162828380766864,
+        0
+      ],
+      "angle": 2.526224192088759,
+      "scale": 0.9922698449738702
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -1.3741241556289414,
+        -6.009001881171892,
+        0
+      ],
+      "angle": 1.9044815224116098,
+      "scale": 1.0660236982736784
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -1.3871322558603616,
+        6.150820092934644,
+        0
+      ],
+      "angle": 0.6018771107338172,
+      "scale": 0.8020981559832556
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -1.4373569290117996,
+        7.078590686735529,
+        0
+      ],
+      "angle": 1.7431803162469315,
+      "scale": 0.8753044505416743
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -0.6393766330829478,
+        -6.648870298423503,
+        0
+      ],
+      "angle": 2.700449214771233,
+      "scale": 0.9273650110805953
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -0.6174597300169893,
+        -6.015800214006632,
+        0
+      ],
+      "angle": 0.5634263474545451,
+      "scale": 0.8754943952517137
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -0.6064735334917302,
+        6.192300278798047,
+        0
+      ],
+      "angle": 4.739575225344287,
+      "scale": 0.927098102509456
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -0.562052361248816,
+        7.0058608773019575,
+        0
+      ],
+      "angle": 6.265098007535947,
+      "scale": 0.9225140180412204
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        0.4635723769450021,
+        5.976529771296515,
+        0
+      ],
+      "angle": 0.9265962647112894,
+      "scale": 0.896645970801295
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        0.42073970524281507,
+        6.885659136526796,
+        0
+      ],
+      "angle": 1.0877656568833385,
+      "scale": 0.9531050008825177
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        1.076111631385581,
+        5.9956253895737515,
+        0
+      ],
+      "angle": 0.24945154579630405,
+      "scale": 0.9129278233599729
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        1.325520593463193,
+        7.192934253515302,
+        0
+      ],
+      "angle": 5.29956735301197,
+      "scale": 0.9262624945901585
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        2.12938833048781,
+        6.114462072764067,
+        0
+      ],
+      "angle": 0.9566334640262361,
+      "scale": 1.0840778172990397
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        2.0584687187297797,
+        7.1808085513945965,
+        0
+      ],
+      "angle": 3.051189606749076,
+      "scale": 1.0219660461242706
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        2.9638605767711104,
+        -6.775853993354893,
+        0
+      ],
+      "angle": 0.23002255868891086,
+      "scale": 0.8562822678138334
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        2.948658322719795,
+        -6.06600052249647,
+        0
+      ],
+      "angle": 5.30000411441265,
+      "scale": 0.8043378782717154
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        2.9292597706535606,
+        6.252526963732351,
+        0
+      ],
+      "angle": 4.357961731228152,
+      "scale": 1.1028956688309268
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        3.1075049834377415,
+        7.032970250668692,
+        0
+      ],
+      "angle": 0.5684520591900522,
+      "scale": 0.8105089766644619
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        3.7125340022721502,
+        -6.62455618881414,
+        0
+      ],
+      "angle": 5.538057575763823,
+      "scale": 1.0265654481467097
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        3.9209638700679155,
+        -6.0668891168565,
+        0
+      ],
+      "angle": 0.2068648574797681,
+      "scale": 0.9495251905141882
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        3.8633806891582143,
+        6.037107025592782,
+        0
+      ],
+      "angle": 3.745534855463399,
+      "scale": 1.1033733590032053
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        3.9382343239261757,
+        7.036602106933187,
+        0
+      ],
+      "angle": 2.8110704534989175,
+      "scale": 0.9754858084360871
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        4.8140728595749005,
+        -6.724715925851037,
+        0
+      ],
+      "angle": 3.579972206632662,
+      "scale": 0.8294403190416009
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        4.8533590799963005,
+        -5.931387416015267,
+        0
+      ],
+      "angle": 4.157058778573529,
+      "scale": 0.9033232102532042
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        4.655076017827306,
+        6.133528602404554,
+        0
+      ],
+      "angle": 1.6611700288910947,
+      "scale": 1.0261807308402384
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        4.804427995412169,
+        7.008307391386632,
+        0
+      ],
+      "angle": 1.3386627828704454,
+      "scale": 0.808745407752441
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        5.681199334378512,
+        -6.672694289021413,
+        0
+      ],
+      "angle": 0.6345310051439174,
+      "scale": 0.8174359946136475
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        5.591794730309356,
+        -5.7832685444799505,
+        0
+      ],
+      "angle": 2.889633832933209,
+      "scale": 1.0128824543354369
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        5.554944770391417,
+        6.216376947343298,
+        0
+      ],
+      "angle": 1.5350174703358832,
+      "scale": 1.0204742983503012
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        5.741334955534187,
+        7.000881332032818,
+        0
+      ],
+      "angle": 4.6251461056202094,
+      "scale": 0.9158520501695206
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        6.448524556456491,
+        -6.889052406601972,
+        0
+      ],
+      "angle": 3.8323617121450084,
+      "scale": 0.9216088325592355
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        6.614696687987186,
+        -6.0931630404397525,
+        0
+      ],
+      "angle": 2.6701465690826183,
+      "scale": 0.8906166701164306
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        6.58699398141667,
+        6.168706743860264,
+        0
+      ],
+      "angle": 0.19298811930607335,
+      "scale": 1.054547779356823
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        6.616261885088899,
+        7.106486743923163,
+        0
+      ],
+      "angle": 3.1193378256665687,
+      "scale": 1.0497047924020928
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        7.263083068112465,
+        -6.890283261168123,
+        0
+      ],
+      "angle": 0.3481921426468995,
+      "scale": 0.9686493300816541
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        7.247180752354833,
+        -5.795549149083993,
+        0
+      ],
+      "angle": 1.1079604196141106,
+      "scale": 0.835119758983127
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        7.483605978841804,
+        6.175624857633853,
+        0
+      ],
+      "angle": 3.404350615006157,
+      "scale": 0.9496027649475522
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        7.420816724424131,
+        7.185164165243714,
+        0
+      ],
+      "angle": 2.3011502438753055,
+      "scale": 0.8052754794501087
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        8.232925589127474,
+        -6.751323342193947,
+        0
+      ],
+      "angle": 4.454383573080034,
+      "scale": 1.0849067012693672
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        8.329544140337903,
+        -6.055452388327548,
+        0
+      ],
+      "angle": 3.5344077589234724,
+      "scale": 1.0358098449187598
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        8.13685540610783,
+        6.140932259757208,
+        0
+      ],
+      "angle": 2.262978712468399,
+      "scale": 1.0932253973990043
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        8.355162014304536,
+        7.050535240065864,
+        0
+      ],
+      "angle": 0.22458861828120127,
+      "scale": 1.1363551483968046
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        9.021793026265179,
+        -6.645549046165842,
+        0
+      ],
+      "angle": 4.248774726929812,
+      "scale": 0.9194291224089954
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        9.099603111969076,
+        -5.790555440747453,
+        0
+      ],
+      "angle": 3.8161544522269777,
+      "scale": 1.083557268751504
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        9.130921726890186,
+        6.237332455299493,
+        0
+      ],
+      "angle": 5.05826246458937,
+      "scale": 0.9389578567473509
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        8.994041611831399,
+        7.184617926717712,
+        0
+      ],
+      "angle": 0.3729405009314597,
+      "scale": 0.8158264686804405
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -8.8,
+        -5.1,
+        0
+      ],
+      "angle": 0.03578034068939847,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -8.8,
+        -4.2299999999999995,
+        0
+      ],
+      "angle": 4.60315539141675,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -8.8,
+        -3.3599999999999994,
+        0
+      ],
+      "angle": 5.489598949111526,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -8.8,
+        -2.4899999999999993,
+        0
+      ],
+      "angle": 0.7954215738521834,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -8.8,
+        -1.6199999999999992,
+        0
+      ],
+      "angle": 4.023152860495033,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -8.8,
+        -0.7499999999999991,
+        0
+      ],
+      "angle": 1.5095205548544037,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -8.8,
+        0.120000000000001,
+        0
+      ],
+      "angle": 4.746072416872167,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -8.8,
+        0.9900000000000011,
+        0
+      ],
+      "angle": 4.828221795393577,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -8.8,
+        1.8600000000000012,
+        0
+      ],
+      "angle": 5.362412648342454,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -8.8,
+        2.7300000000000013,
+        0
+      ],
+      "angle": 5.94085370151362,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -8.8,
+        3.6000000000000014,
+        0
+      ],
+      "angle": 1.729989406131606,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -8.8,
+        4.470000000000001,
+        0
+      ],
+      "angle": 3.907048636558487,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -8.8,
+        5.340000000000002,
+        0
+      ],
+      "angle": 5.57303402188364,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        8.8,
+        -5.1,
+        0
+      ],
+      "angle": 6.088866732369178,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        8.8,
+        -4.2299999999999995,
+        0
+      ],
+      "angle": 0.45489313623315075,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        8.8,
+        -3.3599999999999994,
+        0
+      ],
+      "angle": 0.9155825265564072,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        8.8,
+        -2.4899999999999993,
+        0
+      ],
+      "angle": 4.905902138014739,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        8.8,
+        -1.6199999999999992,
+        0
+      ],
+      "angle": 3.7397943177110324,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        8.8,
+        -0.7499999999999991,
+        0
+      ],
+      "angle": 0.7532775660197498,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        8.8,
+        0.120000000000001,
+        0
+      ],
+      "angle": 5.185659654120586,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        8.8,
+        0.9900000000000011,
+        0
+      ],
+      "angle": 4.062346052131839,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        8.8,
+        1.8600000000000012,
+        0
+      ],
+      "angle": 1.9212663545105402,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        8.8,
+        2.7300000000000013,
+        0
+      ],
+      "angle": 3.7302795095842156,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        8.8,
+        3.6000000000000014,
+        0
+      ],
+      "angle": 0.522335475458054,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        8.8,
+        4.470000000000001,
+        0
+      ],
+      "angle": 0.1872922145447175,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        8.8,
+        5.340000000000002,
+        0
+      ],
+      "angle": 5.468491428843511,
+      "scale": 1.15
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -2.5,
+        1.5,
+        0
+      ],
+      "angle": 5.009397617505891,
+      "scale": 0.8
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        1.7,
+        1.6,
+        0
+      ],
+      "angle": 1.1389859394469337,
+      "scale": 0.8
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -2.5,
+        -1.8,
+        0
+      ],
+      "angle": 0.45286199923422454,
+      "scale": 0.8
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        2.0,
+        -2.2,
+        0
+      ],
+      "angle": 4.446436343601595,
+      "scale": 0.8
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        4.2,
+        0.9,
+        0
+      ],
+      "angle": 2.939002946230132,
+      "scale": 0.8
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        7.8,
+        0.6,
+        0
+      ],
+      "angle": 4.46445159501334,
+      "scale": 0.8
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -4.1,
+        1.5,
+        0
+      ],
+      "angle": 3.8313257776873377,
+      "scale": 0.8
+    },
+    {
+      "kit": "grass_patch",
+      "position": [
+        -7.7,
+        1.4,
+        0
+      ],
+      "angle": 1.2807764226852634,
+      "scale": 0.8
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        -7.866527688381922,
+        5.222847281113605,
+        0
+      ],
+      "angle": 2.0680107112399684,
+      "scale": 0.4617010626413445
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -7.70908528223697,
+        5.335796463831084,
+        0
+      ],
+      "angle": 0.6199144838357051,
+      "scale": 0.46803251982570593
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        -7.6938509482881745,
+        4.811564761182997,
+        0
+      ],
+      "angle": 0.489949818737887,
+      "scale": 0.7285589895383372
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -7.791324006837965,
+        5.498961031002433,
+        0
+      ],
+      "angle": 0.6366600044130455,
+      "scale": 0.5593985263890575
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        -8.436307675451584,
+        5.075056912024869,
+        0
+      ],
+      "angle": 1.4119019036089941,
+      "scale": 0.6468838256057692
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        -6.9590965354334156,
+        5.778002446809468,
+        0
+      ],
+      "angle": 5.5146643341712,
+      "scale": 0.7289246677386597
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -7.748707267217674,
+        6.093195115313225,
+        0
+      ],
+      "angle": 0.5704483375715712,
+      "scale": 0.7246845920453696
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        -6.749080538416835,
+        5.477878492357568,
+        0
+      ],
+      "angle": 1.2776033773130004,
+      "scale": 0.5596277888848348
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        -7.87174406082522,
+        6.098875588580875,
+        0
+      ],
+      "angle": 5.774338238291073,
+      "scale": 0.7719761747109596
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        -7.342598578620761,
+        6.012776921566884,
+        0
+      ],
+      "angle": 2.3314660074140185,
+      "scale": 0.4347361849788902
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        4.742005138065079,
+        6.405244061114081,
+        0
+      ],
+      "angle": 3.1229271049570437,
+      "scale": 0.632889956188794
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        4.346327565287503,
+        6.513781842621829,
+        0
+      ],
+      "angle": 4.297094710643076,
+      "scale": 0.7040735251935277
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        3.8918875070483128,
+        6.809494513905604,
+        0
+      ],
+      "angle": 2.84154183377989,
+      "scale": 0.6078670393251595
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        4.941147465971821,
+        6.396428012636111,
+        0
+      ],
+      "angle": 1.2229670204151695,
+      "scale": 0.5379439921272391
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        4.102376715324397,
+        6.738774175595383,
+        0
+      ],
+      "angle": 3.7015798735063576,
+      "scale": 0.6246405602800262
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        5.345583799418416,
+        6.392918554291695,
+        0
+      ],
+      "angle": 3.8666735821930622,
+      "scale": 0.7969726452848235
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        5.710306567263772,
+        6.856382278977081,
+        0
+      ],
+      "angle": 0.4637748580116263,
+      "scale": 0.7294017449243682
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        5.485719205231129,
+        6.805645338858678,
+        0
+      ],
+      "angle": 2.7500918880785594,
+      "scale": 0.4441955810087733
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        6.499994711366381,
+        6.435033462388891,
+        0
+      ],
+      "angle": 3.997173191491104,
+      "scale": 0.7551139619169192
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        6.459502235113888,
+        6.560480337094383,
+        0
+      ],
+      "angle": 3.287320281595524,
+      "scale": 0.7930469219858088
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        8.081154239062247,
+        5.124273264152097,
+        0
+      ],
+      "angle": 3.08029501084211,
+      "scale": 0.5075971307761469
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        7.8247475089306135,
+        4.892896653115346,
+        0
+      ],
+      "angle": 2.9285135301615695,
+      "scale": 0.5792382021433209
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        7.821494275428798,
+        4.880978695560336,
+        0
+      ],
+      "angle": 0.8023497301010647,
+      "scale": 0.53476965142417
+    },
+    {
+      "kit": "pink_flower",
+      "position": [
+        8.382162811608364,
+        5.265665017719424,
+        0
+      ],
+      "angle": 5.686625928566496,
+      "scale": 0.6832989771498417
+    },
+    {
+      "kit": "daisy",
+      "position": [
+        7.532528670245963,
+        5.227231694092099,
+        0
+      ],
+      "angle": 4.1258729773080205,
+      "scale": 0.7553068436491057
+    }
+  ]
+}

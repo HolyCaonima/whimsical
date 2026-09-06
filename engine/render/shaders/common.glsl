@@ -1,5 +1,6 @@
 #ifndef AFTERLIGHT_COMMON
 #define AFTERLIGHT_COMMON
+#extension GL_EXT_nonuniform_qualifier : require
 const float PI = 3.14159265359;
 struct Instance {
     mat4 model;
@@ -9,6 +10,8 @@ struct Instance {
 struct Material {
     vec4 colorRoughness;
     vec4 emissionMetallic;
+    ivec4 textures;
+    vec4 surface;
 };
 struct Light {
     vec4 positionRadius;
@@ -19,6 +22,8 @@ struct Vertex {
     vec4 normal;
     vec4 color;
     vec4 previousPosition;
+    vec4 uv;
+    vec4 tangent;
 };
 // stats = finalized contribution weight W, represented sample count M, selected target p-hat, validity.
 struct DIReservoir {
@@ -52,6 +57,23 @@ layout(set = 0, binding = 2, std430) readonly buffer Materials {
 layout(set = 0, binding = 3, std430) readonly buffer Lights {
     Light lights[];
 };
+layout(set = 0, binding = 29) uniform sampler2D materialTextures[64];
+vec4 sampleMaterialTexture(int index, vec2 uv, float lod) {
+    if (index < 0) return vec4(1);
+#ifdef FRAGMENT_PASS
+    return textureGrad(materialTextures[nonuniformEXT(index)],uv,dFdx(uv),dFdy(uv));
+#else
+    return textureLod(materialTextures[nonuniformEXT(index)],uv,lod);
+#endif
+}
+vec3 materialNormal(Material m, vec2 uv, vec3 n, vec4 tangent, float lod) {
+    if (m.textures.y < 0) return n;
+    vec3 t=normalize(tangent.xyz - n*dot(n,tangent.xyz));
+    vec3 b=cross(n,t)*tangent.w;
+    vec3 v=sampleMaterialTexture(m.textures.y,uv,lod).xyz*2-1;
+    v.xy*=m.surface.z;
+    return normalize(mat3(t,b,n)*v);
+}
 #ifdef COMPUTE_PASS
 layout(set = 0, binding = 4, std430) readonly buffer Vertices {
     Vertex vertices[];
@@ -185,9 +207,14 @@ bool traceSurface(vec3 origin, vec3 direction, out Surface hit, out float distan
         hit.n = -hit.n;
     hit.p = origin + direction * distance;
     Material m = materials[instance.info.x];
-    hit.albedo = m.colorRoughness.rgb * (a.color.rgb*(1-uv.x-uv.y)+b.color.rgb*uv.x+c.color.rgb*uv.y);
-    hit.roughness = m.colorRoughness.a;
-    hit.metallic = m.emissionMetallic.a;
+    vec2 texcoord = (a.uv.xy*(1-uv.x-uv.y)+b.uv.xy*uv.x+c.uv.xy*uv.y)*m.surface.xy;
+    vec4 tangent = a.tangent*(1-uv.x-uv.y)+b.tangent*uv.x+c.tangent*uv.y;
+    tangent.xyz=mat3(instance.model)*tangent.xyz;
+    hit.n=materialNormal(m,texcoord,hit.n,tangent,2);
+    vec3 orm=sampleMaterialTexture(m.textures.z,texcoord,2).rgb;
+    hit.albedo = m.colorRoughness.rgb * (a.color.rgb*(1-uv.x-uv.y)+b.color.rgb*uv.x+c.color.rgb*uv.y) * sampleMaterialTexture(m.textures.x,texcoord,2).rgb;
+    hit.roughness = m.colorRoughness.a*orm.g;
+    hit.metallic = m.emissionMetallic.a*orm.b;
     hit.emission = m.emissionMetallic.rgb;
     hit.id = instance.info.z;
     return true;

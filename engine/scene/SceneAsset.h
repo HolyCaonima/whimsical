@@ -19,6 +19,7 @@ struct SceneObject {
     vec3 position{0};
     float yaw = 0;
     RenderComponent render;
+    std::optional<AssetRef> staticMesh;
     ColliderShape collider;
     BodyMotion motion = BodyMotion::Static;
     uint32_t layer = CollisionLayer::World;
@@ -33,6 +34,7 @@ struct SceneDocument {
     std::vector<AssetRef> scripts; // Map-specific lifecycle code, loaded after project common scripts.
     std::vector<SceneObject> objects;
     std::vector<Material> materials;
+    std::map<uint32_t, AssetRef> materialAssets;
     std::vector<Light> lights;
     Camera camera;
     NavigationSettings navigation;

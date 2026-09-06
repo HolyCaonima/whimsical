@@ -63,9 +63,9 @@ void VulkanContext::initialize(HWND hwnd, bool validation) {
     if (validationActive)
         VK_CHECK(vkCreateDebugUtilsMessengerEXT(instance, &dbg, nullptr, &debug));
     std::cout << "Validation layer: "
-              << (validationActive        ? "enabled"
-                  : validation            ? "not installed (runtime checks still active)"
-                                          : "off by default in Release (pass --validation)")
+              << (validationActive ? "enabled"
+                  : validation     ? "not installed (runtime checks still active)"
+                                   : "off by default in Release (pass --validation)")
               << "\n";
     VkWin32SurfaceCreateInfoKHR surf{VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR};
     surf.hinstance = GetModuleHandleW(nullptr);
@@ -102,7 +102,8 @@ void VulkanContext::initialize(HWND hwnd, bool validation) {
         f13.pNext = &af;
         af.pNext = &rq;
         vkGetPhysicalDeviceFeatures2(gpu, &features);
-        if (!f12.bufferDeviceAddress || !f13.dynamicRendering || !f13.synchronization2 ||
+        if (!f12.bufferDeviceAddress || !f12.shaderSampledImageArrayNonUniformIndexing ||
+            !features.features.samplerAnisotropy || !f13.dynamicRendering || !f13.synchronization2 ||
             !af.accelerationStructure || !rq.rayQuery || !features.features.shaderStorageImageExtendedFormats)
             continue;
         VkPhysicalDeviceProperties props{};
@@ -129,7 +130,8 @@ void VulkanContext::initialize(HWND hwnd, bool validation) {
     if (!physical)
         throw std::runtime_error(
             "Requires Vulkan 1.3 GPU with accelerationStructure, rayQuery, bufferDeviceAddress, "
-            "dynamicRendering, synchronization2. No raster-lighting fallback.");
+            "dynamicRendering, synchronization2, sampled-image non-uniform indexing and anisotropy. "
+            "No raster-lighting fallback.");
     vkGetPhysicalDeviceProperties(physical, &properties);
     vkGetPhysicalDeviceMemoryProperties(physical, &memoryProperties);
     VkPhysicalDeviceProperties2 props2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
@@ -144,6 +146,7 @@ void VulkanContext::initialize(HWND hwnd, bool validation) {
     q.pQueuePriorities = &priority;
     VkPhysicalDeviceVulkan12Features f12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     f12.bufferDeviceAddress = VK_TRUE;
+    f12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
     VkPhysicalDeviceVulkan13Features f13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
     f13.dynamicRendering = VK_TRUE;
     f13.synchronization2 = VK_TRUE;
@@ -157,6 +160,7 @@ void VulkanContext::initialize(HWND hwnd, bool validation) {
     af.pNext = &rq;
     VkPhysicalDeviceFeatures base{};
     base.shaderStorageImageExtendedFormats = VK_TRUE;
+    base.samplerAnisotropy = VK_TRUE;
     VkDeviceCreateInfo dc{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     dc.pNext = &f12;
     dc.queueCreateInfoCount = 1;
@@ -231,16 +235,19 @@ void VulkanContext::destroy(Buffer& b) {
         vkFreeMemory(device, b.memory, nullptr);
     b = {};
 }
-Image VulkanContext::image(uint32_t w, uint32_t h, VkFormat format, VkImageUsageFlags usage) {
+Image VulkanContext::image(uint32_t w, uint32_t h, VkFormat format, VkImageUsageFlags usage,
+                           uint32_t mipLevels) {
     Image i;
     i.width = w;
     i.height = h;
     i.format = format;
+    i.mipLevels = mipLevels;
     VkImageCreateInfo ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     ci.imageType = VK_IMAGE_TYPE_2D;
     ci.format = format;
     ci.extent = {w, h, 1};
-    ci.mipLevels = ci.arrayLayers = 1;
+    ci.mipLevels = mipLevels;
+    ci.arrayLayers = 1;
     ci.samples = VK_SAMPLE_COUNT_1_BIT;
     ci.tiling = VK_IMAGE_TILING_OPTIMAL;
     ci.usage = usage;
@@ -259,7 +266,7 @@ Image VulkanContext::image(uint32_t w, uint32_t h, VkFormat format, VkImageUsage
     vi.format = format;
     vi.subresourceRange = {VkImageAspectFlags(format == VK_FORMAT_D32_SFLOAT ? VK_IMAGE_ASPECT_DEPTH_BIT
                                                                              : VK_IMAGE_ASPECT_COLOR_BIT),
-                           0, 1, 0, 1};
+                           0, mipLevels, 0, 1};
     VK_CHECK(vkCreateImageView(device, &vi, nullptr, &i.view));
     return i;
 }
@@ -309,7 +316,7 @@ void VulkanContext::transition(VkCommandBuffer c, Image& i, VkImageLayout next, 
     b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     b.subresourceRange = {VkImageAspectFlags(i.format == VK_FORMAT_D32_SFLOAT ? VK_IMAGE_ASPECT_DEPTH_BIT
                                                                               : VK_IMAGE_ASPECT_COLOR_BIT),
-                          0, 1, 0, 1};
+                          0, i.mipLevels, 0, 1};
     VkDependencyInfo d{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
     d.imageMemoryBarrierCount = 1;
     d.pImageMemoryBarriers = &b;

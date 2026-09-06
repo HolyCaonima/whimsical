@@ -1,0 +1,3 @@
+ALAS1
+{"id": "35abfab494984fd29d2dd847567c2e2a", "name": "glow", "type": "Material", "version": 1, "storage": "embedded", "metadata": {}}
+{"albedoRoughness": [1, 0.71, 0.25, 0.35], "emissionMetallic": [1.4, 0.67, 0.16, 0], "surface": [1, 1, 0.5, 0]}

@@ -1,0 +1,3 @@
+ALAS1
+{"id": "395c8245ba2a4bbbbdd0e076a95d53b5", "name": "ceramic_cup", "type": "Material", "version": 1, "storage": "embedded", "metadata": {}}
+{"albedoRoughness": [1, 1, 1, 0.3], "emissionMetallic": [0, 0, 0, 1], "surface": [1, 1, 0.5, 0], "baseColor": {"id": "fb667e6035334109b4ed53848d5cb652", "path": "/Game/textures/Honeybud/cup_glaze_baseColor"}, "normal": {"id": "c563a29b4dc4400897c0bc0676205474", "path": "/Game/textures/Honeybud/cup_glaze_normal"}, "orm": {"id": "10798637e1034e0088953fc1d9cc2d5c", "path": "/Game/textures/Honeybud/cup_glaze_orm"}}

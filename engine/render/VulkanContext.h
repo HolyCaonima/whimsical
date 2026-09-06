@@ -24,6 +24,7 @@ struct Image {
     VkImageView view = VK_NULL_HANDLE;
     VkFormat format = VK_FORMAT_UNDEFINED;
     uint32_t width = 0, height = 0;
+    uint32_t mipLevels = 1;
     VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
 };
 class VulkanContext {
@@ -46,7 +47,7 @@ class VulkanContext {
     ~VulkanContext();
     Buffer buffer(VkDeviceSize, VkBufferUsageFlags, bool host = false);
     void destroy(Buffer&);
-    Image image(uint32_t, uint32_t, VkFormat, VkImageUsageFlags);
+    Image image(uint32_t, uint32_t, VkFormat, VkImageUsageFlags, uint32_t mipLevels = 1);
     void destroy(Image&);
     VkCommandBuffer beginOneTime();
     void endOneTime(VkCommandBuffer);

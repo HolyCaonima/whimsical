@@ -72,6 +72,7 @@ function(afterlight_copy_onnx TARGET)
     VERBATIM)
 endfunction()
 add_library(afterlight_core
+  engine/assets/StaticMesh.cpp
   engine/assets/EngineAssets.cpp engine/scene/SceneAsset.cpp engine/scene/ScenePersistence.cpp
   engine/ui/AnimationInspector.cpp
   engine/core/World.cpp engine/core/RenderScene.cpp engine/navigation/Navigation.cpp engine/scripting/ScriptRuntime.cpp

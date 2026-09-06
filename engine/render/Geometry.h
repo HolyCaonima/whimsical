@@ -6,6 +6,8 @@ struct GpuVertex {
     vec4 normal;
     vec4 color{1};
     vec4 previousPosition{0};
+    vec4 uv{0};
+    vec4 tangent{1, 0, 0, 1};
 };
 struct MeshRange {
     uint32_t firstIndex = 0, indexCount = 0;

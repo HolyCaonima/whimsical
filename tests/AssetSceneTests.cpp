@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <thread>
+#include <cstring>
 
 using namespace afterlight;
 namespace fs = std::filesystem;
@@ -331,12 +332,100 @@ static void scene(const fs::path& directory) {
     check(second.physics().size() == 0 && second.snapshot({}, 5, 0, 0).skins.empty(),
           "Empty Maps must load and publish a clean scene");
 }
+static void staticAssets(const fs::path& directory) {
+    AssetManager assets{Project::create(directory, "Static kit test")};
+    registerEngineAssets(assets);
+    std::string bytes("STM1", 4);
+    auto append = [&](const void* data, size_t size) { bytes.append(static_cast<const char*>(data), size); };
+    uint32_t counts[] = {3, 3};
+    append(counts, sizeof(counts));
+    const float vertices[][15] = {{0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 1, 1},
+                                  {0, 0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1},
+                                  {1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 1}};
+    append(vertices, sizeof(vertices));
+    uint32_t indices[] = {0, 1, 2};
+    append(indices, sizeof(indices));
+    auto meshRef = assets.save(AssetPath("/Game/Triangle"), header("StaticMesh"), bytes);
+    auto mesh = assets.load<StaticMesh>(meshRef);
+    check(mesh->vertices[2].uv == vec2(1, 0), "Static mesh must preserve UVs");
+    rejects([&] { StaticMesh::decode(bytes.substr(0, bytes.size() - 1)); }, "Truncated geometry must fail");
+    auto invalid = bytes;
+    uint32_t badIndex = 3;
+    std::memcpy(&invalid[invalid.size() - 4], &badIndex, 4);
+    rejects([&] { StaticMesh::decode(invalid); }, "Out-of-range mesh index must fail");
+    std::string texture("TEX1", 4);
+    uint32_t texData[] = {2, 1, 0xff0000ffu, 0xff00ff00u};
+    texture.append(reinterpret_cast<const char*>(texData), sizeof(texData));
+    auto texHeader = header("Texture");
+    texHeader.metadata = {{"colorSpace", "sRGB"}};
+    auto texRef = assets.save(AssetPath("/Game/Weave"), texHeader, texture);
+    Json material{{"albedoRoughness", Json::array({1, 1, 1, .8})},
+                  {"emissionMetallic", Json::array({0, 0, 0, 0})},
+                  {"surface", Json::array({2, 2, .5, 0})},
+                  {"baseColor", texRef.json()}};
+    auto matRef = assets.save(AssetPath("/Game/Linen"), header("Material"), material.dump());
+    SceneDocument scene;
+    scene.materials.resize(2);
+    scene.materialAssets = {{0, matRef}, {1, matRef}};
+    for (int i = 0; i < 2; ++i) {
+        SceneObject o;
+        o.id = newPersistentId();
+        o.name = "Triangle";
+        o.staticMesh = meshRef;
+        o.position = vec3(float(i) * 2, 0, 0);
+        o.render.material = uint32_t(i);
+        scene.objects.push_back(o);
+    }
+    AssetPath map("/Game/Kit");
+    assets.save(map, header("Map"), scene.json().dump());
+    World world;
+    ScenePersistence::load(world, assets, map);
+    auto before = world.snapshot({}, 0, 0, 0);
+    check(before.staticMeshes.size() == 2 && before.staticMeshes[0].mesh == before.staticMeshes[1].mesh,
+          "Instances must share immutable static geometry");
+    check(before.textures.size() == 1 && before.materials[0].textures.x == before.materials[1].textures.x,
+          "Repeated material references must share one texture binding");
+    auto saved = ScenePersistence::capture(world, assets).json();
+    check(saved.at("objects").at(0).at("render").at("mesh").at("id").string() == meshRef.id,
+          "Map saves mesh asset identity, never a GPU mesh index");
+    fs::rename(directory / "Content/Triangle.asset", directory / "Content/MovedTriangle.asset");
+    assets.scan();
+    ScenePersistence::load(world, assets, map);
+    check(ScenePersistence::capture(world, assets).objects[0].staticMesh->path ==
+              AssetPath("/Game/MovedTriangle"),
+          "Static meshes must survive an asset move by ID");
+    auto id = world.objects()[world.objects().size() - 1].id;
+    world.setEnabled(id, false);
+    auto disabled = world.snapshot({}, 1, 0, 0);
+    check(disabled.staticMeshes.size() == 2 && !disabled.proxies[world.entity(id).proxy].attributes.visible,
+          "Visibility toggles must retain static geometry bindings");
+    world.clearScene();
+    auto empty = world.snapshot({}, 2, 0, 0);
+    check(empty.staticMeshes.empty() && empty.textures.empty() &&
+              before.staticMeshes[0].mesh->indices.size() == 3,
+          "Unload releases bindings while previous immutable frames retain their assets");
+}
+static void gardenNavigation() {
+    auto& assets = testAssets();
+    World world;
+    ScenePersistence::load(world, assets, AssetPath("/Game/Maps/HoneybudCourt"));
+    auto frame = world.snapshot({}, 0, 0, 0);
+    check(frame.staticMeshes.size() > 400 && frame.textures.size() == 24,
+          "Garden must instantiate the authored kit and texture channels");
+    auto path = world.findPath(world.playerId, vec3(-3.5f, 0, -2));
+    check(path.size() > 1, "Garden player must find a route around the fountain to the pergola");
+    auto scene = ScenePersistence::capture(world, assets);
+    check(SceneDocument::fromJson(scene.json()).json() == scene.json(),
+          "Textured garden Map must round-trip");
+}
 int main() {
     try {
         auto directory = fs::path(AFTERLIGHT_ROOT) / "build" / ("asset-scene-tests-" + newPersistentId());
         payloadStorage(directory / "payloads");
         registry(directory / "empty");
         scene(directory / "relocated");
+        staticAssets(directory / "static-kit");
+        gardenNavigation();
         std::cout << "Project, asset registry, relocation and Scene Save/Load tests passed\n";
         return 0;
     } catch (const std::exception& e) {

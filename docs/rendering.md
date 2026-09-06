@@ -4,7 +4,7 @@
 
 `Globals` 和 GPU struct 有静态尺寸检查，GLSL 使用相同 std140/std430 布局。几何和材质只经过同一份数据源，raster 与 ray query 不维护两套不同场景。每个 TLAS instance 的 custom index 指向 GPU instance；instance 中保存绝对 index-buffer 起始偏移、material index、entity ID 和上次渲染的 model matrix。
 
-`GpuVertex` 包含位置、法线、线性顶点颜色和上一次实际渲染的位置，共 64 字节。蒙皮资源按骨骼名字绑定，World 只发布不可变 palette；渲染线程执行 CPU 蒙皮并上传变形顶点。蒙皮顶点已处于世界空间，对应 instance 的 model 为单位矩阵。G-buffer 与 ray query 都将插值后的顶点颜色乘以材质颜色，并访问同一份变形几何。重复呈现同一仿真快照时，上一位置收敛到当前位置，避免重复报告形变运动。
+`GpuVertex` 包含位置、法线、线性顶点颜色、上一次实际渲染的位置、UV 和切线，共 96 字节。静态网格保留局部空间顶点，重复实例共享静态 BLAS；蒙皮资源按骨骼名字绑定，World 发布不可变 palette，渲染线程执行 CPU 蒙皮并上传世界空间顶点，对应 instance 的 model 为单位矩阵。G-buffer 与 ray query 使用同一份几何、顶点色和 PBR 纹理。重复呈现同一仿真快照时，上一位置收敛到当前位置，避免重复报告形变运动。静态网格与纹理路径见 [Honeybud 美术管线](honeybud-art-pipeline.md)。
 
 | G-buffer | Vulkan 格式 | 含义 |
 | --- | --- | --- |

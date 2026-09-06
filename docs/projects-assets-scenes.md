@@ -61,6 +61,9 @@ id 为 32 位小写十六进制字符，不从真实路径、显示名或运行�
 | Data | embedded | 配置／manifest JSON |
 | Script | embedded | UTF-8 ES5 源码 |
 | SkinnedMesh | embedded | SKN1 little-endian 字节流 |
+| StaticMesh | embedded | STM1：位置、法线、UV、切线、顶点色及三角形索引 |
+| Texture | embedded | TEX1：宽高、RGBA8；头部声明色彩空间 |
+| Material | embedded | PBR 参数 JSON 与 baseColor / normal / ORM 的 AssetRef |
 | AnimationController | embedded | A4C2 little-endian 字节流 |
 | Binary | embedded | 带 format 描述的原始字节；目前用于 golden 数据 |
 | OnnxModel | external | 没有内嵌载荷；source 相对头文件定位独立 `.onnx` |

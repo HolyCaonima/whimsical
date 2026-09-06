@@ -8,9 +8,13 @@
 #include <cstdint>
 namespace afterlight {
 struct SkinnedMesh;
+struct StaticMesh;
+struct TextureAsset;
 struct Material {
     vec4 albedoRoughness{.5f, .5f, .5f, .5f};
     vec4 emissionMetallic{0};
+    glm::ivec4 textures{-1};
+    vec4 surface{1, 1, 1, 1}; // UV scale, normal strength, legacy paving seams.
 };
 enum class Shape : uint32_t { Box, Capsule };
 struct RenderComponent {
@@ -112,6 +116,12 @@ struct AnimationInspection {
     animation::AttributeValues values;
 };
 struct Frame {
+    struct StaticDraw {
+        uint32_t slot = 0;
+        std::shared_ptr<const StaticMesh> mesh;
+    };
+    std::vector<StaticDraw> staticMeshes;
+    std::vector<std::shared_ptr<const TextureAsset>> textures;
     AnimationInspection animationInspection;
     struct Skin {
         uint32_t slot = 0;

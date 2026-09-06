@@ -21,6 +21,8 @@ void World::clearScene() {
     // Keep Entity tombstones and RenderScene/PhysicsScene allocators: stale runtime
     // identities cannot alias the next Map, and delta revisions remain monotonic.
     materials.clear();
+    materialAssets.clear();
+    textures.clear();
     lights.clear();
     animations_.clear();
     camera = {};
@@ -44,6 +46,11 @@ const GameObject& World::entity(uint32_t id) const {
 }
 GameObject& World::mutableObject(uint32_t id) {
     return const_cast<GameObject&>(entity(id));
+}
+void World::setStaticMesh(uint32_t id, std::shared_ptr<const StaticMesh> mesh) {
+    if (mesh && animations_.count(id))
+        throw std::invalid_argument("StaticMesh cannot be bound to an animated object");
+    mutableObject(id).staticMesh = std::move(mesh);
 }
 uint32_t World::spawn(std::string name, Shape shape, vec3 position, vec3 scale, uint32_t material,
                       bool blocking, bool interactable, std::string persistentId) {
@@ -162,6 +169,7 @@ void World::setVisible(uint32_t id, bool visible) {
 void World::destroy(uint32_t id) {
     auto& o = mutableObject(id);
     animations_.erase(id);
+    o.staticMesh.reset();
     objectIds_.erase(o.persistentId);
     for (auto ref = sceneReferences.begin(); ref != sceneReferences.end();) {
         if (ref->second == o.persistentId)
@@ -265,6 +273,8 @@ void World::attachAnimation(uint32_t id, const animation::Asset& asset, bool app
 void World::attachAnimationInstance(uint32_t id, std::unique_ptr<animation::Instance> instance,
                                     bool applyRoot, vec3 offset) {
     const auto& o = entity(id);
+    if (o.staticMesh)
+        throw std::invalid_argument("Detach StaticMesh before attaching animation");
     if (applyRoot)
         (void)agent(id);
     if (!o.joints.empty() && o.joints.size() != instance->skeleton().size())
@@ -383,6 +393,10 @@ uint32_t World::pick(float x, float y, const Input& input) const {
 }
 Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug, bool physicsDebug) {
     Frame f;
+    for (const auto& object : objects_)
+        if (object.alive && object.staticMesh)
+            f.staticMeshes.push_back({object.proxy, object.staticMesh});
+    f.textures = textures;
     f.animationInspection = inspectAnimation(selected);
     for (const auto& entry : animations_) {
         const auto& o = entity(entry.first);

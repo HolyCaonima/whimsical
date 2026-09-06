@@ -6,6 +6,8 @@
 
 ## 直接运行
 
+新增 **蜜芽庭院 / Honeybud Court**：双击 `RunHoneybud.cmd` 体验通过 Blender MCP 制作的暖色庭院。包含可复用静态模型、布艺/木纹/PBR 纹理、陶瓷喷泉与原有角色导航；源文件、重建流程和资产管线见 [美术资产说明](docs/honeybud-art-pipeline.md)。
+
 双击根目录 `Run.cmd`。当前机器的可执行文件是 `build/bin/Release/Afterlight.exe`。
 
 右上角和标题栏显示实时 **FPS**、**Frame ms**（包含线程与呈现等待的整帧间隔）、**GPU ms**（Vulkan timestamp），约每半秒更新。启动及重建窗口尺寸后的统计预热显示 `-- FPS`。默认使用 FIFO 垂直同步，因此通常不超过 60 FPS；面板显示当前呈现模式与 VSync 状态。渲染帧率不再被 60 Hz 仿真锁死——渲染线程在没有新快照时重新呈现最新快照，用 `--present immediate` 或 `--present mailbox` 即可跑出显示器刷新率以上的真实帧成本。累计帧数只保留在日志和截图报告中。
@@ -100,7 +102,7 @@ captures/                 实际 GPU 截图和运行报告
 ## 已实现的渲染路径
 
 ```text
-程序生成 box/capsule → 静态 BLAS
+程序生成 box/capsule + 导入 StaticMesh → 共享静态 BLAS
 动画骨架快照 → CPU 蒙皮 → 动态 BLAS refit
 每帧实体姿态 → TLAS update
 G-buffer 光栅化

@@ -1,0 +1,12 @@
+ALAS1
+{"id": "6c2acbfa4bd8422ea585c009c57734f8", "name": "honeybud_court", "type": "Script", "version": 1, "storage": "embedded", "metadata": {}}
+function initialize() {
+    var player = Engine.sceneObject('player');
+    Engine.setPlayer(player);
+    Locomotion.init(player);
+    Companion.init(Engine.sceneObject('companion'), player);
+    CameraRig.init(Engine.cameraState());
+    CameraRig.follow = false;
+    Controller.message = 'Honeybud Court';
+    Engine.log('Honeybud Court: Blender-authored static meshes, shared PBR materials and garden navigation.');
+}

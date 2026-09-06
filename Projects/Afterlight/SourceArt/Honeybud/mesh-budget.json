@@ -1,0 +1,156 @@
+{
+  "unit": "triangles",
+  "hardModelLimit": 100000,
+  "typicalModelLimit": 20000,
+  "uniqueTriangles": 118010,
+  "sceneTriangles": 403250,
+  "models": [
+    {
+      "model": "cottage",
+      "triangles": 44462,
+      "budget": 60000,
+      "instances": 1,
+      "sceneTriangles": 44462
+    },
+    {
+      "model": "petal_fountain",
+      "triangles": 14736,
+      "budget": 20000,
+      "instances": 1,
+      "sceneTriangles": 14736
+    },
+    {
+      "model": "pergola",
+      "triangles": 6244,
+      "budget": 20000,
+      "instances": 1,
+      "sceneTriangles": 6244
+    },
+    {
+      "model": "cushion_bench",
+      "triangles": 14468,
+      "budget": 20000,
+      "instances": 2,
+      "sceneTriangles": 28936
+    },
+    {
+      "model": "jam_jar",
+      "triangles": 11472,
+      "budget": 20000,
+      "instances": 3,
+      "sceneTriangles": 34416
+    },
+    {
+      "model": "tea_table",
+      "triangles": 1356,
+      "budget": 20000,
+      "instances": 1,
+      "sceneTriangles": 1356
+    },
+    {
+      "model": "tea_cup",
+      "triangles": 1592,
+      "budget": 20000,
+      "instances": 1,
+      "sceneTriangles": 1592
+    },
+    {
+      "model": "fence",
+      "triangles": 1212,
+      "budget": 20000,
+      "instances": 30,
+      "sceneTriangles": 36360
+    },
+    {
+      "model": "planter",
+      "triangles": 432,
+      "budget": 20000,
+      "instances": 2,
+      "sceneTriangles": 864
+    },
+    {
+      "model": "daisy",
+      "triangles": 1428,
+      "budget": 20000,
+      "instances": 26,
+      "sceneTriangles": 37128
+    },
+    {
+      "model": "pink_flower",
+      "triangles": 1104,
+      "budget": 20000,
+      "instances": 37,
+      "sceneTriangles": 40848
+    },
+    {
+      "model": "violet",
+      "triangles": 1104,
+      "budget": 20000,
+      "instances": 14,
+      "sceneTriangles": 15456
+    },
+    {
+      "model": "potted_plant",
+      "triangles": 2620,
+      "budget": 20000,
+      "instances": 4,
+      "sceneTriangles": 10480
+    },
+    {
+      "model": "shrub",
+      "triangles": 4248,
+      "budget": 20000,
+      "instances": 11,
+      "sceneTriangles": 46728
+    },
+    {
+      "model": "grass_tuft",
+      "triangles": 384,
+      "budget": 20000,
+      "instances": 32,
+      "sceneTriangles": 12288
+    },
+    {
+      "model": "stepping_stone",
+      "triangles": 412,
+      "budget": 20000,
+      "instances": 56,
+      "sceneTriangles": 23072
+    },
+    {
+      "model": "lantern",
+      "triangles": 1476,
+      "budget": 20000,
+      "instances": 4,
+      "sceneTriangles": 5904
+    },
+    {
+      "model": "garden_robot",
+      "triangles": 3084,
+      "budget": 20000,
+      "instances": 1,
+      "sceneTriangles": 3084
+    },
+    {
+      "model": "garden_ground",
+      "triangles": 216,
+      "budget": 20000,
+      "instances": 1,
+      "sceneTriangles": 216
+    },
+    {
+      "model": "grass_patch",
+      "triangles": 288,
+      "budget": 20000,
+      "instances": 116,
+      "sceneTriangles": 33408
+    },
+    {
+      "model": "setting",
+      "triangles": 5672,
+      "budget": 20000,
+      "instances": 1,
+      "sceneTriangles": 5672
+    }
+  ]
+}

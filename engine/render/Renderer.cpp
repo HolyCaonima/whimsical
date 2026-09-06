@@ -4,6 +4,7 @@
 #include "RenderGraph.h"
 #include "Geometry.h"
 #include "animation/SkinnedMesh.h"
+#include "assets/StaticMesh.h"
 #include <map>
 #include "DebugHud.h"
 #include "RenderAudit.h"
@@ -15,7 +16,7 @@
 #include <algorithm>
 namespace afterlight {
 namespace {
-constexpr uint32_t MaxInstances = 1024, MaxLights = 256, MaxMaterials = 256;
+constexpr uint32_t MaxInstances = 1024, MaxLights = 256, MaxMaterials = 256, MaxTextures = 64;
 constexpr VkImageUsageFlags ColorUsage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
                                          VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 struct alignas(16) Globals {
@@ -27,8 +28,8 @@ struct alignas(16) GpuInstance {
     mat4 model, previousModel;
     glm::uvec4 info;
 };
-static_assert(sizeof(Globals) == 336 && sizeof(GpuInstance) == 144 && sizeof(Material) == 32 &&
-                  sizeof(GpuVertex) == 64,
+static_assert(sizeof(Globals) == 336 && sizeof(GpuInstance) == 144 && sizeof(Material) == 64 &&
+                  sizeof(GpuVertex) == 96,
               "GPU layout mismatch");
 struct AccelerationStructure {
     VkAccelerationStructureKHR handle = VK_NULL_HANDLE;
@@ -92,6 +93,12 @@ struct Renderer::Impl {
     };
     std::vector<SkinDraw> skinDraws;
     std::map<uint32_t, uint32_t> skinMeshes;
+    std::map<uint32_t, uint32_t> staticSlots;
+    std::vector<Frame::StaticDraw> staticBindings;
+    uint32_t firstSkinMesh = 2;
+    std::vector<Image> materialTextures;
+    VkSampler materialSampler = VK_NULL_HANDLE;
+    std::vector<std::shared_ptr<const TextureAsset>> textureBindings;
     std::vector<GpuVertex> geometryVertices;
     uint64_t skinTick = UINT64_MAX;
     bool skinMotionPending = false, skinGeometryDirty = false;
@@ -134,6 +141,10 @@ struct Renderer::Impl {
             vk.destroy(i);
         vk.destroy(depth);
         vk.destroy(captureImage);
+        for (auto& texture : materialTextures)
+            vk.destroy(texture);
+        if (materialSampler)
+            vkDestroySampler(vk.device, materialSampler, nullptr);
         for (auto b : {&globals, &instanceData, &materialData, &lightData, &vertexData, &indexData,
                        &tlasInstances, &tlasScratch, &hudUpload, &readback, &auditReadback})
             vk.destroy(*b);
@@ -200,7 +211,8 @@ struct Renderer::Impl {
                                   VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
                                       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                   true);
-        createGeometry({});
+        createGeometry({}, {});
+        updateTextures({});
         createPipelines();
         denoiser = std::make_unique<NrdDenoiser>(vk);
         VkSemaphoreCreateInfo si{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
@@ -219,6 +231,9 @@ struct Renderer::Impl {
         VK_CHECK(vkCreateQueryPool(vk.device, &qi, nullptr, &timestamps));
     }
     uint32_t meshFor(uint32_t slot, const RenderProxy& p) const {
+        auto mesh = staticSlots.find(slot);
+        if (mesh != staticSlots.end())
+            return mesh->second;
         auto found = skinMeshes.find(slot);
         return found == skinMeshes.end() ? uint32_t(p.attributes.shape) : found->second;
     }
@@ -238,7 +253,7 @@ struct Renderer::Impl {
             VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR};
         build.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
         build.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
-        if (m >= 2)
+        if (m >= firstSkinMesh)
             build.flags |= VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
         build.mode = update ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR
                             : VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
@@ -263,7 +278,8 @@ struct Renderer::Impl {
         const auto* ptr = &range;
         vkCmdBuildAccelerationStructuresKHR(c, 1, &build, &ptr);
     }
-    void createGeometry(const std::vector<Frame::Skin>& skins) {
+    void createGeometry(const std::vector<Frame::Skin>& skins,
+                        const std::vector<Frame::StaticDraw>& statics) {
         // Called only after the render fence, on mesh binding/topology changes.
         for (auto& b : blas)
             destroyAS(b);
@@ -274,9 +290,29 @@ struct Renderer::Impl {
         geometryVertices.clear();
         skinDraws.clear();
         skinMeshes.clear();
+        staticSlots.clear();
+        staticBindings = statics;
         std::vector<uint32_t> indices;
         auto primitives = buildPrimitives(geometryVertices, indices);
         meshes.assign(primitives.begin(), primitives.end());
+        std::map<const StaticMesh*, uint32_t> unique;
+        for (const auto& draw : statics) {
+            auto existing = unique.find(draw.mesh.get());
+            if (existing != unique.end()) {
+                staticSlots[draw.slot] = existing->second;
+                continue;
+            }
+            uint32_t first = uint32_t(geometryVertices.size()), index = uint32_t(meshes.size());
+            for (const auto& v : draw.mesh->vertices)
+                geometryVertices.push_back({vec4(v.position, 1), vec4(v.normal, 0), vec4(v.color, 1),
+                                            vec4(v.position, 1), vec4(v.uv, 0, 0), v.tangent});
+            meshes.push_back({uint32_t(indices.size()), uint32_t(draw.mesh->indices.size())});
+            for (auto i : draw.mesh->indices)
+                indices.push_back(first + i);
+            unique.emplace(draw.mesh.get(), index);
+            staticSlots[draw.slot] = index;
+        }
+        firstSkinMesh = uint32_t(meshes.size());
         for (const auto& skin : skins) {
             uint32_t first = uint32_t(geometryVertices.size());
             auto vertices = deformSkin(*skin.mesh, skin.palette);
@@ -314,11 +350,16 @@ struct Renderer::Impl {
         skinMotionPending = false;
     }
     void updateSkins(const Frame& frame) {
-        bool changed = frame.skins.size() != skinDraws.size();
+        bool changed =
+            frame.skins.size() != skinDraws.size() || frame.staticMeshes.size() != staticBindings.size();
+        for (size_t i = 0; !changed && i < staticBindings.size(); ++i)
+            changed = frame.staticMeshes[i].slot != staticBindings[i].slot ||
+                      frame.staticMeshes[i].mesh != staticBindings[i].mesh;
         for (size_t i = 0; !changed && i < skinDraws.size(); ++i)
             changed = frame.skins[i].slot != skinDraws[i].slot || frame.skins[i].mesh != skinDraws[i].mesh;
         if (changed)
-            createGeometry(frame.skins);
+            createGeometry(frame.skins, frame.staticMeshes);
+        updateTextures(frame.textures);
         bool newPose = frame.tick != skinTick;
         if (!newPose && !skinMotionPending)
             return;
@@ -346,15 +387,99 @@ struct Renderer::Impl {
         skinGeometryDirty = newPose && !skinDraws.empty();
         skinTick = frame.tick;
     }
+    void updateTextures(const std::vector<std::shared_ptr<const TextureAsset>>& textures) {
+        if (materialSampler && textures == textureBindings)
+            return;
+        if (textures.size() > MaxTextures)
+            throw std::runtime_error("Map exceeds the material texture descriptor capacity");
+        textureBindings = textures;
+        for (auto& texture : materialTextures)
+            vk.destroy(texture);
+        materialTextures.clear();
+        if (!materialSampler) {
+            VkSamplerCreateInfo info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+            info.magFilter = info.minFilter = VK_FILTER_LINEAR;
+            info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+            info.addressModeU = info.addressModeV = info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            info.anisotropyEnable = VK_TRUE;
+            info.maxAnisotropy = std::min(8.f, vk.properties.limits.maxSamplerAnisotropy);
+            info.maxLod = VK_LOD_CLAMP_NONE;
+            VK_CHECK(vkCreateSampler(vk.device, &info, nullptr, &materialSampler));
+        }
+        auto upload = [&](uint32_t w, uint32_t h, const uint32_t* pixels, bool srgb) {
+            uint32_t levels = 1 + uint32_t(std::floor(std::log2(std::max(w, h))));
+            Image texture = vk.image(w, h, srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM,
+                                     VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                         VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                                     levels);
+            auto staging = vk.buffer(VkDeviceSize(w) * h * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true);
+            std::memcpy(staging.mapped, pixels, size_t(staging.size));
+            auto c = vk.beginOneTime();
+            vk.transition(c, texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+            VkBufferImageCopy copy{};
+            copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            copy.imageExtent = {w, h, 1};
+            vkCmdCopyBufferToImage(c, staging.handle, texture.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+                                   &copy);
+            auto mipBarrier = [&](uint32_t level, VkImageLayout before, VkImageLayout after) {
+                VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+                barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+                barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
+                barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+                barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+                barrier.oldLayout = before;
+                barrier.newLayout = after;
+                barrier.image = texture.handle;
+                barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, level, 1, 0, 1};
+                VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+                dependency.imageMemoryBarrierCount = 1;
+                dependency.pImageMemoryBarriers = &barrier;
+                vkCmdPipelineBarrier2(c, &dependency);
+            };
+            int32_t mw = int32_t(w), mh = int32_t(h);
+            for (uint32_t level = 1; level < levels; ++level) {
+                mipBarrier(level - 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+                VkImageBlit region{};
+                region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level - 1, 0, 1};
+                region.srcOffsets[1] = {mw, mh, 1};
+                region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, 1};
+                region.dstOffsets[1] = {std::max(1, mw / 2), std::max(1, mh / 2), 1};
+                vkCmdBlitImage(c, texture.handle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, texture.handle,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, VK_FILTER_LINEAR);
+                mipBarrier(level - 1, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                mw = std::max(1, mw / 2);
+                mh = std::max(1, mh / 2);
+            }
+            mipBarrier(levels - 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            texture.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            vk.endOneTime(c);
+            vk.destroy(staging);
+            materialTextures.push_back(texture);
+        };
+        for (const auto& texture : textures)
+            upload(texture->width, texture->height, texture->pixels.data(), texture->srgb);
+        if (textures.empty()) {
+            const uint32_t white = 0xffffffffu;
+            upload(1, 1, &white, false);
+        }
+        descriptorsDirty = true;
+        historyValid = false;
+    }
     void createPipelines() {
         std::vector<VkDescriptorSetLayoutBinding> bindings;
-        for (uint32_t b = 0; b <= 28; b++) {
-            VkDescriptorType type = b == 0                           ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+        for (uint32_t b = 0; b <= 29; b++) {
+            VkDescriptorType type = b == 29  ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
+                                    : b == 0 ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
                                     : b <= 5 || (b >= 13 && b <= 18) ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
                                     : b == 6 ? VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR
                                              : VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
             bindings.push_back(
-                {b, type, 1, VkShaderStageFlags(b <= 3 ? VK_SHADER_STAGE_ALL : VK_SHADER_STAGE_COMPUTE_BIT),
+                {b, type, b == 29 ? MaxTextures : 1,
+                 VkShaderStageFlags(b <= 3 || b >= 29 ? VK_SHADER_STAGE_ALL : VK_SHADER_STAGE_COMPUTE_BIT),
                  nullptr});
         }
         VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
@@ -368,10 +493,11 @@ struct Renderer::Impl {
         VkDescriptorPoolSize poolSizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
                                             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 11},
                                             {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1},
-                                            {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 16}};
+                                            {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 16},
+                                            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MaxTextures}};
         VkDescriptorPoolCreateInfo dp{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
         dp.maxSets = 1;
-        dp.poolSizeCount = 4;
+        dp.poolSizeCount = 5;
         dp.pPoolSizes = poolSizes;
         VK_CHECK(vkCreateDescriptorPool(vk.device, &dp, nullptr, &descriptorPool));
         VkDescriptorSetAllocateInfo da{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
@@ -401,14 +527,14 @@ struct Renderer::Impl {
             stages[i].pName = "main";
         }
         VkVertexInputBindingDescription binding{0, sizeof(GpuVertex), VK_VERTEX_INPUT_RATE_VERTEX};
-        VkVertexInputAttributeDescription attributes[] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
-                                                          {1, 0, VK_FORMAT_R32G32B32_SFLOAT, 16},
-                                                          {2, 0, VK_FORMAT_R32G32B32_SFLOAT, 32},
-                                                          {3, 0, VK_FORMAT_R32G32B32_SFLOAT, 48}};
+        VkVertexInputAttributeDescription attributes[] = {
+            {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},  {1, 0, VK_FORMAT_R32G32B32_SFLOAT, 16},
+            {2, 0, VK_FORMAT_R32G32B32_SFLOAT, 32}, {3, 0, VK_FORMAT_R32G32B32_SFLOAT, 48},
+            {4, 0, VK_FORMAT_R32G32_SFLOAT, 64},    {5, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 80}};
         VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
         vi.vertexBindingDescriptionCount = 1;
         vi.pVertexBindingDescriptions = &binding;
-        vi.vertexAttributeDescriptionCount = 4;
+        vi.vertexAttributeDescriptionCount = 6;
         vi.pVertexAttributeDescriptions = attributes;
         VkPipelineInputAssemblyStateCreateInfo ia{
             VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
@@ -600,12 +726,17 @@ struct Renderer::Impl {
         std::array<VkDescriptorBufferInfo, 29> buffers{};
         std::array<VkDescriptorImageInfo, 29> textureInfo{};
         std::vector<VkWriteDescriptorSet> writes;
+        std::array<VkDescriptorImageInfo, MaxTextures> sampled{};
+        for (uint32_t i = 0; i < MaxTextures; ++i)
+            sampled[i] = {materialSampler,
+                          materialTextures[std::min(size_t(i), materialTextures.size() - 1)].view,
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         VkWriteDescriptorSetAccelerationStructureKHR asWrite{
             VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR};
         asWrite.accelerationStructureCount = 1;
         asWrite.pAccelerationStructures = &tlas.handle;
         Buffer* basics[] = {&globals, &instanceData, &materialData, &lightData, &vertexData, &indexData};
-        for (uint32_t b = 0; b <= 28; b++) {
+        for (uint32_t b = 0; b <= 29; b++) {
             VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
             w.dstSet = descriptors;
             w.dstBinding = b;
@@ -616,6 +747,10 @@ struct Renderer::Impl {
                 w.descriptorType =
                     b == 0 ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
                 w.pBufferInfo = &buffers[b];
+            } else if (b == 29) {
+                w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                w.descriptorCount = MaxTextures;
+                w.pImageInfo = sampled.data();
             } else if (b == 6) {
                 w.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
                 w.pNext = &asWrite;
@@ -942,6 +1077,9 @@ struct Renderer::Impl {
                << ",\n  \"simulationHz\": 60,\n  \"presentMode\": \"" << presentName(presentMode) << "\""
                << ",\n  \"validationActive\": " << (vk.validationActive ? "true" : "false")
                << ",\n  \"validationErrors\": " << vk.validationErrors.load()
+               << ",\n  \"staticMeshInstances\": " << staticBindings.size()
+               << ", \"staticMeshAssets\": " << firstSkinMesh - 2
+               << ", \"textureAssets\": " << textureBindings.size()
                << ",\n  \"sceneSlots\": " << sceneStatistics.slots << ", \"sceneSlotWrites\": " << sceneWrites
                << ", \"sceneSlotWritesIfRebuilt\": " << sceneSlotFrames
                << ",\n  \"sceneResyncs\": " << sceneResyncs << ", \"tlasRebuilds\": " << sceneTlasRebuilds
@@ -1077,7 +1215,7 @@ struct Renderer::Impl {
         }
         // TLAS allocation precedes descriptor writes; actual construction is recorded before raster/compute.
         if (skinGeometryDirty) {
-            for (uint32_t m = 2; m < meshes.size(); ++m)
+            for (uint32_t m = firstSkinMesh; m < meshes.size(); ++m)
                 buildMeshAS(command, m, true);
             VulkanContext::barrier(command);
             skinGeometryDirty = false;

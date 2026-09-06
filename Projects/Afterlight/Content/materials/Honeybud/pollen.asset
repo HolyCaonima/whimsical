@@ -1,0 +1,3 @@
+ALAS1
+{"id": "c621cc8073a14ed49393a323f6a64ba1", "name": "pollen", "type": "Material", "version": 1, "storage": "embedded", "metadata": {}}
+{"albedoRoughness": [0.91, 0.45, 0.075, 0.65], "emissionMetallic": [0, 0, 0, 0], "surface": [1, 1, 0.5, 0]}

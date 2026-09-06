@@ -66,7 +66,11 @@ Json SceneDocument::json() const {
         j["scripts"].push(script.json());
     for (const auto& m : materials)
         j["materials"].push({{"albedoRoughness", vector(m.albedoRoughness)},
-                             {"emissionMetallic", vector(m.emissionMetallic)}});
+                             {"emissionMetallic", vector(m.emissionMetallic)},
+                             {"surface", vector(m.surface)}});
+    j["materialAssets"] = Json::array();
+    for (const auto& m : materialAssets)
+        j["materialAssets"].push({{"index", m.first}, {"asset", m.second.json()}});
     for (const auto& l : lights)
         j["lights"].push(
             {{"positionRadius", vector(l.positionRadius)}, {"colorIntensity", vector(l.colorIntensity)}});
@@ -96,6 +100,8 @@ Json SceneDocument::json() const {
                   {"animation", Json()},
                   {"joints", Json::array()},
                   {"jointColliders", Json::array()}};
+        if (o.staticMesh)
+            item["render"]["mesh"] = o.staticMesh->json();
         if (o.animation) {
             const auto& a = *o.animation;
             Json attributes = Json::object();
@@ -124,8 +130,14 @@ SceneDocument SceneDocument::fromJson(const Json& j) {
     SceneDocument s;
     for (const auto& script : j.at("scripts").elements())
         s.scripts.push_back(AssetRef::fromJson(script));
-    for (const auto& m : j.at("materials").elements())
+    for (const auto& m : j.at("materials").elements()) {
         s.materials.push_back({vector4(m.at("albedoRoughness")), vector4(m.at("emissionMetallic"))});
+        if (m.contains("surface"))
+            s.materials.back().surface = vector4(m.at("surface"));
+    }
+    if (j.contains("materialAssets"))
+        for (const auto& m : j.at("materialAssets").elements())
+            s.materialAssets.emplace(m.at("index").uint(), AssetRef::fromJson(m.at("asset")));
     for (const auto& l : j.at("lights").elements())
         s.lights.push_back({vector4(l.at("positionRadius")), vector4(l.at("colorIntensity"))});
     const auto& camera = j.at("camera");
@@ -152,6 +164,8 @@ SceneDocument SceneDocument::fromJson(const Json& j) {
         o.enabled = item.at("enabled").boolean();
         o.interactable = item.at("interactable").boolean();
         const auto& r = item.at("render");
+        if (r.contains("mesh"))
+            o.staticMesh = AssetRef::fromJson(r.at("mesh"));
         auto kind = r.at("shape").string();
         if (kind != "box" && kind != "capsule")
             throw std::invalid_argument("Unknown render shape");
@@ -197,6 +211,9 @@ static bool finite(vec3 v) {
     return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
 }
 void SceneDocument::validate() const {
+    for (const auto& m : materialAssets)
+        if (m.first >= materials.size())
+            throw std::invalid_argument("Material asset index outside Map material table");
     std::set<std::string> ids;
     for (const auto& o : objects) {
         validatePersistentId(o.id);
@@ -209,6 +226,8 @@ void SceneDocument::validate() const {
             throw std::invalid_argument("Invalid Map render component");
         if (o.animation && !o.joints.empty())
             throw std::invalid_argument("Solved joint poses are runtime state");
+        if (o.staticMesh && o.animation)
+            throw std::invalid_argument("An object cannot bind both static and animated geometry");
     }
     if (!player.empty() && !ids.count(player))
         throw std::invalid_argument("Map player references missing Object");
