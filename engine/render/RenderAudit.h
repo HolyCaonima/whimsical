@@ -9,11 +9,15 @@
 namespace afterlight {
 // GPU readback of unfiltered linear signals; no tone mapping or history filtering is applied here.
 struct RenderAudit {
+    inline static constexpr uint32_t bindings[] = {26, 7, 23, 19, 20, 21, 22};
+    inline static constexpr const char* names[] = {
+        "direct", "albedo", "display", "raw-diffuse", "raw-specular", "denoised-diffuse", "denoised-specular"};
+    static constexpr size_t signalCount = sizeof(bindings) / sizeof(bindings[0]);
     struct Pixel {
         std::array<float, 3> mean{};
         float meanL = 0, m2 = 0, previousL = 0, delta2 = 0;
     };
-    std::array<std::vector<Pixel>, 3> signals;
+    std::array<std::vector<Pixel>, signalCount> signals;
     uint32_t samples = 0;
     uint64_t nonFinite = 0;
     static float half(uint16_t h) {
@@ -50,7 +54,6 @@ struct RenderAudit {
     }
     void save(const std::filesystem::path& dir, uint32_t width, uint32_t height) const {
         std::filesystem::create_directories(dir);
-        const char* names[] = {"direct", "albedo", "display"};
         std::ofstream report(dir / "audit.json");
         report << "{\n\"width\":" << width << ",\"height\":" << height << ",\"samples\":" << samples
                << ",\"nonFinite\":" << nonFinite << ",\"signals\":[\n";

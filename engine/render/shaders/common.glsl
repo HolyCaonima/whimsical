@@ -245,6 +245,11 @@ bool traceSurface(vec3 origin, vec3 direction, out Surface hit, out float distan
     return true;
 }
 #endif
+// RTXDI's material demodulation baseline. The same factor is used by resolve
+// and composition, including the raw view, so this does not change the BRDF.
+vec3 specularMaterialFactor(Surface s) {
+    return max(mix(vec3(.04), s.albedo, s.metallic), vec3(.01));
+}
 float smithG1(float cosTheta, float a) {
     return 2 * cosTheta / max(cosTheta + sqrt(a * a + (1 - a * a) * cosTheta * cosTheta), 1e-6);
 }

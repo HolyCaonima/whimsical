@@ -17,6 +17,7 @@ void main() {
     GIReservoir gi;
     gi.positionDistance = gi.normalKind = gi.radiancePdf = gi.stats = vec4(0);
     Surface s = surfaceAt(p);
+    imageStore(rawDiffuse, p, vec4(0));
     imageStore(rawSpecular, p, vec4(0));
     if (s.id == 0) {
         candidateDI[index] = di;
@@ -49,6 +50,9 @@ void main() {
     giAdd(gi, fresh, target / pdf, 1, target);
     giFinalize(gi);
     candidateGI[index] = gi;
+    // NRD's diffuse guide comes from this pixel's cosine-weighted ray, before
+    // reservoir selection biases the distribution toward bright distant samples.
+    imageStore(rawDiffuse, p, vec4(0, 0, 0, fresh.positionDistance.w));
     vec3 v = safeNormalize(g.eyeTime.xyz - s.p);
     float specPdf;
     direction = sampleSpecular(s, v, specPdf);

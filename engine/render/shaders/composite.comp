@@ -19,7 +19,7 @@ void main() {
         color = sky(normalize(world.xyz / world.w - g.eyeTime.xyz)) * .32;
     } else
         color = imageLoad(denoisedDiffuse, p).rgb * s.albedo * (1 - s.metallic) +
-                imageLoad(denoisedSpecular, p).rgb + s.emission;
+                imageLoad(denoisedSpecular, p).rgb * specularMaterialFactor(s) + s.emission;
     int debug = int(g.resolution.z);
     if (debug == 1)
         color = s.albedo;
@@ -32,8 +32,8 @@ void main() {
     if (debug == 5)
         color = imageLoad(indirectDebug, p).rgb;
     if (debug == 6)
-        color = imageLoad(rawDiffuse, p).rgb * s.albedo * (1 - s.metallic) + imageLoad(rawSpecular, p).rgb +
-                s.emission;
+        color = imageLoad(rawDiffuse, p).rgb * s.albedo * (1 - s.metallic) +
+                imageLoad(rawSpecular, p).rgb * specularMaterialFactor(s) + s.emission;
     if (debug == 7)
         color = vec3(.5) + vec3(imageLoad(gMotion, p).xy * 15, 0);
     if (debug == 0 || debug == 4 || debug == 5 || debug == 6)

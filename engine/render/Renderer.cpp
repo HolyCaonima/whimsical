@@ -755,7 +755,7 @@ struct Renderer::Impl {
                                                                       VK_BUFFER_USAGE_TRANSFER_DST_BIT);
         readback = vk.buffer(pixels * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
         if (!options.audit.empty())
-            auditReadback = vk.buffer(pixels * 8 * 3, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
+            auditReadback = vk.buffer(pixels * 8 * RenderAudit::signalCount, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
         denoiser->resize(width, height);
         historyValid = false;
         resizePending = false;
@@ -1349,9 +1349,8 @@ struct Renderer::Impl {
         if (auditFrame) {
             CpuScope cpuScope("Audit Readback Commands");
             GpuScope scope(*profiler, command, "Audit Readback");
-            const uint32_t bindings[] = {26, 7, 23};
-            for (uint32_t s = 0; s < 3; ++s) {
-                auto& image = images[bindings[s]];
+            for (uint32_t s = 0; s < RenderAudit::signalCount; ++s) {
+                auto& image = images[RenderAudit::bindings[s]];
                 vk.transition(command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
                 VkBufferImageCopy copy{};
                 copy.bufferOffset = VkDeviceSize(s) * width * height * 8;

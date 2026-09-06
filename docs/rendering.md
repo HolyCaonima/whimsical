@@ -34,7 +34,11 @@ GI initial sample 从当前 G-buffer 表面发射余弦半球 BRDF 光线。命�
 
 固定 NRD 4.17.3，`RELAX_DIFFUSE_SPECULAR`。`NrdDenoiser` 通过 `CreateInstance/GetInstanceDesc` 建立 Vulkan pipeline、permanent/transient textures、sampler、descriptor layout 和常量区。每帧 `SetCommonSettings/GetComputeDispatches` 获取真实 dispatch 列表，逐个绑定资源并执行。当前选择对应 15 条原生 Vulkan pipelines；完整 NRD 构建产生 159 个 shader variants。
 
-RELAX 输入直接是 RGB radiance + 真实 hit distance，不用 REBLUR 的归一化 hit-distance 编码。Diffuse 在 denoise 前不乘 base color / (1-metallic)，合成时再乘；specular 保留完整 BRDF 信号，合成直接相加。当前没有采纳 NRD 可选的 specular material demodulation，所以未来引入高频金属材质时需要一起扩展 material factor 契约。
+DI + GI 合并后交给同一个 `RELAX_DIFFUSE_SPECULAR`，不分别运行两套 NRD。RELAX 输入直接是 RGB 光照信号 + 世界单位 hit distance，不用 REBLUR 的归一化 hit-distance 编码。Diffuse 在 denoise 前不乘 base color / (1-metallic)，合成时再乘。Specular 采用 RTXDI 的 F0 解调基线：resolve 除以 `max(mix(0.04, albedo, metallic), 0.01)`，合成和 RAW 视图乘回同一个 `specularMaterialFactor`；Direct/Indirect RAW 调试信号保留原物理光照值。
+
+Diffuse hit distance 保留当前像素 initial cosine ray 的一跳距离，由 `lighting.comp` 暂存在 `rawDiffuse.a`，resolve 保留它而不使用重采样后偏向高亮样本的 GI reservoir 距离。Specular 沿用独立 GGX ray 的一跳距离，不替换成选中灯的距离。该契约无需新增 ray、纹理或 pass。
+
+RELAX 默认大半径预滤波会跨越同一平面上的投射阴影，其后 A-trous 无法恢复已经损失的边缘。参考 RTX Remix/RTXGI，当前 diffuse/specular prepass 半径为 0/20，`PhiLuminance` 为 0.5/0.35，diffuse fast history 为 4；保留 24 帧主历史、5 次 A-trous 和 anti-firefly。当前分别采样两个 lobe，没有 probabilistic lobe split，因此不需要开启 diffuse prepass 或 hit-distance reconstruction 来填补抽样空洞。这是一套针对合并信号的配置，不直接套用 Remix 的两套 DI/GI 配置。调查依据和验证见 [NRD 接入调查](nrd-integration-audit.md)。
 
 Resize、首帧、大相机跳变、灯光／材质变化会清理历史。NRD 帧号按实际 GPU render 递增；timeDelta 使用实际渲染帧间隔，GPU timestamp 只用来报告 pass 时间。
 

@@ -144,6 +144,14 @@ NrdDenoiser::NrdDenoiser(VulkanContext& v) : vk_(v) {
     settings.diffuseMaxAccumulatedFrameNum = 24;
     settings.specularMaxAccumulatedFrameNum = 24;
     settings.atrousIterationNum = 5;
+    // Both lobes are sampled every pixel. ReSTIR already performs spatial reuse;
+    // diffuse pre-blur loses shadow edges before the luminance-aware A-trous pass.
+    // Start from RTXGI's RELAX edge settings, keeping one combined DI/GI denoiser.
+    settings.diffusePrepassBlurRadius = 0;
+    settings.specularPrepassBlurRadius = 20;
+    settings.diffusePhiLuminance = 0.5f;
+    settings.specularPhiLuminance = 0.35f;
+    settings.diffuseMaxFastAccumulatedFrameNum = 4;
     settings.enableAntiFirefly = true;
     nrdCheck(nrd::SetDenoiserSettings(*instance_, 0, &settings));
     std::cout << "NRD RELAX_DIFFUSE_SPECULAR: " << pipelines_.size() << " native Vulkan pipelines\n";
