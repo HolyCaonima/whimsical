@@ -6,6 +6,7 @@ function fixedUpdate(dt, input) {
     Locomotion.prepare(input);
     Controller.tick(dt, input);
     Locomotion.tick(dt, input);
+    Companion.tick(dt);
     CameraRig.tick(dt, input);
     Engine.status(Locomotion.state, Controller.message);
 }

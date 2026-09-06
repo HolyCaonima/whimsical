@@ -1,7 +1,8 @@
 #pragma once
 #include "physics/PhysicsScene.h"
 namespace afterlight {
-// Animation publishes joint-local rigid transforms; PhysicsScene owns the resulting colliders.
+// Animation publishes model-space rigid transforms relative to the actor root (not parent-local).
+// PhysicsScene owns the resulting colliders.
 class AnimationCollision {
     struct Binding {
         uint32_t owner, joint;

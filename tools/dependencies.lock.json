@@ -38,5 +38,9 @@
   "mathlib": {
     "url": "https://github.com/NVIDIA-RTX/MathLib/archive/refs/tags/v11.zip",
     "sha256": "9bd668daa3770a684ca86ccfbd15dd5e1927f259bc531034a4fd943e1f98f5c9"
+  },
+  "onnxruntime": {
+    "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.20.1/onnxruntime-win-x64-1.20.1.zip",
+    "sha256": "78d447051e48bd2e1e778bba378bec4ece11191c9e538cf7b2c4a4565e8f5581"
   }
 }

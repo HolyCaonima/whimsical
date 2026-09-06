@@ -1,0 +1,59 @@
+#include "scripting/ScriptRuntime.h"
+#include "animation/SkinnedMesh.h"
+#include <iostream>
+#include <stdexcept>
+using namespace afterlight;
+static void check(bool value, const char* message) {
+    if (!value)
+        throw std::runtime_error(message);
+}
+int main() {
+    try {
+        World world;
+        ScriptRuntime scripts(world);
+        scripts.initialize();
+        Input input;
+        uint32_t dog = 0;
+        for (const auto& o : world.objects())
+            if (o.name == "Ash")
+                dog = o.id;
+        check(dog != 0, "Scene must spawn a companion dog");
+        auto initial = world.entity(dog).position;
+        scripts.execute("Locomotion.command({x:-8,y:0,z:4});");
+        float closest = 100;
+        for (int i = 0; i < 540; ++i) {
+            scripts.tick(1.f / 60, input);
+            auto p = world.entity(dog).position;
+            check(Navigation::canStand(world.physics(), world.feet(dog), world.agent(dog), world.navigation),
+                  "Dog must remain outside obstacles");
+            float distance = glm::length(vec2(p.x - world.entity(world.playerId).position.x,
+                                              p.z - world.entity(world.playerId).position.z));
+            if (i > 420)
+                closest = std::min(closest, distance);
+            check(distance > .6f, "Dog must not overlap the player capsule");
+        }
+        check(glm::distance(initial, world.entity(dog).position) > 3, "Dog must follow moving player");
+        check(closest < 2.5f, "Dog must catch up and stop near player");
+        auto frame = world.snapshot(input, 540, 9, 0);
+        check(frame.skins.size() == 2, "Player and dog must use actual skinned meshes");
+        for (const auto& skin : frame.skins) {
+            auto vertices = deformSkin(*skin.mesh, skin.palette);
+            check(vertices.size() > 500, "Scene must use imported character geometry");
+            for (const auto& v : vertices)
+                check(std::isfinite(v.position.x + v.position.y + v.position.z),
+                      "Skin deformation must stay finite");
+        }
+        auto before = frame.skins[0].palette;
+        scripts.execute("Locomotion.command({x:-7,y:0,z:1});");
+        for (int i = 0; i < 45; ++i)
+            scripts.tick(1.f / 60, input);
+        check(before != world.snapshot(input, 585, 9.75, 0).skins[0].palette,
+              "Skin palette must follow animation and movement");
+        std::cout
+            << "PASS: skinned biped, dog obstacle navigation, following distance and animated palettes\n";
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << "\n";
+        return 1;
+    }
+}

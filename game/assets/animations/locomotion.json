@@ -1,1 +1,25 @@
-{"source":"procedural_capsule","states":["Idle","TurnInPlace","Starting","Walking","Running","Crouching","Stopping","Interacting"],"walkSpeed":2.4,"runSpeed":4.8,"crouchSpeed":1.25,"standingHeight":2.0,"crouchHeight":1.3,"acceleration":10,"braking":14,"turnRate":8,"arrivalRadius":0.10,"note":"Stance updates the PhysicsScene capsule before navigation queries. Visual bob stays in presentation. Root motion uses the same physical sweep as player movement."}
+{
+  "source": "ai4animation_biped",
+  "idleAction": "Idle",
+  "moveAction": "Locomotion",
+  "states": [
+    "Idle",
+    "TurnInPlace",
+    "Starting",
+    "Walking",
+    "Running",
+    "Crouching",
+    "Stopping",
+    "Interacting"
+  ],
+  "walkSpeed": 2.4,
+  "runSpeed": 4.8,
+  "crouchSpeed": 1.25,
+  "standingHeight": 2.0,
+  "crouchHeight": 1.3,
+  "acceleration": 10,
+  "braking": 14,
+  "turnRate": 8,
+  "arrivalRadius": 0.1,
+  "note": "Gameplay owns movement and collision. Animation receives measured velocity and facing; the invisible capsule remains the navigation body."
+}

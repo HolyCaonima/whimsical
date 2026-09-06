@@ -1,11 +1,13 @@
 #pragma once
 #include "Math.h"
+#include "animation/Animation.h"
 #include <vector>
 #include <array>
 #include <memory>
 #include <string>
 #include <cstdint>
 namespace afterlight {
+struct SkinnedMesh;
 struct Material {
     vec4 albedoRoughness{.5f, .5f, .5f, .5f};
     vec4 emissionMetallic{0};
@@ -32,8 +34,8 @@ struct ProxyAttributes {
     bool visible = true;
     bool interactable = false;
     bool operator==(const ProxyAttributes& o) const {
-        return entity == o.entity && material == o.material && shape == o.shape &&
-               visible == o.visible && interactable == o.interactable;
+        return entity == o.entity && material == o.material && shape == o.shape && visible == o.visible &&
+               interactable == o.interactable;
     }
     bool operator!=(const ProxyAttributes& o) const {
         return !(*this == o);
@@ -97,7 +99,25 @@ struct Input {
     float mouseX = 0, mouseY = 0, deltaX = 0, deltaY = 0, wheel = 0;
     uint32_t width = 1280, height = 800;
 };
+struct AnimationInspection {
+    uint32_t entity = 0;
+    std::string name, solver;
+    std::vector<animation::EnumAttribute> schema;
+    animation::AttributeValues values;
+};
 struct Frame {
+    AnimationInspection animationInspection;
+    struct Skin {
+        uint32_t slot = 0;
+        std::shared_ptr<const SkinnedMesh> mesh;
+        std::vector<mat4> palette;
+    };
+    std::vector<Skin> skins;
+    struct SkeletonPose {
+        uint32_t owner = 0;
+        std::vector<mat4> jointWorld;
+    };
+    std::vector<SkeletonPose> skeletons; // Immutable animation output for render consumers.
     struct DebugLine {
         vec3 a, b, color;
     };

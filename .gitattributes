@@ -1,0 +1,6 @@
+# Vendor snapshot and exported weights are preserved byte-for-byte.
+external/AI4AnimationPy/** -text
+*.onnx binary
+*.a4c binary
+*.golden binary
+*.skin binary

@@ -43,16 +43,40 @@ set(NRD_NORMAL_ENCODING 4 CACHE STRING "" FORCE)
 set(FETCHCONTENT_SOURCE_DIR_MATHLIB "${DEPS}/mathlib" CACHE PATH "" FORCE)
 set(FETCHCONTENT_SOURCE_DIR_SHADERMAKE "${DEPS}/shadermake" CACHE PATH "" FORCE)
 add_subdirectory("${DEPS}/nrd" "third_party/nrd")
+if(NOT EXISTS "${DEPS}/onnxruntime/include/onnxruntime_cxx_api.h")
+  message(FATAL_ERROR "Run node tools/bootstrap.mjs to install ONNX Runtime")
+endif()
+add_library(onnxruntime SHARED IMPORTED)
+set_target_properties(onnxruntime PROPERTIES
+  IMPORTED_IMPLIB "${DEPS}/onnxruntime/lib/onnxruntime.lib"
+  IMPORTED_LOCATION "${DEPS}/onnxruntime/lib/onnxruntime.dll"
+  INTERFACE_INCLUDE_DIRECTORIES "${DEPS}/onnxruntime/include")
+add_library(afterlight_animation
+  engine/animation/SkinnedMesh.cpp
+  engine/animation/Animation.cpp engine/animation/ai4animation/Controller.cpp
+  engine/animation/ai4animation/ControllerAsset.cpp engine/animation/ai4animation/OnnxModel.cpp)
+target_include_directories(afterlight_animation PUBLIC engine "${DEPS}/glm")
+target_compile_definitions(afterlight_animation PUBLIC GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE
+  GLM_FORCE_CTOR_INIT GLM_ENABLE_EXPERIMENTAL NOMINMAX)
+target_compile_options(afterlight_animation PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(afterlight_animation PRIVATE onnxruntime)
+function(afterlight_copy_onnx TARGET)
+  add_custom_command(TARGET ${TARGET} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:onnxruntime>" "$<TARGET_FILE_DIR:${TARGET}>"
+    VERBATIM)
+endfunction()
 add_library(afterlight_core
+  engine/ui/AnimationInspector.cpp
   engine/core/World.cpp engine/core/RenderScene.cpp engine/navigation/Navigation.cpp engine/scripting/ScriptRuntime.cpp
   engine/physics/PhysicsScene.cpp engine/animation/AnimationCollision.cpp
 )
 target_include_directories(afterlight_core PUBLIC engine "${DEPS}/glm")
 target_compile_definitions(afterlight_core PUBLIC GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_CTOR_INIT
   NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS AFTERLIGHT_ROOT="${CMAKE_SOURCE_DIR}")
-target_link_libraries(afterlight_core PUBLIC duktape)
+target_link_libraries(afterlight_core PUBLIC duktape afterlight_animation)
 add_executable(Afterlight engine/main.cpp engine/platform/Window.cpp engine/render/Renderer.cpp engine/render/VulkanContext.cpp engine/render/NrdDenoiser.cpp)
 target_link_libraries(Afterlight PRIVATE afterlight_core volk NRD user32 gdi32 winmm)
+afterlight_copy_onnx(Afterlight)
 target_compile_options(Afterlight PRIVATE /W4 /permissive- /utf-8)
 target_compile_options(afterlight_core PRIVATE /W4 /permissive- /utf-8)
 set(SHADER_FILES gbuffer.vert gbuffer.frag lighting.comp reuse.comp resolve.comp composite.comp)
@@ -71,11 +95,28 @@ target_compile_definitions(Afterlight PRIVATE AFTERLIGHT_SHADERS="${CMAKE_BINARY
 enable_testing()
 add_executable(afterlight_tests tests/CoreTests.cpp)
 target_link_libraries(afterlight_tests PRIVATE afterlight_core)
+afterlight_copy_onnx(afterlight_tests)
 add_test(NAME core_gameplay COMMAND afterlight_tests)
 add_executable(physics_tests tests/PhysicsTests.cpp)
 target_link_libraries(physics_tests PRIVATE afterlight_core)
+afterlight_copy_onnx(physics_tests)
 target_compile_options(physics_tests PRIVATE /W4 /permissive- /utf-8)
 add_test(NAME physics_scene COMMAND physics_tests)
+add_executable(animation_tests tests/AnimationTests.cpp)
+target_link_libraries(animation_tests PRIVATE afterlight_core)
+target_compile_options(animation_tests PRIVATE /W4 /permissive- /utf-8)
+afterlight_copy_onnx(animation_tests)
+add_test(NAME animation_runtime COMMAND animation_tests)
+add_executable(companion_tests tests/CompanionTests.cpp)
+target_link_libraries(companion_tests PRIVATE afterlight_core)
+target_compile_options(companion_tests PRIVATE /W4 /permissive- /utf-8)
+afterlight_copy_onnx(companion_tests)
+add_test(NAME companion_follow COMMAND companion_tests)
+add_executable(animation_attribute_tests tests/AnimationAttributeTests.cpp)
+target_link_libraries(animation_attribute_tests PRIVATE afterlight_core)
+target_compile_options(animation_attribute_tests PRIVATE /W4 /permissive- /utf-8)
+afterlight_copy_onnx(animation_attribute_tests)
+add_test(NAME animation_attributes COMMAND animation_attribute_tests)
 set_tests_properties(core_gameplay PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT Afterlight)
 set_target_properties(Afterlight PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")

@@ -3,6 +3,7 @@
 #include "scripting/ScriptRuntime.h"
 #include "platform/Window.h"
 #include "render/Renderer.h"
+#include "ui/AnimationInspector.h"
 #include <thread>
 #include <atomic>
 #include <chrono>
@@ -109,6 +110,7 @@ int main(int argc, char** argv) {
         Window window(width, height);
         World world;
         ScriptRuntime scripts(world);
+        scripts.setHudEnabled(options.hud);
         scripts.initialize();
         // A level-sized scene in which the number of objects that change each tick stays
         // fixed no matter how many exist. That is the measurement that separates the two
@@ -175,6 +177,7 @@ int main(int argc, char** argv) {
         constexpr double step = 1.0 / 60.0;
         std::string mainError;
         uint32_t smokeStage = 0;
+        bool smokeAnimationClicked = false;
         auto restoreAt = Clock::time_point::max();
         mailbox.publish(world.snapshot(window.input(), tick, time, debugView, physicsDebug));
         try {
@@ -192,6 +195,18 @@ int main(int argc, char** argv) {
                     }
                     if (smoke) {
                         auto f = rendered.load();
+                        if (!smokeAnimationClicked && options.hud && f >= 25) {
+                            auto layout = ui::animationInspectorLayout(world.inspectAnimation(world.selected),
+                                                                       input.width, input.height);
+                            if (!layout.controls.empty()) {
+                                const auto& button = layout.controls[0].previous;
+                                input.mouseX = float(button.x + button.width / 2);
+                                input.mouseY = float(button.y + button.height / 2);
+                                input.leftPressed = true;
+                                std::cout << "[Smoke] Animation attribute selector\n";
+                            }
+                            smokeAnimationClicked = true;
+                        }
                         if (smokeStage == 0 && f >= 12) {
                             auto clip = world.camera.projection(float(input.width) / input.height) *
                                         world.camera.view() * vec4(-8, 0, 4, 1);

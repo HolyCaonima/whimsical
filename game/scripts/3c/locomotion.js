@@ -1,13 +1,11 @@
 /* Gameplay owns intent/state; native movement supplies capsule collision and navigation. ES5. */
 var Locomotion = {
     id : 0,
-    marker : 0,
     facing : false,
     blockedTime : 0,
     velocity : {x : 0, z : 0},
     path : [],
     state : 'Idle',
-    phase : 0,
     yaw : 0,
     interactionTime : 0,
     init : function(id) {
@@ -32,14 +30,17 @@ var Locomotion = {
         this.facing = false;
     },
     prepare : function(input) {
-        this.bodyHeight = Engine.characterHeight(this.id, input.keys[17] ? this.settings.crouchHeight : this.settings.standingHeight);
+        this.bodyHeight = Engine.characterHeight(this.id, input.keys[17] ? this.settings.crouchHeight
+                                                                         : this.settings.standingHeight);
     },
-    present : function(next, height, bob) {
+    present : function(next) {
         Engine.pose(this.id, next.x, next.y, next.z, this.yaw, 1);
-        Engine.visualPose(this.id, {x : 0, y : bob, z : 0}, {x : 1, y : height, z : 1});
-        if (this.marker)
-            Engine.pose(this.marker, next.x + Math.sin(this.yaw) * .42, next.y + height * .36 + bob,
-                        next.z + Math.cos(this.yaw) * .42, this.yaw, .14);
+        var v = this.velocity, speed = Math.sqrt(v.x * v.x + v.z * v.z);
+        Engine.animationInput(this.id, {
+            action : speed < .04 ? this.settings.idleAction : this.settings.moveAction,
+            velocity : {x : v.x, y : 0, z : v.z},
+            facing : {x : Math.sin(this.yaw), y : 0, z : Math.cos(this.yaw)}
+        });
     },
     tick : function(dt, input) {
         var bodyHeight = this.bodyHeight;
@@ -49,7 +50,7 @@ var Locomotion = {
             this.interactionTime -= dt;
             this.velocity = {x : 0, z : 0};
             this.state = 'Interacting';
-            this.present(p, bodyHeight * .5, 0);
+            this.present(p);
             return;
         }
         if (Controller.selected && input.focused) {
@@ -81,7 +82,7 @@ var Locomotion = {
                 }
             }
         }
-        var length = Math.sqrt(dx * dx + dz * dz), speed = crouched   ? s.crouchSpeed
+        var length = Math.sqrt(dx * dx + dz * dz), speed = crouched         ? s.crouchSpeed
                                                            : input.keys[16] ? s.runSpeed
                                                                             : s.walkSpeed;
         if (!manual && this.path.length === 1)
@@ -109,7 +110,6 @@ var Locomotion = {
         v.x = (next.x - p.x) / dt;
         v.z = (next.z - p.z) / dt;
         var actual = Math.sqrt(v.x * v.x + v.z * v.z);
-        this.phase += actual * dt * 5;
         if (this.path.length && speed > .3 && actual < .05) {
             this.blockedTime += dt;
             if (this.blockedTime > .6) {
@@ -124,14 +124,12 @@ var Locomotion = {
         } else
             this.blockedTime = 0;
         this.state = this.facing || (length > .01 && Math.abs(turn) > 1.0 && actual < .2) ? 'TurnInPlace'
-                     : actual < .04                                                       ? (crouched ? 'Crouching' : 'Idle')
-                     : speed < .05                                                        ? 'Stopping'
-                     : crouched                                                           ? 'Crouching'
-                     : actual < .6                                                        ? 'Starting'
-                     : input.keys[16]                                                     ? 'Running'
-                                                                                          : 'Walking';
-        var height = bodyHeight * .5;
-        var bob = actual > .1 ? Math.sin(this.phase) * .025 : 0;
-        this.present(next, height, bob);
+                     : actual < .04   ? (crouched ? 'Crouching' : 'Idle')
+                     : speed < .05    ? 'Stopping'
+                     : crouched       ? 'Crouching'
+                     : actual < .6    ? 'Starting'
+                     : input.keys[16] ? 'Running'
+                                      : 'Walking';
+        this.present(next);
     }
 };

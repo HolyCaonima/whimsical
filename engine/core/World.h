@@ -3,6 +3,9 @@
 #include "RenderScene.h"
 #include "physics/PhysicsScene.h"
 #include "animation/AnimationCollision.h"
+#include "animation/Animation.h"
+#include "animation/SkinnedMesh.h"
+#include <map>
 #include "navigation/Navigation.h"
 namespace afterlight {
 struct RenderComponent {
@@ -23,6 +26,15 @@ struct GameObject {
     std::vector<PhysicsPose> joints;
 };
 class World {
+    struct AnimatedObject {
+        std::unique_ptr<animation::Instance> instance;
+        animation::Input input;
+        bool applyRootMotion = true;
+        vec3 rootOffset{0}; // Skeleton origin relative to physical object's centre.
+        std::shared_ptr<const SkinnedMesh> mesh;
+        std::vector<unsigned> meshJoints;
+    };
+    std::map<uint32_t, AnimatedObject> animations_;
     std::vector<GameObject> objects_;
     PhysicsScene physics_;
     RenderScene scene_;
@@ -35,6 +47,7 @@ class World {
     static ProxyTransform proxyTransform(const GameObject&);
     void publishTransform(const GameObject&);
     void publishAttributes(const GameObject&);
+    void attachAnimationInstance(uint32_t, std::unique_ptr<animation::Instance>, bool, vec3);
 
   public:
     std::vector<Material> materials;
@@ -75,6 +88,20 @@ class World {
     BodyHandle addAnimationCollider(uint32_t, uint32_t joint, const ColliderShape&, PhysicsPose local,
                                     bool blocking);
     void setAnimationJoints(uint32_t, std::vector<PhysicsPose>);
+    void attachAnimation(uint32_t, std::shared_ptr<const animation::Skeleton>,
+                         std::unique_ptr<animation::Solver>, bool applyRootMotion = true,
+                         vec3 rootOffset = {0, 0, 0});
+    void detachAnimation(uint32_t);
+    void attachAnimation(uint32_t, const animation::Asset&, bool applyRootMotion = true,
+                         vec3 rootOffset = {0, 0, 0});
+    void setAnimationAttribute(uint32_t, const std::string& key, const std::string& value);
+    AnimationInspection inspectAnimation(uint32_t) const;
+    void setSkinnedMesh(uint32_t, std::shared_ptr<const SkinnedMesh>);
+    void setAnimationInput(uint32_t, animation::Input);
+    void resetAnimation(uint32_t); // Teleport/reinitialization resets sequence and IK history.
+    void setAnimationSolver(uint32_t, std::unique_ptr<animation::Solver>);
+    const animation::Output& animationOutput(uint32_t) const;
+    void updateAnimations(float dt);
     std::vector<vec3> findPath(uint32_t, vec3 target) const;
     std::optional<vec3> groundAt(float x, float y, const Input&) const;
     uint32_t pick(float x, float y, const Input&) const;

@@ -3,6 +3,8 @@
 #include "NrdDenoiser.h"
 #include "RenderGraph.h"
 #include "Geometry.h"
+#include "animation/SkinnedMesh.h"
+#include <map>
 #include "DebugHud.h"
 #include "RenderAudit.h"
 #include <fstream>
@@ -26,7 +28,7 @@ struct alignas(16) GpuInstance {
     glm::uvec4 info;
 };
 static_assert(sizeof(Globals) == 336 && sizeof(GpuInstance) == 144 && sizeof(Material) == 32 &&
-                  sizeof(GpuVertex) == 32,
+                  sizeof(GpuVertex) == 64,
               "GPU layout mismatch");
 struct AccelerationStructure {
     VkAccelerationStructureKHR handle = VK_NULL_HANDLE;
@@ -79,10 +81,20 @@ struct Renderer::Impl {
         hudUpload, readback, auditReadback;
     RenderAudit audit;
     std::array<Buffer, 6> reservoirs;
-    std::array<AccelerationStructure, 2> blas;
+    std::vector<AccelerationStructure> blas;
+    std::vector<Buffer> blasScratch;
     AccelerationStructure tlas;
     uint32_t tlasCount = 0;
-    std::array<MeshRange, 2> meshes;
+    std::vector<MeshRange> meshes;
+    struct SkinDraw {
+        uint32_t slot, firstVertex;
+        std::shared_ptr<const SkinnedMesh> mesh;
+    };
+    std::vector<SkinDraw> skinDraws;
+    std::map<uint32_t, uint32_t> skinMeshes;
+    std::vector<GpuVertex> geometryVertices;
+    uint64_t skinTick = UINT64_MAX;
+    bool skinMotionPending = false, skinGeometryDirty = false;
     uint32_t vertexCount = 0;
     // Binding number -> image; unused bindings intentionally remain empty.
     std::array<Image, 29> images;
@@ -127,6 +139,8 @@ struct Renderer::Impl {
             vk.destroy(*b);
         for (auto& a : blas)
             destroyAS(a);
+        for (auto& b : blasScratch)
+            vk.destroy(b);
         destroyAS(tlas);
         for (auto s : finished)
             vkDestroySemaphore(vk.device, s, nullptr);
@@ -186,55 +200,7 @@ struct Renderer::Impl {
                                   VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
                                       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                   true);
-        std::vector<GpuVertex> vertices;
-        std::vector<uint32_t> indices;
-        meshes = buildPrimitives(vertices, indices);
-        vertexCount = uint32_t(vertices.size());
-        auto geometryUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
-                             VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
-        vertexData = vk.buffer(vertices.size() * sizeof(GpuVertex),
-                               geometryUsage | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
-        indexData = vk.buffer(indices.size() * sizeof(uint32_t),
-                              geometryUsage | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true);
-        std::memcpy(vertexData.mapped, vertices.data(), size_t(vertexData.size));
-        std::memcpy(indexData.mapped, indices.data(), size_t(indexData.size));
-        for (uint32_t m = 0; m < 2; m++) {
-            VkAccelerationStructureGeometryKHR geom{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR};
-            geom.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-            geom.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
-            geom.geometry.triangles = {VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR};
-            auto& tri = geom.geometry.triangles;
-            tri.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
-            tri.vertexData.deviceAddress = vertexData.address;
-            tri.vertexStride = sizeof(GpuVertex);
-            tri.maxVertex = vertexCount - 1;
-            tri.indexType = VK_INDEX_TYPE_UINT32;
-            tri.indexData.deviceAddress = indexData.address + meshes[m].firstIndex * sizeof(uint32_t);
-            VkAccelerationStructureBuildGeometryInfoKHR build{
-                VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR};
-            build.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-            build.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
-            build.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-            build.geometryCount = 1;
-            build.pGeometries = &geom;
-            uint32_t primitives = meshes[m].indexCount / 3;
-            VkAccelerationStructureBuildSizesInfoKHR sizes{
-                VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR};
-            vkGetAccelerationStructureBuildSizesKHR(
-                vk.device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &build, &primitives, &sizes);
-            blas[m] = createAS(build.type, sizes.accelerationStructureSize);
-            auto scratch = vk.buffer(
-                sizes.buildScratchSize + vk.asProperties.minAccelerationStructureScratchOffsetAlignment,
-                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
-            build.dstAccelerationStructure = blas[m].handle;
-            build.scratchData.deviceAddress = alignedScratch(scratch);
-            VkAccelerationStructureBuildRangeInfoKHR range{primitives, 0, 0, 0};
-            const auto* rangePointer = &range;
-            auto c = vk.beginOneTime();
-            vkCmdBuildAccelerationStructuresKHR(c, 1, &build, &rangePointer);
-            vk.endOneTime(c);
-            vk.destroy(scratch);
-        }
+        createGeometry({});
         createPipelines();
         denoiser = std::make_unique<NrdDenoiser>(vk);
         VkSemaphoreCreateInfo si{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
@@ -251,6 +217,134 @@ struct Renderer::Impl {
         qi.queryType = VK_QUERY_TYPE_TIMESTAMP;
         qi.queryCount = 2;
         VK_CHECK(vkCreateQueryPool(vk.device, &qi, nullptr, &timestamps));
+    }
+    uint32_t meshFor(uint32_t slot, const RenderProxy& p) const {
+        auto found = skinMeshes.find(slot);
+        return found == skinMeshes.end() ? uint32_t(p.attributes.shape) : found->second;
+    }
+    void buildMeshAS(VkCommandBuffer c, uint32_t m, bool update) {
+        VkAccelerationStructureGeometryKHR geom{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR};
+        geom.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+        geom.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+        geom.geometry.triangles = {VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR};
+        auto& tri = geom.geometry.triangles;
+        tri.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+        tri.vertexData.deviceAddress = vertexData.address;
+        tri.vertexStride = sizeof(GpuVertex);
+        tri.maxVertex = vertexCount - 1;
+        tri.indexType = VK_INDEX_TYPE_UINT32;
+        tri.indexData.deviceAddress = indexData.address + meshes[m].firstIndex * sizeof(uint32_t);
+        VkAccelerationStructureBuildGeometryInfoKHR build{
+            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR};
+        build.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+        build.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+        if (m >= 2)
+            build.flags |= VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
+        build.mode = update ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR
+                            : VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+        build.geometryCount = 1;
+        build.pGeometries = &geom;
+        uint32_t primitives = meshes[m].indexCount / 3;
+        if (!update) {
+            VkAccelerationStructureBuildSizesInfoKHR sizes{
+                VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR};
+            vkGetAccelerationStructureBuildSizesKHR(
+                vk.device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &build, &primitives, &sizes);
+            blas[m] = createAS(build.type, sizes.accelerationStructureSize);
+            blasScratch[m] =
+                vk.buffer(std::max(sizes.buildScratchSize, sizes.updateScratchSize) +
+                              vk.asProperties.minAccelerationStructureScratchOffsetAlignment,
+                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+        }
+        build.srcAccelerationStructure = update ? blas[m].handle : VK_NULL_HANDLE;
+        build.dstAccelerationStructure = blas[m].handle;
+        build.scratchData.deviceAddress = alignedScratch(blasScratch[m]);
+        VkAccelerationStructureBuildRangeInfoKHR range{primitives, 0, 0, 0};
+        const auto* ptr = &range;
+        vkCmdBuildAccelerationStructuresKHR(c, 1, &build, &ptr);
+    }
+    void createGeometry(const std::vector<Frame::Skin>& skins) {
+        // Called only after the render fence, on mesh binding/topology changes.
+        for (auto& b : blas)
+            destroyAS(b);
+        for (auto& b : blasScratch)
+            vk.destroy(b);
+        vk.destroy(vertexData);
+        vk.destroy(indexData);
+        geometryVertices.clear();
+        skinDraws.clear();
+        skinMeshes.clear();
+        std::vector<uint32_t> indices;
+        auto primitives = buildPrimitives(geometryVertices, indices);
+        meshes.assign(primitives.begin(), primitives.end());
+        for (const auto& skin : skins) {
+            uint32_t first = uint32_t(geometryVertices.size());
+            auto vertices = deformSkin(*skin.mesh, skin.palette);
+            for (size_t i = 0; i < vertices.size(); ++i)
+                geometryVertices.push_back({vec4(vertices[i].position, 1), vec4(vertices[i].normal, 0),
+                                            vec4(skin.mesh->vertices[i].color, 1),
+                                            vec4(vertices[i].position, 1)});
+            MeshRange range{uint32_t(indices.size()), uint32_t(skin.mesh->indices.size())};
+            for (auto index : skin.mesh->indices)
+                indices.push_back(first + index);
+            skinMeshes[skin.slot] = uint32_t(meshes.size());
+            meshes.push_back(range);
+            skinDraws.push_back({skin.slot, first, skin.mesh});
+        }
+        vertexCount = uint32_t(geometryVertices.size());
+        auto usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                     VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+        vertexData = vk.buffer(geometryVertices.size() * sizeof(GpuVertex),
+                               usage | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
+        indexData =
+            vk.buffer(indices.size() * sizeof(uint32_t), usage | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true);
+        std::memcpy(vertexData.mapped, geometryVertices.data(), size_t(vertexData.size));
+        std::memcpy(indexData.mapped, indices.data(), size_t(indexData.size));
+        blas.resize(meshes.size());
+        blasScratch.resize(meshes.size());
+        auto commandBuffer = vk.beginOneTime();
+        for (uint32_t m = 0; m < meshes.size(); ++m)
+            buildMeshAS(commandBuffer, m, false);
+        vk.endOneTime(commandBuffer);
+        descriptorsDirty = true;
+        mirrorValid = false;
+        tlasCount = 0;
+        historyValid = false;
+        skinTick = UINT64_MAX;
+        skinMotionPending = false;
+    }
+    void updateSkins(const Frame& frame) {
+        bool changed = frame.skins.size() != skinDraws.size();
+        for (size_t i = 0; !changed && i < skinDraws.size(); ++i)
+            changed = frame.skins[i].slot != skinDraws[i].slot || frame.skins[i].mesh != skinDraws[i].mesh;
+        if (changed)
+            createGeometry(frame.skins);
+        bool newPose = frame.tick != skinTick;
+        if (!newPose && !skinMotionPending)
+            return;
+        for (size_t i = 0; i < skinDraws.size(); ++i) {
+            const auto& skin = frame.skins[i];
+            const auto& draw = skinDraws[i];
+            std::vector<DeformedVertex> deformed;
+            if (newPose)
+                deformed = deformSkin(*skin.mesh, skin.palette);
+            for (size_t j = 0; j < skin.mesh->vertices.size(); ++j) {
+                auto& v = geometryVertices[draw.firstVertex + j];
+                v.previousPosition = v.position;
+                if (newPose) {
+                    v.position = vec4(deformed[j].position, 1);
+                    v.normal = vec4(deformed[j].normal, 0);
+                }
+                if (frame.resetHistory || changed)
+                    v.previousPosition = v.position;
+            }
+            std::memcpy(static_cast<GpuVertex*>(vertexData.mapped) + draw.firstVertex,
+                        geometryVertices.data() + draw.firstVertex,
+                        skin.mesh->vertices.size() * sizeof(GpuVertex));
+        }
+        skinMotionPending = newPose;
+        skinGeometryDirty = newPose && !skinDraws.empty();
+        skinTick = frame.tick;
     }
     void createPipelines() {
         std::vector<VkDescriptorSetLayoutBinding> bindings;
@@ -308,11 +402,13 @@ struct Renderer::Impl {
         }
         VkVertexInputBindingDescription binding{0, sizeof(GpuVertex), VK_VERTEX_INPUT_RATE_VERTEX};
         VkVertexInputAttributeDescription attributes[] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
-                                                          {1, 0, VK_FORMAT_R32G32B32_SFLOAT, 16}};
+                                                          {1, 0, VK_FORMAT_R32G32B32_SFLOAT, 16},
+                                                          {2, 0, VK_FORMAT_R32G32B32_SFLOAT, 32},
+                                                          {3, 0, VK_FORMAT_R32G32B32_SFLOAT, 48}};
         VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
         vi.vertexBindingDescriptionCount = 1;
         vi.pVertexBindingDescriptions = &binding;
-        vi.vertexAttributeDescriptionCount = 2;
+        vi.vertexAttributeDescriptionCount = 4;
         vi.pVertexAttributeDescriptions = attributes;
         VkPipelineInputAssemblyStateCreateInfo ia{
             VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
@@ -372,10 +468,9 @@ struct Renderer::Impl {
     // FIFO is the only mode Vulkan guarantees, so an unsupported request degrades to it
     // rather than failing to start.
     VkPresentModeKHR selectPresentMode() const {
-        VkPresentModeKHR wanted = options.present == PresentMode::Mailbox ? VK_PRESENT_MODE_MAILBOX_KHR
-                                  : options.present == PresentMode::Immediate
-                                      ? VK_PRESENT_MODE_IMMEDIATE_KHR
-                                      : VK_PRESENT_MODE_FIFO_KHR;
+        VkPresentModeKHR wanted = options.present == PresentMode::Mailbox     ? VK_PRESENT_MODE_MAILBOX_KHR
+                                  : options.present == PresentMode::Immediate ? VK_PRESENT_MODE_IMMEDIATE_KHR
+                                                                              : VK_PRESENT_MODE_FIFO_KHR;
         if (wanted == VK_PRESENT_MODE_FIFO_KHR)
             return wanted;
         uint32_t count = 0;
@@ -550,7 +645,7 @@ struct Renderer::Impl {
     // instance bytes [0, 48). Geometry binding, material, entity id and visibility mask
     // are left exactly as they were, so moving an object never reconsiders what it is.
     void writeTransform(uint32_t slot, const RenderProxy& p, bool zeroMotion) {
-        const mat4 model = transform(p.transform);
+        const mat4 model = skinMeshes.count(slot) ? mat4(1) : transform(p.transform);
         const mat4 before = zeroMotion ? model : shadowModel[slot];
         auto& instance = instances()[slot];
         instance.previousModel = before;
@@ -574,15 +669,14 @@ struct Renderer::Impl {
     // Attribute path: the instance's trailing uvec4 plus the whole acceleration structure
     // instance, which is where the visibility mask and geometry binding live.
     void writeAttributes(uint32_t slot, const RenderProxy& p) {
-        instances()[slot].info = {p.attributes.material,
-                                  meshes[uint32_t(p.attributes.shape)].firstIndex,
+        instances()[slot].info = {p.attributes.material, meshes[meshFor(slot, p)].firstIndex,
                                   p.attributes.entity, p.attributes.interactable ? 1u : 0u};
         VkAccelerationStructureInstanceKHR a{};
         a.transform = rowMajor(shadowModel[slot]);
         a.instanceCustomIndex = slot;
         a.mask = p.live && p.attributes.visible ? 0xffu : 0u;
         a.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-        a.accelerationStructureReference = blas[uint32_t(p.attributes.shape)].address;
+        a.accelerationStructureReference = blas[meshFor(slot, p)].address;
         accelerationInstances()[slot] = a; // Built in cached memory, stored once.
         sceneStatistics.attributes++;
     }
@@ -764,7 +858,7 @@ struct Renderer::Impl {
             const auto& p = frame.proxies[slot];
             if (!p.live || !p.attributes.visible)
                 continue;
-            auto& mesh = meshes[uint32_t(p.attributes.shape)];
+            auto& mesh = meshes[meshFor(slot, p)];
             vkCmdDrawIndexed(c, mesh.indexCount, 1, mesh.firstIndex, 0, slot);
         }
         vkCmdEndRendering(c);
@@ -848,8 +942,7 @@ struct Renderer::Impl {
                << ",\n  \"simulationHz\": 60,\n  \"presentMode\": \"" << presentName(presentMode) << "\""
                << ",\n  \"validationActive\": " << (vk.validationActive ? "true" : "false")
                << ",\n  \"validationErrors\": " << vk.validationErrors.load()
-               << ",\n  \"sceneSlots\": " << sceneStatistics.slots
-               << ", \"sceneSlotWrites\": " << sceneWrites
+               << ",\n  \"sceneSlots\": " << sceneStatistics.slots << ", \"sceneSlotWrites\": " << sceneWrites
                << ", \"sceneSlotWritesIfRebuilt\": " << sceneSlotFrames
                << ",\n  \"sceneResyncs\": " << sceneResyncs << ", \"tlasRebuilds\": " << sceneTlasRebuilds
                << ",\n  \"meanRgb\": " << double(sum) / (double(width) * height * 3) << ",\n  \"redRange\": ["
@@ -915,6 +1008,7 @@ struct Renderer::Impl {
         float frameMs = std::clamp(
             float(std::chrono::duration<double, std::milli>(now - previousRenderTime).count()), 1.f, 100.f);
         previousRenderTime = now;
+        updateSkins(frame);
         bool reset = !historyValid || frame.resetHistory ||
                      glm::distance(frame.camera.eye(), previous->camera.eye()) > 4.f;
         bool lightsChanged = !historyValid, materialsChanged = !historyValid;
@@ -982,6 +1076,12 @@ struct Renderer::Impl {
             vk.transition(command, images[28], VK_IMAGE_LAYOUT_GENERAL);
         }
         // TLAS allocation precedes descriptor writes; actual construction is recorded before raster/compute.
+        if (skinGeometryDirty) {
+            for (uint32_t m = 2; m < meshes.size(); ++m)
+                buildMeshAS(command, m, true);
+            VulkanContext::barrier(command);
+            skinGeometryDirty = false;
+        }
         buildTLAS(command, frame);
         VulkanContext::barrier(command);
         // Bindings name resources, not their contents. Nothing but a swapchain resize or

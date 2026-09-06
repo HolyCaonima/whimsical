@@ -1,0 +1,10 @@
+#Custom
+**/Assets
+
+#General
+**/__pycache__/
+__pycache__/
+*.egg-info/
+*.vscode/
+build/
+dist/

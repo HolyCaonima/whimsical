@@ -5,6 +5,7 @@ layout(location = 0) in vec3 worldPosition;
 layout(location = 1) in vec3 worldNormal;
 layout(location = 2) in vec4 previousClip;
 layout(location = 3) flat in uint instanceIndex;
+layout(location = 4) in vec3 vertexColor;
 layout(location = 0) out vec4 outAlbedo;
 layout(location = 1) out vec4 outNormal;
 layout(location = 2) out vec4 outPosition;
@@ -14,7 +15,7 @@ layout(location = 5) out vec4 outEmission;
 void main() {
     Instance i = instances[instanceIndex];
     Material m = materials[i.info.x];
-    vec3 n = normalize(worldNormal), color = m.colorRoughness.rgb;
+    vec3 n = normalize(worldNormal), color = m.colorRoughness.rgb * vertexColor;
     if (n.y > .95 && worldPosition.y < .08) {
         vec2 uv = worldPosition.xz;
         uv.x += mod(floor(uv.y), 2) * .5;

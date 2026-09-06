@@ -1,5 +1,7 @@
 #include "ScriptRuntime.h"
 #include "navigation/Navigation.h"
+#include "animation/ai4animation/Controller.h"
+#include "ui/AnimationInspector.h"
 #include <fstream>
 #include <sstream>
 #include <iostream>
@@ -18,6 +20,10 @@ static float num(duk_context* c, int i) {
 }
 static void value(duk_context* c, const char* name, double n) {
     duk_push_number(c, n);
+    duk_put_prop_string(c, -2, name);
+}
+static void value(duk_context* c, const char* name, const std::string& text) {
+    duk_push_lstring(c, text.data(), text.size());
     duk_put_prop_string(c, -2, name);
 }
 static void pushVec(duk_context* c, vec3 p) {
@@ -124,6 +130,13 @@ enum Op {
     PhysicsRevision,
     AnimationJoints,
     AnimationCollider,
+    AnimationAttach,
+    AnimationInput,
+    AnimationAttribute,
+    AnimationAttributes,
+    AnimationReset,
+    AnimationDetach,
+    SkinMesh,
     NavigationConfig
 };
 static duk_ret_t callNative(duk_context* c) {
@@ -321,6 +334,105 @@ static duk_ret_t callNative(duk_context* c) {
             value(c, "generation", h.generation);
             return 1;
         }
+        case AnimationAttach: {
+            std::filesystem::path path = duk_require_string(c, 1);
+            if (path.is_absolute() || path.string().find("..") != std::string::npos)
+                throw std::invalid_argument("Animation asset path must be relative to game/assets");
+            duk_push_heap_stash(c);
+            duk_get_prop_string(c, -1, "animations");
+            auto* library = static_cast<animation::Library*>(duk_get_pointer(c, -1));
+            duk_pop_2(c);
+            auto asset = library->load(std::filesystem::path(AFTERLIGHT_ROOT) / "game/assets" / path);
+            bool applyRoot = true;
+            vec3 offset(0);
+            if (duk_is_object(c, 2)) {
+                applyRoot = boolProp(c, 2, "rootMotion", true);
+                duk_get_prop_string(c, 2, "rootOffset");
+                if (duk_is_object(c, -1))
+                    offset = readVec(c, -1);
+                duk_pop(c);
+            }
+            w.attachAnimation(duk_require_uint(c, 0), *asset, applyRoot, offset);
+            return 0;
+        }
+        case AnimationAttribute:
+            w.setAnimationAttribute(duk_require_uint(c, 0), duk_require_string(c, 1),
+                                    duk_require_string(c, 2));
+            return 0;
+        case AnimationAttributes: {
+            auto inspection = w.inspectAnimation(duk_require_uint(c, 0));
+            duk_push_object(c);
+            value(c, "solver", inspection.solver);
+            duk_push_array(c);
+            for (duk_uarridx_t i = 0; i < inspection.schema.size(); ++i) {
+                const auto& attribute = inspection.schema[i];
+                duk_push_object(c);
+                value(c, "key", attribute.key);
+                value(c, "label", attribute.label);
+                value(c, "type", std::string("enum"));
+                value(c, "value", inspection.values.at(attribute.key));
+                value(c, "defaultValue", attribute.defaultValue);
+                duk_push_array(c);
+                for (duk_uarridx_t k = 0; k < attribute.options.size(); ++k) {
+                    duk_push_object(c);
+                    value(c, "value", attribute.options[k].value);
+                    value(c, "label", attribute.options[k].label);
+                    duk_put_prop_index(c, -2, k);
+                }
+                duk_put_prop_string(c, -2, "options");
+                duk_put_prop_index(c, -2, i);
+            }
+            duk_put_prop_string(c, -2, "attributes");
+            return 1;
+        }
+        case AnimationInput: {
+            animation::Input input;
+            duk_get_prop_string(c, 1, "velocity");
+            if (duk_is_object(c, -1))
+                input.desiredVelocity = readVec(c, -1);
+            duk_pop(c);
+            duk_get_prop_string(c, 1, "facing");
+            if (duk_is_object(c, -1))
+                input.facing = readVec(c, -1);
+            duk_pop(c);
+            duk_get_prop_string(c, 1, "action");
+            input.action = duk_get_string_default(c, -1, "Idle");
+            duk_pop(c);
+            input.speedScale = float(numberProp(c, 1, "speedScale", 1));
+            duk_get_prop_string(c, 1, "trajectory");
+            for (duk_uarridx_t i = 0; i < duk_get_length(c, -1); ++i) {
+                duk_get_prop_index(c, -1, i);
+                int p = duk_normalize_index(c, -1);
+                auto pose = readPhysicsPose(c, p);
+                animation::TrajectoryPoint point;
+                point.time = float(numberProp(c, p, "time", 0));
+                point.transform = {pose.position, pose.rotation};
+                duk_get_prop_string(c, p, "velocity");
+                if (duk_is_object(c, -1))
+                    point.velocity = readVec(c, -1);
+                duk_pop(c);
+                input.trajectory.push_back(point);
+                duk_pop(c);
+            }
+            duk_pop(c);
+            w.setAnimationInput(duk_require_uint(c, 0), std::move(input));
+            return 0;
+        }
+        case AnimationReset:
+            w.resetAnimation(duk_require_uint(c, 0));
+            return 0;
+        case AnimationDetach:
+            w.detachAnimation(duk_require_uint(c, 0));
+            return 0;
+        case SkinMesh: {
+            std::filesystem::path path = duk_require_string(c, 1);
+            if (path.is_absolute() || path.string().find("..") != std::string::npos)
+                throw std::invalid_argument("Mesh asset path must be relative to game/assets");
+            w.setSkinnedMesh(
+                duk_require_uint(c, 0),
+                SkinnedMesh::load(std::filesystem::path(AFTERLIGHT_ROOT) / "game/assets" / path));
+            return 0;
+        }
         case NavigationConfig: {
             duk_get_prop_string(c, 0, "min");
             auto min = readVec(c, -1);
@@ -344,12 +456,15 @@ static duk_ret_t callNative(duk_context* c) {
     duk_throw_raw(c);
 }
 ScriptRuntime::ScriptRuntime(World& w) : world_(w), owner_(std::this_thread::get_id()) {
+    animations_.registerLoader(".a4c", animation::ai4animation::loadAsset);
     context_ = duk_create_heap_default();
     if (!context_)
         throw std::runtime_error("JS heap creation failed");
     duk_push_heap_stash(context_);
     duk_push_pointer(context_, &w);
     duk_put_prop_string(context_, -2, "world");
+    duk_push_pointer(context_, &animations_);
+    duk_put_prop_string(context_, -2, "animations");
     duk_pop(context_);
     duk_push_object(context_);
     struct Binding {
@@ -387,6 +502,13 @@ ScriptRuntime::ScriptRuntime(World& w) : world_(w), owner_(std::this_thread::get
                                 {"physicsRevision", PhysicsRevision, 0},
                                 {"animationJoints", AnimationJoints, 2},
                                 {"animationCollider", AnimationCollider, 3},
+                                {"animation", AnimationAttach, 3},
+                                {"animationInput", AnimationInput, 2},
+                                {"animationAttribute", AnimationAttribute, 3},
+                                {"animationAttributes", AnimationAttributes, 1},
+                                {"animationReset", AnimationReset, 1},
+                                {"animationDetach", AnimationDetach, 1},
+                                {"skinMesh", SkinMesh, 2},
                                 {"navigation", NavigationConfig, 1}};
     for (auto& b : bindings) {
         duk_push_c_function(context_, callNative, b.nargs);
@@ -428,19 +550,27 @@ void ScriptRuntime::execute(const std::string& source, const std::string& label)
 }
 void ScriptRuntime::initialize() {
     for (auto name : {"3c/locomotion.js", "3c/camera.js", "3c/controller.js", "gameplay/interactions.js",
-                      "levels/rain_court.js", "bootstrap.js"})
+                      "gameplay/companion.js", "levels/rain_court.js", "bootstrap.js"})
         evaluateFile(name);
     duk_get_global_string(context_, "initialize");
     checkedCall(0);
 }
-void ScriptRuntime::tick(float dt, const Input& input) {
+void ScriptRuntime::tick(float dt, const Input& rawInput) {
     if (std::this_thread::get_id() != owner_)
         throw std::runtime_error("JS accessed outside engine thread");
-    world_.hovered = world_.pick(input.mouseX, input.mouseY, input);
+    Input input = rawInput;
+    bool captured = hudEnabled_ && ui::animationInspectorInput(world_, input);
+    if (captured) {
+        input.left = input.right = input.middle = input.leftPressed = input.rightPressed = false;
+        input.deltaX = input.deltaY = input.wheel = 0;
+    }
+    world_.hovered = captured ? 0 : world_.pick(input.mouseX, input.mouseY, input);
     auto ground = world_.groundAt(input.mouseX, input.mouseY, input);
     duk_get_global_string(context_, "fixedUpdate");
     duk_push_number(context_, dt);
     duk_push_object(context_);
+    duk_push_boolean(context_, captured);
+    duk_put_prop_string(context_, -2, "pointerCaptured");
     for (auto pair : {std::pair<const char*, const std::array<bool, 256>*>{"keys", &input.keys},
                       {"pressed", &input.pressed}}) {
         duk_push_array(context_);
@@ -471,5 +601,6 @@ void ScriptRuntime::tick(float dt, const Input& input) {
         duk_put_prop_string(context_, -2, b.first);
     }
     checkedCall(2);
+    world_.updateAnimations(dt);
 }
 } // namespace afterlight

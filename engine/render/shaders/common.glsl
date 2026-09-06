@@ -17,6 +17,8 @@ struct Light {
 struct Vertex {
     vec4 position;
     vec4 normal;
+    vec4 color;
+    vec4 previousPosition;
 };
 // stats = finalized contribution weight W, represented sample count M, selected target p-hat, validity.
 struct DIReservoir {
@@ -183,7 +185,7 @@ bool traceSurface(vec3 origin, vec3 direction, out Surface hit, out float distan
         hit.n = -hit.n;
     hit.p = origin + direction * distance;
     Material m = materials[instance.info.x];
-    hit.albedo = m.colorRoughness.rgb;
+    hit.albedo = m.colorRoughness.rgb * (a.color.rgb*(1-uv.x-uv.y)+b.color.rgb*uv.x+c.color.rgb*uv.y);
     hit.roughness = m.colorRoughness.a;
     hit.metallic = m.emissionMetallic.a;
     hit.emission = m.emissionMetallic.rgb;

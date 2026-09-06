@@ -1,0 +1,18 @@
+{
+  "biped": {
+    "mesh": "models/biped.skin",
+    "animation": "animations/ai4animation/biped/controller.a4c",
+    "source": "external/AI4AnimationPy/Demos/_ASSETS_/Geno/Model.glb",
+    "vertices": 10780,
+    "triangles": 18660,
+    "license": "CC-BY-NC-4.0"
+  },
+  "dog": {
+    "mesh": "models/dog.skin",
+    "animation": "animations/ai4animation/quadruped/controller.a4c",
+    "source": "external/AI4AnimationPy/Demos/_ASSETS_/Quadruped/Dog.glb",
+    "vertices": 609,
+    "triangles": 722,
+    "license": "CC-BY-NC-4.0"
+  }
+}

@@ -121,6 +121,7 @@ void World::setVisible(uint32_t id, bool visible) {
 }
 void World::destroy(uint32_t id) {
     auto& o = mutableObject(id);
+    animations_.erase(id);
     physics_.destroy(o.physical);
     animationCollision_.remove(id);
     o.alive = o.enabled = false;
@@ -180,8 +181,12 @@ vec3 World::rootMotion(uint32_t id, vec3 localDelta, float deltaYaw) {
 }
 float World::setCharacterHeight(uint32_t id, float height) {
     auto& o = mutableObject(id);
+    float before = o.position.y;
     physics_.resizeCharacter(o.physical, height);
     o.position = physics_.body(o.physical).pose.position;
+    auto animation = animations_.find(id);
+    if (animation != animations_.end())
+        animation->second.rootOffset.y += before - o.position.y;
     syncPose(o);
     return physics_.body(o.physical).shape.height();
 }
@@ -199,6 +204,105 @@ void World::setAnimationJoints(uint32_t id, std::vector<PhysicsPose> joints) {
     auto& o = mutableObject(id);
     animationCollision_.update(id, {o.position, glm::angleAxis(o.yaw, vec3(0, 1, 0))}, joints);
     o.joints = std::move(joints);
+}
+void World::attachAnimation(uint32_t id, std::shared_ptr<const animation::Skeleton> skeleton,
+                            std::unique_ptr<animation::Solver> solver, bool applyRoot, vec3 offset) {
+    attachAnimationInstance(id, std::make_unique<animation::Instance>(std::move(skeleton), std::move(solver)),
+                            applyRoot, offset);
+}
+void World::attachAnimation(uint32_t id, const animation::Asset& asset, bool applyRoot, vec3 offset) {
+    attachAnimationInstance(id, std::make_unique<animation::Instance>(asset), applyRoot, offset);
+}
+void World::attachAnimationInstance(uint32_t id, std::unique_ptr<animation::Instance> instance,
+                                    bool applyRoot, vec3 offset) {
+    const auto& o = entity(id);
+    if (applyRoot)
+        (void)agent(id);
+    if (!o.joints.empty() && o.joints.size() != instance->skeleton().size())
+        throw std::invalid_argument("Detach animation before changing skeleton layout");
+    auto previous = animations_.find(id);
+    if (previous != animations_.end()) {
+        const auto& before = previous->second.instance->skeleton().joints();
+        const auto& after = instance->skeleton().joints();
+        if (before.size() != after.size())
+            throw std::invalid_argument("Detach animation before changing skeleton layout");
+        for (size_t i = 0; i < before.size(); ++i)
+            if (before[i].name != after[i].name || before[i].parent != after[i].parent)
+                throw std::invalid_argument("Detach animation before changing skeleton layout");
+    }
+    animations_[id] = {std::move(instance), {}, applyRoot, offset};
+}
+void World::setAnimationAttribute(uint32_t id, const std::string& key, const std::string& value) {
+    animations_.at(id).instance->setAttribute(key, value);
+}
+AnimationInspection World::inspectAnimation(uint32_t id) const {
+    auto found = animations_.find(id);
+    if (found == animations_.end() || !entity(id).enabled)
+        return {};
+    const auto& instance = *found->second.instance;
+    return {id, entity(id).name, instance.solverLabel(), instance.schema(), instance.attributes()};
+}
+void World::detachAnimation(uint32_t id) {
+    auto& o = mutableObject(id);
+    animations_.erase(id);
+    animationCollision_.remove(id);
+    o.joints.clear();
+}
+void World::setSkinnedMesh(uint32_t id, std::shared_ptr<const SkinnedMesh> mesh) {
+    entity(id);
+    auto& a = animations_.at(id);
+    const auto& joints = a.instance->skeleton().joints();
+    std::vector<unsigned> mapping;
+    for (const auto& binding : mesh->bindings) {
+        auto it = std::find_if(joints.begin(), joints.end(),
+                               [&](const animation::Joint& j) { return j.name == binding.joint; });
+        if (it == joints.end())
+            throw std::invalid_argument("Mesh binding absent from animation skeleton: " + binding.joint);
+        mapping.push_back(unsigned(it - joints.begin()));
+    }
+    a.mesh = std::move(mesh);
+    a.meshJoints = std::move(mapping);
+}
+void World::setAnimationInput(uint32_t id, animation::Input input) {
+    entity(id);
+    animations_.at(id).input = std::move(input);
+}
+void World::resetAnimation(uint32_t id) {
+    entity(id);
+    animations_.at(id).instance->reset();
+}
+void World::setAnimationSolver(uint32_t id, std::unique_ptr<animation::Solver> solver) {
+    entity(id);
+    animations_.at(id).instance->setSolver(std::move(solver));
+}
+const animation::Output& World::animationOutput(uint32_t id) const {
+    entity(id);
+    return animations_.at(id).instance->output();
+}
+void World::updateAnimations(float dt) {
+    for (auto& entry : animations_) {
+        auto& o = mutableObject(entry.first);
+        auto& a = entry.second;
+        if (!o.enabled)
+            continue;
+        animation::Transform objectRoot{o.position, glm::angleAxis(o.yaw, vec3(0, 1, 0))};
+        auto root = animation::compose(objectRoot, {a.rootOffset, quat(1, 0, 0, 0)});
+        const auto& output = a.instance->evaluate(dt, root, a.input);
+        if (a.applyRootMotion) {
+            auto forward = output.rootMotion.rotation * vec3(0, 0, 1);
+            float yaw = std::atan2(forward.x, forward.z);
+            // Offset origin must stay attached when root yaw changes.
+            vec3 delta =
+                output.rootMotion.position + a.rootOffset - output.rootMotion.rotation * a.rootOffset;
+            rootMotion(o.id, delta, yaw);
+        }
+        auto model = a.instance->skeleton().toModel(output.localPose);
+        std::vector<PhysicsPose> joints;
+        joints.reserve(model.size());
+        for (const auto& p : model)
+            joints.push_back({p.position + a.rootOffset, p.rotation});
+        setAnimationJoints(o.id, std::move(joints));
+    }
 }
 std::vector<vec3> World::findPath(uint32_t id, vec3 target) const {
     return Navigation::findPath(physics_, feet(id), target, agent(id), navigation);
@@ -229,6 +333,38 @@ uint32_t World::pick(float x, float y, const Input& input) const {
 }
 Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug, bool physicsDebug) {
     Frame f;
+    f.animationInspection = inspectAnimation(selected);
+    for (const auto& entry : animations_) {
+        const auto& o = entity(entry.first);
+        if (!o.enabled)
+            continue;
+        const auto& skeleton = entry.second.instance->skeleton();
+        auto model = skeleton.toModel(entry.second.instance->output().localPose);
+        animation::Transform root{o.position, glm::angleAxis(o.yaw, vec3(0, 1, 0))};
+        root = animation::compose(root, {entry.second.rootOffset, quat(1, 0, 0, 0)});
+        Frame::SkeletonPose pose;
+        pose.owner = o.id;
+        for (auto& p : model) {
+            p = animation::compose(root, p);
+            pose.jointWorld.push_back(glm::translate(mat4(1), p.position) * glm::mat4_cast(p.rotation));
+        }
+        const auto& a = entry.second;
+        if (a.mesh) {
+            Frame::Skin skin;
+            skin.slot = o.proxy;
+            skin.mesh = a.mesh;
+            for (size_t j = 0; j < a.meshJoints.size(); ++j)
+                skin.palette.push_back(pose.jointWorld[a.meshJoints[j]] * a.mesh->bindings[j].inverseBind);
+            f.skins.push_back(std::move(skin));
+        }
+        if (physicsDebug)
+            for (size_t j = 0; j < model.size(); ++j) {
+                int parent = skeleton.joints()[j].parent;
+                if (parent >= 0)
+                    f.physicsLines.push_back({model[parent].position, model[j].position, {.3f, 1, .5f}});
+            }
+        f.skeletons.push_back(std::move(pose));
+    }
     // The proxy array is already the authoritative render state; publishing it is a flat
     // copy of trivially copyable values, and the delta tells the renderer which of those
     // slots it actually has to touch.

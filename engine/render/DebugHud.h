@@ -1,6 +1,7 @@
 #pragma once
 #include "core/Types.h"
 #include "Renderer.h"
+#include "ui/AnimationInspector.h"
 #include <windows.h>
 #include <cstring>
 #include <algorithm>
@@ -76,6 +77,21 @@ class DebugHud {
         s.mix(uint64_t(f.physicsDebug));
         s.text(f.locomotion);
         s.text(f.message);
+        const auto& inspection = f.animationInspection;
+        s.mix(inspection.entity);
+        s.text(inspection.name);
+        s.text(inspection.solver);
+        s.mix(inspection.schema.size());
+        for (const auto& attribute : inspection.schema) {
+            s.text(attribute.key);
+            s.text(attribute.label);
+            s.text(inspection.values.at(attribute.key));
+            s.mix(attribute.options.size());
+            for (const auto& option : attribute.options) {
+                s.text(option.value);
+                s.text(option.label);
+            }
+        }
         if (f.hovered && f.hovered != f.selected)
             s.text(f.hoveredName);
         s.mix(uint64_t(int64_t(f.player.x * 5.2f)));
@@ -242,6 +258,35 @@ class DebugHud {
             text(w - 224, statsY + 109, 10, "F2  PHYSICS SCENE", mint);
             text(w - 224, statsY + 128, 9, "BLUE Ground  GOLD Solid  PINK Trigger", muted);
         }
+        const auto& inspection = f.animationInspection;
+        auto inspector = ui::animationInspectorLayout(inspection, w_, h_);
+        if (inspector.panel.width) {
+            const auto& r = inspector.panel;
+            rectangle(r.x, r.y, r.width, r.height, ink);
+            rectangle(r.x, r.y, 2, r.height, gold);
+            text(r.x + 12, r.y + 10, 12, "ANIMATION  /  " + inspection.name, mint, true);
+            text(r.x + 12, r.y + 32, 11, inspection.solver, muted);
+            if (!inspection.schema.empty())
+                text(r.x + 12, r.y + 48, 10, "Move to compare", muted);
+            for (const auto& control : inspector.controls) {
+                const auto& attribute = inspection.schema[control.attribute];
+                const auto& current = inspection.values.at(attribute.key);
+                auto found = std::find_if(attribute.options.begin(), attribute.options.end(),
+                                          [&](const animation::EnumOption& o) { return o.value == current; });
+                auto index = size_t(found - attribute.options.begin());
+                text(control.previous.x, control.previous.y - 20, 11,
+                     attribute.label + "  " + std::to_string(index + 1) + " / " +
+                         std::to_string(attribute.options.size()),
+                     gold);
+                for (const auto& button : {control.previous, control.value, control.next})
+                    rectangle(button.x, button.y, button.width, button.height, RGB(37, 68, 61));
+                text(control.previous.x + 9, control.previous.y + 4, 17, "<", mint, true);
+                text(control.next.x + 9, control.next.y + 4, 17, ">", mint, true);
+                text(control.value.x + 10, control.value.y + 6, 13, found->label, RGB(239, 240, 222));
+            }
+            if (inspection.schema.empty())
+                text(r.x + 12, r.y + 48, 10, "No editable attributes", muted);
+        }
         GdiFlush();
         // One 32-bit load and one 32-bit store per pixel. `output` is host-visible device
         // memory, which is write-combined on discrete GPUs: byte-sized stores there defeat
@@ -251,8 +296,8 @@ class DebugHud {
         for (size_t i = 0, n = size_t(w_) * h_; i < n; i++) {
             const uint32_t bgr = source[i] & 0x00ffffffu; // GDI DIB order is B, G, R, unused
             const uint32_t alpha = bgr ? 245u : 0u;
-            destination[i] = ((bgr & 0x00ff0000u) >> 16) | (bgr & 0x0000ff00u) |
-                             ((bgr & 0x000000ffu) << 16) | (alpha << 24);
+            destination[i] = ((bgr & 0x00ff0000u) >> 16) | (bgr & 0x0000ff00u) | ((bgr & 0x000000ffu) << 16) |
+                             (alpha << 24);
         }
         return true;
     }

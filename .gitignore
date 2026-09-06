@@ -4,3 +4,4 @@
 /captures/
 *.log
 .vs/
+__pycache__/

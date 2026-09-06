@@ -4,6 +4,8 @@ namespace afterlight {
 struct GpuVertex {
     vec4 position;
     vec4 normal;
+    vec4 color{1};
+    vec4 previousPosition{0};
 };
 struct MeshRange {
     uint32_t firstIndex = 0, indexCount = 0;
@@ -42,6 +44,8 @@ inline std::array<MeshRange, 2> buildPrimitives(std::vector<GpuVertex>& vertices
                 indices.push_back(i);
         }
     ranges[1].indexCount = uint32_t(indices.size()) - ranges[1].firstIndex;
+    for (auto& v : vertices)
+        v.previousPosition = v.position;
     return ranges;
 }
 } // namespace afterlight

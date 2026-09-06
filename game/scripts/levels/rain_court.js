@@ -3,9 +3,11 @@ var RainCourt = {
     build : function() {
         var collision = Engine.readJson('physics/profiles.json');
         var config = Engine.readJson('levels/rain_court.json');
-        Engine.navigation({min : {x : config.bounds.min[0], y : config.bounds.min[1], z : config.bounds.min[2]},
-                           max : {x : config.bounds.max[0], y : config.bounds.max[1], z : config.bounds.max[2]},
-                           cellSize : config.navigationCellSize});
+        Engine.navigation({
+            min : {x : config.bounds.min[0], y : config.bounds.min[1], z : config.bounds.min[2]},
+            max : {x : config.bounds.max[0], y : config.bounds.max[1], z : config.bounds.max[2]},
+            cellSize : config.navigationCellSize
+        });
         var definitions = Engine.readJson('materials/blockout.json'), m = {};
         for (var key in definitions) {
             var d = definitions[key], e = d.emission || [ 0, 0, 0 ];
@@ -60,8 +62,27 @@ var RainCourt = {
         Engine.setPlayer(player);
         Locomotion.init(player);
         CameraRig.init(config.camera);
-        Locomotion.marker = box('Heading marker', config.spawn[0], 1.36, config.spawn[2] + .42, .18, .14, .12,
-                                'brass', false);
+        var humanMaterial = Engine.material(.72, .79, .83, .65, 0, 0, 0, .12);
+        Engine.setMaterial(player, humanMaterial);
+        Engine.animation(player, 'animations/ai4animation/biped/controller.a4c',
+                         {rootMotion : false, rootOffset : {x : 0, y : -1, z : 0}});
+        Engine.skinMesh(player, 'models/biped.skin');
+        var dogMaterial = Engine.material(1, 1, 1, .8, 0, 0, 0, 0);
+        var dog = Engine.spawn('Ash', true, config.spawn[0] + 1.4, .35, config.spawn[2] - 1.5, 1, 1, 1,
+                               dogMaterial, false, false);
+        Engine.collider(dog, {
+            layer : 2,
+            blocking : true,
+            walkable : false,
+            pickable : false,
+            shape : 'capsule',
+            radius : .32,
+            height : .7
+        });
+        Engine.animation(dog, 'animations/ai4animation/quadruped/controller.a4c',
+                         {rootMotion : false, rootOffset : {x : 0, y : -.35, z : 0}});
+        Engine.skinMesh(dog, 'models/dog.skin');
+        Companion.init(dog, player);
         var power = true;
         Interactions.register(beacon, 'Power console', {x : -6, y : 0, z : -1.7}, function() {
             power = !power;
@@ -74,6 +95,6 @@ var RainCourt = {
         Interactions.register(cache, 'Supply cache', {x : 3, y : 0, z : 5.3}, function() {
             Engine.setMaterial(cache, m.cyan);
         });
-        Engine.log('Rain Court loaded: single-character 3C, PBR primitives, dynamic RT lights.');
+        Engine.log('Rain Court loaded: animated Kiln and following dog Ash, dynamic RT lights.');
     }
 };

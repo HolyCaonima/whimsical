@@ -27,7 +27,7 @@ var CameraRig = {
         var px = (input.keys[39] ? 1 : 0) - (input.keys[37] ? 1 : 0),
             pz = (input.keys[40] ? 1 : 0) - (input.keys[38] ? 1 : 0);
         // Edge pan is opt-in (hold Alt), avoiding accidental pan during character interactions.
-        if (input.keys[18] && input.focused) {
+        if (input.keys[18] && input.focused && !input.pointerCaptured) {
             px += (input.x > input.width - 15 ? 1 : 0) - (input.x < 15 ? 1 : 0);
             pz += (input.y > input.height - 15 ? 1 : 0) - (input.y < 15 ? 1 : 0);
         }

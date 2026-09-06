@@ -35,12 +35,12 @@ proxy 拆成两半，因为它们的变化频率相差一到两个数量级：`P
 - 单位米，Y 向上，角色 +Z 朝前；GLM 列主序矩阵，列向量。
 - Box 是中心原点的单位立方体；Capsule 半径 0.4 m，高 2 m，默认中心离地 1 m。
 - 材质 `color` 和 `emission` 使用线性空间；roughness 是线性 perceptual roughness，metallic ∈ [0,1]。
-- 基础模型 manifest 描述当前 C++ 生成器，尚未做通用模型 importer。动画 manifest 中的速度和状态机参数由 JS 读取。
+- 基础模型 manifest 描述 C++ 生成器；角色网格从 GLB 离线导出为带骨骼绑定的 `.skin`，运行时通过通用 `SkinnedMesh` 加载。动画 manifest 中的速度和状态机参数由 JS 读取。
 - material、camera/spawn、locomotion 和 physics profile JSON 在启动时读取；修改后重新运行即可。关卡边界与 navigationCellSize 已用于物理地面查询和导航网格配置。lighting 字段仍是记录用途，GPU 对应参数仍在 GLSL 中。
 
 ## JS 生命周期和绑定
 
-脚本以明确顺序载入：`3c/locomotion`、`3c/camera`、`3c/controller`、`gameplay/interactions`、`levels/rain_court`、`bootstrap`。`initialize()` 创建世界；`fixedUpdate(dt, input)` 执行控制、移动、镜头。脚本使用 ES5 语法，Duktape 2.7 不是 Node.js，没有 DOM / npm runtime。
+脚本以明确顺序载入：`3c/locomotion`、`3c/camera`、`3c/controller`、`gameplay/interactions`、`gameplay/companion`、`levels/rain_court`、`bootstrap`。`initialize()` 创建世界；`fixedUpdate(dt, input)` 执行控制、移动、同伴跟随、镜头，随后 World 更新动画。脚本使用 ES5 语法，Duktape 2.7 不是 Node.js，没有 DOM / npm runtime。
 
 | Binding | 作用 |
 | --- | --- |
@@ -56,12 +56,18 @@ proxy 拆成两半，因为它们的变化频率相差一到两个数量级：`P
 | `Engine.solid(id,bool)` / `setMaterial(id,index)` | 玩法引起的碰撞／外观变化 |
 | `Engine.lightIntensity(index,value)` | 动态灯强度 |
 | `Engine.readJson(path)` | 从 `game/assets` 内读取 JSON |
+| `Engine.animation(id,path,options)` / `animationInput(id,input)` | 绑定动画资源并提交动作意图 |
+| `Engine.skinMesh(id,path)` | 按骨骼名字将蒙皮网格绑定到已挂接动画的实体 |
+| `Engine.animationAttributes(id)` | 查询该角色资产声明的属性选项和实例当前值 |
+| `Engine.animationAttribute(id,key,value)` | 设置持续的表现属性，不覆盖每帧运动意图 |
 
 JS 接收输入副本，runtime 拒绝在非 owner 线程 tick。绑定检查实体／材质索引，脚本异常通过受保护调用转成引擎错误。
 
 ## 3C 与玩法扩展
 
-Controller 是单角色命令入口；它不包含关卡内容。Locomotion 先更新物理站姿，再处理命令、路径、速度、转角和表现。直接 WASD 覆盖点击命令；不可通行目标被拒绝；遇到动态阻挡时重新查询路径。Navigation 只查询 PhysicsScene，使用角色真实胶囊尺寸检查地面与净空，避免对角切角并验证平滑路径。实际位移使用连续扫掠和滑移，视觉 bob 独立于物理姿态。参见 [Physics Scene](physics-scene.md) 的所有权、动画接口和实现边界。
+动画底层通过独立 `afterlight_animation` 库提供统一 Asset/Instance/Solver 协议。World 在 gameplay tick 后求解，接受物理 root motion、将 FK 结果发布到关节碰撞体及不可变骨架快照。AI4Animation/ONNX 是一个具体后端；clip graph 和 motion matching 未来接入同级 Solver，无需修改上层输入/输出。详见 [Animation 架构、资产与接口](animation.md)。
+
+Controller 是单角色命令入口；它不包含关卡内容。Locomotion 先更新物理站姿，再处理命令、路径、速度、转角，并向动画系统提交实际速度和动作意图。直接 WASD 覆盖点击命令；不可通行目标被拒绝；遇到动态阻挡时重新查询路径。Navigation 只查询 PhysicsScene，使用角色真实胶囊尺寸检查地面与净空，避免对角切角并验证平滑路径。实际位移使用连续扫掠和滑移；Companion 复用这些入口跟随主角。参见 [Physics Scene](physics-scene.md) 的所有权、动画接口和实现边界。
 
 交互通过 `Interactions.register(id,name,approach,action)` 注册。控制器先寻路到 approach，再转向物体，最后执行 action；场景脚本只定义摆放和 action 内容。增加新关卡时保留 3C 和通用 interactions，添加独立 level script / data。未来支持多个可控角色时，把 Locomotion 实例化为每实体状态，并在 Controller 维护一个当前角色 ID；渲染线程和资产目录不需要改变。
 

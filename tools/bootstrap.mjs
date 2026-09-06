@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 const root = path.resolve(import.meta.dirname, '..');
 const deps = [
+  ['onnxruntime', 'https://github.com/microsoft/onnxruntime/releases/download/v1.20.1/onnxruntime-win-x64-1.20.1.zip', 'onnxruntime-win-x64-1.20.1'],
   ['cmake', 'https://github.com/Kitware/CMake/releases/download/v3.31.8/cmake-3.31.8-windows-x86_64.zip', 'cmake-3.31.8-windows-x86_64'],
   ['vulkan', 'https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.3.290.zip', 'Vulkan-Headers-1.3.290'],
   ['volk', 'https://github.com/zeux/volk/archive/refs/tags/vulkan-sdk-1.3.290.0.zip', 'volk-vulkan-sdk-1.3.290.0'],

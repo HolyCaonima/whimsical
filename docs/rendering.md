@@ -4,6 +4,8 @@
 
 `Globals` 和 GPU struct 有静态尺寸检查，GLSL 使用相同 std140/std430 布局。几何和材质只经过同一份数据源，raster 与 ray query 不维护两套不同场景。每个 TLAS instance 的 custom index 指向 GPU instance；instance 中保存绝对 index-buffer 起始偏移、material index、entity ID 和上次渲染的 model matrix。
 
+`GpuVertex` 包含位置、法线、线性顶点颜色和上一次实际渲染的位置，共 64 字节。蒙皮资源按骨骼名字绑定，World 只发布不可变 palette；渲染线程执行 CPU 蒙皮并上传变形顶点。蒙皮顶点已处于世界空间，对应 instance 的 model 为单位矩阵。G-buffer 与 ray query 都将插值后的顶点颜色乘以材质颜色，并访问同一份变形几何。重复呈现同一仿真快照时，上一位置收敛到当前位置，避免重复报告形变运动。
+
 | G-buffer | Vulkan 格式 | 含义 |
 | --- | --- | --- |
 | albedo | RGBA16F | RGB 线性 base color，A metallic |
@@ -36,7 +38,9 @@ Resize、首帧、大相机跳变、灯光／材质变化会清理历史。NRD �
 
 ## 同步与资源生命周期
 
-`RenderGraph` 是明确顺序的 pass graph，记录每 pass 的 debug marker 和 memory barrier。纹理 layout 由对应 pass 进行显式 transition；读写 reservoir 的 dispatch 之间有内存可见性边界。场景静态 BLAS 初始化完成后释放 scratch，TLAS 使用支持 update 的存储与对齐 scratch。TLAS 只在拓扑变化时重建：`SceneDelta::topology` 是单调计数，槽位数增长或某个槽位改绑到不同几何体时递增，其余情况一律走 `UPDATE` 增量 refit。存储与 scratch 按 64 的块增长，只在容量真正不够时重新分配，避免姿态变化引发显存反复分配。
+`RenderGraph` 是明确顺序的 pass graph，记录每 pass 的 debug marker 和 memory barrier。纹理 layout 由对应 pass 进行显式 transition；读写 reservoir 的 dispatch 之间有内存可见性边界。基础几何共享静态 BLAS，蒙皮角色各自持有支持 update 的 BLAS 和持续复用的对齐 scratch。每次新姿态先更新顶点、refit 动态 BLAS，经 barrier 后更新 TLAS，再进入光追查询。蒙皮绑定列表发生变化时重建几何和 BLAS，并清理历史。
+
+TLAS 只在拓扑变化时重建：`SceneDelta::topology` 是单调计数，槽位数增长或某个槽位改绑到不同几何体时递增；蒙皮资源重建也会使 TLAS 失效，其余情况走 `UPDATE`。TLAS 存储与 scratch 按 64 的块增长，只在容量真正不够时重新分配，避免姿态变化引发显存反复分配。
 
 GPU fence 完成后再更新 CPU-visible 常量／实例／灯光数据；NRD descriptor pool 每帧重置前也已完成同一 fence。历史 image 和 reservoir 在当前帧末尾保存。Resize 等待 device idle，再重建 swapchain、screen-size images、reservoir 和 NRD pool。关闭时先 idle，再按依赖关系析构。
 
