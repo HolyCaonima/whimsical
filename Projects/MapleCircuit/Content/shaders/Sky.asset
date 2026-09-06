@@ -1,0 +1,2 @@
+ALAS1
+{"id": "a1b61a89ab7856eb86cc44718ae9e78d", "name": "Sky", "version": 1, "type": "Shader", "storage": "external", "metadata": {"materialModel": "metallicRoughness", "properties": [{"name": "baseColor", "type": "vec3", "default": [1, 1, 1]}, {"name": "roughness", "type": "float", "default": 0.75}, {"name": "emission", "type": "vec3", "default": [0, 0, 0]}, {"name": "metallic", "type": "float", "default": 0}], "textures": [], "renderState": {"surface": "opaque", "cull": "none", "alphaCutoff": 0.5}}, "source": "Sky.glsl"}

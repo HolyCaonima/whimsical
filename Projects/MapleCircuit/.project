@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "id": "57232cf18cab5824a48af9ae7d71ad44",
+  "name": "Maple Circuit",
+  "startupMap": "/Game/Maps/MapleCircuit",
+  "scripts": [
+    "/Game/scripts/track",
+    "/Game/scripts/vehicle",
+    "/Game/scripts/race",
+    "/Game/scripts/hud",
+    "/Game/scripts/main"
+  ]
+}

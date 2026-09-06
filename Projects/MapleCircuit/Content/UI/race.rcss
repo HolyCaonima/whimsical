@@ -1,0 +1,47 @@
+body { width: 100%; height: 100%; font-family: LatoLatin; color: #f5f4e8; font-size: 12px; pointer-events: none; }
+.panel { background-color: #142a32ed; border-radius: 12px; }
+#brand { position: absolute; left: 28px; top: 27px; }
+.eyebrow { color: #f2cd73; font-size: 10px; font-weight: bold; letter-spacing: 2px; }
+.title { font-size: 31px; font-weight: bold; margin-top: 5px; }
+#timing { position: absolute; top: 20px; left: 50%; margin-left: -145px; width: 266px; padding: 13px 14px; }
+.stat { display: inline-block; vertical-align: top; width: 71px; }
+.stat.clock { width: 117px; }
+.label { font-size: 9px; font-weight: bold; letter-spacing: 2px; color: #b7cbcf; margin-bottom: 3px; }
+.number { font-size: 31px; font-weight: bold; }
+.unit { font-size: 10px; font-weight: bold; color: #b7cbcf; }
+#lap-time { font-size: 21px; font-weight: bold; }
+.best { font-size: 8px; color: #9cb5b8; margin-top: 2px; }
+#best-time { color: #d9e2d8; margin-left: 8px; }
+button { pointer-events: auto; font-family: LatoLatin; font-weight: bold; text-align: center; background-color: #f2c65d; color: #3c3525; border-radius: 8px; padding: 13px 17px; }
+button:hover { background-color: #ffe397; }
+button:active { background-color: #d5a545; }
+#restart { position: absolute; right: 28px; top: 23px; width: 115px; }
+#countdown { position: absolute; top: 23%; left: 0; width: 100%; text-align: center; font-size: 58px; font-weight: bold; color: #ffd879; }
+#lap-message { position: absolute; top: 34%; left: 0; width: 100%; text-align: center; font-size: 19px; color: #fff2c5; font-weight: bold; }
+#minimap { position: absolute; bottom: 24px; left: 28px; padding: 10px 6px 10px 6px; width: 180px; }
+#map { position: relative; width: 180px; height: 200px; }
+#map img { position: absolute; left: 0; top: 0; }
+.dot { position: absolute; width: 6px; height: 6px; margin-left: -3px; margin-top: -3px; border-radius: 3px; background-color: #f0d178; }
+.player { width: 8px; height: 8px; margin-left: -4px; margin-top: -4px; border-radius: 4px; background-color: #8bddff; border: 1px #f1ffff; z-index: 2; }
+.red { background-color: #fa9990; }.gold { background-color: #efd076; }.mint { background-color: #9ce4bf; }
+.map-caption { font-size: 8px; color: #b2c7c8; padding: 4px 9px 0px 9px; }
+.you { color: #8bddff; font-weight: bold; }.circuit-label { float: right; font-size: 7px; letter-spacing: 1px; }
+#speed-panel { position: absolute; right: 28px; bottom: 24px; width: 129px; padding: 16px 19px; border-bottom: 2px #8dd8e5; }
+#speed { font-size: 51px; font-weight: bold; }
+#speed-track { margin-top: 8px; height: 3px; width: 129px; background-color: #3b555c; }
+#speed-fill { height: 3px; width: 0px; background-color: #8dd8e5; }
+#grip.drift { color: #f3ce6e; }
+#controls { position: absolute; bottom: 30px; left: 50%; margin-left: -273px; width: 528px; padding: 10px 9px; text-align: center; font-size: 9px; font-weight: bold; background-color: #122731d9; border-radius: 7px; }
+#controls span { color: #9aafb4; font-size: 8px; }
+#watch { position: absolute; bottom: 78px; left: 50%; margin-left: -60px; width: 120px; padding: 7px 0; background-color: #172d36bd; color: #cbdcda; font-size: 9px; }
+#watch:hover { background-color: #456069; }
+#overlay { display: none; position: absolute; left: 0; top: 0; width: 100%; height: 100%; background-color: #13262a70; pointer-events: auto; }
+#result-card { position: absolute; top: 50%; left: 50%; margin-left: -200px; margin-top: -182px; width: 344px; padding: 28px; }
+#result-title { font-size: 37px; font-weight: bold; margin-top: 8px; }
+#result-description { color: #b8ccca; margin-top: 10px; font-size: 13px; }
+#standings { margin-top: 18px; margin-bottom: 20px; }
+.standing { padding: 8px 0px; border-bottom: 1px #354d50; color: #b9cbc9; }
+.standing.you { color: #9be5fa; }.finish-time { float: right; }
+#continue { width: 310px; }
+@media (max-width: 1000px) { #brand { left: 18px; }.title { font-size: 23px; }.eyebrow { font-size: 8px; } #controls { width: 380px; margin-left: -199px; font-size: 8px; } #controls span { font-size: 7px; } #minimap { left: 14px; } #speed-panel { right: 14px; } }
+@media (max-width: 760px) { #timing { left: 18px; margin-left: 0; top: 85px; } #minimap { bottom: 66px; } #speed-panel { bottom: 66px; } #controls { bottom: 12px; } #watch { bottom: 50px; } }

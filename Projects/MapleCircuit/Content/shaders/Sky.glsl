@@ -1,0 +1,12 @@
+SurfaceData s = DefaultSurface(ctx);
+vec3 d = -normalize(ctx.viewDirection);
+float elevation = max(d.y, 0.0);
+vec3 blue = mix(vec3(0.30, 0.46, 0.92), vec3(0.08, 0.23, 0.72), pow(elevation, 0.55));
+vec2 p = d.xz / max(elevation + 0.16, 0.16);
+float n = sin(p.x * 3.1 + sin(p.y * 1.9)) * 0.5 + sin(p.y * 4.3 - p.x * 1.2) * 0.26;
+n += sin(p.x * 7.2 + p.y * 6.1) * 0.12;
+float cloud = smoothstep(0.24, 0.64, n) * smoothstep(0.025, 0.16, elevation) * 0.70;
+s.albedo = vec3(0.0);
+s.emission = mix(blue, vec3(1.15, 1.19, 1.20), cloud);
+s.roughness = 1.0;
+return s;

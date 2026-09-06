@@ -1,0 +1,27 @@
+<rml>
+<head><title>Maple Circuit</title><link type="text/rcss" href="race.rcss"/></head>
+<body>
+    <div id="brand"><div class="eyebrow">NEIGHBORHOOD GRAND PRIX</div><div class="title">Maple Circuit</div></div>
+    <div id="timing" class="panel">
+        <div class="stat"><div class="label">POSITION</div><span id="position" class="number">2</span><span class="unit"> / 4</span></div>
+        <div class="stat"><div class="label">LAP</div><span id="lap" class="number">1</span><span class="unit"> / 3</span></div>
+        <div class="stat clock"><div class="label">LAP TIME</div><div id="lap-time">0:00.00</div><div class="best">BEST <span id="best-time">--</span></div></div>
+    </div>
+    <button id="restart">RESTART RACE</button>
+    <div id="countdown">3</div><div id="lap-message"></div>
+    <div id="minimap" class="panel">
+        <div id="map"><img src="circuit.png" width="180" height="200"/>
+            <div id="dot0" class="dot player"></div><div id="dot1" class="dot red"></div>
+            <div id="dot2" class="dot gold"></div><div id="dot3" class="dot mint"></div>
+        </div>
+        <div class="map-caption"><span class="you">YOU</span><span class="circuit-label">MAPLE CIRCUIT</span></div>
+    </div>
+    <div id="speed-panel" class="panel"><div id="grip" class="label">GRIP</div>
+        <span id="speed">0</span><span class="unit"> KM/H</span><div id="speed-track"><div id="speed-fill"></div></div>
+    </div>
+    <div id="controls">W / S <span>DRIVE</span>　 A / D <span>STEER</span>　 SPACE <span>DRIFT</span>　 R <span>RECOVER</span>　 ESC <span>PAUSE</span></div>
+    <button id="watch">WATCH AI · V</button>
+    <div id="overlay"><div id="result-card" class="panel"><div id="result-eyebrow" class="eyebrow">CHECKERED FLAG</div>
+        <div id="result-title">Race complete</div><div id="result-description"></div><div id="standings"></div>
+        <button id="continue">RACE AGAIN</button></div></div>
+</body></rml>
