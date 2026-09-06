@@ -8,10 +8,9 @@ struct Instance {
     uvec4 info;
 };
 struct Material {
-    vec4 colorRoughness;
-    vec4 emissionMetallic;
-    ivec4 textures;
-    vec4 surface;
+    uvec4 info; // renderer-owned Shader table index
+    vec4 properties[8];
+    ivec4 textures[2];
 };
 struct Light {
     vec4 positionRadius;
@@ -59,22 +58,10 @@ layout(set = 0, binding = 3, std430) readonly buffer Lights {
     Light lights[];
 };
 layout(set = 0, binding = 29) uniform sampler2D materialTextures[64];
-vec4 sampleMaterialTexture(int index, vec2 uv, float lod) {
-    if (index < 0) return vec4(1);
-#ifdef FRAGMENT_PASS
-    return textureGrad(materialTextures[nonuniformEXT(index)],uv,dFdx(uv),dFdy(uv));
-#else
-    return textureLod(materialTextures[nonuniformEXT(index)],uv,lod);
+#ifdef SURFACE_PASS
+#include "surface.glsl"
+#include "surface_link.glsl"
 #endif
-}
-vec3 materialNormal(Material m, vec2 uv, vec3 n, vec4 tangent, float lod) {
-    if (m.textures.y < 0) return n;
-    vec3 t=normalize(tangent.xyz - n*dot(n,tangent.xyz));
-    vec3 b=cross(n,t)*tangent.w;
-    vec3 v=sampleMaterialTexture(m.textures.y,uv,lod).xyz*2-1;
-    v.xy*=m.surface.z;
-    return normalize(mat3(t,b,n)*v);
-}
 #ifdef COMPUTE_PASS
 layout(set = 0, binding = 4, std430) readonly buffer Vertices {
     Vertex vertices[];
@@ -174,52 +161,90 @@ Surface surfaceAt(ivec2 pixel) {
     s.emission = imageLoad(gEmission, pixel).rgb;
     return s;
 }
+#ifdef SURFACE_PASS
+MaterialContext rayMaterialContext(uint instanceIndex, uint primitive, vec2 bary,
+                                   float distance, bool frontFacing, vec3 origin, vec3 direction) {
+    Instance instance = instances[instanceIndex];
+    uint first = instance.info.y + primitive * 3;
+    Vertex a = vertices[indices[first]], b = vertices[indices[first+1]], c = vertices[indices[first+2]];
+    vec3 w = vec3(1-bary.x-bary.y, bary);
+    MaterialContext ctx;
+    ctx.material = instance.info.x;
+    ctx.position = origin + direction * distance;
+    ctx.normal = normalize(transpose(inverse(mat3(instance.model))) *
+                           (a.normal.xyz*w.x + b.normal.xyz*w.y + c.normal.xyz*w.z));
+    ctx.frontFacing = frontFacing;
+    if (!ctx.frontFacing) ctx.normal = -ctx.normal;
+    ctx.tangent = a.tangent*w.x + b.tangent*w.y + c.tangent*w.z;
+    ctx.tangent.xyz = mat3(instance.model) * ctx.tangent.xyz;
+    ctx.vertexColor = a.color.rgb*w.x + b.color.rgb*w.y + c.color.rgb*w.z;
+    ctx.uv = a.uv.xy*w.x + b.uv.xy*w.y + c.uv.xy*w.z;
+    ctx.viewDirection = -direction;
+    // Explicit secondary-ray sampling policy. Surface math is identical; derivatives
+    // are unavailable in ray queries, so textures use LOD 2 and a world-space cone.
+    ctx.textureLod = 2;
+    ctx.footprint = max(.001, distance / g.resolution.y);
+    return ctx;
+}
 bool visible(vec3 p, vec3 n, vec3 target) {
-    vec3 delta = target - p;
+    vec3 delta = target-p;
     float distance = length(delta);
-    if (distance < .03)
-        return true;
+    if (distance < .03) return true;
+    vec3 origin = p+n*.012, direction = delta/distance;
     rayQueryEXT query;
-    rayQueryInitializeEXT(query, scene, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT, 0xff,
-                          p + n * .012, .001, delta / distance, max(.002, distance - .025));
+    rayQueryInitializeEXT(query, scene, gl_RayFlagsTerminateOnFirstHitEXT, 0xff,
+                          origin, .001, direction, max(.002,distance-.025));
     while (rayQueryProceedEXT(query)) {
+        if (rayQueryGetIntersectionTypeEXT(query, false) == gl_RayQueryCandidateIntersectionTriangleEXT) {
+            MaterialContext ctx = rayMaterialContext(
+                rayQueryGetIntersectionInstanceCustomIndexEXT(query,false),
+                rayQueryGetIntersectionPrimitiveIndexEXT(query,false),
+                rayQueryGetIntersectionBarycentricsEXT(query,false),
+                rayQueryGetIntersectionTEXT(query,false),
+                rayQueryGetIntersectionFrontFaceEXT(query,false), origin, direction);
+            if (AcceptSurface(ctx, EvaluateSurface(ctx)))
+                rayQueryConfirmIntersectionEXT(query);
+        }
     }
-    return rayQueryGetIntersectionTypeEXT(query, true) == gl_RayQueryCommittedIntersectionNoneEXT;
+    return rayQueryGetIntersectionTypeEXT(query,true) == gl_RayQueryCommittedIntersectionNoneEXT;
 }
 bool traceSurface(vec3 origin, vec3 direction, out Surface hit, out float distance) {
     rayQueryEXT query;
-    rayQueryInitializeEXT(query, scene, gl_RayFlagsOpaqueEXT, 0xff, origin, .002, direction, 150.0);
+    rayQueryInitializeEXT(query, scene, 0, 0xff, origin, .002, direction, 150.0);
     while (rayQueryProceedEXT(query)) {
+        if (rayQueryGetIntersectionTypeEXT(query,false) == gl_RayQueryCandidateIntersectionTriangleEXT) {
+            MaterialContext ctx = rayMaterialContext(
+                rayQueryGetIntersectionInstanceCustomIndexEXT(query,false),
+                rayQueryGetIntersectionPrimitiveIndexEXT(query,false),
+                rayQueryGetIntersectionBarycentricsEXT(query,false),
+                rayQueryGetIntersectionTEXT(query,false),
+                rayQueryGetIntersectionFrontFaceEXT(query,false), origin, direction);
+            if (AcceptSurface(ctx, EvaluateSurface(ctx)))
+                rayQueryConfirmIntersectionEXT(query);
+        }
     }
-    if (rayQueryGetIntersectionTypeEXT(query, true) == gl_RayQueryCommittedIntersectionNoneEXT) {
+    if (rayQueryGetIntersectionTypeEXT(query,true) == gl_RayQueryCommittedIntersectionNoneEXT) {
         distance = 150;
         return false;
     }
-    distance = rayQueryGetIntersectionTEXT(query, true);
-    uint instanceIndex = rayQueryGetIntersectionInstanceCustomIndexEXT(query, true),
-         primitive = rayQueryGetIntersectionPrimitiveIndexEXT(query, true);
-    Instance instance = instances[instanceIndex];
-    uint first = instance.info.y + primitive * 3;
-    Vertex a = vertices[indices[first]], b = vertices[indices[first + 1]], c = vertices[indices[first + 2]];
-    vec2 uv = rayQueryGetIntersectionBarycentricsEXT(query, true);
-    vec3 normal = a.normal.xyz * (1 - uv.x - uv.y) + b.normal.xyz * uv.x + c.normal.xyz * uv.y;
-    hit.n = safeNormalize(transpose(inverse(mat3(instance.model))) * normal);
-    if (dot(hit.n, direction) > 0)
-        hit.n = -hit.n;
-    hit.p = origin + direction * distance;
-    Material m = materials[instance.info.x];
-    vec2 texcoord = (a.uv.xy*(1-uv.x-uv.y)+b.uv.xy*uv.x+c.uv.xy*uv.y)*m.surface.xy;
-    vec4 tangent = a.tangent*(1-uv.x-uv.y)+b.tangent*uv.x+c.tangent*uv.y;
-    tangent.xyz=mat3(instance.model)*tangent.xyz;
-    hit.n=materialNormal(m,texcoord,hit.n,tangent,2);
-    vec3 orm=sampleMaterialTexture(m.textures.z,texcoord,2).rgb;
-    hit.albedo = m.colorRoughness.rgb * (a.color.rgb*(1-uv.x-uv.y)+b.color.rgb*uv.x+c.color.rgb*uv.y) * sampleMaterialTexture(m.textures.x,texcoord,2).rgb;
-    hit.roughness = m.colorRoughness.a*orm.g;
-    hit.metallic = m.emissionMetallic.a*orm.b;
-    hit.emission = m.emissionMetallic.rgb;
-    hit.id = instance.info.z;
+    distance = rayQueryGetIntersectionTEXT(query,true);
+    MaterialContext ctx = rayMaterialContext(
+                rayQueryGetIntersectionInstanceCustomIndexEXT(query,true),
+                rayQueryGetIntersectionPrimitiveIndexEXT(query,true),
+                rayQueryGetIntersectionBarycentricsEXT(query,true),
+                rayQueryGetIntersectionTEXT(query,true),
+                rayQueryGetIntersectionFrontFaceEXT(query,true), origin, direction);
+    SurfaceData surface = EvaluateSurface(ctx);
+    hit.p = ctx.position;
+    hit.n = normalize(surface.normal);
+    hit.albedo = surface.albedo;
+    hit.roughness = max(surface.roughness,.08);
+    hit.metallic = surface.metallic;
+    hit.emission = surface.emission;
+    hit.id = instances[rayQueryGetIntersectionInstanceCustomIndexEXT(query,true)].info.z;
     return true;
 }
+#endif
 float smithG1(float cosTheta, float a) {
     return 2 * cosTheta / max(cosTheta + sqrt(a * a + (1 - a * a) * cosTheta * cosTheta), 1e-6);
 }
@@ -301,6 +326,7 @@ void giFinalize(inout GIReservoir r) {
     r.stats.x = r.stats.z > 0 ? r.stats.x / max(r.stats.y * r.stats.z, 1e-12) : 0;
     r.stats.y = min(r.stats.y, 16);
 }
+#ifdef SURFACE_PASS
 vec3 secondaryLighting(Surface s) {
     vec4 l = lightSample();
     vec3 direction = safeNormalize(l.xyz - s.p);
@@ -312,6 +338,7 @@ vec3 secondaryLighting(Surface s) {
         result = vec3(0);
     return result * s.albedo * (1 - s.metallic) + s.emission;
 }
+#endif
 // Isotropic GGX visible-normal sampling in the stretched view hemisphere.
 vec3 sampleSpecular(Surface s, vec3 viewDirection, out float pdf) {
     mat3 frame = basis(s.n);

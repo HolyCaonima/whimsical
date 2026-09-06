@@ -1,5 +1,7 @@
 # RT 渲染接入约定
 
+Shader → Material 的资产、共享表面契约、source linking 与容量约定见 [Shader / Material](shader-materials.md)。
+
 ## 每帧数据
 
 `Globals` 和 GPU struct 有静态尺寸检查，GLSL 使用相同 std140/std430 布局。几何和材质只经过同一份数据源，raster 与 ray query 不维护两套不同场景。每个 TLAS instance 的 custom index 指向 GPU instance；instance 中保存绝对 index-buffer 起始偏移、material index、entity ID 和上次渲染的 model matrix。

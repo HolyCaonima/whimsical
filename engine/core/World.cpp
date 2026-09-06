@@ -23,7 +23,6 @@ void World::clearScene() {
     // identities cannot alias the next Map, and delta revisions remain monotonic.
     materials.clear();
     materialAssets.clear();
-    textures.clear();
     lights.clear();
     animations_.clear();
     camera = {};
@@ -422,7 +421,6 @@ Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug,
     for (const auto& object : objects_)
         if (object.alive && object.staticMesh)
             f.staticMeshes.push_back({object.proxy, object.staticMesh});
-    f.textures = textures;
     f.animationInspection = inspectAnimation(selected);
     for (const auto& entry : animations_) {
         const auto& o = entity(entry.first);

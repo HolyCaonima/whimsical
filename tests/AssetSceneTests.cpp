@@ -359,13 +359,17 @@ static void staticAssets(const fs::path& directory) {
     auto texHeader = header("Texture");
     texHeader.metadata = {{"colorSpace", "sRGB"}};
     auto texRef = assets.save(AssetPath("/Game/Weave"), texHeader, texture);
-    Json material{{"albedoRoughness", Json::array({1, 1, 1, .8})},
-                  {"emissionMetallic", Json::array({0, 0, 0, 0})},
-                  {"surface", Json::array({2, 2, .5, 0})},
-                  {"baseColor", texRef.json()}};
+    auto standard = testAssets().load<ShaderAsset>(AssetPath("/Game/shaders/Standard"));
+    auto shaderHeader = header("Shader");
+    shaderHeader.metadata = standard->header().metadata;
+    auto shaderRef = assets.save(AssetPath("/Game/TestShader"), shaderHeader, standard->source);
+    Json material{{"shader", shaderRef.json()},
+                  {"properties", {{"baseColor", Json::array({1,1,1})}, {"roughness", .8},
+                                  {"uvScale", Json::array({2,2})}, {"normalStrength", .5}}},
+                  {"textures", {{"baseColor", texRef.json()}}}};
     auto matRef = assets.save(AssetPath("/Game/Linen"), header("Material"), material.dump());
     SceneDocument scene;
-    scene.materials.resize(2);
+    scene.materials.resize(2, MaterialDefinition::fromJson(material));
     scene.materialAssets = {{0, matRef}, {1, matRef}};
     for (int i = 0; i < 2; ++i) {
         SceneObject o;
@@ -383,7 +387,8 @@ static void staticAssets(const fs::path& directory) {
     auto before = world.snapshot({}, 0, 0, 0);
     check(before.staticMeshes.size() == 2 && before.staticMeshes[0].mesh == before.staticMeshes[1].mesh,
           "Instances must share immutable static geometry");
-    check(before.textures.size() == 1 && before.materials[0].textures.x == before.materials[1].textures.x,
+    check(before.materials[0].textures[0] == before.materials[1].textures[0] &&
+              before.materials[0].shader == before.materials[1].shader,
           "Repeated material references must share one texture binding");
     auto saved = ScenePersistence::capture(world, assets).json();
     check(saved.at("objects").at(0).at("render").at("mesh").at("id").string() == meshRef.id,
@@ -401,7 +406,7 @@ static void staticAssets(const fs::path& directory) {
           "Visibility toggles must retain static geometry bindings");
     world.clearScene();
     auto empty = world.snapshot({}, 2, 0, 0);
-    check(empty.staticMeshes.empty() && empty.textures.empty() &&
+    check(empty.staticMeshes.empty() && empty.materials.empty() &&
               before.staticMeshes[0].mesh->indices.size() == 3,
           "Unload releases bindings while previous immutable frames retain their assets");
 }
@@ -410,7 +415,7 @@ static void gardenNavigation() {
     World world;
     ScenePersistence::load(world, assets, AssetPath("/Game/Maps/HoneybudCourt"));
     auto frame = world.snapshot({}, 0, 0, 0);
-    check(frame.staticMeshes.size() > 400 && frame.textures.size() == 24,
+    check(frame.staticMeshes.size() > 400 && !frame.materials.empty(),
           "Garden must instantiate the authored kit and texture channels");
     auto path = world.findPath(world.playerId, vec3(-3.5f, 0, -2));
     check(path.size() > 1, "Garden player must find a route around the fountain to the pergola");

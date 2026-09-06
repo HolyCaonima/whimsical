@@ -12,22 +12,14 @@ void registerEngineAssets(AssetManager& manager) {
     manager.registerLoader("Texture", [](AssetManager&, const AssetHeader& h, const std::string& bytes) {
         return TextureAsset::decode(bytes, h.metadata);
     });
-    manager.registerLoader(
-        "Material", [](AssetManager& manager, const AssetHeader&, const std::string& bytes) {
-            auto data = Json::parse(bytes);
-            auto asset = std::make_shared<MaterialAsset>();
-            auto read4 = [](const Json& j) {
-                return vec4(j.at(0).number(), j.at(1).number(), j.at(2).number(), j.at(3).number());
-            };
-            asset->parameters.albedoRoughness = read4(data.at("albedoRoughness"));
-            asset->parameters.emissionMetallic = read4(data.at("emissionMetallic"));
-            asset->parameters.surface = read4(data.at("surface"));
-            const char* channels[] = {"baseColor", "normal", "orm"};
-            for (int i = 0; i < 3; ++i)
-                if (data.contains(channels[i]))
-                    asset->textures[i] = manager.load<TextureAsset>(AssetRef::fromJson(data.at(channels[i])));
-            return asset;
-        });
+    manager.registerLoader("Shader", [](AssetManager&, const AssetHeader& h, const std::string& bytes) {
+        return ShaderAsset::decode(h.metadata, bytes);
+    });
+    manager.registerLoader("Material", [](AssetManager& manager, const AssetHeader&, const std::string& bytes) {
+        auto asset = std::make_shared<MaterialAsset>();
+        asset->parameters = MaterialDefinition::fromJson(Json::parse(bytes)).resolve(manager);
+        return asset;
+    });
     namespace ai = animation::ai4animation;
     manager.registerLoader("OnnxModel", [](AssetManager&, const AssetHeader&, const std::string& bytes) {
         return std::make_shared<ai::OnnxModel>(bytes);

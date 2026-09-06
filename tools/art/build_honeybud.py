@@ -138,7 +138,7 @@ def mat(name, color, rough=.65, metal=0, texture=None, uv=1, emission=None):
     bs=m.node_tree.nodes.get('Principled BSDF')
     bs.inputs['Base Color'].default_value=(*color,1)
     bs.inputs['Roughness'].default_value=rough; bs.inputs['Metallic'].default_value=metal
-    data={'albedoRoughness':[*color,rough],'emissionMetallic':[*(emission or [0,0,0]),metal],'surface':[uv,uv,.5,0]}
+    data={'shader':asset_reference(CONTENT/'shaders/Standard.asset'),'properties':{'baseColor':list(color),'roughness':rough,'emission':emission or [0,0,0],'metallic':metal,'uvScale':[uv,uv],'normalStrength':.5},'textures':{}}
     if emission:
         bs.inputs['Emission Color'].default_value=(*emission,1); bs.inputs['Emission Strength'].default_value=1
     if texture:
@@ -146,7 +146,7 @@ def mat(name, color, rough=.65, metal=0, texture=None, uv=1, emission=None):
         coord=nodes.new('ShaderNodeTexCoord'); mapping=nodes.new('ShaderNodeVectorMath'); mapping.operation='SCALE'
         mapping.inputs[3].default_value=uv; links.new(coord.outputs['UV'],mapping.inputs[0])
         for channel,(image,ref) in TEX[texture].items():
-            data[channel]=ref
+            data['textures'][channel]=ref
             node=nodes.new('ShaderNodeTexImage'); node.image=image; links.new(mapping.outputs[0],node.inputs[0])
             if channel=='baseColor':
                 mult=nodes.new('ShaderNodeMixRGB'); mult.blend_type='MULTIPLY'; mult.inputs[0].default_value=1; mult.inputs[2].default_value=(*color,1)

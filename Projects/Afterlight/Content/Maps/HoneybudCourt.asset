@@ -1,7 +1,7 @@
 ALAS1
 {"id": "d3ba56b8cba6483c84816c14b8f4d738", "name": "HoneybudCourt", "type": "Map", "version": 1, "storage": "embedded", "metadata": {"authoring": "Blender MCP", "description": "Original warm miniature garden kit; see SourceArt/Honeybud."}}
 {
-  "version": 1,
+  "version": 3,
   "objects": [
     {
       "id": "c340fc9867bb56cea7a666833827350e",
@@ -11,7 +11,7 @@ ALAS1
         0,
         0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -65,7 +65,7 @@ ALAS1
         0,
         0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -119,7 +119,7 @@ ALAS1
         0,
         -5.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -173,7 +173,7 @@ ALAS1
         0,
         -5.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -227,7 +227,7 @@ ALAS1
         0,
         -5.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -281,7 +281,7 @@ ALAS1
         0,
         -5.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -335,7 +335,7 @@ ALAS1
         0,
         -5.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -389,7 +389,7 @@ ALAS1
         0,
         -5.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -443,7 +443,7 @@ ALAS1
         0,
         -5.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -497,7 +497,7 @@ ALAS1
         0,
         -5.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -551,7 +551,7 @@ ALAS1
         0,
         -5.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -605,7 +605,7 @@ ALAS1
         0,
         -5.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -659,7 +659,7 @@ ALAS1
         0,
         -5.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -713,7 +713,7 @@ ALAS1
         0,
         -5.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -767,7 +767,7 @@ ALAS1
         0,
         -5.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -821,7 +821,7 @@ ALAS1
         0,
         -5.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -875,7 +875,7 @@ ALAS1
         0,
         0.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -929,7 +929,7 @@ ALAS1
         0,
         0.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -983,7 +983,7 @@ ALAS1
         0,
         0.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1037,7 +1037,7 @@ ALAS1
         0,
         0.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1091,7 +1091,7 @@ ALAS1
         0,
         0.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1145,7 +1145,7 @@ ALAS1
         0,
         0.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1199,7 +1199,7 @@ ALAS1
         0,
         0.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1253,7 +1253,7 @@ ALAS1
         0,
         -3.0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1307,7 +1307,7 @@ ALAS1
         0,
         -3.0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1361,7 +1361,7 @@ ALAS1
         0,
         -3.0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1415,7 +1415,7 @@ ALAS1
         0,
         -3.0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1469,7 +1469,7 @@ ALAS1
         0,
         -3.35
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1523,7 +1523,7 @@ ALAS1
         0,
         -3.35
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1577,7 +1577,7 @@ ALAS1
         0,
         -3.35
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1631,7 +1631,7 @@ ALAS1
         0,
         -3.35
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1685,7 +1685,7 @@ ALAS1
         0,
         -3.35
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1739,7 +1739,7 @@ ALAS1
         0,
         -3.35
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1793,7 +1793,7 @@ ALAS1
         0,
         -3.35
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1847,7 +1847,7 @@ ALAS1
         0,
         -3.35
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1901,7 +1901,7 @@ ALAS1
         0,
         -3.35
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1955,7 +1955,7 @@ ALAS1
         0,
         -1.6
       ],
-      "yaw": -0.28,
+      "rotation": [0, -0.1395431146442365, 0, 0.9902159962126371],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2009,7 +2009,7 @@ ALAS1
         0,
         -1.6
       ],
-      "yaw": -0.28,
+      "rotation": [0, -0.1395431146442365, 0, 0.9902159962126371],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2063,7 +2063,7 @@ ALAS1
         0,
         -1.6
       ],
-      "yaw": -0.28,
+      "rotation": [0, -0.1395431146442365, 0, 0.9902159962126371],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2117,7 +2117,7 @@ ALAS1
         0,
         -1.6
       ],
-      "yaw": -0.28,
+      "rotation": [0, -0.1395431146442365, 0, 0.9902159962126371],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2171,7 +2171,7 @@ ALAS1
         0,
         -1.6
       ],
-      "yaw": -0.28,
+      "rotation": [0, -0.1395431146442365, 0, 0.9902159962126371],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2225,7 +2225,7 @@ ALAS1
         0,
         -1.6
       ],
-      "yaw": -0.28,
+      "rotation": [0, -0.1395431146442365, 0, 0.9902159962126371],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2279,7 +2279,7 @@ ALAS1
         0,
         -1.6
       ],
-      "yaw": -0.28,
+      "rotation": [0, -0.1395431146442365, 0, 0.9902159962126371],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2333,7 +2333,7 @@ ALAS1
         0,
         -1.6
       ],
-      "yaw": -0.28,
+      "rotation": [0, -0.1395431146442365, 0, 0.9902159962126371],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2387,7 +2387,7 @@ ALAS1
         0,
         -1.6
       ],
-      "yaw": -0.28,
+      "rotation": [0, -0.1395431146442365, 0, 0.9902159962126371],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2441,7 +2441,7 @@ ALAS1
         0,
         0.25
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2495,7 +2495,7 @@ ALAS1
         0,
         0.25
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2549,7 +2549,7 @@ ALAS1
         0.93,
         0.4
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2603,7 +2603,7 @@ ALAS1
         0.93,
         0.4
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2657,7 +2657,7 @@ ALAS1
         0.93,
         0.4
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2711,7 +2711,7 @@ ALAS1
         0.93,
         0.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2765,7 +2765,7 @@ ALAS1
         0.93,
         0.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2819,7 +2819,7 @@ ALAS1
         0.93,
         0.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2873,7 +2873,7 @@ ALAS1
         0.93,
         0.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2927,7 +2927,7 @@ ALAS1
         0.93,
         0.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2981,7 +2981,7 @@ ALAS1
         0.93,
         0.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -3035,7 +3035,7 @@ ALAS1
         0.93,
         0.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -3089,7 +3089,7 @@ ALAS1
         0,
         -1.5
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -3143,7 +3143,7 @@ ALAS1
         0,
         -1.5
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -3197,7 +3197,7 @@ ALAS1
         0,
         -1.5
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -3251,7 +3251,7 @@ ALAS1
         0,
         -1.5
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -3305,7 +3305,7 @@ ALAS1
         0,
         -1.5
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -3359,7 +3359,7 @@ ALAS1
         0,
         -1.5
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -3413,7 +3413,7 @@ ALAS1
         0,
         -1.5
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -3467,7 +3467,7 @@ ALAS1
         0,
         -1.4
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -3521,7 +3521,7 @@ ALAS1
         0,
         -1.4
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -3575,7 +3575,7 @@ ALAS1
         0,
         -1.4
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -3629,7 +3629,7 @@ ALAS1
         0,
         -1.4
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -3683,7 +3683,7 @@ ALAS1
         0,
         -1.4
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -3737,7 +3737,7 @@ ALAS1
         0,
         -1.4
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -3791,7 +3791,7 @@ ALAS1
         0,
         -1.4
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -3845,7 +3845,7 @@ ALAS1
         0,
         0.5
       ],
-      "yaw": -0.3,
+      "rotation": [0, -0.14943813247359922, 0, 0.9887710779360422],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -3899,7 +3899,7 @@ ALAS1
         0,
         0.5
       ],
-      "yaw": -0.3,
+      "rotation": [0, -0.14943813247359922, 0, 0.9887710779360422],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -3953,7 +3953,7 @@ ALAS1
         0,
         0.5
       ],
-      "yaw": -0.3,
+      "rotation": [0, -0.14943813247359922, 0, 0.9887710779360422],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -4007,7 +4007,7 @@ ALAS1
         0,
         0.5
       ],
-      "yaw": -0.3,
+      "rotation": [0, -0.14943813247359922, 0, 0.9887710779360422],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -4061,7 +4061,7 @@ ALAS1
         0,
         0.5
       ],
-      "yaw": -0.3,
+      "rotation": [0, -0.14943813247359922, 0, 0.9887710779360422],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -4115,7 +4115,7 @@ ALAS1
         0,
         0.5
       ],
-      "yaw": -0.3,
+      "rotation": [0, -0.14943813247359922, 0, 0.9887710779360422],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -4169,7 +4169,7 @@ ALAS1
         0,
         3.55
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -4223,7 +4223,7 @@ ALAS1
         0,
         3.55
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -4277,7 +4277,7 @@ ALAS1
         0,
         3.55
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -4331,7 +4331,7 @@ ALAS1
         0.51,
         3.9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -4385,7 +4385,7 @@ ALAS1
         0.51,
         3.9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -4439,7 +4439,7 @@ ALAS1
         0.51,
         3.9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -4493,7 +4493,7 @@ ALAS1
         0.51,
         3.1999999999999997
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -4547,7 +4547,7 @@ ALAS1
         0.51,
         3.1999999999999997
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -4601,7 +4601,7 @@ ALAS1
         0.51,
         3.1999999999999997
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -4655,7 +4655,7 @@ ALAS1
         0.51,
         3.9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -4709,7 +4709,7 @@ ALAS1
         0.51,
         3.9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -4763,7 +4763,7 @@ ALAS1
         0.51,
         3.9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -4817,7 +4817,7 @@ ALAS1
         0.51,
         3.1999999999999997
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -4871,7 +4871,7 @@ ALAS1
         0.51,
         3.1999999999999997
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -4925,7 +4925,7 @@ ALAS1
         0.51,
         3.1999999999999997
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -4979,7 +4979,7 @@ ALAS1
         0.51,
         3.9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -5033,7 +5033,7 @@ ALAS1
         0.51,
         3.9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -5087,7 +5087,7 @@ ALAS1
         0.51,
         3.9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -5141,7 +5141,7 @@ ALAS1
         0.51,
         3.1999999999999997
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -5195,7 +5195,7 @@ ALAS1
         0.51,
         3.1999999999999997
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -5249,7 +5249,7 @@ ALAS1
         0.51,
         3.1999999999999997
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -5303,7 +5303,7 @@ ALAS1
         0,
         3.55
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -5357,7 +5357,7 @@ ALAS1
         0,
         3.55
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -5411,7 +5411,7 @@ ALAS1
         0,
         3.55
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -5465,7 +5465,7 @@ ALAS1
         0.51,
         3.9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -5519,7 +5519,7 @@ ALAS1
         0.51,
         3.9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -5573,7 +5573,7 @@ ALAS1
         0.51,
         3.9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -5627,7 +5627,7 @@ ALAS1
         0.51,
         3.1999999999999997
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -5681,7 +5681,7 @@ ALAS1
         0.51,
         3.1999999999999997
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -5735,7 +5735,7 @@ ALAS1
         0.51,
         3.1999999999999997
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -5789,7 +5789,7 @@ ALAS1
         0.51,
         3.9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -5843,7 +5843,7 @@ ALAS1
         0.51,
         3.9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -5897,7 +5897,7 @@ ALAS1
         0.51,
         3.9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -5951,7 +5951,7 @@ ALAS1
         0.51,
         3.1999999999999997
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -6005,7 +6005,7 @@ ALAS1
         0.51,
         3.1999999999999997
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -6059,7 +6059,7 @@ ALAS1
         0.51,
         3.1999999999999997
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -6113,7 +6113,7 @@ ALAS1
         0.51,
         3.9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -6167,7 +6167,7 @@ ALAS1
         0.51,
         3.9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -6221,7 +6221,7 @@ ALAS1
         0.51,
         3.9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -6275,7 +6275,7 @@ ALAS1
         0.51,
         3.1999999999999997
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -6329,7 +6329,7 @@ ALAS1
         0.51,
         3.1999999999999997
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -6383,7 +6383,7 @@ ALAS1
         0.51,
         3.1999999999999997
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -6437,7 +6437,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -6491,7 +6491,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -6545,7 +6545,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -6599,7 +6599,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -6653,7 +6653,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -6707,7 +6707,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -6761,7 +6761,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -6815,7 +6815,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -6869,7 +6869,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -6923,7 +6923,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -6977,7 +6977,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -7031,7 +7031,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -7085,7 +7085,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -7139,7 +7139,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -7193,7 +7193,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -7247,7 +7247,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -7301,7 +7301,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -7355,7 +7355,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -7409,7 +7409,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -7463,7 +7463,7 @@ ALAS1
         0,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -7517,7 +7517,7 @@ ALAS1
         0,
         6
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -7571,7 +7571,7 @@ ALAS1
         0,
         6
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -7625,7 +7625,7 @@ ALAS1
         0,
         6
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -7679,7 +7679,7 @@ ALAS1
         0,
         6
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -7733,7 +7733,7 @@ ALAS1
         0,
         4
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -7787,7 +7787,7 @@ ALAS1
         0,
         4
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -7841,7 +7841,7 @@ ALAS1
         0,
         4
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -7895,7 +7895,7 @@ ALAS1
         0,
         4
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -7949,7 +7949,7 @@ ALAS1
         0,
         2
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -8003,7 +8003,7 @@ ALAS1
         0,
         2
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -8057,7 +8057,7 @@ ALAS1
         0,
         2
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -8111,7 +8111,7 @@ ALAS1
         0,
         2
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -8165,7 +8165,7 @@ ALAS1
         0,
         0
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -8219,7 +8219,7 @@ ALAS1
         0,
         0
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -8273,7 +8273,7 @@ ALAS1
         0,
         0
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -8327,7 +8327,7 @@ ALAS1
         0,
         0
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -8381,7 +8381,7 @@ ALAS1
         0,
         -2
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -8435,7 +8435,7 @@ ALAS1
         0,
         -2
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -8489,7 +8489,7 @@ ALAS1
         0,
         -2
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -8543,7 +8543,7 @@ ALAS1
         0,
         -2
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -8597,7 +8597,7 @@ ALAS1
         0,
         -4
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -8651,7 +8651,7 @@ ALAS1
         0,
         -4
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -8705,7 +8705,7 @@ ALAS1
         0,
         -4
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -8759,7 +8759,7 @@ ALAS1
         0,
         -4
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -8813,7 +8813,7 @@ ALAS1
         0,
         -6
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -8867,7 +8867,7 @@ ALAS1
         0,
         -6
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -8921,7 +8921,7 @@ ALAS1
         0,
         -6
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -8975,7 +8975,7 @@ ALAS1
         0,
         -6
       ],
-      "yaw": 1.5707963267948966,
+      "rotation": [0, 0.7071067811865476, 0, 0.7071067811865476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -9029,7 +9029,7 @@ ALAS1
         0,
         8.0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -9083,7 +9083,7 @@ ALAS1
         0,
         8.0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -9137,7 +9137,7 @@ ALAS1
         0,
         8.0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -9191,7 +9191,7 @@ ALAS1
         0,
         8.0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -9245,7 +9245,7 @@ ALAS1
         0,
         8.0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -9299,7 +9299,7 @@ ALAS1
         0,
         8.0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -9353,7 +9353,7 @@ ALAS1
         0,
         8.0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -9407,7 +9407,7 @@ ALAS1
         0,
         8.0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -9461,7 +9461,7 @@ ALAS1
         0,
         8.0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -9515,7 +9515,7 @@ ALAS1
         0,
         8.0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -9569,7 +9569,7 @@ ALAS1
         0,
         8.0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -9623,7 +9623,7 @@ ALAS1
         0,
         8.0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -9677,7 +9677,7 @@ ALAS1
         0,
         7.5
       ],
-      "yaw": 2.0460136817639336,
+      "rotation": [0, 0.8536778457258759, 0, 0.5208014359780775],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -9731,7 +9731,7 @@ ALAS1
         0,
         7.5
       ],
-      "yaw": 1.853449046584207,
+      "rotation": [0, 0.7996574529159048, 0, 0.6004564580350914],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -9785,7 +9785,7 @@ ALAS1
         0,
         7.5
       ],
-      "yaw": 2.5036508657282694,
+      "rotation": [0, 0.9495586377337549, 0, 0.31358953028635317],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -9839,7 +9839,7 @@ ALAS1
         0,
         6.8
       ],
-      "yaw": 1.8931138958870297,
+      "rotation": [0, 0.8114079222329752, 0, 0.5844802680480892],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -9893,7 +9893,7 @@ ALAS1
         0,
         6.8
       ],
-      "yaw": 1.584055866057674,
+      "rotation": [0, 0.711779161934269, 0, 0.7024033204905495],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -9947,7 +9947,7 @@ ALAS1
         0,
         6.8
       ],
-      "yaw": 2.0488498014998893,
+      "rotation": [0, 0.8544155147663098, 0, 0.5195903464524931],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -10001,7 +10001,7 @@ ALAS1
         0,
         6.1
       ],
-      "yaw": 0.845773568569215,
+      "rotation": [0, 0.410394641162391, 0, 0.9119080208580207],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -10055,7 +10055,7 @@ ALAS1
         0,
         6.1
       ],
-      "yaw": 2.2083946114010145,
+      "rotation": [0, 0.8931033857017239, 0, 0.4498514670956601],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -10109,7 +10109,7 @@ ALAS1
         0,
         6.1
       ],
-      "yaw": 2.8788481906096526,
+      "rotation": [0, 0.9913830721529985, 0, 0.130994672595807],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -10163,7 +10163,7 @@ ALAS1
         0,
         5.3999999999999995
       ],
-      "yaw": 2.5150878142456286,
+      "rotation": [0, 0.9513363559255528, 0, 0.30815440593035515],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -10217,7 +10217,7 @@ ALAS1
         0,
         5.3999999999999995
       ],
-      "yaw": 0.22545789652322878,
+      "rotation": [0, 0.11249034346818017, 0, 0.993652817953238],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -10271,7 +10271,7 @@ ALAS1
         0,
         5.3999999999999995
       ],
-      "yaw": 1.083321190958414,
+      "rotation": [0, 0.5155595892725376, 0, 0.8568537272540351],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -10325,7 +10325,7 @@ ALAS1
         0,
         4.699999999999999
       ],
-      "yaw": 2.4806593936933057,
+      "rotation": [0, 0.945891032355018, 0, 0.32448444478951255],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -10379,7 +10379,7 @@ ALAS1
         0,
         4.699999999999999
       ],
-      "yaw": 1.9175731995370038,
+      "rotation": [0, 0.8184950561236656, 0, 0.5745135708589637],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -10433,7 +10433,7 @@ ALAS1
         0,
         4.699999999999999
       ],
-      "yaw": 0.10216978506206076,
+      "rotation": [0, 0.05106267634345977, 0, 0.9986954506177762],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -10487,7 +10487,7 @@ ALAS1
         0,
         3.999999999999999
       ],
-      "yaw": 0.6397314482598784,
+      "rotation": [0, 0.3144390983690262, 0, 0.949277648223571],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -10541,7 +10541,7 @@ ALAS1
         0,
         3.999999999999999
       ],
-      "yaw": 0.026352122595425187,
+      "rotation": [0, 0.013175680054781785, 0, 0.9999131969601631],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -10595,7 +10595,7 @@ ALAS1
         0,
         3.999999999999999
       ],
-      "yaw": 2.730669454356231,
+      "rotation": [0, 0.9789669136935216, 0, 0.2040190723765331],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -10649,7 +10649,7 @@ ALAS1
         0,
         3.299999999999999
       ],
-      "yaw": 1.7402002265645546,
+      "rotation": [0, 0.7643934888972329, 0, 0.6447500245300622],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -10703,7 +10703,7 @@ ALAS1
         0,
         3.299999999999999
       ],
-      "yaw": 1.0556190206297051,
+      "rotation": [0, 0.5036421598920912, 0, 0.8639123652195454],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -10757,7 +10757,7 @@ ALAS1
         0,
         3.299999999999999
       ],
-      "yaw": 2.5817458485447053,
+      "rotation": [0, 0.9610766036369714, 0, 0.27628203333120244],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -10811,7 +10811,7 @@ ALAS1
         0,
         2.5999999999999988
       ],
-      "yaw": 2.689605517882999,
+      "rotation": [0, 0.9745719546489521, 0, 0.22407477593812491],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -10865,7 +10865,7 @@ ALAS1
         0,
         2.5999999999999988
       ],
-      "yaw": 2.1566984946630394,
+      "rotation": [0, 0.8811785590230704, 0, 0.47278361553466014],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -10919,7 +10919,7 @@ ALAS1
         0,
         2.5999999999999988
       ],
-      "yaw": 1.532048970075527,
+      "rotation": [0, 0.6932756804329658, 0, 0.7206724851971305],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -10973,7 +10973,7 @@ ALAS1
         0,
         1.8999999999999986
       ],
-      "yaw": 1.874778718696597,
+      "rotation": [0, 0.8060156256278761, 0, 0.5918942568091902],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -11027,7 +11027,7 @@ ALAS1
         0,
         1.8999999999999986
       ],
-      "yaw": 2.15127846308644,
+      "rotation": [0, 0.8798940737613625, 0, 0.47516988431468793],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -11081,7 +11081,7 @@ ALAS1
         0,
         1.1999999999999984
       ],
-      "yaw": 0.6390975698766423,
+      "rotation": [0, 0.3141382192908396, 0, 0.9493772586178691],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -11135,7 +11135,7 @@ ALAS1
         0,
         0.4999999999999982
       ],
-      "yaw": 0.14485898849564816,
+      "rotation": [0, 0.07236618295371262, 0, 0.9973781306829972],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -11189,7 +11189,7 @@ ALAS1
         0,
         -0.20000000000000195
       ],
-      "yaw": 1.6702989857360482,
+      "rotation": [0, 0.7413968397205731, 0, 0.6710668566188818],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -11243,7 +11243,7 @@ ALAS1
         0,
         -0.9000000000000021
       ],
-      "yaw": 1.9457100534246887,
+      "rotation": [0, 0.8264962945151358, 0, 0.5629421596867212],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -11297,7 +11297,7 @@ ALAS1
         0,
         -0.9000000000000021
       ],
-      "yaw": 1.9492330431236424,
+      "rotation": [0, 0.8274866314646563, 0, 0.5614854181074306],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -11351,7 +11351,7 @@ ALAS1
         0,
         -1.6000000000000014
       ],
-      "yaw": 0.0883584491433449,
+      "rotation": [0, 0.04416485444377767, 0, 0.9990242567785629],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -11405,7 +11405,7 @@ ALAS1
         0,
         -1.6000000000000014
       ],
-      "yaw": 0.19251652608203562,
+      "rotation": [0, 0.09610968261190683, 0, 0.9953707494739026],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -11459,7 +11459,7 @@ ALAS1
         0,
         -1.6000000000000014
       ],
-      "yaw": 1.5172483397515815,
+      "rotation": [0, 0.6879235421739425, 0, 0.7257831632952476],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -11513,7 +11513,7 @@ ALAS1
         0,
         -2.3000000000000025
       ],
-      "yaw": 1.5912853022337639,
+      "rotation": [0, 0.7143134962780979, 0, 0.6998258562206456],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -11567,7 +11567,7 @@ ALAS1
         0,
         -2.3000000000000025
       ],
-      "yaw": 1.7295967157142664,
+      "rotation": [0, 0.7609644549764794, 0, 0.6487935713787165],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -11621,7 +11621,7 @@ ALAS1
         0,
         -2.3000000000000025
       ],
-      "yaw": 0.8826869160588039,
+      "rotation": [0, 0.4271545762022884, 0, 0.9041786151139848],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -11675,7 +11675,7 @@ ALAS1
         0,
         -3.0000000000000036
       ],
-      "yaw": 2.0836390293957887,
+      "rotation": [0, 0.8633238743816511, 0, 0.5046502629769007],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -11729,7 +11729,7 @@ ALAS1
         0,
         -3.0000000000000036
       ],
-      "yaw": 1.561586012108806,
+      "rotation": [0, 0.7038429567494788, 0, 0.710355609701332],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -11783,7 +11783,7 @@ ALAS1
         0,
         -3.0000000000000036
       ],
-      "yaw": 0.025453411579406837,
+      "rotation": [0, 0.012726362237098608, 0, 0.9999190165729474],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -11837,7 +11837,7 @@ ALAS1
         0,
         0.9127047691139712
       ],
-      "yaw": 1.6902029701283032,
+      "rotation": [0, 0.748038467134908, 0, 0.6636553711727625],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -11891,7 +11891,7 @@ ALAS1
         0,
         0.9699986524620062
       ],
-      "yaw": 0.16198267543814404,
+      "rotation": [0, 0.08090282166911376, 0, 0.9967219940615214],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -11945,7 +11945,7 @@ ALAS1
         0,
         0.9116877217821941
       ],
-      "yaw": 2.2619252839309327,
+      "rotation": [0, 0.9048224909013732, 0, 0.4257889852486021],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -11999,7 +11999,7 @@ ALAS1
         0,
         0.7774253754950722
       ],
-      "yaw": 1.2040052588218453,
+      "rotation": [0, 0.5662941814106677, 0, 0.8242031910278083],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -12053,7 +12053,7 @@ ALAS1
         0,
         0.6585145348219369
       ],
-      "yaw": 0.9491120442926403,
+      "rotation": [0, 0.4569435758436488, 0, 0.8894956821116219],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -12107,7 +12107,7 @@ ALAS1
         0,
         0.6358185796944914
       ],
-      "yaw": 0.5832996835804112,
+      "rotation": [0, 0.2875327860009112, 0, 0.9577707956366983],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -12161,7 +12161,7 @@ ALAS1
         0,
         0.7247715246398749
       ],
-      "yaw": 2.9004130954415785,
+      "rotation": [0, 0.9927378594342318, 0, 0.12029772419268556],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -12215,7 +12215,7 @@ ALAS1
         0,
         0.8648823686488961
       ],
-      "yaw": 0.13967112192418263,
+      "rotation": [0, 0.06977881006589134, 0, 0.9975624881007646],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -12269,7 +12269,7 @@ ALAS1
         0,
         0.679049530025556
       ],
-      "yaw": 2.464346123510499,
+      "rotation": [0, 0.9432128952738307, 0, 0.3321888531982337],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -12323,7 +12323,7 @@ ALAS1
         0,
         0.809923604382688
       ],
-      "yaw": 2.1136677512396154,
+      "rotation": [0, 0.8708032827219157, 0, 0.49163161289804735],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -12377,7 +12377,7 @@ ALAS1
         0,
         0.9340492932524527
       ],
-      "yaw": 2.6924584187053986,
+      "rotation": [0, 0.9748905945866079, 0, 0.22268436987487508],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -12431,7 +12431,7 @@ ALAS1
         0,
         0.9670169441461367
       ],
-      "yaw": 2.1037351749178486,
+      "rotation": [0, 0.8683509697679078, 0, 0.49595019236122295],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -12485,7 +12485,7 @@ ALAS1
         0,
         0.8864074431748747
       ],
-      "yaw": 1.0408232678889615,
+      "rotation": [0, 0.4972373195693685, 0, 0.8676145734296248],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -12539,7 +12539,7 @@ ALAS1
         0,
         0.7470379682027267
       ],
-      "yaw": 1.6499265718403349,
+      "rotation": [0, 0.7345228691569201, 0, 0.6785839334124306],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -12593,7 +12593,7 @@ ALAS1
         0,
         0.6436844601090755
       ],
-      "yaw": 2.7648601814748477,
+      "rotation": [0, 0.9823114752578362, 0, 0.18725428052990759],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -12647,7 +12647,7 @@ ALAS1
         0,
         0.6466307882614296
       ],
-      "yaw": 0.12267223401395277,
+      "rotation": [0, 0.061297665276275407, 0, 0.9981195300321889],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -12701,7 +12701,7 @@ ALAS1
         0,
         -3.4
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -12755,7 +12755,7 @@ ALAS1
         0,
         -3.4
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -12809,7 +12809,7 @@ ALAS1
         0,
         -3.4
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -12863,7 +12863,7 @@ ALAS1
         0,
         -3.4
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -12917,7 +12917,7 @@ ALAS1
         0,
         -3.3
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -12971,7 +12971,7 @@ ALAS1
         0,
         -3.3
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -13025,7 +13025,7 @@ ALAS1
         0,
         -3.3
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -13079,7 +13079,7 @@ ALAS1
         0,
         -3.3
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -13133,7 +13133,7 @@ ALAS1
         0,
         -1.5
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -13187,7 +13187,7 @@ ALAS1
         0,
         -1.5
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -13241,7 +13241,7 @@ ALAS1
         0,
         -1.5
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -13295,7 +13295,7 @@ ALAS1
         0,
         -1.5
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -13349,7 +13349,7 @@ ALAS1
         0,
         -1.8
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -13403,7 +13403,7 @@ ALAS1
         0,
         -1.8
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -13457,7 +13457,7 @@ ALAS1
         0,
         -1.8
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -13511,7 +13511,7 @@ ALAS1
         0,
         -1.8
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -13565,7 +13565,7 @@ ALAS1
         0,
         3
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -13619,7 +13619,7 @@ ALAS1
         0,
         3
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -13673,7 +13673,7 @@ ALAS1
         0,
         3
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -13727,7 +13727,7 @@ ALAS1
         0,
         3
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -13781,7 +13781,7 @@ ALAS1
         0,
         3.2
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -13835,7 +13835,7 @@ ALAS1
         0,
         3.2
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -13889,7 +13889,7 @@ ALAS1
         0,
         3.2
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -13943,7 +13943,7 @@ ALAS1
         0,
         3.2
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -13997,7 +13997,7 @@ ALAS1
         0,
         -5.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -14051,7 +14051,7 @@ ALAS1
         0,
         -5.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -14105,7 +14105,7 @@ ALAS1
         0,
         -5.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -14159,7 +14159,7 @@ ALAS1
         0,
         -5.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -14213,7 +14213,7 @@ ALAS1
         0,
         -5.2
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -14267,7 +14267,7 @@ ALAS1
         0,
         -5.2
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -14321,7 +14321,7 @@ ALAS1
         0,
         -5.2
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -14375,7 +14375,7 @@ ALAS1
         0,
         -5.2
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -14429,7 +14429,7 @@ ALAS1
         0,
         -6.5
       ],
-      "yaw": 3.3997983796472555,
+      "rotation": [0, 0.9916777942496493, 0, -0.1287445237365467],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -14483,7 +14483,7 @@ ALAS1
         0,
         -6.5
       ],
-      "yaw": 3.3997983796472555,
+      "rotation": [0, 0.9916777942496493, 0, -0.1287445237365467],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -14537,7 +14537,7 @@ ALAS1
         0,
         -6.5
       ],
-      "yaw": 3.3997983796472555,
+      "rotation": [0, 0.9916777942496493, 0, -0.1287445237365467],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -14591,7 +14591,7 @@ ALAS1
         0,
         -6.744435060766132
       ],
-      "yaw": 3.838233635033493,
+      "rotation": [0, 0.9399472877575693, 0, -0.3413196393956685],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -14645,7 +14645,7 @@ ALAS1
         0,
         -6.744435060766132
       ],
-      "yaw": 3.838233635033493,
+      "rotation": [0, 0.9399472877575693, 0, -0.3413196393956685],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -14699,7 +14699,7 @@ ALAS1
         0,
         -6.744435060766132
       ],
-      "yaw": 3.838233635033493,
+      "rotation": [0, 0.9399472877575693, 0, -0.3413196393956685],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -14753,7 +14753,7 @@ ALAS1
         0,
         -5.927791941615369
       ],
-      "yaw": 3.5504929556847413,
+      "rotation": [0, 0.9791727677018626, 0, -0.20302879350248418],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -14807,7 +14807,7 @@ ALAS1
         0,
         -5.927791941615369
       ],
-      "yaw": 3.5504929556847413,
+      "rotation": [0, 0.9791727677018626, 0, -0.20302879350248418],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -14861,7 +14861,7 @@ ALAS1
         0,
         -5.927791941615369
       ],
-      "yaw": 3.5504929556847413,
+      "rotation": [0, 0.9791727677018626, 0, -0.20302879350248418],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -14915,7 +14915,7 @@ ALAS1
         0,
         -6.727213984864661
       ],
-      "yaw": 2.142166836500798,
+      "rotation": [0, 0.8777201646983279, 0, 0.47917357239516056],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -14969,7 +14969,7 @@ ALAS1
         0,
         -6.727213984864661
       ],
-      "yaw": 2.142166836500798,
+      "rotation": [0, 0.8777201646983279, 0, 0.47917357239516056],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -15023,7 +15023,7 @@ ALAS1
         0,
         -6.727213984864661
       ],
-      "yaw": 2.142166836500798,
+      "rotation": [0, 0.8777201646983279, 0, 0.47917357239516056],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -15077,7 +15077,7 @@ ALAS1
         0,
         -6.2
       ],
-      "yaw": 2.545267488364782,
+      "rotation": [0, 0.9558778701295723, 0, 0.29376435691988334],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -15131,7 +15131,7 @@ ALAS1
         0,
         -6.2
       ],
-      "yaw": 2.545267488364782,
+      "rotation": [0, 0.9558778701295723, 0, 0.29376435691988334],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -15185,7 +15185,7 @@ ALAS1
         0,
         -6.2
       ],
-      "yaw": 2.545267488364782,
+      "rotation": [0, 0.9558778701295723, 0, 0.29376435691988334],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -15239,7 +15239,7 @@ ALAS1
         0,
         -6.0866952074124105
       ],
-      "yaw": 0.4105895570960365,
+      "rotation": [0, 0.20385575723161398, 0, 0.9790009347510988],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -15293,7 +15293,7 @@ ALAS1
         0,
         -6.0866952074124105
       ],
-      "yaw": 0.4105895570960365,
+      "rotation": [0, 0.20385575723161398, 0, 0.9790009347510988],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -15347,7 +15347,7 @@ ALAS1
         0,
         -6.0866952074124105
       ],
-      "yaw": 0.4105895570960365,
+      "rotation": [0, 0.20385575723161398, 0, 0.9790009347510988],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -15401,7 +15401,7 @@ ALAS1
         0,
         -5.766450483008766
       ],
-      "yaw": 4.771614502710162,
+      "rotation": [0, 0.6858604433337101, 0, -0.7277330913666676],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -15455,7 +15455,7 @@ ALAS1
         0,
         -5.766450483008766
       ],
-      "yaw": 4.771614502710162,
+      "rotation": [0, 0.6858604433337101, 0, -0.7277330913666676],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -15509,7 +15509,7 @@ ALAS1
         0,
         -5.766450483008766
       ],
-      "yaw": 4.771614502710162,
+      "rotation": [0, 0.6858604433337101, 0, -0.7277330913666676],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -15563,7 +15563,7 @@ ALAS1
         0,
         -5.63700440742923
       ],
-      "yaw": 0.8609665576727803,
+      "rotation": [0, 0.4173100376400875, 0, 0.9087641786980981],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -15617,7 +15617,7 @@ ALAS1
         0,
         -5.63700440742923
       ],
-      "yaw": 0.8609665576727803,
+      "rotation": [0, 0.4173100376400875, 0, 0.9087641786980981],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -15671,7 +15671,7 @@ ALAS1
         0,
         -5.63700440742923
       ],
-      "yaw": 0.8609665576727803,
+      "rotation": [0, 0.4173100376400875, 0, 0.9087641786980981],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -15725,7 +15725,7 @@ ALAS1
         0,
         -6.6
       ],
-      "yaw": 2.93108437401371,
+      "rotation": [0, 0.9944658949614515, 0, 0.10505990557067577],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -15779,7 +15779,7 @@ ALAS1
         0,
         -6.6
       ],
-      "yaw": 2.93108437401371,
+      "rotation": [0, 0.9944658949614515, 0, 0.10505990557067577],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -15833,7 +15833,7 @@ ALAS1
         0,
         -6.6
       ],
-      "yaw": 2.93108437401371,
+      "rotation": [0, 0.9944658949614515, 0, 0.10505990557067577],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -15887,7 +15887,7 @@ ALAS1
         0,
         -6.488568356179189
       ],
-      "yaw": 5.6312273818736855,
+      "rotation": [0, 0.32023634737039125, 0, -0.9473376809896618],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -15941,7 +15941,7 @@ ALAS1
         0,
         -6.488568356179189
       ],
-      "yaw": 5.6312273818736855,
+      "rotation": [0, 0.32023634737039125, 0, -0.9473376809896618],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -15995,7 +15995,7 @@ ALAS1
         0,
         -6.488568356179189
       ],
-      "yaw": 5.6312273818736855,
+      "rotation": [0, 0.32023634737039125, 0, -0.9473376809896618],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -16049,7 +16049,7 @@ ALAS1
         0,
         -6.944780477864383
       ],
-      "yaw": 0.9926498901047767,
+      "rotation": [0, 0.4761971441641068, 0, 0.8793385468009172],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -16103,7 +16103,7 @@ ALAS1
         0,
         -6.944780477864383
       ],
-      "yaw": 0.9926498901047767,
+      "rotation": [0, 0.4761971441641068, 0, 0.8793385468009172],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -16157,7 +16157,7 @@ ALAS1
         0,
         -6.944780477864383
       ],
-      "yaw": 0.9926498901047767,
+      "rotation": [0, 0.4761971441641068, 0, 0.8793385468009172],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -16211,7 +16211,7 @@ ALAS1
         0,
         -6.169585592637951
       ],
-      "yaw": 4.928594229636449,
+      "rotation": [0, 0.6266878117823729, 0, -0.7792704194074231],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -16265,7 +16265,7 @@ ALAS1
         0,
         -6.169585592637951
       ],
-      "yaw": 4.928594229636449,
+      "rotation": [0, 0.6266878117823729, 0, -0.7792704194074231],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -16319,7 +16319,7 @@ ALAS1
         0,
         -6.169585592637951
       ],
-      "yaw": 4.928594229636449,
+      "rotation": [0, 0.6266878117823729, 0, -0.7792704194074231],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -16373,7 +16373,7 @@ ALAS1
         0,
         -6.9
       ],
-      "yaw": 1.0976147496092907,
+      "rotation": [0, 0.5216701152237061, 0, 0.8531472855741177],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -16427,7 +16427,7 @@ ALAS1
         0,
         -6.9
       ],
-      "yaw": 1.0976147496092907,
+      "rotation": [0, 0.5216701152237061, 0, 0.8531472855741177],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -16481,7 +16481,7 @@ ALAS1
         0,
         -6.9
       ],
-      "yaw": 1.0976147496092907,
+      "rotation": [0, 0.5216701152237061, 0, 0.8531472855741177],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -16535,7 +16535,7 @@ ALAS1
         0,
         -6.6595473881746905
       ],
-      "yaw": 0.015276608511294976,
+      "rotation": [0, 0.007638229981385802, 0, 0.9999708282958816],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -16589,7 +16589,7 @@ ALAS1
         0,
         -6.6595473881746905
       ],
-      "yaw": 0.015276608511294976,
+      "rotation": [0, 0.007638229981385802, 0, 0.9999708282958816],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -16643,7 +16643,7 @@ ALAS1
         0,
         -6.6595473881746905
       ],
-      "yaw": 0.015276608511294976,
+      "rotation": [0, 0.007638229981385802, 0, 0.9999708282958816],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -16697,7 +16697,7 @@ ALAS1
         0,
         -6.777611659335948
       ],
-      "yaw": 3.242796200878888,
+      "rotation": [0, 0.998720003410469, 0, -0.05058018176907806],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -16751,7 +16751,7 @@ ALAS1
         0,
         -6.777611659335948
       ],
-      "yaw": 3.242796200878888,
+      "rotation": [0, 0.998720003410469, 0, -0.05058018176907806],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -16805,7 +16805,7 @@ ALAS1
         0,
         -6.777611659335948
       ],
-      "yaw": 3.242796200878888,
+      "rotation": [0, 0.998720003410469, 0, -0.05058018176907806],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -16859,7 +16859,7 @@ ALAS1
         0,
         -6.527404724013292
       ],
-      "yaw": 1.4963474833428134,
+      "rotation": [0, 0.6803013711682766, 0, 0.7329324964732856],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -16913,7 +16913,7 @@ ALAS1
         0,
         -6.527404724013292
       ],
-      "yaw": 1.4963474833428134,
+      "rotation": [0, 0.6803013711682766, 0, 0.7329324964732856],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -16967,7 +16967,7 @@ ALAS1
         0,
         -6.527404724013292
       ],
-      "yaw": 1.4963474833428134,
+      "rotation": [0, 0.6803013711682766, 0, 0.7329324964732856],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -17021,7 +17021,7 @@ ALAS1
         0,
         -6.6
       ],
-      "yaw": 0.23111839347502539,
+      "rotation": [0, 0.11530217354646224, 0, 0.993330463026007],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -17075,7 +17075,7 @@ ALAS1
         0,
         -6.6
       ],
-      "yaw": 0.23111839347502539,
+      "rotation": [0, 0.11530217354646224, 0, 0.993330463026007],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -17129,7 +17129,7 @@ ALAS1
         0,
         -6.6
       ],
-      "yaw": 0.23111839347502539,
+      "rotation": [0, 0.11530217354646224, 0, 0.993330463026007],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -17183,7 +17183,7 @@ ALAS1
         0,
         -6.833268527138905
       ],
-      "yaw": 3.4825152768247367,
+      "rotation": [0, 0.9855066162588721, 0, -0.1696369927521357],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -17237,7 +17237,7 @@ ALAS1
         0,
         -6.833268527138905
       ],
-      "yaw": 3.4825152768247367,
+      "rotation": [0, 0.9855066162588721, 0, -0.1696369927521357],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -17291,7 +17291,7 @@ ALAS1
         0,
         -6.833268527138905
       ],
-      "yaw": 3.4825152768247367,
+      "rotation": [0, 0.9855066162588721, 0, -0.1696369927521357],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -17345,7 +17345,7 @@ ALAS1
         0,
         -6.203574418847912
       ],
-      "yaw": 0.38302311982454995,
+      "rotation": [0, 0.19034303689311832, 0, 0.9817176418432669],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -17399,7 +17399,7 @@ ALAS1
         0,
         -6.203574418847912
       ],
-      "yaw": 0.38302311982454995,
+      "rotation": [0, 0.19034303689311832, 0, 0.9817176418432669],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -17453,7 +17453,7 @@ ALAS1
         0,
         -6.203574418847912
       ],
-      "yaw": 0.38302311982454995,
+      "rotation": [0, 0.19034303689311832, 0, 0.9817176418432669],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -17507,7 +17507,7 @@ ALAS1
         0,
         -6.245601920712466
       ],
-      "yaw": 0.983233188678186,
+      "rotation": [0, 0.4720516468929448, 0, 0.8815708948607925],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -17561,7 +17561,7 @@ ALAS1
         0,
         -6.245601920712466
       ],
-      "yaw": 0.983233188678186,
+      "rotation": [0, 0.4720516468929448, 0, 0.8815708948607925],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -17615,7 +17615,7 @@ ALAS1
         0,
         -6.245601920712466
       ],
-      "yaw": 0.983233188678186,
+      "rotation": [0, 0.4720516468929448, 0, 0.8815708948607925],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -17669,7 +17669,7 @@ ALAS1
         0,
         -6.5
       ],
-      "yaw": 2.3397931702521886,
+      "rotation": [0, 0.9207102453254244, 0, 0.39024690152875885],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -17723,7 +17723,7 @@ ALAS1
         0,
         -6.5
       ],
-      "yaw": 2.3397931702521886,
+      "rotation": [0, 0.9207102453254244, 0, 0.39024690152875885],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -17777,7 +17777,7 @@ ALAS1
         0,
         -6.5
       ],
-      "yaw": 2.3397931702521886,
+      "rotation": [0, 0.9207102453254244, 0, 0.39024690152875885],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -17831,7 +17831,7 @@ ALAS1
         0,
         -6.235906178944694
       ],
-      "yaw": 4.47374904834652,
+      "rotation": [0, 0.7862510163190222, 0, -0.6179072255098695],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -17885,7 +17885,7 @@ ALAS1
         0,
         -6.235906178944694
       ],
-      "yaw": 4.47374904834652,
+      "rotation": [0, 0.7862510163190222, 0, -0.6179072255098695],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -17939,7 +17939,7 @@ ALAS1
         0,
         -6.235906178944694
       ],
-      "yaw": 4.47374904834652,
+      "rotation": [0, 0.7862510163190222, 0, -0.6179072255098695],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -17993,7 +17993,7 @@ ALAS1
         0,
         -6.716200543726606
       ],
-      "yaw": 2.8292738100925274,
+      "rotation": [0, 0.9878318750981488, 0, 0.15552551732778563],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -18047,7 +18047,7 @@ ALAS1
         0,
         -6.716200543726606
       ],
-      "yaw": 2.8292738100925274,
+      "rotation": [0, 0.9878318750981488, 0, 0.15552551732778563],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -18101,7 +18101,7 @@ ALAS1
         0,
         -6.716200543726606
       ],
-      "yaw": 2.8292738100925274,
+      "rotation": [0, 0.9878318750981488, 0, 0.15552551732778563],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -18155,7 +18155,7 @@ ALAS1
         0,
         -6.039534287496259
       ],
-      "yaw": 3.1486646368965276,
+      "rotation": [0, 0.9999937483880275, 0, -0.003535984284814881],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -18209,7 +18209,7 @@ ALAS1
         0,
         -6.039534287496259
       ],
-      "yaw": 3.1486646368965276,
+      "rotation": [0, 0.9999937483880275, 0, -0.003535984284814881],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -18263,7 +18263,7 @@ ALAS1
         0,
         -6.039534287496259
       ],
-      "yaw": 3.1486646368965276,
+      "rotation": [0, 0.9999937483880275, 0, -0.003535984284814881],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -18317,7 +18317,7 @@ ALAS1
         0,
         -0.7
       ],
-      "yaw": 1.0151657975412371,
+      "rotation": [0, 0.4860663110572393, 0, 0.8739219308698044],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -18371,7 +18371,7 @@ ALAS1
         0,
         -0.7
       ],
-      "yaw": 1.0151657975412371,
+      "rotation": [0, 0.4860663110572393, 0, 0.8739219308698044],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -18425,7 +18425,7 @@ ALAS1
         0,
         -0.7
       ],
-      "yaw": 1.0151657975412371,
+      "rotation": [0, 0.4860663110572393, 0, 0.8739219308698044],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -18479,7 +18479,7 @@ ALAS1
         0,
         -0.3293098605437562
       ],
-      "yaw": 4.864786250191987,
+      "rotation": [0, 0.6512265151805029, 0, -0.7588834073333388],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -18533,7 +18533,7 @@ ALAS1
         0,
         -0.3293098605437562
       ],
-      "yaw": 4.864786250191987,
+      "rotation": [0, 0.6512265151805029, 0, -0.7588834073333388],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -18587,7 +18587,7 @@ ALAS1
         0,
         -0.3293098605437562
       ],
-      "yaw": 4.864786250191987,
+      "rotation": [0, 0.6512265151805029, 0, -0.7588834073333388],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -18641,7 +18641,7 @@ ALAS1
         0,
         -0.942300257825799
       ],
-      "yaw": 3.566948018597701,
+      "rotation": [0, 0.9774692197338785, 0, -0.21107800565867335],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -18695,7 +18695,7 @@ ALAS1
         0,
         -0.942300257825799
       ],
-      "yaw": 3.566948018597701,
+      "rotation": [0, 0.9774692197338785, 0, -0.21107800565867335],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -18749,7 +18749,7 @@ ALAS1
         0,
         -0.942300257825799
       ],
-      "yaw": 3.566948018597701,
+      "rotation": [0, 0.9774692197338785, 0, -0.21107800565867335],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -18803,7 +18803,7 @@ ALAS1
         0,
         -0.6106398691434829
       ],
-      "yaw": 3.379094919131319,
+      "rotation": [0, 0.9929573662411237, 0, -0.11847222808528134],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -18857,7 +18857,7 @@ ALAS1
         0,
         -0.6106398691434829
       ],
-      "yaw": 3.379094919131319,
+      "rotation": [0, 0.9929573662411237, 0, -0.11847222808528134],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -18911,7 +18911,7 @@ ALAS1
         0,
         -0.6106398691434829
       ],
-      "yaw": 3.379094919131319,
+      "rotation": [0, 0.9929573662411237, 0, -0.11847222808528134],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -18965,7 +18965,7 @@ ALAS1
         0,
         -3.6
       ],
-      "yaw": 2.008874989270597,
+      "rotation": [0, 0.8438602806831264, 0, 0.5365629755074378],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -19019,7 +19019,7 @@ ALAS1
         0,
         -3.6
       ],
-      "yaw": 2.008874989270597,
+      "rotation": [0, 0.8438602806831264, 0, 0.5365629755074378],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -19073,7 +19073,7 @@ ALAS1
         0,
         -3.6
       ],
-      "yaw": 2.008874989270597,
+      "rotation": [0, 0.8438602806831264, 0, 0.5365629755074378],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -19127,7 +19127,7 @@ ALAS1
         0,
         -3.5522454166181197
       ],
-      "yaw": 3.182513792399471,
+      "rotation": [0, 0.9997906898520121, 0, -0.02045914184998141],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -19181,7 +19181,7 @@ ALAS1
         0,
         -3.5522454166181197
       ],
-      "yaw": 3.182513792399471,
+      "rotation": [0, 0.9997906898520121, 0, -0.02045914184998141],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -19235,7 +19235,7 @@ ALAS1
         0,
         -3.5522454166181197
       ],
-      "yaw": 3.182513792399471,
+      "rotation": [0, 0.9997906898520121, 0, -0.02045914184998141],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -19289,7 +19289,7 @@ ALAS1
         0,
         -3.8642119738664187
       ],
-      "yaw": 2.4321017129156646,
+      "rotation": [0, 0.9377349305040197, 0, 0.34735169513422764],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -19343,7 +19343,7 @@ ALAS1
         0,
         -3.8642119738664187
       ],
-      "yaw": 2.4321017129156646,
+      "rotation": [0, 0.9377349305040197, 0, 0.34735169513422764],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -19397,7 +19397,7 @@ ALAS1
         0,
         -3.8642119738664187
       ],
-      "yaw": 2.4321017129156646,
+      "rotation": [0, 0.9377349305040197, 0, 0.34735169513422764],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -19451,7 +19451,7 @@ ALAS1
         0,
         -3.248501253783886
       ],
-      "yaw": 1.3528991571640898,
+      "rotation": [0, 0.6260283558651829, 0, 0.7798002934423248],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -19505,7 +19505,7 @@ ALAS1
         0,
         -3.248501253783886
       ],
-      "yaw": 1.3528991571640898,
+      "rotation": [0, 0.6260283558651829, 0, 0.7798002934423248],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -19559,7 +19559,7 @@ ALAS1
         0,
         -3.248501253783886
       ],
-      "yaw": 1.3528991571640898,
+      "rotation": [0, 0.6260283558651829, 0, 0.7798002934423248],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -19613,7 +19613,7 @@ ALAS1
         0,
         4.8
       ],
-      "yaw": 3.7754375769059183,
+      "rotation": [0, 0.9501990119899102, 0, -0.31164376716597175],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -19667,7 +19667,7 @@ ALAS1
         0,
         4.8
       ],
-      "yaw": 3.7754375769059183,
+      "rotation": [0, 0.9501990119899102, 0, -0.31164376716597175],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -19721,7 +19721,7 @@ ALAS1
         0,
         4.8
       ],
-      "yaw": 3.7754375769059183,
+      "rotation": [0, 0.9501990119899102, 0, -0.31164376716597175],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -19775,7 +19775,7 @@ ALAS1
         0,
         5.024532256272252
       ],
-      "yaw": 4.329585540078198,
+      "rotation": [0, 0.8287105840674579, 0, -0.5596773783659411],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -19829,7 +19829,7 @@ ALAS1
         0,
         5.024532256272252
       ],
-      "yaw": 4.329585540078198,
+      "rotation": [0, 0.8287105840674579, 0, -0.5596773783659411],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -19883,7 +19883,7 @@ ALAS1
         0,
         5.024532256272252
       ],
-      "yaw": 4.329585540078198,
+      "rotation": [0, 0.8287105840674579, 0, -0.5596773783659411],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -19937,7 +19937,7 @@ ALAS1
         0,
         5.091667699176709
       ],
-      "yaw": 5.320260101660021,
+      "rotation": [0, 0.4630760023804177, 0, -0.8863185747908996],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -19991,7 +19991,7 @@ ALAS1
         0,
         5.091667699176709
       ],
-      "yaw": 5.320260101660021,
+      "rotation": [0, 0.4630760023804177, 0, -0.8863185747908996],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -20045,7 +20045,7 @@ ALAS1
         0,
         5.091667699176709
       ],
-      "yaw": 5.320260101660021,
+      "rotation": [0, 0.4630760023804177, 0, -0.8863185747908996],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -20099,7 +20099,7 @@ ALAS1
         0,
         5.124935082815744
       ],
-      "yaw": 4.968378066434527,
+      "rotation": [0, 0.6110636679756434, 0, -0.7915814510713048],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -20153,7 +20153,7 @@ ALAS1
         0,
         5.124935082815744
       ],
-      "yaw": 4.968378066434527,
+      "rotation": [0, 0.6110636679756434, 0, -0.7915814510713048],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -20207,7 +20207,7 @@ ALAS1
         0,
         5.124935082815744
       ],
-      "yaw": 4.968378066434527,
+      "rotation": [0, 0.6110636679756434, 0, -0.7915814510713048],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -20261,7 +20261,7 @@ ALAS1
         0,
         5.9
       ],
-      "yaw": 1.9934182417488135,
+      "rotation": [0, 0.8396883619243227, 0, 0.5430685544651316],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -20315,7 +20315,7 @@ ALAS1
         0,
         5.9
       ],
-      "yaw": 1.9934182417488135,
+      "rotation": [0, 0.8396883619243227, 0, 0.5430685544651316],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -20369,7 +20369,7 @@ ALAS1
         0,
         5.9
       ],
-      "yaw": 1.9934182417488135,
+      "rotation": [0, 0.8396883619243227, 0, 0.5430685544651316],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -20423,7 +20423,7 @@ ALAS1
         0,
         6.438885304065838
       ],
-      "yaw": 3.3122056717533903,
+      "rotation": [0, 0.9963636057875782, 0, -0.08520308129390332],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -20477,7 +20477,7 @@ ALAS1
         0,
         6.438885304065838
       ],
-      "yaw": 3.3122056717533903,
+      "rotation": [0, 0.9963636057875782, 0, -0.08520308129390332],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -20531,7 +20531,7 @@ ALAS1
         0,
         6.438885304065838
       ],
-      "yaw": 3.3122056717533903,
+      "rotation": [0, 0.9963636057875782, 0, -0.08520308129390332],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -20585,7 +20585,7 @@ ALAS1
         0,
         6.417031247871907
       ],
-      "yaw": 0.9638603390572698,
+      "rotation": [0, 0.46349036485897455, 0, 0.8861019589657246],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -20639,7 +20639,7 @@ ALAS1
         0,
         6.417031247871907
       ],
-      "yaw": 0.9638603390572698,
+      "rotation": [0, 0.46349036485897455, 0, 0.8861019589657246],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -20693,7 +20693,7 @@ ALAS1
         0,
         6.417031247871907
       ],
-      "yaw": 0.9638603390572698,
+      "rotation": [0, 0.46349036485897455, 0, 0.8861019589657246],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -20747,7 +20747,7 @@ ALAS1
         0,
         5.571284738543293
       ],
-      "yaw": 3.7310363676862606,
+      "rotation": [0, 0.9568829725492989, 0, -0.2904737111086263],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -20801,7 +20801,7 @@ ALAS1
         0,
         5.571284738543293
       ],
-      "yaw": 3.7310363676862606,
+      "rotation": [0, 0.9568829725492989, 0, -0.2904737111086263],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -20855,7 +20855,7 @@ ALAS1
         0,
         5.571284738543293
       ],
-      "yaw": 3.7310363676862606,
+      "rotation": [0, 0.9568829725492989, 0, -0.2904737111086263],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -20909,7 +20909,7 @@ ALAS1
         0,
         6.0
       ],
-      "yaw": 3.9825541607083266,
+      "rotation": [0, 0.9128928025123478, 0, -0.40819937667903344],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -20963,7 +20963,7 @@ ALAS1
         0,
         6.0
       ],
-      "yaw": 3.9825541607083266,
+      "rotation": [0, 0.9128928025123478, 0, -0.40819937667903344],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -21017,7 +21017,7 @@ ALAS1
         0,
         6.0
       ],
-      "yaw": 3.9825541607083266,
+      "rotation": [0, 0.9128928025123478, 0, -0.40819937667903344],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -21071,7 +21071,7 @@ ALAS1
         0,
         6.400502741421687
       ],
-      "yaw": 3.227216981536854,
+      "rotation": [0, 0.999083699276657, 0, -0.04279908690229721],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -21125,7 +21125,7 @@ ALAS1
         0,
         6.400502741421687
       ],
-      "yaw": 3.227216981536854,
+      "rotation": [0, 0.999083699276657, 0, -0.04279908690229721],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -21179,7 +21179,7 @@ ALAS1
         0,
         6.400502741421687
       ],
-      "yaw": 3.227216981536854,
+      "rotation": [0, 0.999083699276657, 0, -0.04279908690229721],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -21233,7 +21233,7 @@ ALAS1
         0,
         6.081000656848943
       ],
-      "yaw": 2.136992546820231,
+      "rotation": [0, 0.8764775372172101, 0, 0.4814427554275317],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -21287,7 +21287,7 @@ ALAS1
         0,
         6.081000656848943
       ],
-      "yaw": 2.136992546820231,
+      "rotation": [0, 0.8764775372172101, 0, 0.4814427554275317],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -21341,7 +21341,7 @@ ALAS1
         0,
         6.081000656848943
       ],
-      "yaw": 2.136992546820231,
+      "rotation": [0, 0.8764775372172101, 0, 0.4814427554275317],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -21395,7 +21395,7 @@ ALAS1
         0,
         6.05457380615244
       ],
-      "yaw": 5.745652196418092,
+      "rotation": [0, 0.26554247606328113, 0, -0.9640991616043351],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -21449,7 +21449,7 @@ ALAS1
         0,
         6.05457380615244
       ],
-      "yaw": 5.745652196418092,
+      "rotation": [0, 0.26554247606328113, 0, -0.9640991616043351],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -21503,7 +21503,7 @@ ALAS1
         0,
         6.05457380615244
       ],
-      "yaw": 5.745652196418092,
+      "rotation": [0, 0.26554247606328113, 0, -0.9640991616043351],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -21557,7 +21557,7 @@ ALAS1
         2.98,
         -1.67
       ],
-      "yaw": 4.810178517564573,
+      "rotation": [0, 0.6717016618914553, 0, -0.7408217581930603],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -21611,7 +21611,7 @@ ALAS1
         2.98,
         -1.67
       ],
-      "yaw": 4.810178517564573,
+      "rotation": [0, 0.6717016618914553, 0, -0.7408217581930603],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -21665,7 +21665,7 @@ ALAS1
         2.98,
         -1.67
       ],
-      "yaw": 4.810178517564573,
+      "rotation": [0, 0.6717016618914553, 0, -0.7408217581930603],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -21719,7 +21719,7 @@ ALAS1
         2.98,
         -1.67
       ],
-      "yaw": 4.5827435462267605,
+      "rotation": [0, 0.7514261642039914, 0, -0.6598171866128346],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -21773,7 +21773,7 @@ ALAS1
         2.98,
         -1.67
       ],
-      "yaw": 4.5827435462267605,
+      "rotation": [0, 0.7514261642039914, 0, -0.6598171866128346],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -21827,7 +21827,7 @@ ALAS1
         2.98,
         -1.67
       ],
-      "yaw": 4.5827435462267605,
+      "rotation": [0, 0.7514261642039914, 0, -0.6598171866128346],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -21881,7 +21881,7 @@ ALAS1
         2.98,
         -1.67
       ],
-      "yaw": 4.306853169041148,
+      "rotation": [0, 0.835018313954049, 0, -0.5502221509184607],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -21935,7 +21935,7 @@ ALAS1
         2.98,
         -1.67
       ],
-      "yaw": 4.306853169041148,
+      "rotation": [0, 0.835018313954049, 0, -0.5502221509184607],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -21989,7 +21989,7 @@ ALAS1
         2.98,
         -1.67
       ],
-      "yaw": 4.306853169041148,
+      "rotation": [0, 0.835018313954049, 0, -0.5502221509184607],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -22043,7 +22043,7 @@ ALAS1
         2.98,
         -1.67
       ],
-      "yaw": 0.6979690418378159,
+      "rotation": [0, 0.34194371748244073, 0, 0.9397204339984785],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -22097,7 +22097,7 @@ ALAS1
         2.98,
         -1.67
       ],
-      "yaw": 0.6979690418378159,
+      "rotation": [0, 0.34194371748244073, 0, 0.9397204339984785],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -22151,7 +22151,7 @@ ALAS1
         2.98,
         -1.67
       ],
-      "yaw": 0.6979690418378159,
+      "rotation": [0, 0.34194371748244073, 0, 0.9397204339984785],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -22205,7 +22205,7 @@ ALAS1
         0,
         6.158016930618545
       ],
-      "yaw": 4.350136764630815,
+      "rotation": [0, 0.822915906886147, 0, -0.5681631897560333],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -22259,7 +22259,7 @@ ALAS1
         0,
         6.208685318764876
       ],
-      "yaw": 3.3668213669681317,
+      "rotation": [0, 0.9936657018746117, 0, -0.11237647849098735],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -22313,7 +22313,7 @@ ALAS1
         0,
         -7.710876887640772
       ],
-      "yaw": 0.008349432416478564,
+      "rotation": [0, 0.004174704081913119, 0, 0.9999912858849463],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -22367,7 +22367,7 @@ ALAS1
         0,
         -6.699045471858766
       ],
-      "yaw": 0.9439009067879007,
+      "rotation": [0, 0.4546243852199091, 0, 0.890683259280997],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -22421,7 +22421,7 @@ ALAS1
         0,
         6.912951090748178
       ],
-      "yaw": 2.9766713335287633,
+      "rotation": [0, 0.9966020458679795, 0, 0.08236723967547775],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -22475,7 +22475,7 @@ ALAS1
         0,
         -6.557193627734313
       ],
-      "yaw": 0.6805495153311949,
+      "rotation": [0, 0.3337461086209208, 0, 0.9426630018094444],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -22529,7 +22529,7 @@ ALAS1
         0,
         6.407195228076544
       ],
-      "yaw": 4.305467307679493,
+      "rotation": [0, 0.8353993792649439, 0, -0.5496434090605894],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -22583,7 +22583,7 @@ ALAS1
         0,
         6.008492506848805
       ],
-      "yaw": 1.3181400291518466,
+      "rotation": [0, 0.612381905684856, 0, 0.7905620795293588],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -22637,7 +22637,7 @@ ALAS1
         0,
         -6.112815092755344
       ],
-      "yaw": 5.8215751577276045,
+      "rotation": [0, 0.22876132377539876, 0, -0.9734825405442704],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -22691,7 +22691,7 @@ ALAS1
         0,
         6.2887967067125405
       ],
-      "yaw": 0.32114124643526387,
+      "rotation": [0, 0.15988151545478033, 0, 0.9871362119869187],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -22745,7 +22745,7 @@ ALAS1
         0,
         7.305534032167922
       ],
-      "yaw": 2.213749176210166,
+      "rotation": [0, 0.8943045628707985, 0, 0.4474587677411965],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -22799,7 +22799,7 @@ ALAS1
         0,
         -6.318417528390096
       ],
-      "yaw": 3.1656052169032565,
+      "rotation": [0, 0.999927925466196, 0, -0.01200599320629456],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -22853,7 +22853,7 @@ ALAS1
         0,
         -6.745459801825869
       ],
-      "yaw": 1.6068020501104703,
+      "rotation": [0, 0.7197214544914391, 0, 0.6942629386224842],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -22907,7 +22907,7 @@ ALAS1
         0,
         6.734332890482396
       ],
-      "yaw": 2.714051901560242,
+      "rotation": [0, 0.9772379926738595, 0, 0.21214595370820943],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -22961,7 +22961,7 @@ ALAS1
         0,
         7.479153278645569
       ],
-      "yaw": 5.951769482754718,
+      "rotation": [0, 0.16495058737579577, 0, -0.9863018319583412],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -23015,7 +23015,7 @@ ALAS1
         0,
         6.439762540571287
       ],
-      "yaw": 4.680804776399979,
+      "rotation": [0, 0.7181848484361983, 0, -0.6958523718984327],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -23069,7 +23069,7 @@ ALAS1
         0,
         6.133904159598018
       ],
-      "yaw": 3.5916720797284256,
+      "rotation": [0, 0.9747852460618339, 0, -0.2231450740217447],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -23123,7 +23123,7 @@ ALAS1
         0,
         -6.247633678894982
       ],
-      "yaw": 3.135436470143738,
+      "rotation": [0, 0.9999952626794126, 0, 0.003078086862390295],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -23177,7 +23177,7 @@ ALAS1
         0,
         -5.902785200908738
       ],
-      "yaw": 0.8748857959918412,
+      "rotation": [0, 0.42362453273659234, 0, 0.9058378747125249],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -23231,7 +23231,7 @@ ALAS1
         0,
         6.369791857818279
       ],
-      "yaw": 4.775465473879929,
+      "rotation": [0, 0.6844579332108894, 0, -0.7290523559146336],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -23285,7 +23285,7 @@ ALAS1
         0,
         -7.3890049897097265
       ],
-      "yaw": 3.388306235704036,
+      "rotation": [0, 0.9924011942401488, 0, -0.12304417771973748],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -23339,7 +23339,7 @@ ALAS1
         0,
         6.723707384482131
       ],
-      "yaw": 3.0617058927175,
+      "rotation": [0, 0.9992023692380317, 0, 0.03993275984832467],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -23393,7 +23393,7 @@ ALAS1
         0,
         7.059578552188222
       ],
-      "yaw": 3.42514506572826,
+      "rotation": [0, 0.9899665769960406, 0, -0.14130172125895163],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -23447,7 +23447,7 @@ ALAS1
         0,
         -6.22220491800602
       ],
-      "yaw": 3.4464589804699957,
+      "rotation": [0, 0.9884045439928135, 0, -0.15184352937928713],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -23501,7 +23501,7 @@ ALAS1
         0,
         6.137797277587173
       ],
-      "yaw": 3.7361500071293436,
+      "rotation": [0, 0.9561371567185623, 0, -0.2929193362380564],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -23555,7 +23555,7 @@ ALAS1
         0,
         -6.210365431802343
       ],
-      "yaw": 2.23203752034747,
+      "rotation": [0, 0.8983587570436328, 0, 0.43926249970037196],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -23609,7 +23609,7 @@ ALAS1
         0,
         -7.0470468489943725
       ],
-      "yaw": 1.5339211074452213,
+      "rotation": [0, 0.6939499755472983, 0, 0.7200232159020319],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -23663,7 +23663,7 @@ ALAS1
         0,
         -7.062377488615763
       ],
-      "yaw": 2.762919425488243,
+      "rotation": [0, 0.98212930536474, 0, 0.1882074056560297],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -23717,7 +23717,7 @@ ALAS1
         0,
         -6.237438164530475
       ],
-      "yaw": 5.121020603224554,
+      "rotation": [0, 0.5489289626172611, 0, -0.8358690052872744],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -23771,7 +23771,7 @@ ALAS1
         0,
         7.233115496729273
       ],
-      "yaw": 4.600775437288831,
+      "rotation": [0, 0.7454468284980692, 0, -0.6665650950073595],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -23825,7 +23825,7 @@ ALAS1
         0,
         6.452504118968875
       ],
-      "yaw": 4.3578311826256035,
+      "rotation": [0, 0.8207239797539598, 0, -0.5713249067359323],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -23879,7 +23879,7 @@ ALAS1
         0,
         7.372989512655941
       ],
-      "yaw": 2.211889352897635,
+      "rotation": [0, 0.8938880791384387, 0, 0.4482901983918368],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -23933,7 +23933,7 @@ ALAS1
         0,
         -6.5
       ],
-      "yaw": 0.2,
+      "rotation": [0, 0.09983341664682815, 0, 0.9950041652780258],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -23987,7 +23987,7 @@ ALAS1
         0,
         -6.5
       ],
-      "yaw": 0.2,
+      "rotation": [0, 0.09983341664682815, 0, 0.9950041652780258],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -24041,7 +24041,7 @@ ALAS1
         0,
         -6.5
       ],
-      "yaw": 0.2,
+      "rotation": [0, 0.09983341664682815, 0, 0.9950041652780258],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -24095,7 +24095,7 @@ ALAS1
         0,
         -7.2
       ],
-      "yaw": 0.2,
+      "rotation": [0, 0.09983341664682815, 0, 0.9950041652780258],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -24149,7 +24149,7 @@ ALAS1
         0,
         -7.2
       ],
-      "yaw": 0.2,
+      "rotation": [0, 0.09983341664682815, 0, 0.9950041652780258],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -24203,7 +24203,7 @@ ALAS1
         0,
         -7.2
       ],
-      "yaw": 0.2,
+      "rotation": [0, 0.09983341664682815, 0, 0.9950041652780258],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -24257,7 +24257,7 @@ ALAS1
         0,
         -6.9
       ],
-      "yaw": 0.2,
+      "rotation": [0, 0.09983341664682815, 0, 0.9950041652780258],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -24311,7 +24311,7 @@ ALAS1
         0,
         -6.9
       ],
-      "yaw": 0.2,
+      "rotation": [0, 0.09983341664682815, 0, 0.9950041652780258],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -24365,7 +24365,7 @@ ALAS1
         0,
         -6.9
       ],
-      "yaw": 0.2,
+      "rotation": [0, 0.09983341664682815, 0, 0.9950041652780258],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -24419,7 +24419,7 @@ ALAS1
         0,
         0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -24473,7 +24473,7 @@ ALAS1
         0,
         0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -24527,7 +24527,7 @@ ALAS1
         0,
         0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -24581,7 +24581,7 @@ ALAS1
         0,
         0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -24635,7 +24635,7 @@ ALAS1
         0,
         0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -24689,7 +24689,7 @@ ALAS1
         0,
         6.777401246082624
       ],
-      "yaw": 4.580381106191573,
+      "rotation": [0, 0.7522050290663639, 0, -0.6589291268772921],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -24743,7 +24743,7 @@ ALAS1
         0,
         6.11661637255352
       ],
-      "yaw": 1.5582516011592435,
+      "rotation": [0, 0.7026576703449906, 0, 0.7115280727457987],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -24797,7 +24797,7 @@ ALAS1
         0,
         -6.253279877661541
       ],
-      "yaw": 3.592541718175998,
+      "rotation": [0, 0.9746881261467848, 0, -0.22356890827767026],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -24851,7 +24851,7 @@ ALAS1
         0,
         -7.1443746185807875
       ],
-      "yaw": 5.016989994289621,
+      "rotation": [0, 0.591644918998448, 0, -0.8061986664732955],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -24905,7 +24905,7 @@ ALAS1
         0,
         6.971461617412093
       ],
-      "yaw": 3.3306935336548342,
+      "rotation": [0, 0.9955334361430296, 0, -0.09440962621074457],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -24959,7 +24959,7 @@ ALAS1
         0,
         5.816391042876631
       ],
-      "yaw": 2.4321428659503095,
+      "rotation": [0, 0.9377420775936758, 0, 0.3473323997416545],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -25013,7 +25013,7 @@ ALAS1
         0,
         -5.935400637254647
       ],
-      "yaw": 3.280670866968962,
+      "rotation": [0, 0.9975831304913791, 0, -0.06948307534227297],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -25067,7 +25067,7 @@ ALAS1
         0,
         -7.0934574151574
       ],
-      "yaw": 0.31733574556919864,
+      "rotation": [0, 0.15800295331116354, 0, 0.9874386394834619],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -25121,7 +25121,7 @@ ALAS1
         0,
         6.955758123737729
       ],
-      "yaw": 4.132580952576476,
+      "rotation": [0, 0.8797338657589455, 0, -0.47546642934787897],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -25175,7 +25175,7 @@ ALAS1
         0,
         6.1125365021769635
       ],
-      "yaw": 1.8097909171376305,
+      "rotation": [0, 0.786360576920858, 0, 0.617767790569155],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -25229,7 +25229,7 @@ ALAS1
         0,
         -6.253005215831866
       ],
-      "yaw": 4.990220268016967,
+      "rotation": [0, 0.6023824584558185, 0, -0.798207600655822],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -25283,7 +25283,7 @@ ALAS1
         0,
         -6.979762383150939
       ],
-      "yaw": 3.312021882597751,
+      "rotation": [0, 0.9963714312817988, 0, -0.08511152052136992],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -25337,7 +25337,7 @@ ALAS1
         0,
         6.772891954268823
       ],
-      "yaw": 4.090368965370022,
+      "rotation": [0, 0.8895723749860509, 0, -0.45679425309615795],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -25391,7 +25391,7 @@ ALAS1
         0,
         5.920650518038405
       ],
-      "yaw": 0.2055288263164174,
+      "rotation": [0, 0.10258363428820559, 0, 0.9947243829203262],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -25445,7 +25445,7 @@ ALAS1
         0,
         -6.198576319529972
       ],
-      "yaw": 4.846362786654858,
+      "rotation": [0, 0.6581894166628208, 0, -0.7528523705169929],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -25499,7 +25499,7 @@ ALAS1
         0,
         -7.028297985527229
       ],
-      "yaw": 0.7582096229369549,
+      "rotation": [0, 0.3700889909717481, 0, 0.9289963071840024],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -25553,7 +25553,7 @@ ALAS1
         0,
         6.6319645597051045
       ],
-      "yaw": 4.458578263724713,
+      "rotation": [0, 0.7909154204723999, 0, -0.6119254837469729],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -25607,7 +25607,7 @@ ALAS1
         0,
         6.086624851212087
       ],
-      "yaw": 4.4356307693006265,
+      "rotation": [0, 0.7978842845353836, 0, -0.6028106406587885],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -25661,7 +25661,7 @@ ALAS1
         0,
         -6.261141295457264
       ],
-      "yaw": 0.8709590905837781,
+      "rotation": [0, 0.42184523815457603, 0, 0.9066678526595663],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -25715,7 +25715,7 @@ ALAS1
         0,
         -7.213748825607876
       ],
-      "yaw": 4.954364359926462,
+      "rotation": [0, 0.6165951173296464, 0, -0.7872804209970166],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -25769,7 +25769,7 @@ ALAS1
         0,
         6.857234701559946
       ],
-      "yaw": 1.566012543084038,
+      "rotation": [0, 0.7054134371185947, 0, 0.708796079794838],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -25823,7 +25823,7 @@ ALAS1
         0,
         6.010472201353393
       ],
-      "yaw": 5.382502230166322,
+      "rotation": [0, 0.4352730460948405, 0, -0.9002984923586836],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -25877,7 +25877,7 @@ ALAS1
         0,
         -6.175416227613611
       ],
-      "yaw": 4.639637292218833,
+      "rotation": [0, 0.7323549441219436, 0, -0.680923076286995],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -25931,7 +25931,7 @@ ALAS1
         0,
         -6.880855529677327
       ],
-      "yaw": 2.801287500240518,
+      "rotation": [0, 0.9855589421574028, 0, 0.16933272434346877],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -25985,7 +25985,7 @@ ALAS1
         0,
         6.7835768318367915
       ],
-      "yaw": 4.513729687836706,
+      "rotation": [0, 0.7737425831859843, 0, -0.6335001302009969],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -26039,7 +26039,7 @@ ALAS1
         0,
         5.942735674762796
       ],
-      "yaw": 5.4269320373512615,
+      "rotation": [0, 0.41516724722240905, 0, -0.9097451054189668],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -26093,7 +26093,7 @@ ALAS1
         0,
         -6.272889501680211
       ],
-      "yaw": 3.4931237470383194,
+      "rotation": [0, 0.9845929624482669, 0, -0.17486194067705474],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -26147,7 +26147,7 @@ ALAS1
         0,
         -7.094807795188405
       ],
-      "yaw": 5.989072682482762,
+      "rotation": [0, 0.14652685600238124, 0, -0.9892066924915427],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -26201,7 +26201,7 @@ ALAS1
         0,
         6.813450983315868
       ],
-      "yaw": 3.6543635587212675,
+      "rotation": [0, 0.9673128930473409, 0, -0.2535858177114475],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -26255,7 +26255,7 @@ ALAS1
         0,
         5.945821958920246
       ],
-      "yaw": 5.505236770097976,
+      "rotation": [0, 0.37923950696707603, 0, -0.9252985444468013],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -26309,7 +26309,7 @@ ALAS1
         0,
         -6.2063209162657
       ],
-      "yaw": 6.114016472479559,
+      "rotation": [0, 0.08448359322169248, 0, -0.9964248704625711],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -26363,7 +26363,7 @@ ALAS1
         0,
         -7.06033119210346
       ],
-      "yaw": 4.202107223572506,
+      "rotation": [0, 0.8626769758178724, 0, -0.5057553117800446],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -26417,7 +26417,7 @@ ALAS1
         0,
         6.914326745696241
       ],
-      "yaw": 1.923695780182584,
+      "rotation": [0, 0.8202499709518484, 0, 0.572005231753602],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -26471,7 +26471,7 @@ ALAS1
         0,
         5.8550715354518506
       ],
-      "yaw": 4.892463146131803,
+      "rotation": [0, 0.6406627270116882, 0, -0.7678224210180027],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -26525,7 +26525,7 @@ ALAS1
         0,
         -6.032724230245187
       ],
-      "yaw": 5.188224506043652,
+      "rotation": [0, 0.5205375517937885, 0, -0.8538387770372864],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -26579,7 +26579,7 @@ ALAS1
         0,
         -7.002664031028514
       ],
-      "yaw": 3.463977389723505,
+      "rotation": [0, 0.9870366156876361, 0, -0.1604952313680927],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -26633,7 +26633,7 @@ ALAS1
         0,
         6.8162828380766864
       ],
-      "yaw": 2.526224192088759,
+      "rotation": [0, 0.9530374610838529, 0, 0.30285243563630715],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -26687,7 +26687,7 @@ ALAS1
         0,
         6.009001881171892
       ],
-      "yaw": 1.9044815224116098,
+      "rotation": [0, 0.8147168745164205, 0, 0.5798589607639043],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -26741,7 +26741,7 @@ ALAS1
         0,
         -6.150820092934644
       ],
-      "yaw": 0.6018771107338172,
+      "rotation": [0, 0.29641671255895, 0, 0.955058706319012],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -26795,7 +26795,7 @@ ALAS1
         0,
         -7.078590686735529
       ],
-      "yaw": 1.7431803162469315,
+      "rotation": [0, 0.7653533464237334, 0, 0.6436103286290491],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -26849,7 +26849,7 @@ ALAS1
         0,
         6.648870298423503
       ],
-      "yaw": 2.700449214771233,
+      "rotation": [0, 0.9757725237337871, 0, 0.21878752689812084],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -26903,7 +26903,7 @@ ALAS1
         0,
         6.015800214006632
       ],
-      "yaw": 0.5634263474545451,
+      "rotation": [0, 0.2780016971392282, 0, 0.9605805829745409],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -26957,7 +26957,7 @@ ALAS1
         0,
         -6.192300278798047
       ],
-      "yaw": 4.739575225344287,
+      "rotation": [0, 0.6974299619934217, 0, -0.7166529481651871],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -27011,7 +27011,7 @@ ALAS1
         0,
         -7.0058608773019575
       ],
-      "yaw": 6.265098007535947,
+      "rotation": [0, 0.009043526545918319, 0, -0.9999591064776665],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -27065,7 +27065,7 @@ ALAS1
         0,
         -5.976529771296515
       ],
-      "yaw": 0.9265962647112894,
+      "rotation": [0, 0.44690098678229323, 0, 0.894583427083809],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -27119,7 +27119,7 @@ ALAS1
         0,
         -6.885659136526796
       ],
-      "yaw": 1.0877656568833385,
+      "rotation": [0, 0.5174624433036301, 0, 0.855705918975811],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -27173,7 +27173,7 @@ ALAS1
         0,
         -5.9956253895737515
       ],
-      "yaw": 0.24945154579630405,
+      "rotation": [0, 0.12440264121009192, 0, 0.9922318191128287],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -27227,7 +27227,7 @@ ALAS1
         0,
         -7.192934253515302
       ],
-      "yaw": 5.29956735301197,
+      "rotation": [0, 0.4722212371847331, 0, -0.8814800639559128],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -27281,7 +27281,7 @@ ALAS1
         0,
         -6.114462072764067
       ],
-      "yaw": 0.9566334640262361,
+      "rotation": [0, 0.4602854718881552, 0, 0.8877709639139468],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -27335,7 +27335,7 @@ ALAS1
         0,
         -7.1808085513945965
       ],
-      "yaw": 3.051189606749076,
+      "rotation": [0, 0.9989785850690265, 0, 0.04518613253516839],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -27389,7 +27389,7 @@ ALAS1
         0,
         6.775853993354893
       ],
-      "yaw": 0.23002255868891086,
+      "rotation": [0, 0.11475789322831684, 0, 0.9933934899836008],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -27443,7 +27443,7 @@ ALAS1
         0,
         6.06600052249647
       ],
-      "yaw": 5.30000411441265,
+      "rotation": [0, 0.47202872769241416, 0, -0.8815831669406357],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -27497,7 +27497,7 @@ ALAS1
         0,
         -6.252526963732351
       ],
-      "yaw": 4.357961731228152,
+      "rotation": [0, 0.820686685171455, 0, -0.5713784777030799],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -27551,7 +27551,7 @@ ALAS1
         0,
         -7.032970250668692
       ],
-      "yaw": 0.5684520591900522,
+      "rotation": [0, 0.2804146174406075, 0, 0.9598789727489804],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -27605,7 +27605,7 @@ ALAS1
         0,
         6.62455618881414
       ],
-      "yaw": 5.538057575763823,
+      "rotation": [0, 0.36400460293395737, 0, -0.9313971489342728],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -27659,7 +27659,7 @@ ALAS1
         0,
         6.0668891168565
       ],
-      "yaw": 0.2068648574797681,
+      "rotation": [0, 0.10324810273734107, 0, 0.9946556335140014],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -27713,7 +27713,7 @@ ALAS1
         0,
         -6.037107025592782
       ],
-      "yaw": 3.745534855463399,
+      "rotation": [0, 0.954752133491958, 0, -0.297402696007542],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -27767,7 +27767,7 @@ ALAS1
         0,
         -7.036602106933187
       ],
-      "yaw": 2.8110704534989175,
+      "rotation": [0, 0.9863754354320857, 0, 0.16450987926615002],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -27821,7 +27821,7 @@ ALAS1
         0,
         6.724715925851037
       ],
-      "yaw": 3.579972206632662,
+      "rotation": [0, 0.976073943755779, 0, -0.2174388565115267],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -27875,7 +27875,7 @@ ALAS1
         0,
         5.931387416015267
       ],
-      "yaw": 4.157058778573529,
+      "rotation": [0, 0.8738489314909409, 0, -0.4861975369457776],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -27929,7 +27929,7 @@ ALAS1
         0,
         -6.133528602404554
       ],
-      "yaw": 1.6611700288910947,
+      "rotation": [0, 0.7383260568805197, 0, 0.6744439440985911],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -27983,7 +27983,7 @@ ALAS1
         0,
         -7.008307391386632
       ],
-      "yaw": 1.3386627828704454,
+      "rotation": [0, 0.6204617783945608, 0, 0.7842366872006555],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -28037,7 +28037,7 @@ ALAS1
         0,
         6.672694289021413
       ],
-      "yaw": 0.6345310051439174,
+      "rotation": [0, 0.31196970596037277, 0, 0.9500920495209917],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -28091,7 +28091,7 @@ ALAS1
         0,
         5.7832685444799505
       ],
-      "yaw": 2.889633832933209,
+      "rotation": [0, 0.9920750836472115, 0, 0.12564644207608178],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -28145,7 +28145,7 @@ ALAS1
         0,
         -6.216376947343298
       ],
-      "yaw": 1.5350174703358832,
+      "rotation": [0, 0.6943445746277087, 0, 0.719642697235973],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -28199,7 +28199,7 @@ ALAS1
         0,
         -7.000881332032818
       ],
-      "yaw": 4.6251461056202094,
+      "rotation": [0, 0.7372693689035957, 0, -0.6755989029568459],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -28253,7 +28253,7 @@ ALAS1
         0,
         6.889052406601972
       ],
-      "yaw": 3.8323617121450084,
+      "rotation": [0, 0.9409453365107179, 0, -0.33855852329949077],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -28307,7 +28307,7 @@ ALAS1
         0,
         6.0931630404397525
       ],
-      "yaw": 2.6701465690826183,
+      "rotation": [0, 0.9723457318199111, 0, 0.23354609354815054],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -28361,7 +28361,7 @@ ALAS1
         0,
         -6.168706743860264
       ],
-      "yaw": 0.19298811930607335,
+      "rotation": [0, 0.09634438498830931, 0, 0.9953480594652427],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -28415,7 +28415,7 @@ ALAS1
         0,
         -7.106486743923163
       ],
-      "yaw": 3.1193378256665687,
+      "rotation": [0, 0.9999380909680621, 0, 0.011127184331522403],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -28469,7 +28469,7 @@ ALAS1
         0,
         6.890283261168123
       ],
-      "yaw": 0.3481921426468995,
+      "rotation": [0, 0.17321794402699003, 0, 0.9848835179182676],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -28523,7 +28523,7 @@ ALAS1
         0,
         5.795549149083993
       ],
-      "yaw": 1.1079604196141106,
+      "rotation": [0, 0.5260763062164372, 0, 0.8504373698501668],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -28577,7 +28577,7 @@ ALAS1
         0,
         -6.175624857633853
       ],
-      "yaw": 3.404350615006157,
+      "rotation": [0, 0.991382188018802, 0, -0.1310013636534095],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -28631,7 +28631,7 @@ ALAS1
         0,
         -7.185164165243714
       ],
-      "yaw": 2.3011502438753055,
+      "rotation": [0, 0.9129987193807889, 0, 0.4079624227904323],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -28685,7 +28685,7 @@ ALAS1
         0,
         6.751323342193947
       ],
-      "yaw": 4.454383573080034,
+      "rotation": [0, 0.7921970990209899, 0, -0.6102653163196545],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -28739,7 +28739,7 @@ ALAS1
         0,
         6.055452388327548
       ],
-      "yaw": 3.5344077589234724,
+      "rotation": [0, 0.9807739612087312, 0, -0.19514721882449207],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -28793,7 +28793,7 @@ ALAS1
         0,
         -6.140932259757208
       ],
-      "yaw": 2.262978712468399,
+      "rotation": [0, 0.905046634513495, 0, 0.4253123432911349],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -28847,7 +28847,7 @@ ALAS1
         0,
         -7.050535240065864
       ],
-      "yaw": 0.22458861828120127,
+      "rotation": [0, 0.11205845246904919, 0, 0.9937016167996517],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -28901,7 +28901,7 @@ ALAS1
         0,
         6.645549046165842
       ],
-      "yaw": 4.248774726929812,
+      "rotation": [0, 0.8506420402096087, 0, -0.525745299007071],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -28955,7 +28955,7 @@ ALAS1
         0,
         5.790555440747453
       ],
-      "yaw": 3.8161544522269777,
+      "rotation": [0, 0.9436579642602637, 0, -0.33092241762711505],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -29009,7 +29009,7 @@ ALAS1
         0,
         -6.237332455299493
       ],
-      "yaw": 5.05826246458937,
+      "rotation": [0, 0.5748832217638695, 0, -0.8182354681473992],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -29063,7 +29063,7 @@ ALAS1
         0,
         -7.184617926717712
       ],
-      "yaw": 0.3729405009314597,
+      "rotation": [0, 0.18539149667493207, 0, 0.9826647408758639],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -29117,7 +29117,7 @@ ALAS1
         0,
         5.1
       ],
-      "yaw": 0.03578034068939847,
+      "rotation": [0, 0.017889216044032933, 0, 0.999839975170692],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -29171,7 +29171,7 @@ ALAS1
         0,
         4.2299999999999995
       ],
-      "yaw": 4.60315539141675,
+      "rotation": [0, 0.7446531037173565, 0, -0.6674516874831525],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -29225,7 +29225,7 @@ ALAS1
         0,
         3.3599999999999994
       ],
-      "yaw": 5.489598949111526,
+      "rotation": [0, 0.38646266733547335, 0, -0.9223050508134233],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -29279,7 +29279,7 @@ ALAS1
         0,
         2.4899999999999993
       ],
-      "yaw": 0.7954215738521834,
+      "rotation": [0, 0.3873088189086298, 0, 0.9219500413772984],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -29333,7 +29333,7 @@ ALAS1
         0,
         1.6199999999999992
       ],
-      "yaw": 4.023152860495033,
+      "rotation": [0, 0.9044191111079062, 0, -0.4266451352855027],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -29387,7 +29387,7 @@ ALAS1
         0,
         0.7499999999999991
       ],
-      "yaw": 1.5095205548544037,
+      "rotation": [0, 0.6851140658403879, 0, 0.7284358014181157],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -29441,7 +29441,7 @@ ALAS1
         0,
         -0.120000000000001
       ],
-      "yaw": 4.746072416872167,
+      "rotation": [0, 0.6950981702401778, 0, -0.7189148306501659],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -29495,7 +29495,7 @@ ALAS1
         0,
         -0.9900000000000011
       ],
-      "yaw": 4.828221795393577,
+      "rotation": [0, 0.664990991446085, 0, -0.7468513783180379],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -29549,7 +29549,7 @@ ALAS1
         0,
         -1.8600000000000012
       ],
-      "yaw": 5.362412648342454,
+      "rotation": [0, 0.4442942452675622, 0, -0.8958809204476492],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -29603,7 +29603,7 @@ ALAS1
         0,
         -2.7300000000000013
       ],
-      "yaw": 5.94085370151362,
+      "rotation": [0, 0.17033123135260314, 0, -0.9853868639402019],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -29657,7 +29657,7 @@ ALAS1
         0,
         -3.6000000000000014
       ],
-      "yaw": 1.729989406131606,
+      "rotation": [0, 0.7610918278166787, 0, 0.6486441471490104],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -29711,7 +29711,7 @@ ALAS1
         0,
         -4.470000000000001
       ],
-      "yaw": 3.907048636558487,
+      "rotation": [0, 0.927649313419661, 0, -0.3734524753058032],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -29765,7 +29765,7 @@ ALAS1
         0,
         -5.340000000000002
       ],
-      "yaw": 5.57303402188364,
+      "rotation": [0, 0.3476612903045709, 0, -0.9376201934812203],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -29819,7 +29819,7 @@ ALAS1
         0,
         5.1
       ],
-      "yaw": 6.088866732369178,
+      "rotation": [0, 0.09700649677415489, 0, -0.9952837482766439],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -29873,7 +29873,7 @@ ALAS1
         0,
         4.2299999999999995
       ],
-      "yaw": 0.45489313623315075,
+      "rotation": [0, 0.22549059221206588, 0, 0.9742453452923713],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -29927,7 +29927,7 @@ ALAS1
         0,
         3.3599999999999994
       ],
-      "yaw": 0.9155825265564072,
+      "rotation": [0, 0.4419678816148379, 0, 0.8970308755114802],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -29981,7 +29981,7 @@ ALAS1
         0,
         2.4899999999999993
       ],
-      "yaw": 4.905902138014739,
+      "rotation": [0, 0.6354889227681249, 0, -0.7721099850662522],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -30035,7 +30035,7 @@ ALAS1
         0,
         1.6199999999999992
       ],
-      "yaw": 3.7397943177110324,
+      "rotation": [0, 0.955601825188894, 0, -0.294661079370273],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -30089,7 +30089,7 @@ ALAS1
         0,
         0.7499999999999991
       ],
-      "yaw": 0.7532775660197498,
+      "rotation": [0, 0.3677969366524207, 0, 0.9299061314934401],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -30143,7 +30143,7 @@ ALAS1
         0,
         -0.120000000000001
       ],
-      "yaw": 5.185659654120586,
+      "rotation": [0, 0.5216321084660616, 0, -0.8531705242313818],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -30197,7 +30197,7 @@ ALAS1
         0,
         -0.9900000000000011
       ],
-      "yaw": 4.062346052131839,
+      "rotation": [0, 0.8958851990252418, 0, -0.4442856177815155],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -30251,7 +30251,7 @@ ALAS1
         0,
         -1.8600000000000012
       ],
-      "yaw": 1.9212663545105402,
+      "rotation": [0, 0.8195545438749097, 0, 0.5730011776724275],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -30305,7 +30305,7 @@ ALAS1
         0,
         -2.7300000000000013
       ],
-      "yaw": 3.7302795095842156,
+      "rotation": [0, 0.9569928277206079, 0, -0.2901115780028691],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -30359,7 +30359,7 @@ ALAS1
         0,
         -3.6000000000000014
       ],
-      "yaw": 0.522335475458054,
+      "rotation": [0, 0.25820886639513985, 0, 0.9660891166527739],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -30413,7 +30413,7 @@ ALAS1
         0,
         -4.470000000000001
       ],
-      "yaw": 0.1872922145447175,
+      "rotation": [0, 0.09350929422838572, 0, 0.9956184067668241],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -30467,7 +30467,7 @@ ALAS1
         0,
         -5.340000000000002
       ],
-      "yaw": 5.468491428843511,
+      "rotation": [0, 0.3961747506543948, 0, -0.9181751286894718],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -30521,7 +30521,7 @@ ALAS1
         0,
         -1.5
       ],
-      "yaw": 5.009397617505891,
+      "rotation": [0, 0.5947011305608223, 0, -0.8039468672180269],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -30575,7 +30575,7 @@ ALAS1
         0,
         -1.6
       ],
-      "yaw": 1.1389859394469337,
+      "rotation": [0, 0.5392051101037876, 0, 0.8421744767196179],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -30629,7 +30629,7 @@ ALAS1
         0,
         1.8
       ],
-      "yaw": 0.45286199923422454,
+      "rotation": [0, 0.22450106321555177, 0, 0.9744738439871472],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -30683,7 +30683,7 @@ ALAS1
         0,
         2.2
       ],
-      "yaw": 4.446436343601595,
+      "rotation": [0, 0.7946157976602175, 0, -0.6071126206140145],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -30737,7 +30737,7 @@ ALAS1
         0,
         -0.9
       ],
-      "yaw": 2.939002946230132,
+      "rotation": [0, 0.9948740615124475, 0, 0.10112171739901746],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -30791,7 +30791,7 @@ ALAS1
         0,
         -0.6
       ],
-      "yaw": 4.46445159501334,
+      "rotation": [0, 0.7891149920834567, 0, -0.6142454959290512],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -30845,7 +30845,7 @@ ALAS1
         0,
         -1.5
       ],
-      "yaw": 3.8313257776873377,
+      "rotation": [0, 0.9411205724998557, 0, -0.33807109905690536],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -30899,7 +30899,7 @@ ALAS1
         0,
         -1.4
       ],
-      "yaw": 1.2807764226852634,
+      "rotation": [0, 0.5975067790245796, 0, 0.8018638594048695],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -30953,7 +30953,7 @@ ALAS1
         0,
         -5.222847281113605
       ],
-      "yaw": 2.0680107112399684,
+      "rotation": [0, 0.859354139468609, 0, 0.5113809372455789],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -31007,7 +31007,7 @@ ALAS1
         0,
         -5.222847281113605
       ],
-      "yaw": 2.0680107112399684,
+      "rotation": [0, 0.859354139468609, 0, 0.5113809372455789],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -31061,7 +31061,7 @@ ALAS1
         0,
         -5.222847281113605
       ],
-      "yaw": 2.0680107112399684,
+      "rotation": [0, 0.859354139468609, 0, 0.5113809372455789],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -31115,7 +31115,7 @@ ALAS1
         0,
         -5.335796463831084
       ],
-      "yaw": 0.6199144838357051,
+      "rotation": [0, 0.30501791620758073, 0, 0.9523466127373926],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -31169,7 +31169,7 @@ ALAS1
         0,
         -5.335796463831084
       ],
-      "yaw": 0.6199144838357051,
+      "rotation": [0, 0.30501791620758073, 0, 0.9523466127373926],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -31223,7 +31223,7 @@ ALAS1
         0,
         -5.335796463831084
       ],
-      "yaw": 0.6199144838357051,
+      "rotation": [0, 0.30501791620758073, 0, 0.9523466127373926],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -31277,7 +31277,7 @@ ALAS1
         0,
         -4.811564761182997
       ],
-      "yaw": 0.489949818737887,
+      "rotation": [0, 0.24253198335453016, 0, 0.9701434105585204],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -31331,7 +31331,7 @@ ALAS1
         0,
         -4.811564761182997
       ],
-      "yaw": 0.489949818737887,
+      "rotation": [0, 0.24253198335453016, 0, 0.9701434105585204],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -31385,7 +31385,7 @@ ALAS1
         0,
         -4.811564761182997
       ],
-      "yaw": 0.489949818737887,
+      "rotation": [0, 0.24253198335453016, 0, 0.9701434105585204],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -31439,7 +31439,7 @@ ALAS1
         0,
         -5.498961031002433
       ],
-      "yaw": 0.6366600044130455,
+      "rotation": [0, 0.3129809016531854, 0, 0.9497594196428689],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -31493,7 +31493,7 @@ ALAS1
         0,
         -5.498961031002433
       ],
-      "yaw": 0.6366600044130455,
+      "rotation": [0, 0.3129809016531854, 0, 0.9497594196428689],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -31547,7 +31547,7 @@ ALAS1
         0,
         -5.498961031002433
       ],
-      "yaw": 0.6366600044130455,
+      "rotation": [0, 0.3129809016531854, 0, 0.9497594196428689],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -31601,7 +31601,7 @@ ALAS1
         0,
         -5.075056912024869
       ],
-      "yaw": 1.4119019036089941,
+      "rotation": [0, 0.6487577922944241, 0, 0.7609949585491778],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -31655,7 +31655,7 @@ ALAS1
         0,
         -5.075056912024869
       ],
-      "yaw": 1.4119019036089941,
+      "rotation": [0, 0.6487577922944241, 0, 0.7609949585491778],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -31709,7 +31709,7 @@ ALAS1
         0,
         -5.075056912024869
       ],
-      "yaw": 1.4119019036089941,
+      "rotation": [0, 0.6487577922944241, 0, 0.7609949585491778],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -31763,7 +31763,7 @@ ALAS1
         0,
         -5.778002446809468
       ],
-      "yaw": 5.5146643341712,
+      "rotation": [0, 0.37487365416819185, 0, -0.9270759102741193],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -31817,7 +31817,7 @@ ALAS1
         0,
         -5.778002446809468
       ],
-      "yaw": 5.5146643341712,
+      "rotation": [0, 0.37487365416819185, 0, -0.9270759102741193],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -31871,7 +31871,7 @@ ALAS1
         0,
         -5.778002446809468
       ],
-      "yaw": 5.5146643341712,
+      "rotation": [0, 0.37487365416819185, 0, -0.9270759102741193],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -31925,7 +31925,7 @@ ALAS1
         0,
         -6.093195115313225
       ],
-      "yaw": 0.5704483375715712,
+      "rotation": [0, 0.2813725704166214, 0, 0.9595986018211695],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -31979,7 +31979,7 @@ ALAS1
         0,
         -6.093195115313225
       ],
-      "yaw": 0.5704483375715712,
+      "rotation": [0, 0.2813725704166214, 0, 0.9595986018211695],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -32033,7 +32033,7 @@ ALAS1
         0,
         -6.093195115313225
       ],
-      "yaw": 0.5704483375715712,
+      "rotation": [0, 0.2813725704166214, 0, 0.9595986018211695],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -32087,7 +32087,7 @@ ALAS1
         0,
         -5.477878492357568
       ],
-      "yaw": 1.2776033773130004,
+      "rotation": [0, 0.5962338523758076, 0, 0.802810807900033],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -32141,7 +32141,7 @@ ALAS1
         0,
         -5.477878492357568
       ],
-      "yaw": 1.2776033773130004,
+      "rotation": [0, 0.5962338523758076, 0, 0.802810807900033],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -32195,7 +32195,7 @@ ALAS1
         0,
         -5.477878492357568
       ],
-      "yaw": 1.2776033773130004,
+      "rotation": [0, 0.5962338523758076, 0, 0.802810807900033],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -32249,7 +32249,7 @@ ALAS1
         0,
         -6.098875588580875
       ],
-      "yaw": 5.774338238291073,
+      "rotation": [0, 0.2516875421935971, 0, -0.9678085456868761],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -32303,7 +32303,7 @@ ALAS1
         0,
         -6.098875588580875
       ],
-      "yaw": 5.774338238291073,
+      "rotation": [0, 0.2516875421935971, 0, -0.9678085456868761],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -32357,7 +32357,7 @@ ALAS1
         0,
         -6.098875588580875
       ],
-      "yaw": 5.774338238291073,
+      "rotation": [0, 0.2516875421935971, 0, -0.9678085456868761],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -32411,7 +32411,7 @@ ALAS1
         0,
         -6.012776921566884
       ],
-      "yaw": 2.3314660074140185,
+      "rotation": [0, 0.9190774448384846, 0, 0.39407695998264386],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -32465,7 +32465,7 @@ ALAS1
         0,
         -6.012776921566884
       ],
-      "yaw": 2.3314660074140185,
+      "rotation": [0, 0.9190774448384846, 0, 0.39407695998264386],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -32519,7 +32519,7 @@ ALAS1
         0,
         -6.012776921566884
       ],
-      "yaw": 2.3314660074140185,
+      "rotation": [0, 0.9190774448384846, 0, 0.39407695998264386],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -32573,7 +32573,7 @@ ALAS1
         0,
         -6.405244061114081
       ],
-      "yaw": 3.1229271049570437,
+      "rotation": [0, 0.9999564499778842, 0, 0.009332638835138777],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -32627,7 +32627,7 @@ ALAS1
         0,
         -6.405244061114081
       ],
-      "yaw": 3.1229271049570437,
+      "rotation": [0, 0.9999564499778842, 0, 0.009332638835138777],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -32681,7 +32681,7 @@ ALAS1
         0,
         -6.405244061114081
       ],
-      "yaw": 3.1229271049570437,
+      "rotation": [0, 0.9999564499778842, 0, 0.009332638835138777],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -32735,7 +32735,7 @@ ALAS1
         0,
         -6.513781842621829
       ],
-      "yaw": 4.297094710643076,
+      "rotation": [0, 0.8376930237168825, 0, -0.5461413718224125],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -32789,7 +32789,7 @@ ALAS1
         0,
         -6.513781842621829
       ],
-      "yaw": 4.297094710643076,
+      "rotation": [0, 0.8376930237168825, 0, -0.5461413718224125],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -32843,7 +32843,7 @@ ALAS1
         0,
         -6.513781842621829
       ],
-      "yaw": 4.297094710643076,
+      "rotation": [0, 0.8376930237168825, 0, -0.5461413718224125],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -32897,7 +32897,7 @@ ALAS1
         0,
         -6.809494513905604
       ],
-      "yaw": 2.84154183377989,
+      "rotation": [0, 0.9887672804080938, 0, 0.14946325700446247],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -32951,7 +32951,7 @@ ALAS1
         0,
         -6.809494513905604
       ],
-      "yaw": 2.84154183377989,
+      "rotation": [0, 0.9887672804080938, 0, 0.14946325700446247],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -33005,7 +33005,7 @@ ALAS1
         0,
         -6.809494513905604
       ],
-      "yaw": 2.84154183377989,
+      "rotation": [0, 0.9887672804080938, 0, 0.14946325700446247],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -33059,7 +33059,7 @@ ALAS1
         0,
         -6.396428012636111
       ],
-      "yaw": 1.2229670204151695,
+      "rotation": [0, 0.5740827854716045, 0, 0.8187972614910016],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -33113,7 +33113,7 @@ ALAS1
         0,
         -6.396428012636111
       ],
-      "yaw": 1.2229670204151695,
+      "rotation": [0, 0.5740827854716045, 0, 0.8187972614910016],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -33167,7 +33167,7 @@ ALAS1
         0,
         -6.396428012636111
       ],
-      "yaw": 1.2229670204151695,
+      "rotation": [0, 0.5740827854716045, 0, 0.8187972614910016],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -33221,7 +33221,7 @@ ALAS1
         0,
         -6.738774175595383
       ],
-      "yaw": 3.7015798735063576,
+      "rotation": [0, 0.961057204215273, 0, -0.27634950737412767],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -33275,7 +33275,7 @@ ALAS1
         0,
         -6.738774175595383
       ],
-      "yaw": 3.7015798735063576,
+      "rotation": [0, 0.961057204215273, 0, -0.27634950737412767],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -33329,7 +33329,7 @@ ALAS1
         0,
         -6.738774175595383
       ],
-      "yaw": 3.7015798735063576,
+      "rotation": [0, 0.961057204215273, 0, -0.27634950737412767],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -33383,7 +33383,7 @@ ALAS1
         0,
         -6.392918554291695
       ],
-      "yaw": 3.8666735821930622,
+      "rotation": [0, 0.9349988644083866, 0, -0.35465070640706103],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -33437,7 +33437,7 @@ ALAS1
         0,
         -6.392918554291695
       ],
-      "yaw": 3.8666735821930622,
+      "rotation": [0, 0.9349988644083866, 0, -0.35465070640706103],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -33491,7 +33491,7 @@ ALAS1
         0,
         -6.392918554291695
       ],
-      "yaw": 3.8666735821930622,
+      "rotation": [0, 0.9349988644083866, 0, -0.35465070640706103],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -33545,7 +33545,7 @@ ALAS1
         0,
         -6.856382278977081
       ],
-      "yaw": 0.4637748580116263,
+      "rotation": [0, 0.22981484256788634, 0, 0.9732343695819099],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -33599,7 +33599,7 @@ ALAS1
         0,
         -6.856382278977081
       ],
-      "yaw": 0.4637748580116263,
+      "rotation": [0, 0.22981484256788634, 0, 0.9732343695819099],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -33653,7 +33653,7 @@ ALAS1
         0,
         -6.856382278977081
       ],
-      "yaw": 0.4637748580116263,
+      "rotation": [0, 0.22981484256788634, 0, 0.9732343695819099],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -33707,7 +33707,7 @@ ALAS1
         0,
         -6.805645338858678
       ],
-      "yaw": 2.7500918880785594,
+      "rotation": [0, 0.9809019942954288, 0, 0.19450264159453098],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -33761,7 +33761,7 @@ ALAS1
         0,
         -6.805645338858678
       ],
-      "yaw": 2.7500918880785594,
+      "rotation": [0, 0.9809019942954288, 0, 0.19450264159453098],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -33815,7 +33815,7 @@ ALAS1
         0,
         -6.805645338858678
       ],
-      "yaw": 2.7500918880785594,
+      "rotation": [0, 0.9809019942954288, 0, 0.19450264159453098],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -33869,7 +33869,7 @@ ALAS1
         0,
         -6.435033462388891
       ],
-      "yaw": 3.997173191491104,
+      "rotation": [0, 0.9098847020822443, 0, -0.4148612164528104],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -33923,7 +33923,7 @@ ALAS1
         0,
         -6.435033462388891
       ],
-      "yaw": 3.997173191491104,
+      "rotation": [0, 0.9098847020822443, 0, -0.4148612164528104],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -33977,7 +33977,7 @@ ALAS1
         0,
         -6.435033462388891
       ],
-      "yaw": 3.997173191491104,
+      "rotation": [0, 0.9098847020822443, 0, -0.4148612164528104],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -34031,7 +34031,7 @@ ALAS1
         0,
         -6.560480337094383
       ],
-      "yaw": 3.287320281595524,
+      "rotation": [0, 0.9973466065515947, 0, -0.07279935714014718],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -34085,7 +34085,7 @@ ALAS1
         0,
         -6.560480337094383
       ],
-      "yaw": 3.287320281595524,
+      "rotation": [0, 0.9973466065515947, 0, -0.07279935714014718],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -34139,7 +34139,7 @@ ALAS1
         0,
         -6.560480337094383
       ],
-      "yaw": 3.287320281595524,
+      "rotation": [0, 0.9973466065515947, 0, -0.07279935714014718],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -34193,7 +34193,7 @@ ALAS1
         0,
         -5.124273264152097
       ],
-      "yaw": 3.08029501084211,
+      "rotation": [0, 0.9995303616388332, 0, 0.03064402326952409],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -34247,7 +34247,7 @@ ALAS1
         0,
         -5.124273264152097
       ],
-      "yaw": 3.08029501084211,
+      "rotation": [0, 0.9995303616388332, 0, 0.03064402326952409],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -34301,7 +34301,7 @@ ALAS1
         0,
         -5.124273264152097
       ],
-      "yaw": 3.08029501084211,
+      "rotation": [0, 0.9995303616388332, 0, 0.03064402326952409],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -34355,7 +34355,7 @@ ALAS1
         0,
         -4.892896653115346
       ],
-      "yaw": 2.9285135301615695,
+      "rotation": [0, 0.9943300271098462, 0, 0.10633812668903199],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -34409,7 +34409,7 @@ ALAS1
         0,
         -4.892896653115346
       ],
-      "yaw": 2.9285135301615695,
+      "rotation": [0, 0.9943300271098462, 0, 0.10633812668903199],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -34463,7 +34463,7 @@ ALAS1
         0,
         -4.892896653115346
       ],
-      "yaw": 2.9285135301615695,
+      "rotation": [0, 0.9943300271098462, 0, 0.10633812668903199],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -34517,7 +34517,7 @@ ALAS1
         0,
         -4.880978695560336
       ],
-      "yaw": 0.8023497301010647,
+      "rotation": [0, 0.3905001956723957, 0, 0.920602844433918],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -34571,7 +34571,7 @@ ALAS1
         0,
         -4.880978695560336
       ],
-      "yaw": 0.8023497301010647,
+      "rotation": [0, 0.3905001956723957, 0, 0.920602844433918],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -34625,7 +34625,7 @@ ALAS1
         0,
         -4.880978695560336
       ],
-      "yaw": 0.8023497301010647,
+      "rotation": [0, 0.3905001956723957, 0, 0.920602844433918],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -34679,7 +34679,7 @@ ALAS1
         0,
         -5.265665017719424
       ],
-      "yaw": 5.686625928566496,
+      "rotation": [0, 0.293876294602565, 0, -0.9558434618025414],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -34733,7 +34733,7 @@ ALAS1
         0,
         -5.265665017719424
       ],
-      "yaw": 5.686625928566496,
+      "rotation": [0, 0.293876294602565, 0, -0.9558434618025414],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -34787,7 +34787,7 @@ ALAS1
         0,
         -5.265665017719424
       ],
-      "yaw": 5.686625928566496,
+      "rotation": [0, 0.293876294602565, 0, -0.9558434618025414],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -34841,7 +34841,7 @@ ALAS1
         0,
         -5.227231694092099
       ],
-      "yaw": 4.1258729773080205,
+      "rotation": [0, 0.8813236231325953, 0, -0.47251314405890893],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -34895,7 +34895,7 @@ ALAS1
         0,
         -5.227231694092099
       ],
-      "yaw": 4.1258729773080205,
+      "rotation": [0, 0.8813236231325953, 0, -0.47251314405890893],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -34949,7 +34949,7 @@ ALAS1
         0,
         -5.227231694092099
       ],
-      "yaw": 4.1258729773080205,
+      "rotation": [0, 0.8813236231325953, 0, -0.47251314405890893],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35003,7 +35003,7 @@ ALAS1
         -0.15,
         0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35053,7 +35053,7 @@ ALAS1
         1.75,
         -5.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35103,7 +35103,7 @@ ALAS1
         0.4,
         0.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35153,7 +35153,7 @@ ALAS1
         0.9,
         -3.35
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35203,7 +35203,7 @@ ALAS1
         0.9,
         -1.6
       ],
-      "yaw": -0.28,
+      "rotation": [0, -0.1395431146442365, 0, 0.9902159962126371],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35253,7 +35253,7 @@ ALAS1
         0.48,
         0.25
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35303,7 +35303,7 @@ ALAS1
         0.27,
         3.55
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35353,7 +35353,7 @@ ALAS1
         0.27,
         3.55
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35403,7 +35403,7 @@ ALAS1
         0.6,
         0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35453,7 +35453,7 @@ ALAS1
         0.6,
         0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35503,7 +35503,7 @@ ALAS1
         0.6,
         -8.1
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35553,7 +35553,7 @@ ALAS1
         0.6,
         8
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35603,7 +35603,7 @@ ALAS1
         0.6,
         8
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35653,7 +35653,7 @@ ALAS1
         1.6,
         -1.65
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35703,7 +35703,7 @@ ALAS1
         1.6,
         -4.35
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35753,7 +35753,7 @@ ALAS1
         1.6,
         -1.65
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35803,7 +35803,7 @@ ALAS1
         1.6,
         -4.35
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35853,7 +35853,7 @@ ALAS1
         1,
         4.7
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35918,7 +35918,7 @@ ALAS1
         0.35,
         5.4
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -35976,784 +35976,1018 @@ ALAS1
   ],
   "materials": [
     {
-      "albedoRoughness": [
-        0.77,
-        0.59,
-        0.37,
-        0.83
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        3,
-        3,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.77,
+          0.59,
+          0.37
+        ],
+        "roughness": 0.83,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          3,
+          3
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.93,
-        0.8,
-        0.58,
-        0.58
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.93,
+          0.8,
+          0.58
+        ],
+        "roughness": 0.58,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.48,
-        0.115,
-        0.1,
-        0.68
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        2,
-        2,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.48,
+          0.115,
+          0.1
+        ],
+        "roughness": 0.68,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          2,
+          2
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.68,
-        0.24,
-        0.17,
-        0.65
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.68,
+          0.24,
+          0.17
+        ],
+        "roughness": 0.65,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.22,
-        0.37,
-        0.19,
-        0.68
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        2,
-        2,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.22,
+          0.37,
+          0.19
+        ],
+        "roughness": 0.68,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          2,
+          2
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.5,
-        0.28,
-        0.105,
-        0.7
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        2,
-        2,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.5,
+          0.28,
+          0.105
+        ],
+        "roughness": 0.7,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          2,
+          2
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.19,
-        0.09,
-        0.041,
-        0.73
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        2,
-        2,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.19,
+          0.09,
+          0.041
+        ],
+        "roughness": 0.73,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          2,
+          2
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.72,
-        0.45,
-        0.12,
-        0.3
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0.65
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.72,
+          0.45,
+          0.12
+        ],
+        "roughness": 0.3,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0.65,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.3,
-        0.53,
-        0.48,
-        0.24
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.3,
+          0.53,
+          0.48
+        ],
+        "roughness": 0.24,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.16,
-        0.53,
-        0.59,
-        0.13
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0.12
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.16,
+          0.53,
+          0.59
+        ],
+        "roughness": 0.13,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0.12,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.22,
-        0.43,
-        0.073,
-        0.68
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.22,
+          0.43,
+          0.073
+        ],
+        "roughness": 0.68,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.39,
-        0.58,
-        0.12,
-        0.7
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.39,
+          0.58,
+          0.12
+        ],
+        "roughness": 0.7,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.24,
-        0.4,
-        0.1,
-        0.94
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        12,
-        12,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.24,
+          0.4,
+          0.1
+        ],
+        "roughness": 0.94,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          12,
+          12
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.69,
-        0.29,
-        0.36,
-        0.6
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.69,
+          0.29,
+          0.36
+        ],
+        "roughness": 0.6,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.36,
-        0.25,
-        0.59,
-        0.65
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.36,
+          0.25,
+          0.59
+        ],
+        "roughness": 0.65,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.93,
-        0.56,
-        0.12,
-        0.81
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.93,
+          0.56,
+          0.12
+        ],
+        "roughness": 0.81,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.85,
-        0.72,
-        0.5,
-        0.94
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        2,
-        2,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.85,
+          0.72,
+          0.5
+        ],
+        "roughness": 0.94,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          2,
+          2
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.2,
-        0.38,
-        0.55,
-        0.9
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.2,
+          0.38,
+          0.55
+        ],
+        "roughness": 0.9,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.19,
-        0.105,
-        0.055,
-        0.98
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        3,
-        3,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.19,
+          0.105,
+          0.055
+        ],
+        "roughness": 0.98,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          3,
+          3
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.51,
-        0.39,
-        0.24,
-        0.85
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        2,
-        2,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.51,
+          0.39,
+          0.24
+        ],
+        "roughness": 0.85,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          2,
+          2
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        1,
-        0.71,
-        0.25,
-        0.35
-      ],
-      "emissionMetallic": [
-        1.4,
-        0.67,
-        0.16,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          1,
+          0.71,
+          0.25
+        ],
+        "roughness": 0.35,
+        "emission": [
+          1.4,
+          0.67,
+          0.16
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        1,
-        1,
-        1,
-        0.3
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        1
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          1,
+          1,
+          1
+        ],
+        "roughness": 0.3,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 1,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.76,
-        0.6,
-        0.37,
-        0.93
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.76,
+          0.6,
+          0.37
+        ],
+        "roughness": 0.93,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.54,
-        0.32,
-        0.14,
-        0.9
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.54,
+          0.32,
+          0.14
+        ],
+        "roughness": 0.9,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.48,
-        0.065,
-        0.018,
-        0.96
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        2,
-        2,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.48,
+          0.065,
+          0.018
+        ],
+        "roughness": 0.96,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          2,
+          2
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.38,
-        0.085,
-        0.07,
-        0.97
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.38,
+          0.085,
+          0.07
+        ],
+        "roughness": 0.97,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.29,
-        0.2,
-        0.31,
-        0.25
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.29,
+          0.2,
+          0.31
+        ],
+        "roughness": 0.25,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.32,
-        0.055,
-        0.025,
-        0.19
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.32,
+          0.055,
+          0.025
+        ],
+        "roughness": 0.19,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.5,
-        0.205,
-        0.095,
-        0.79
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        3,
-        3,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.5,
+          0.205,
+          0.095
+        ],
+        "roughness": 0.79,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          3,
+          3
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.58,
-        0.32,
-        0.17,
-        0.86
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        2,
-        2,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.58,
+          0.32,
+          0.17
+        ],
+        "roughness": 0.86,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          2,
+          2
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.3,
-        0.4,
-        0.11,
-        0.7
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.3,
+          0.4,
+          0.11
+        ],
+        "roughness": 0.7,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.91,
-        0.45,
-        0.075,
-        0.65
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.91,
+          0.45,
+          0.075
+        ],
+        "roughness": 0.65,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.36,
-        0.66,
-        0.67,
-        0.12
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.36,
+          0.66,
+          0.67
+        ],
+        "roughness": 0.12,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.17,
-        0.28,
-        0.046,
-        0.92
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.17,
+          0.28,
+          0.046
+        ],
+        "roughness": 0.92,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.49,
-        0.25,
-        0.16,
-        0.92
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        4,
-        4,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.49,
+          0.25,
+          0.16
+        ],
+        "roughness": 0.92,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          4,
+          4
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.35,
-        0.22,
-        0.13,
-        0.97
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        20,
-        20,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.35,
+          0.22,
+          0.13
+        ],
+        "roughness": 0.97,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          20,
+          20
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.65,
-        0.26,
-        0.16,
-        0.92
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        0.5,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.65,
+          0.26,
+          0.16
+        ],
+        "roughness": 0.92,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 0.5
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.72,
-        0.79,
-        0.83,
-        0.65
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0.12
-      ],
-      "surface": [
-        1,
-        1,
-        1,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.72,
+          0.79,
+          0.83
+        ],
+        "roughness": 0.65,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0.12,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 1
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        1,
-        1,
-        1,
-        0.8
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ],
-      "surface": [
-        1,
-        1,
-        1,
-        0
-      ]
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          1,
+          1,
+          1
+        ],
+        "roughness": 0.8,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 1
+      },
+      "textures": {}
     }
   ],
   "materialAssets": [

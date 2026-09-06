@@ -1,7 +1,7 @@
 ALAS1
 {"id": "ac82d4e0213b364b2f00aa883568db0b", "name": "RainCourt", "version": 1, "type": "Map", "storage": "embedded", "metadata": {"description": "The Rain Court: authored scene and persistent gameplay state"}}
 {
-  "version": 1,
+  "version": 3,
   "objects": [
     {
       "id": "1702166d462dcfe7ac1b174ec8298b5a",
@@ -11,7 +11,7 @@ ALAS1
         -0.37,
         0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -61,7 +61,7 @@ ALAS1
         -0.035,
         0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -111,7 +111,7 @@ ALAS1
         -0.035,
         -10.25
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -161,7 +161,7 @@ ALAS1
         -0.035,
         10.25
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -211,7 +211,7 @@ ALAS1
         -0.035,
         0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -261,7 +261,7 @@ ALAS1
         -0.035,
         0
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -311,7 +311,7 @@ ALAS1
         1.8,
         0.55
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -361,7 +361,7 @@ ALAS1
         1.8,
         -10
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -411,7 +411,7 @@ ALAS1
         0.7,
         0.55
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -461,7 +461,7 @@ ALAS1
         3.7,
         -9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -511,7 +511,7 @@ ALAS1
         3.7,
         -10
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -561,7 +561,7 @@ ALAS1
         3.7,
         -6.8
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -611,7 +611,7 @@ ALAS1
         3.7,
         -10
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -661,7 +661,7 @@ ALAS1
         3.7,
         -4.6
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -711,7 +711,7 @@ ALAS1
         3.7,
         -10
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -761,7 +761,7 @@ ALAS1
         3.7,
         -2.3999999999999995
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -811,7 +811,7 @@ ALAS1
         3.7,
         -10
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -861,7 +861,7 @@ ALAS1
         3.7,
         -0.1999999999999993
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -911,7 +911,7 @@ ALAS1
         3.7,
         -10
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -961,7 +961,7 @@ ALAS1
         3.7,
         2
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1011,7 +1011,7 @@ ALAS1
         3.7,
         -10
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1061,7 +1061,7 @@ ALAS1
         3.7,
         4.200000000000001
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1111,7 +1111,7 @@ ALAS1
         3.7,
         -10
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1161,7 +1161,7 @@ ALAS1
         3.7,
         6.400000000000002
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1211,7 +1211,7 @@ ALAS1
         3.7,
         -10
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1261,7 +1261,7 @@ ALAS1
         3.7,
         8.600000000000001
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1311,7 +1311,7 @@ ALAS1
         3.7,
         -10
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1361,7 +1361,7 @@ ALAS1
         2.5,
         -7
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1411,7 +1411,7 @@ ALAS1
         5.15,
         -7
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1461,7 +1461,7 @@ ALAS1
         1.45,
         -4.42
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1511,7 +1511,7 @@ ALAS1
         1.3,
         -4.2
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1561,7 +1561,7 @@ ALAS1
         3,
         -4.02
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1611,7 +1611,7 @@ ALAS1
         0.7,
         -3
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": true,
       "render": {
@@ -1661,7 +1661,7 @@ ALAS1
         1.45,
         -3
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1711,7 +1711,7 @@ ALAS1
         0.65,
         4
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1761,7 +1761,7 @@ ALAS1
         1.65,
         4.2
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1811,7 +1811,7 @@ ALAS1
         0.65,
         3
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1861,7 +1861,7 @@ ALAS1
         0.45,
         6.5
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": true,
       "render": {
@@ -1911,7 +1911,7 @@ ALAS1
         2,
         -9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -1961,7 +1961,7 @@ ALAS1
         3.4,
         -8.3
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2011,7 +2011,7 @@ ALAS1
         2,
         -9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2061,7 +2061,7 @@ ALAS1
         3.4,
         -8.3
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2111,7 +2111,7 @@ ALAS1
         2,
         -9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2161,7 +2161,7 @@ ALAS1
         3.4,
         -8.3
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2211,7 +2211,7 @@ ALAS1
         2,
         -9
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2261,7 +2261,7 @@ ALAS1
         3.4,
         -8.3
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2311,7 +2311,7 @@ ALAS1
         1,
         3.2
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2376,7 +2376,7 @@ ALAS1
         0.35,
         1.7000000000000002
       ],
-      "yaw": 0,
+      "rotation": [0, 0.0, 0, 1.0],
       "enabled": true,
       "interactable": false,
       "render": {
@@ -2434,144 +2434,264 @@ ALAS1
   ],
   "materials": [
     {
-      "albedoRoughness": [
-        0.32,
-        0.35,
-        0.31,
-        0.38
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0.05
-      ]
+      "shader": {
+        "id": "e5cc4ae90847574ebd50bc0392f6410e",
+        "path": "/Game/shaders/Paving"
+      },
+      "properties": {
+        "baseColor": [
+          0.32,
+          0.35,
+          0.31
+        ],
+        "roughness": 0.38,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0.05,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 1
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.45,
-        0.44,
-        0.36,
-        0.28
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0.05
-      ]
+      "shader": {
+        "id": "e5cc4ae90847574ebd50bc0392f6410e",
+        "path": "/Game/shaders/Paving"
+      },
+      "properties": {
+        "baseColor": [
+          0.45,
+          0.44,
+          0.36
+        ],
+        "roughness": 0.28,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0.05,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 1
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.08,
-        0.13,
-        0.12,
-        0.42
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0.35
-      ]
+      "shader": {
+        "id": "e5cc4ae90847574ebd50bc0392f6410e",
+        "path": "/Game/shaders/Paving"
+      },
+      "properties": {
+        "baseColor": [
+          0.08,
+          0.13,
+          0.12
+        ],
+        "roughness": 0.42,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0.35,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 1
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.52,
-        0.3,
-        0.1,
-        0.3
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0.7
-      ]
+      "shader": {
+        "id": "e5cc4ae90847574ebd50bc0392f6410e",
+        "path": "/Game/shaders/Paving"
+      },
+      "properties": {
+        "baseColor": [
+          0.52,
+          0.3,
+          0.1
+        ],
+        "roughness": 0.3,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0.7,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 1
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.29,
-        0.72,
-        0.65,
-        0.26
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0.45
-      ]
+      "shader": {
+        "id": "e5cc4ae90847574ebd50bc0392f6410e",
+        "path": "/Game/shaders/Paving"
+      },
+      "properties": {
+        "baseColor": [
+          0.29,
+          0.72,
+          0.65
+        ],
+        "roughness": 0.26,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0.45,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 1
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.9,
-        0.6,
-        0.28,
-        0.32
-      ],
-      "emissionMetallic": [
-        7,
-        3,
-        0.8,
-        0.1
-      ]
+      "shader": {
+        "id": "e5cc4ae90847574ebd50bc0392f6410e",
+        "path": "/Game/shaders/Paving"
+      },
+      "properties": {
+        "baseColor": [
+          0.9,
+          0.6,
+          0.28
+        ],
+        "roughness": 0.32,
+        "emission": [
+          7,
+          3,
+          0.8
+        ],
+        "metallic": 0.1,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 1
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.2,
-        0.8,
-        0.7,
-        0.3
-      ],
-      "emissionMetallic": [
-        0.3,
-        4,
-        3,
-        0.2
-      ]
+      "shader": {
+        "id": "e5cc4ae90847574ebd50bc0392f6410e",
+        "path": "/Game/shaders/Paving"
+      },
+      "properties": {
+        "baseColor": [
+          0.2,
+          0.8,
+          0.7
+        ],
+        "roughness": 0.3,
+        "emission": [
+          0.3,
+          4,
+          3
+        ],
+        "metallic": 0.2,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 1
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.25,
-        0.2,
-        0.12,
-        0.65
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0.15
-      ]
+      "shader": {
+        "id": "e5cc4ae90847574ebd50bc0392f6410e",
+        "path": "/Game/shaders/Paving"
+      },
+      "properties": {
+        "baseColor": [
+          0.25,
+          0.2,
+          0.12
+        ],
+        "roughness": 0.65,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0.15,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 1
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        0.72,
-        0.79,
-        0.83,
-        0.65
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0.12
-      ]
+      "shader": {
+        "id": "e5cc4ae90847574ebd50bc0392f6410e",
+        "path": "/Game/shaders/Paving"
+      },
+      "properties": {
+        "baseColor": [
+          0.72,
+          0.79,
+          0.83
+        ],
+        "roughness": 0.65,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0.12,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 1
+      },
+      "textures": {}
     },
     {
-      "albedoRoughness": [
-        1,
-        1,
-        1,
-        0.8
-      ],
-      "emissionMetallic": [
-        0,
-        0,
-        0,
-        0
-      ]
+      "shader": {
+        "id": "e5cc4ae90847574ebd50bc0392f6410e",
+        "path": "/Game/shaders/Paving"
+      },
+      "properties": {
+        "baseColor": [
+          1,
+          1,
+          1
+        ],
+        "roughness": 0.8,
+        "emission": [
+          0,
+          0,
+          0
+        ],
+        "metallic": 0,
+        "uvScale": [
+          1,
+          1
+        ],
+        "normalStrength": 1
+      },
+      "textures": {}
     }
   ],
   "lights": [

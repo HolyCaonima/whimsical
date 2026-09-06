@@ -63,7 +63,8 @@ id 为 32 位小写十六进制字符，不从真实路径、显示名或运行�
 | SkinnedMesh | embedded | SKN1 little-endian 字节流 |
 | StaticMesh | embedded | STM1：位置、法线、UV、切线、顶点色及三角形索引 |
 | Texture | embedded | TEX1：宽高、RGBA8；头部声明色彩空间 |
-| Material | embedded | PBR 参数 JSON 与 baseColor / normal / ORM 的 AssetRef |
+| Shader | external 或 embedded | GLSL 表面函数体；metadata 定义 schema、material model 与 render state |
+| Material | embedded | Shader AssetRef、命名属性值与 Texture AssetRef |
 | AnimationController | embedded | A4C2 little-endian 字节流 |
 | Binary | embedded | 带 format 描述的原始字节；目前用于 golden 数据 |
 | OnnxModel | external | 没有内嵌载荷；source 相对头文件定位独立 `.onnx` |
@@ -107,9 +108,9 @@ clearCache、重扫、保存不销毁 World、Solver 或 Frame 持有的旧资�
 
 SceneDocument 保存：对象 ID/显示名/位置/旋转/启用/交互；RenderComponent 的 primitive、scale/offset/animationScale、材质索引和可见性；主碰撞体 shape/motion/layer/查询属性；关节碰撞体 joint/local/shape/blocking；动画与 mesh 引用、root-motion 选项、rootOffset 和实例属性；材质值表、灯表、相机、导航（含 planeTolerance）；player Object ID、命名 Object 引用、Map 脚本引用和显式 gameplay JSON data。
 
-Map 的 SceneDocument 载荷现写入 `version: 2`：对象朝向改为 `rotation: [x,y,z,w]` 单位四元数，贯通碰撞、渲染与动画；相机仍保留 yaw/pitch。加载器兼容 `version: 1` 的对象 yaw，读取时转换为绕 Y 轴的四元数；保存后统一写为 v2，不保留第二份可修改的 yaw。原有项目无需批量改写，旧版引擎不能读取 v2 Map。外层 ALAS1 资产信封版本仍为 1。
+Map 的 SceneDocument 载荷现写入 `version: 3`：内嵌材质与 Material 资产统一使用 Shader 引用、命名属性和纹理引用；对象朝向为 `rotation: [x,y,z,w]` 单位四元数。已迁移仓库内的 v1/v2 地图，旧载荷明确拒绝；外层 ALAS1 资产信封版本仍为 1。迁移方式见 [Shader / Material](shader-materials.md)。
 
-材质可作为 Map 内嵌值，类似对象内的 ColliderShape，不把每个临时材质强制变成独立文件。复用的材质配置仍是注册的 Data 资产。
+材质可作为 Map 内嵌值；复用的材质是注册的 Material 资产。Shader 与 Texture 按持久 ID 解析。CPU 材质不保存 descriptor index，World 和 Frame 仅持有参数值与不可变资产引用，纹理绑定由 renderer 分配。
 
 capture 跳过已删除对象，删除对象也移除其命名引用。未注册的自定义 Solver/mesh 无法重建，保存明确报错。save 始终把 SceneDocument 写成 inline payload；对同一 Map 保留 ID，Save As 创建新 Map ID，保留 Object ID。无 Solver 的手动关节姿态可保存；有 Solver 的姿态重新求解。选择、悬停、路径命令、计时器、推理序列、IK 历史、RenderDelta、GPU 句柄、物理缓存与 JS 闭包不序列化。
 

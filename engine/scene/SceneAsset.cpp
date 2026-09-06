@@ -43,7 +43,7 @@ static ColliderShape shape(const Json& j) {
 }
 Json SceneDocument::json() const {
     validate();
-    Json j{{"version", 2},
+    Json j{{"version", 3},
            {"scripts", Json::array()},
            {"objects", Json::array()},
            {"materials", Json::array()},
@@ -65,9 +65,7 @@ Json SceneDocument::json() const {
     for (const auto& script : scripts)
         j["scripts"].push(script.json());
     for (const auto& m : materials)
-        j["materials"].push({{"albedoRoughness", vector(m.albedoRoughness)},
-                             {"emissionMetallic", vector(m.emissionMetallic)},
-                             {"surface", vector(m.surface)}});
+        j["materials"].push(m.json());
     j["materialAssets"] = Json::array();
     for (const auto& m : materialAssets)
         j["materialAssets"].push({{"index", m.first}, {"asset", m.second.json()}});
@@ -126,16 +124,13 @@ Json SceneDocument::json() const {
 }
 SceneDocument SceneDocument::fromJson(const Json& j) {
     auto version = j.at("version").uint();
-    if (version != 1 && version != 2)
+    if (version != 3)
         throw std::invalid_argument("Unsupported Map version");
     SceneDocument s;
     for (const auto& script : j.at("scripts").elements())
         s.scripts.push_back(AssetRef::fromJson(script));
-    for (const auto& m : j.at("materials").elements()) {
-        s.materials.push_back({vector4(m.at("albedoRoughness")), vector4(m.at("emissionMetallic"))});
-        if (m.contains("surface"))
-            s.materials.back().surface = vector4(m.at("surface"));
-    }
+    for (const auto& m : j.at("materials").elements())
+        s.materials.push_back(MaterialDefinition::fromJson(m));
     if (j.contains("materialAssets"))
         for (const auto& m : j.at("materialAssets").elements())
             s.materialAssets.emplace(m.at("index").uint(), AssetRef::fromJson(m.at("asset")));
@@ -161,11 +156,8 @@ SceneDocument SceneDocument::fromJson(const Json& j) {
         o.id = item.at("id").string();
         o.name = item.at("name").string();
         o.position = vector3(item.at("position"));
-        if (version == 2) {
-            auto q = vector4(item.at("rotation"));
-            o.rotation = quat(q.w, q.x, q.y, q.z);
-        } else
-            o.rotation = glm::angleAxis(float(item.at("yaw").number()), vec3(0, 1, 0));
+        auto q = vector4(item.at("rotation"));
+        o.rotation = quat(q.w, q.x, q.y, q.z);
         o.enabled = item.at("enabled").boolean();
         o.interactable = item.at("interactable").boolean();
         const auto& r = item.at("render");

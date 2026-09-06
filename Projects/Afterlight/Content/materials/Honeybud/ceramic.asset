@@ -1,3 +1,3 @@
 ALAS1
 {"id": "6c5b47d687bb4fd9b5ae43be67cce189", "name": "ceramic", "type": "Material", "version": 1, "storage": "embedded", "metadata": {}}
-{"albedoRoughness": [0.3, 0.53, 0.48, 0.24], "emissionMetallic": [0, 0, 0, 0], "surface": [1, 1, 0.5, 0]}
+{"shader": {"id": "c6152da2cdb35ce49c81a5f9157b4179", "path": "/Game/shaders/Standard"}, "properties": {"baseColor": [0.3, 0.53, 0.48], "roughness": 0.24, "emission": [0, 0, 0], "metallic": 0, "uvScale": [1, 1], "normalStrength": 0.5}, "textures": {}}

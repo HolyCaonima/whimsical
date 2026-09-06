@@ -33,7 +33,7 @@ struct SceneObject {
 struct SceneDocument {
     std::vector<AssetRef> scripts; // Map-specific lifecycle code, loaded after project common scripts.
     std::vector<SceneObject> objects;
-    std::vector<Material> materials;
+    std::vector<MaterialDefinition> materials;
     std::map<uint32_t, AssetRef> materialAssets;
     std::vector<Light> lights;
     Camera camera;

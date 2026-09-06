@@ -1,4 +1,5 @@
 #include "Renderer.h"
+#include "MaterialBindings.h"
 #include "VulkanContext.h"
 #include "NrdDenoiser.h"
 #include "RenderGraph.h"
@@ -28,7 +29,7 @@ struct alignas(16) GpuInstance {
     mat4 model, previousModel;
     glm::uvec4 info;
 };
-static_assert(sizeof(Globals) == 352 && sizeof(GpuInstance) == 144 && sizeof(Material) == 64 &&
+static_assert(sizeof(Globals) == 352 && sizeof(GpuInstance) == 144 && sizeof(GpuMaterial) == 176 &&
                   sizeof(GpuVertex) == 96,
               "GPU layout mismatch");
 struct AccelerationStructure {
@@ -36,6 +37,14 @@ struct AccelerationStructure {
     Buffer storage;
     VkDeviceAddress address = 0;
 };
+VkShaderModule createShaderModule(VulkanContext& vk, const std::vector<uint32_t>& data) {
+    VkShaderModuleCreateInfo info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    info.codeSize = data.size()*sizeof(uint32_t);
+    info.pCode = data.data();
+    VkShaderModule shader;
+    VK_CHECK(vkCreateShaderModule(vk.device, &info, nullptr, &shader));
+    return shader;
+}
 VkShaderModule loadShader(VulkanContext& vk, const char* name) {
     std::string path = std::string(AFTERLIGHT_SHADERS) + "/" + name + ".spv";
     std::ifstream file(path, std::ios::binary | std::ios::ate);
@@ -80,7 +89,10 @@ struct Renderer::Impl {
     VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
     VkDescriptorSet descriptors = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-    VkPipeline raster = VK_NULL_HANDLE;
+    ShaderCompiler shaderCompiler;
+    MaterialBindings materialBindings;
+    std::map<std::shared_ptr<const ShaderAsset>, VkPipeline> rasterPrograms;
+    std::map<ShaderCompiler::ShaderSet, std::array<VkPipeline, 3>> computePrograms;
     std::array<VkPipeline, 4> compute{};
     Buffer globals, instanceData, materialData, lightData, vertexData, indexData, tlasInstances, tlasScratch,
         readback, auditReadback;
@@ -166,11 +178,12 @@ struct Renderer::Impl {
             vkDestroySemaphore(vk.device, acquired, nullptr);
         if (fence)
             vkDestroyFence(vk.device, fence, nullptr);
-        for (auto p : compute)
-            if (p)
+        if (compute[3]) vkDestroyPipeline(vk.device, compute[3], nullptr);
+        for (const auto& programs : computePrograms)
+            for (auto p : programs.second)
                 vkDestroyPipeline(vk.device, p, nullptr);
-        if (raster)
-            vkDestroyPipeline(vk.device, raster, nullptr);
+        for (const auto& program : rasterPrograms)
+            vkDestroyPipeline(vk.device, program.second, nullptr);
         if (pipelineLayout)
             vkDestroyPipelineLayout(vk.device, pipelineLayout, nullptr);
         if (descriptorPool)
@@ -208,7 +221,7 @@ struct Renderer::Impl {
         globals = vk.buffer(sizeof(Globals), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
         instanceData =
             vk.buffer(sizeof(GpuInstance) * MaxInstances, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
-        materialData = vk.buffer(sizeof(Material) * MaxMaterials, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+        materialData = vk.buffer(sizeof(GpuMaterial) * MaxMaterials, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
         lightData = vk.buffer(sizeof(Light) * MaxLights, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
         tlasInstances = vk.buffer(sizeof(VkAccelerationStructureInstanceKHR) * MaxInstances,
                                   VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
@@ -240,7 +253,7 @@ struct Renderer::Impl {
     void buildMeshAS(VkCommandBuffer c, uint32_t m, bool update) {
         VkAccelerationStructureGeometryKHR geom{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR};
         geom.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-        geom.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+        geom.flags = 0; // Candidate acceptance uses the Shader surface/cull contract.
         geom.geometry.triangles = {VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR};
         auto& tri = geom.geometry.triangles;
         tri.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
@@ -359,7 +372,6 @@ struct Renderer::Impl {
             changed = frame.skins[i].slot != skinDraws[i].slot || frame.skins[i].mesh != skinDraws[i].mesh;
         if (changed)
             createGeometry(frame.skins, frame.staticMeshes);
-        updateTextures(frame.textures);
         bool newPose = frame.tick != skinTick;
         if (!newPose && !skinMotionPending)
             return;
@@ -505,20 +517,52 @@ struct Renderer::Impl {
         da.descriptorSetCount = 1;
         da.pSetLayouts = &setLayout;
         VK_CHECK(vkAllocateDescriptorSets(vk.device, &da, &descriptors));
-        const char* names[] = {"lighting.comp", "reuse.comp", "resolve.comp", "composite.comp"};
-        for (uint32_t i = 0; i < 4; i++) {
-            auto module = loadShader(vk, names[i]);
-            VkComputePipelineCreateInfo cp{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
-            cp.layout = pipelineLayout;
-            cp.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
-            cp.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-            cp.stage.module = module;
-            cp.stage.pName = "main";
-            auto result = vkCreateComputePipelines(vk.device, VK_NULL_HANDLE, 1, &cp, nullptr, &compute[i]);
-            vkDestroyShaderModule(vk.device, module, nullptr);
-            VK_CHECK(result);
+        compute[3] = createComputePipeline(loadShader(vk, "composite.comp"));
+    }
+    VkPipeline createComputePipeline(VkShaderModule module) {
+        VkComputePipelineCreateInfo cp{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+        cp.layout = pipelineLayout;
+        cp.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+        cp.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+        cp.stage.module = module;
+        cp.stage.pName = "main";
+        VkPipeline pipeline;
+        auto result = vkCreateComputePipelines(vk.device, VK_NULL_HANDLE, 1, &cp, nullptr, &pipeline);
+        vkDestroyShaderModule(vk.device, module, nullptr);
+        VK_CHECK(result);
+        return pipeline;
+    }
+    void updateMaterials(const Frame& frame) {
+        auto bindings = MaterialBindings::build(frame.materials);
+        for (const auto& shader : bindings.shaders) {
+            if (!rasterPrograms.count(shader))
+                rasterPrograms.emplace(shader, createRasterPipeline(shader));
         }
-        VkShaderModule vertex = loadShader(vk, "gbuffer.vert"), fragment = loadShader(vk, "gbuffer.frag");
+        auto programs = computePrograms.find(bindings.shaders);
+        if (programs == computePrograms.end()) {
+            std::array<VkPipeline, 3> pipelines{};
+            const char* names[] = {"lighting.comp", "reuse.comp", "resolve.comp"};
+            try {
+                for (uint32_t i = 0; i < pipelines.size(); ++i) {
+                    auto module = createShaderModule(vk, shaderCompiler.compile(names[i], bindings.shaders));
+                    pipelines[i] = createComputePipeline(module);
+                }
+            } catch (...) {
+                for (auto pipeline : pipelines)
+                    if (pipeline) vkDestroyPipeline(vk.device, pipeline, nullptr);
+                throw;
+            }
+            programs = computePrograms.emplace(bindings.shaders, pipelines).first;
+        }
+        updateTextures(bindings.textures);
+        std::copy(programs->second.begin(), programs->second.end(), compute.begin());
+        materialBindings = std::move(bindings);
+        std::memcpy(materialData.mapped, materialBindings.materials.data(),
+                    materialBindings.materials.size() * sizeof(GpuMaterial));
+    }
+    VkPipeline createRasterPipeline(const std::shared_ptr<const ShaderAsset>& shader) {
+        const auto& code = shaderCompiler.compile("gbuffer.frag", {shader});
+        VkShaderModule vertex = loadShader(vk, "gbuffer.vert"), fragment = createShaderModule(vk, code);
         VkPipelineShaderStageCreateInfo stages[2]{};
         for (int i = 0; i < 2; i++) {
             stages[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -543,7 +587,8 @@ struct Renderer::Impl {
         viewport.viewportCount = viewport.scissorCount = 1;
         VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
         rs.polygonMode = VK_POLYGON_MODE_FILL;
-        rs.cullMode = VK_CULL_MODE_NONE;
+        rs.cullMode = shader->renderState.cull == SurfaceCull::Back ? VK_CULL_MODE_BACK_BIT :
+                      shader->renderState.cull == SurfaceCull::Front ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_NONE;
         rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rs.lineWidth = 1;
         VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
@@ -581,10 +626,12 @@ struct Renderer::Impl {
         gp.pColorBlendState = &blend;
         gp.pDynamicState = &dynamic;
         gp.layout = pipelineLayout;
+        VkPipeline raster;
         auto result = vkCreateGraphicsPipelines(vk.device, VK_NULL_HANDLE, 1, &gp, nullptr, &raster);
         vkDestroyShaderModule(vk.device, vertex, nullptr);
         vkDestroyShaderModule(vk.device, fragment, nullptr);
         VK_CHECK(result);
+        return raster;
     }
     static const char* presentName(VkPresentModeKHR mode) {
         return mode == VK_PRESENT_MODE_MAILBOX_KHR     ? "MAILBOX"
@@ -810,6 +857,12 @@ struct Renderer::Impl {
         a.instanceCustomIndex = slot;
         a.mask = p.live && p.attributes.visible ? 0xffu : 0u;
         a.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+        if (p.live) {
+            auto shaderIndex = materialBindings.materials[p.attributes.material].info.x;
+            const auto& state = materialBindings.shaders[shaderIndex]->renderState;
+            if (state.mode == SurfaceMode::Opaque && state.cull == SurfaceCull::None)
+                a.flags |= VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
+        }
         a.accelerationStructureReference = blas[meshFor(slot, p)].address;
         accelerationInstances()[slot] = a; // Built in cached memory, stored once.
         sceneStatistics.attributes++;
@@ -981,7 +1034,7 @@ struct Renderer::Impl {
         VkRect2D scissor{{0, 0}, {width, height}};
         vkCmdSetViewport(c, 0, 1, &viewport);
         vkCmdSetScissor(c, 0, 1, &scissor);
-        vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS, raster);
+        VkPipeline boundPipeline = VK_NULL_HANDLE;
         vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptors, 0,
                                 nullptr);
         VkDeviceSize offset = 0;
@@ -993,6 +1046,12 @@ struct Renderer::Impl {
             const auto& p = frame.proxies[slot];
             if (!p.live || !p.attributes.visible)
                 continue;
+            auto shader = frame.materials[p.attributes.material].shader;
+            auto pipeline = rasterPrograms.at(shader);
+            if (pipeline != boundPipeline) {
+                vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+                boundPipeline = pipeline;
+            }
             auto& mesh = meshes[meshFor(slot, p)];
             vkCmdDrawIndexed(c, mesh.indexCount, 1, mesh.firstIndex, 0, slot);
         }
@@ -1084,6 +1143,9 @@ struct Renderer::Impl {
                << ",\n  \"staticMeshInstances\": " << staticBindings.size()
                << ", \"staticMeshAssets\": " << firstSkinMesh - 2
                << ", \"textureAssets\": " << textureBindings.size()
+               << ", \"shaderAssets\": " << materialBindings.shaders.size()
+               << ", \"shaderCompilations\": " << shaderCompiler.compilationCount()
+               << ", \"rasterPrograms\": " << rasterPrograms.size()
                << ",\n  \"sceneSlots\": " << sceneStatistics.slots << ", \"sceneSlotWrites\": " << sceneWrites
                << ", \"sceneSlotWritesIfRebuilt\": " << sceneSlotFrames
                << ",\n  \"sceneResyncs\": " << sceneResyncs << ", \"tlasRebuilds\": " << sceneTlasRebuilds
@@ -1179,13 +1241,13 @@ struct Renderer::Impl {
             lightsChanged = frame.lights.size() != previous->lights.size() ||
                             std::memcmp(frame.lights.data(), previous->lights.data(),
                                         frame.lights.size() * sizeof(Light)) != 0;
-            materialsChanged = frame.materials.size() != previous->materials.size() ||
-                               std::memcmp(frame.materials.data(), previous->materials.data(),
-                                           frame.materials.size() * sizeof(Material)) != 0;
+            materialsChanged = !(frame.materials == previous->materials);
             // Both are read by every shading pass, so changing either invalidates the
             // temporal history that was accumulated under the old values.
             reset = reset || lightsChanged || materialsChanged;
         }
+        if (materialsChanged)
+            updateMaterials(frame);
         Globals data{};
         data.view = frame.camera.view();
         data.vp = frame.camera.projection(float(width) / height) * data.view;
@@ -1204,9 +1266,6 @@ struct Renderer::Impl {
         // Materials and lights are compared against the previous snapshot anyway, to
         // decide whether temporal history survives; the same answer decides whether they
         // are worth uploading again.
-        if (materialsChanged)
-            std::memcpy(materialData.mapped, frame.materials.data(),
-                        frame.materials.size() * sizeof(Material));
         if (lightsChanged)
             std::memcpy(lightData.mapped, frame.lights.data(), frame.lights.size() * sizeof(Light));
         uploadScope.finish();

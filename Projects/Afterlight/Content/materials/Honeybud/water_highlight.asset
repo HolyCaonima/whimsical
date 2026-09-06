@@ -1,3 +1,3 @@
 ALAS1
 {"id": "613c26279123466a85191a329d92eeed", "name": "water_highlight", "type": "Material", "version": 1, "storage": "embedded", "metadata": {}}
-{"albedoRoughness": [0.36, 0.66, 0.67, 0.12], "emissionMetallic": [0, 0, 0, 0], "surface": [1, 1, 0.5, 0]}
+{"shader": {"id": "c6152da2cdb35ce49c81a5f9157b4179", "path": "/Game/shaders/Standard"}, "properties": {"baseColor": [0.36, 0.66, 0.67], "roughness": 0.12, "emission": [0, 0, 0], "metallic": 0, "uvScale": [1, 1], "normalStrength": 0.5}, "textures": {}}

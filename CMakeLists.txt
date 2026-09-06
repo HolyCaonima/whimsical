@@ -91,6 +91,7 @@ endfunction()
 add_library(afterlight_core
   engine/core/ConsoleRegistry.cpp engine/core/EngineSettings.cpp engine/core/GpuProfile.cpp engine/core/CpuProfile.cpp engine/ui/Console.cpp
   engine/assets/StaticMesh.cpp
+  engine/assets/ShaderAsset.cpp engine/assets/Material.cpp
   engine/assets/EngineAssets.cpp engine/scene/SceneAsset.cpp engine/scene/ScenePersistence.cpp
   engine/ui/EngineUi.cpp engine/scripting/UiBindings.cpp
   engine/core/World.cpp engine/core/RenderScene.cpp engine/navigation/Navigation.cpp engine/scripting/ScriptRuntime.cpp
@@ -100,12 +101,19 @@ target_include_directories(afterlight_core PUBLIC engine "${DEPS}/glm")
 target_compile_definitions(afterlight_core PUBLIC GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_CTOR_INIT
   NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS AFTERLIGHT_ROOT="${CMAKE_SOURCE_DIR}")
 target_link_libraries(afterlight_core PUBLIC duktape afterlight_animation uiCore)
+add_library(afterlight_shader_runtime engine/render/ShaderCompiler.cpp engine/render/MaterialBindings.cpp)
+target_link_libraries(afterlight_shader_runtime PUBLIC afterlight_core)
+target_compile_options(afterlight_shader_runtime PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(afterlight_shader_runtime PRIVATE
+  AFTERLIGHT_SHADER_SOURCES="${CMAKE_SOURCE_DIR}/engine/render/shaders"
+  AFTERLIGHT_GLSLANG="${DEPS}/glslang/bin/glslang.exe"
+  AFTERLIGHT_SHADERS="${CMAKE_BINARY_DIR}/shaders")
 add_executable(Afterlight engine/main.cpp engine/platform/Window.cpp engine/render/Renderer.cpp engine/render/VulkanContext.cpp engine/render/NrdDenoiser.cpp engine/render/GpuProfiler.cpp engine/render/UiRenderer.cpp)
-target_link_libraries(Afterlight PRIVATE afterlight_core volk NRD user32 gdi32 winmm)
+target_link_libraries(Afterlight PRIVATE afterlight_shader_runtime volk NRD user32 gdi32 winmm)
 afterlight_copy_onnx(Afterlight)
 target_compile_options(Afterlight PRIVATE /W4 /permissive- /utf-8)
 target_compile_options(afterlight_core PRIVATE /W4 /permissive- /utf-8)
-set(SHADER_FILES gbuffer.vert gbuffer.frag lighting.comp reuse.comp resolve.comp composite.comp ui.vert ui.frag)
+set(SHADER_FILES gbuffer.vert composite.comp ui.vert ui.frag)
 set(SPIRV)
 foreach(SHADER IN LISTS SHADER_FILES)
   set(OUTPUT "${CMAKE_BINARY_DIR}/shaders/${SHADER}.spv")
@@ -119,6 +127,11 @@ add_custom_target(afterlight_shaders DEPENDS ${SPIRV})
 add_dependencies(Afterlight afterlight_shaders)
 target_compile_definitions(Afterlight PRIVATE AFTERLIGHT_SHADERS="${CMAKE_BINARY_DIR}/shaders")
 enable_testing()
+add_executable(shader_tests tests/ShaderTests.cpp)
+target_link_libraries(shader_tests PRIVATE afterlight_shader_runtime)
+target_compile_options(shader_tests PRIVATE /W4 /permissive- /utf-8)
+afterlight_copy_onnx(shader_tests)
+add_test(NAME shader_assets_and_compilation COMMAND shader_tests)
 add_executable(ui_tests tests/UiTests.cpp)
 target_link_libraries(ui_tests PRIVATE afterlight_core)
 target_compile_options(ui_tests PRIVATE /W4 /permissive- /utf-8)

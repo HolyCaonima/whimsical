@@ -213,10 +213,13 @@ static duk_ret_t callNative(duk_context* c) {
             runtime(c).log(duk_safe_to_string(c, 0));
             return 0;
         case MaterialAdd: {
-            Material m;
-            m.albedoRoughness = {num(c, 0), num(c, 1), num(c, 2), num(c, 3)};
-            m.emissionMetallic = {num(c, 4), num(c, 5), num(c, 6), num(c, 7)};
-            w.materials.push_back(m);
+            MaterialDefinition definition;
+            definition.shader = assets(c).reference(AssetPath("/Game/shaders/Standard"));
+            definition.properties = {{"baseColor", Json::array({num(c, 0), num(c, 1), num(c, 2)})},
+                                     {"roughness", num(c, 3)},
+                                     {"emission", Json::array({num(c, 4), num(c, 5), num(c, 6)})},
+                                     {"metallic", num(c, 7)}};
+            w.materials.push_back(definition.resolve(assets(c)));
             duk_push_uint(c, uint32_t(w.materials.size() - 1));
             return 1;
         }

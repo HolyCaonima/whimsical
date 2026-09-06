@@ -109,7 +109,9 @@ static void rotationalMotion() {
 }
 static void transformsAndScript() {
     World world;
-    world.materials.push_back({});
+    MaterialDefinition material;
+    material.shader = testAssets().reference(AssetPath("/Game/shaders/Standard"));
+    world.materials.push_back(material.resolve(testAssets()));
     ScriptRuntime js(world, testAssets());
     js.execute(R"JS(
         function assert(value, message) { if (!value) throw new Error(message); }
@@ -162,15 +164,20 @@ static void transformsAndScript() {
               sameRotation(attached.pose.rotation, full), "Joint colliders must follow full root rotation");
     auto document = ScenePersistence::capture(world, testAssets());
     auto encoded = document.json();
-    check(encoded.at("version").uint() == 2, "Quaternion maps must declare their updated schema");
+    check(encoded.at("version").uint() == 3, "Quaternion maps must declare their updated schema");
     auto decoded = SceneDocument::fromJson(Json::parse(encoded.dump()));
     check(sameRotation(decoded.objects.back().rotation, full), "Quaternion scene data did not round-trip");
-    // A real old project exercises the v1 yaw migration, and the saved v2 file exercises disk IO.
+    // The migrated project and a saved Shader-backed map exercise disk IO.
     auto legacy = testAssets().load<SceneAsset>(AssetPath("/Game/Maps/RainCourt"));
-    check(!legacy->scene.objects.empty(), "Legacy yaw map must remain loadable");
+    check(!legacy->scene.objects.empty(), "Migrated project map must remain loadable");
     auto directory = std::filesystem::path(AFTERLIGHT_ROOT) / "build" / ("kinematic-" + newPersistentId());
     AssetManager local{Project::create(directory, "Kinematic test")};
     registerEngineAssets(local);
+    auto shader = world.materials[0].shader;
+    auto shaderHeader = shader->header();
+    shaderHeader.storage = PayloadStorage::Inline;
+    shaderHeader.source.clear();
+    local.save(shader->reference().path, shaderHeader, shader->source);
     auto saved = ScenePersistence::save(world, local, AssetPath("/Game/Maps/Rotated"), "Rotated");
     local.scan();
     World fromDisk;

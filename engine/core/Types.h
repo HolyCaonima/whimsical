@@ -2,6 +2,7 @@
 #include "ConsoleTypes.h"
 #include "Input.h"
 #include "Math.h"
+#include "assets/Material.h"
 #include "animation/Animation.h"
 #include <vector>
 #include <array>
@@ -16,12 +17,7 @@ struct SkinnedMesh;
 struct StaticMesh;
 struct TextureAsset;
 struct CpuProfile;
-struct Material {
-    vec4 albedoRoughness{.5f, .5f, .5f, .5f};
-    vec4 emissionMetallic{0};
-    glm::ivec4 textures{-1};
-    vec4 surface{1, 1, 1, 1}; // UV scale, normal strength, legacy paving seams.
-};
+
 enum class Shape : uint32_t { Box, Capsule };
 struct RenderComponent {
     Shape shape = Shape::Box;
@@ -126,7 +122,6 @@ struct Frame {
         std::shared_ptr<const StaticMesh> mesh;
     };
     std::vector<StaticDraw> staticMeshes;
-    std::vector<std::shared_ptr<const TextureAsset>> textures;
     AnimationInspection animationInspection;
     struct Skin {
         uint32_t slot = 0;

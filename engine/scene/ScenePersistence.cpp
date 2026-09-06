@@ -4,7 +4,8 @@
 namespace afterlight {
 SceneDocument ScenePersistence::capture(const World& world, const AssetManager& assets) {
     SceneDocument s;
-    s.materials = world.materials;
+    for (const auto& material : world.materials)
+        s.materials.push_back(MaterialDefinition::capture(material, assets));
     for (const auto& material : world.materialAssets)
         s.materialAssets.emplace(material.first, assets.resolve(material.second->reference()));
     s.lights = world.lights;
@@ -61,20 +62,14 @@ SceneDocument ScenePersistence::capture(const World& world, const AssetManager& 
     return s;
 }
 void ScenePersistence::instantiate(World& world, const SceneDocument& s, AssetManager& assets) {
-    world.materials = s.materials;
-    for (const auto& binding : s.materialAssets) {
-        auto material = assets.load<MaterialAsset>(binding.second);
-        world.materialAssets.emplace(binding.first, material);
-        auto& parameters = world.materials[binding.first];
-        parameters = material->parameters;
-        for (int channel = 0; channel < 3; ++channel) {
-            auto texture = material->textures[channel];
-            if (!texture)
-                continue;
-            auto found = std::find(world.textures.begin(), world.textures.end(), texture);
-            parameters.textures[channel] = int(found - world.textures.begin());
-            if (found == world.textures.end())
-                world.textures.push_back(texture);
+    for (uint32_t i = 0; i < s.materials.size(); ++i) {
+        auto binding = s.materialAssets.find(i);
+        if (binding == s.materialAssets.end())
+            world.materials.push_back(s.materials[i].resolve(assets));
+        else {
+            auto material = assets.load<MaterialAsset>(binding->second);
+            world.materialAssets.emplace(i, material);
+            world.materials.push_back(material->parameters);
         }
     }
     world.lights = s.lights;

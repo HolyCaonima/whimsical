@@ -67,7 +67,6 @@ class World {
     void clearScene();
     std::vector<Material> materials;
     std::map<uint32_t, std::shared_ptr<const MaterialAsset>> materialAssets;
-    std::vector<std::shared_ptr<const TextureAsset>> textures;
     std::vector<Light> lights;
     Camera camera;
     NavigationSettings navigation;
