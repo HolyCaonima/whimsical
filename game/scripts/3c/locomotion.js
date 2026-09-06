@@ -1,16 +1,17 @@
-/* Gameplay owns intent/state; native movement supplies capsule collision and navigation. ES5. */
+/* Gameplay supplies intent; animation root motion moves the physical navigation body. ES5. */
 var Locomotion = {
     id : 0,
-    facing : false,
+    facing : null,
     blockedTime : 0,
     velocity : {x : 0, z : 0},
     path : [],
     state : 'Idle',
-    yaw : 0,
+    previousPosition : null,
     interactionTime : 0,
     init : function(id) {
         this.id = id;
         this.settings = Engine.readJson('animations/locomotion.json');
+        this.previousPosition = Engine.position(id);
     },
     command : function(target) {
         var route = Engine.findPath(this.id, target);
@@ -27,19 +28,23 @@ var Locomotion = {
         this.path = [];
         Engine.showPath([]);
         this.interactionTime = 0;
-        this.facing = false;
+        this.facing = null;
     },
-    prepare : function(input) {
+    prepare : function(dt, input) {
+        var p = Engine.position(this.id);
+        // Observe the previous animation/physics step, rather than treating intent as motion.
+        this.velocity = {x : (p.x - this.previousPosition.x) / dt, z : (p.z - this.previousPosition.z) / dt};
+        this.previousPosition = p;
         this.bodyHeight = Engine.characterHeight(this.id, input.keys[17] ? this.settings.crouchHeight
                                                                          : this.settings.standingHeight);
     },
-    present : function(next) {
-        Engine.pose(this.id, next.x, next.y, next.z, this.yaw, 1);
-        var v = this.velocity, speed = Math.sqrt(v.x * v.x + v.z * v.z);
+    present : function(dx, dz, speed) {
+        // Like the upstream Biped Control: velocity and facing are independent inputs.
+        // Zero facing lets the controller keep its trajectory direction while stopping.
         Engine.animationInput(this.id, {
-            action : speed < .04 ? this.settings.idleAction : this.settings.moveAction,
-            velocity : {x : v.x, y : 0, z : v.z},
-            facing : {x : Math.sin(this.yaw), y : 0, z : Math.cos(this.yaw)}
+            action : speed < .1 ? this.settings.idleAction : this.settings.moveAction,
+            velocity : {x : dx * speed, y : 0, z : dz * speed},
+            facing : this.facing || {x : dx, y : 0, z : dz}
         });
     },
     tick : function(dt, input) {
@@ -48,9 +53,8 @@ var Locomotion = {
         var p = Engine.position(this.id), s = this.settings, dx = 0, dz = 0, distance = 0, manual = false;
         if (this.interactionTime > 0) {
             this.interactionTime -= dt;
-            this.velocity = {x : 0, z : 0};
             this.state = 'Interacting';
-            this.present(p);
+            this.present(0, 0, 0);
             return;
         }
         if (Controller.selected && input.focused) {
@@ -60,6 +64,7 @@ var Locomotion = {
                 manual = true;
                 this.path = [];
                 Controller.pending = 0;
+                this.facing = null;
                 Engine.showPath([]);
                 dx = x * Math.cos(CameraRig.yaw) + z * Math.sin(CameraRig.yaw);
                 dz = -x * Math.sin(CameraRig.yaw) + z * Math.cos(CameraRig.yaw);
@@ -86,29 +91,16 @@ var Locomotion = {
                                                            : input.keys[16] ? s.runSpeed
                                                                             : s.walkSpeed;
         if (!manual && this.path.length === 1)
-            speed = Math.min(speed, Math.sqrt(2 * s.braking * Math.max(0, distance - .04)));
+            speed = Math.min(speed, distance * s.arrivalResponse);
         var turn = 0;
         if (length > .001) {
             dx /= length;
             dz /= length;
             var desired = Math.atan2(dx, dz);
-            turn = Math.atan2(Math.sin(desired - this.yaw), Math.cos(desired - this.yaw));
-            this.yaw += Math.max(-s.turnRate * dt, Math.min(s.turnRate * dt, turn));
-            speed *= Math.max(0, Math.cos(turn));
+            turn = Math.atan2(Math.sin(desired - p.yaw), Math.cos(desired - p.yaw));
         } else
             speed = 0;
-        var tx = dx * speed, tz = dz * speed, v = this.velocity,
-            acc = (speed > Math.sqrt(v.x * v.x + v.z * v.z) ? s.acceleration : s.braking) * dt;
-        var vx = tx - v.x, vz = tz - v.z, change = Math.sqrt(vx * vx + vz * vz);
-        if (change > acc) {
-            vx *= acc / change;
-            vz *= acc / change;
-        }
-        v.x += vx;
-        v.z += vz;
-        var next = Engine.move(this.id, v.x * dt, v.z * dt);
-        v.x = (next.x - p.x) / dt;
-        v.z = (next.z - p.z) / dt;
+        var v = this.velocity;
         var actual = Math.sqrt(v.x * v.x + v.z * v.z);
         if (this.path.length && speed > .3 && actual < .05) {
             this.blockedTime += dt;
@@ -117,19 +109,22 @@ var Locomotion = {
                 this.blockedTime = 0;
                 if (!this.command(goal)) {
                     this.stop();
+                    dx = 0;
+                    dz = 0;
+                    speed = 0;
                     Controller.pending = 0;
                     Controller.message = 'Route is no longer reachable';
                 }
             }
         } else
             this.blockedTime = 0;
-        this.state = this.facing || (length > .01 && Math.abs(turn) > 1.0 && actual < .2) ? 'TurnInPlace'
+        this.state = (this.facing || (length > .01 && Math.abs(turn) > 1.0)) && actual < .2 ? 'TurnInPlace'
                      : actual < .04   ? (crouched ? 'Crouching' : 'Idle')
                      : speed < .05    ? 'Stopping'
                      : crouched       ? 'Crouching'
                      : actual < .6    ? 'Starting'
                      : input.keys[16] ? 'Running'
                                       : 'Walking';
-        this.present(next);
+        this.present(dx, dz, speed);
     }
 };

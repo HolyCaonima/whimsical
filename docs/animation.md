@@ -125,6 +125,16 @@ powershell -ExecutionPolicy Bypass -File tools/build.ps1 -Test
 
 `companion_follow` 额外验证实际关卡中的跟随、绕障、角色间距、两套导入网格和运动后的蒙皮矩阵更新。`animation_attributes` 验证独立求解器消费属性、实例隔离、属性持久性、UI 点击路由、不可变快照、全部风格求解和 Zombie 风格实际抬高手腕。五项 CTest 全部通过。
 
+### 跟随与根运动
+
+人和狗均使用 `rootMotion:true`：Locomotion / Companion 负责寻路、目标速度和动作意图；Solver 同时生成身体动作与根位移/旋转；World 通过碰撞和可行走区域检查应用根运动，下一帧实际根姿态反馈给 Solver。该分工同样适用于未来带 root motion 的 clip 或 motion matching 求解器，不在玩法脚本内绑定神经网络类型。
+
+对应原始四足 `Program.Control` → `RootModule.Series.Control` → `Program.Animate`：先对目标速度/方向平滑并预测 0.5 秒轨迹，每 0.1 秒预测一次动作序列，再每帧采样/混合序列中的根姿态与骨骼。上游不会先把 Actor 转到目标方向，再丢弃网络的根旋转。脚本直接修改狗的 yaw 会绕过预测的转向和脚步，并迫使缓存每帧重定位；原先每 0.45 秒重新寻路因此产生周期性的转向突变。停止时传零 facing，沿用 controller 内的轨迹方向，避免追着残余路径点旋转。
+
+`build/bin/Release/companion_tests.exe captures/dog-turn.csv` 可导出逐帧位置、实际 yaw、求解器根旋转和身体骨骼 yaw。测试同时检查根旋转被实际消费、重新寻路时根与身体转速的连续性，以及已有的跟随/碰撞约束。
+
+双足同样参考原始 `Biped.Program.Control/Animate`：速度与朝向分别作为输入，由 controller 平滑轨迹及每帧混合根运动。Locomotion 在下一帧读取实际位移，供受阻重规划和状态判断使用；到达减速使用 `min(speed, distance * arrivalResponse)`，给网络留出收步时间，不再硬改位移或用脚本限速转 yaw。交互朝向在最后 1.5 米进近时独立输入，角色可以一边移动一边面向物体；站稳后的触发按实际根朝向判断，容差由 `interactionFacingTolerance`（0.2 rad）配置。此容差允许自然落脚后的残余朝向误差，不强制拧正已经着地的脚。`core_gameplay` 覆盖手动转向、停止、导航停靠、交互、动态受阻及逐帧根旋转消费。
+
 ### 骨骼姿态诊断
 
 `animation_runtime` 还检查虚拟 muzzle 的绑定方向、待机/小跑时狗头保持向上，以及默认双足步态的双手相对身体摆幅。仅检查有限值、骨长或 GPU validation 无法发现骨骼轴翻转。

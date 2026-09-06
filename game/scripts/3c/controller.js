@@ -3,7 +3,7 @@ var Controller = {
     pending : 0,
     message : 'Click to walk. Explore the court.',
     tick : function(dt, input) {
-        Locomotion.facing = false;
+        Locomotion.facing = null;
         if (input.pressed[27]) {
             Locomotion.stop();
             this.pending = 0;
@@ -32,17 +32,17 @@ var Controller = {
             if (id)
                 this.interact(id);
         }
-        if (this.pending && Locomotion.path.length === 0) {
+        if (this.pending) {
             var p = Engine.position(Locomotion.id), item = Interactions.objects[this.pending];
-            if (Interactions.distance(p, item.approach) < .65) {
+            // Face the object during the final approach. The solver can place its last
+            // steps for the interaction instead of being asked to pivot after planting.
+            if (Locomotion.path.length <= 1 && Interactions.distance(p, item.approach) < 1.5) {
                 var target = Engine.position(this.pending),
                     desired = Math.atan2(target.x - p.x, target.z - p.z),
-                    angle =
-                        Math.atan2(Math.sin(desired - Locomotion.yaw), Math.cos(desired - Locomotion.yaw));
-                if (Math.abs(angle) > .12) {
-                    Locomotion.facing = true;
-                    Locomotion.yaw += Math.max(-6 * dt, Math.min(6 * dt, angle));
-                } else {
+                    angle = Math.atan2(Math.sin(desired - p.yaw), Math.cos(desired - p.yaw));
+                Locomotion.facing = {x : target.x - p.x, y : 0, z : target.z - p.z};
+                if (Locomotion.path.length === 0 &&
+                    Math.abs(angle) <= Locomotion.settings.interactionFacingTolerance) {
                     Interactions.execute(this.pending);
                     Locomotion.interactionTime = .75;
                     this.pending = 0;

@@ -65,7 +65,7 @@ var RainCourt = {
         var humanMaterial = Engine.material(.72, .79, .83, .65, 0, 0, 0, .12);
         Engine.setMaterial(player, humanMaterial);
         Engine.animation(player, 'animations/ai4animation/biped/controller.a4c',
-                         {rootMotion : false, rootOffset : {x : 0, y : -1, z : 0}});
+                         {rootMotion : true, rootOffset : {x : 0, y : -1, z : 0}});
         Engine.skinMesh(player, 'models/biped.skin');
         var dogMaterial = Engine.material(1, 1, 1, .8, 0, 0, 0, 0);
         var dog = Engine.spawn('Ash', true, config.spawn[0] + 1.4, .35, config.spawn[2] - 1.5, 1, 1, 1,
@@ -80,7 +80,7 @@ var RainCourt = {
             height : .7
         });
         Engine.animation(dog, 'animations/ai4animation/quadruped/controller.a4c',
-                         {rootMotion : false, rootOffset : {x : 0, y : -.35, z : 0}});
+                         {rootMotion : true, rootOffset : {x : 0, y : -.35, z : 0}});
         Engine.skinMesh(dog, 'models/dog.skin');
         Companion.init(dog, player);
         var power = true;

@@ -11,6 +11,13 @@ static void check(bool condition, const char* reason) {
     if (!condition)
         throw std::runtime_error(reason);
 }
+static void tickAnimated(ScriptRuntime& scripts, World& world, const Input& input) {
+    float yaw = world.entity(world.playerId).yaw;
+    scripts.tick(1.f / 60, input);
+    auto direction = world.animationOutput(world.playerId).rootMotion.rotation * vec3(0, 0, 1);
+    check(std::abs(world.entity(world.playerId).yaw - yaw - std::atan2(direction.x, direction.z)) < 1e-5f,
+          "Player movement and interaction must consume animated root rotation without scripted yaw");
+}
 int main() {
     try {
         World w;
@@ -39,25 +46,38 @@ int main() {
         input.keys['W'] = true;
         auto initial = w.entity(w.playerId).position;
         for (int i = 0; i < 120; i++)
-            js.tick(1.f / 60, input);
+            tickAnimated(js, w, input);
         check(glm::distance(initial, w.entity(w.playerId).position) > 2, "JS manual locomotion failed");
         input.keys.fill(false);
+        input.keys['D'] = true;
+        float turnStart = w.entity(w.playerId).yaw, previousTurn = 0, maxTurnChange = 0;
+        for (int i = 0; i < 90; ++i) {
+            float yaw = w.entity(w.playerId).yaw;
+            tickAnimated(js, w, input);
+            float turn = w.entity(w.playerId).yaw - yaw;
+            maxTurnChange = std::max(maxTurnChange, std::abs(turn - previousTurn));
+            previousTurn = turn;
+        }
+        check(std::abs(w.entity(w.playerId).yaw - turnStart) > .5f,
+              "A manual direction change must turn the animated player");
+        check(maxTurnChange < glm::radians(4.f), "Player turn rate must not snap to the scripted turn limit");
+        input.keys.fill(false);
         for (int i = 0; i < 120; i++)
-            js.tick(1.f / 60, input);
+            tickAnimated(js, w, input);
         check(w.state == "Idle", "Locomotion must settle at idle");
         input.keys[17] = true;
-        js.tick(1.f / 60, input);
+        tickAnimated(js, w, input);
         check(std::abs(w.agent(w.playerId).height - 1.3f) < .001f && std::abs(w.feet(w.playerId).y) < .001f,
               "JS crouch must resize physical capsule and keep feet grounded");
         auto player = w.entity(w.playerId).position;
         auto ceiling = w.spawn("Stance test ceiling", Shape::Box, {player.x, 1.7f, player.z}, {2, .4f, 2}, 0,
                                true, false);
         input.keys[17] = false;
-        js.tick(1.f / 60, input);
+        tickAnimated(js, w, input);
         check(w.agent(w.playerId).height < 1.4f && w.state == "Crouching",
               "JS must respect blocked standing clearance");
         w.destroy(ceiling);
-        js.tick(1.f / 60, input);
+        tickAnimated(js, w, input);
         check(w.agent(w.playerId).height > 1.9f, "JS must stand once ceiling is removed");
         js.execute(R"JS(
             (function() {
@@ -95,7 +115,7 @@ int main() {
         ScriptRuntime gameplay(interactionWorld);
         gameplay.initialize();
         Input click;
-        gameplay.tick(1.f / 60, click);
+        tickAnimated(gameplay, interactionWorld, click);
         auto screenPoint = [&](vec3 point) {
             auto clip = interactionWorld.camera.projection(float(click.width) / click.height) *
                         interactionWorld.camera.view() * vec4(point, 1);
@@ -114,10 +134,10 @@ int main() {
         check(interactionWorld.pick(click.mouseX, click.mouseY, click) == console,
               "Interactive object picking failed");
         click.leftPressed = true;
-        gameplay.tick(1.f / 60, click);
+        tickAnimated(gameplay, interactionWorld, click);
         click.leftPressed = false;
         for (int i = 0; i < 1500; i++) {
-            gameplay.tick(1.f / 60, click);
+            tickAnimated(gameplay, interactionWorld, click);
             check(Navigation::canStand(interactionWorld.physics(),
                                        interactionWorld.feet(interactionWorld.playerId),
                                        interactionWorld.agent(interactionWorld.playerId)),
@@ -131,17 +151,33 @@ int main() {
                             vec2(-6, -1.7f)) < .25f,
               "Navigation must arrive precisely");
         click.pressed[9] = true;
-        gameplay.tick(1.f / 60, click);
+        tickAnimated(gameplay, interactionWorld, click);
         click.pressed.fill(false);
         auto stopped = interactionWorld.entity(interactionWorld.playerId).position;
         screenPoint(vec3(6, 0, 4));
         click.leftPressed = true;
-        gameplay.tick(1.f / 60, click);
+        tickAnimated(gameplay, interactionWorld, click);
         click.leftPressed = false;
         for (int i = 0; i < 60; i++)
-            gameplay.tick(1.f / 60, click);
+            tickAnimated(gameplay, interactionWorld, click);
         check(glm::distance(stopped, interactionWorld.entity(interactionWorld.playerId).position) < .1f,
               "Deselected character must ignore commands");
+        // Block an already accepted route. Replanning must use physical feedback from
+        // root motion, rather than mistaking the requested velocity for actual travel.
+        gameplay.execute("Locomotion.command({x:-8,y:0,z:-1.7});");
+        check(!interactionWorld.path.empty(), "Dynamic obstacle test requires an initially valid route");
+        auto blocker = interactionWorld.spawn("New route obstruction", Shape::Box, {-8, 1, -1.7f}, {1, 2, 1},
+                                              0, true, false);
+        for (int i = 0; i < 600; ++i) {
+            tickAnimated(gameplay, interactionWorld, click);
+            check(Navigation::canStand(interactionWorld.physics(),
+                                       interactionWorld.feet(interactionWorld.playerId),
+                                       interactionWorld.agent(interactionWorld.playerId)),
+                  "Animated root motion must not cross a new route obstruction");
+        }
+        check(interactionWorld.path.empty() && interactionWorld.message == "Route is no longer reachable",
+              "Blocked animated travel must replan and cancel an unreachable route");
+        interactionWorld.destroy(blocker);
         // The render scene is persistent: slots outlive the objects that move through
         // them, and a change is reported as an event rather than rediscovered by
         // comparing whole frames.

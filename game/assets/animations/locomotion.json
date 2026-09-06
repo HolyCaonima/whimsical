@@ -17,9 +17,8 @@
   "crouchSpeed": 1.25,
   "standingHeight": 2.0,
   "crouchHeight": 1.3,
-  "acceleration": 10,
-  "braking": 14,
-  "turnRate": 8,
+  "arrivalResponse": 1,
   "arrivalRadius": 0.1,
-  "note": "Gameplay owns movement and collision. Animation receives measured velocity and facing; the invisible capsule remains the navigation body."
+  "interactionFacingTolerance": 0.2,
+  "note": "Gameplay supplies desired velocity and facing. Animation predicts root motion; physics constrains it. Arrival, blockage and interaction use the actual body pose."
 }

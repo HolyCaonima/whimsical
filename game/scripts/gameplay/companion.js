@@ -4,7 +4,6 @@ var Companion = {
     target : 0,
     path : [],
     repath : 0,
-    yaw : 0,
     speed : 0,
     lastGoal : null,
     init : function(id, target) {
@@ -13,6 +12,7 @@ var Companion = {
         this.path = [];
         this.repath = 0;
         this.speed = 0;
+        this.lastGoal = null;
     },
     tick : function(dt) {
         var p = Engine.position(this.id), leader = Engine.position(this.target);
@@ -50,28 +50,26 @@ var Companion = {
             var length = Math.sqrt(dx * dx + dz * dz);
             dx /= length;
             dz /= length;
-            var turn =
-                Math.atan2(Math.sin(Math.atan2(dx, dz) - this.yaw), Math.cos(Math.atan2(dx, dz) - this.yaw));
-            this.yaw += Math.max(-7 * dt, Math.min(7 * dt, turn));
             desired = Math.min(4.5, Math.max(.5, (distance - 1.1) * 1.5));
             if (this.path.length === 1)
                 desired = Math.min(desired, length * 3);
-            desired *= Math.max(0, Math.cos(turn));
         } else {
             dx = 0;
             dz = 0;
         }
         this.speed += Math.max(-9 * dt, Math.min(7 * dt, desired - this.speed));
-        var next = Engine.move(this.id, dx * this.speed * dt, dz * this.speed * dt);
-        var vx = (next.x - p.x) / dt, vz = (next.z - p.z) / dt, actual = Math.sqrt(vx * vx + vz * vz);
-        Engine.pose(this.id, next.x, next.y, next.z, this.yaw, 1);
+        // The solver predicts the turn and its footwork together. Moving/rotating the
+        // capsule here would discard that root motion and rebase the pose at each repath.
+        var moving = this.path.length && distance > 1.3;
+        var speed = moving ? this.speed : 0;
         Engine.animationInput(this.id, {
-            action : actual < .06   ? 'Idle'
-                     : actual < 1   ? 'Walk'
-                     : actual < 2.6 ? 'Trot'
-                                    : 'Canter',
-            velocity : {x : vx, y : 0, z : vz},
-            facing : {x : Math.sin(this.yaw), y : 0, z : Math.cos(this.yaw)}
+            action : speed < .1    ? 'Idle'
+                     : speed < 1.2 ? 'Walk'
+                     : speed < 2   ? 'Pace'
+                     : speed < 4   ? 'Trot'
+                                   : 'Canter',
+            velocity : {x : dx * speed, y : 0, z : dz * speed},
+            facing : moving ? {x : dx, y : 0, z : dz} : {x : 0, y : 0, z : 0}
         });
     }
 };
