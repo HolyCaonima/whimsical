@@ -1,3 +1,4 @@
+#include "TestProject.h"
 #include "animation/Animation.h"
 #include "animation/ai4animation/Controller.h"
 #include "scripting/ScriptRuntime.h"
@@ -60,7 +61,7 @@ static void framework() {
 }
 static void scene() {
     World world;
-    ScriptRuntime scripts(world);
+    ScriptRuntime scripts(world, testAssets());
     scripts.initialize();
     auto player = world.playerId;
     auto view = world.inspectAnimation(player);
@@ -101,8 +102,8 @@ static void scene() {
               "Gameplay movement input must not overwrite selected style");
     }
     // Prove the property changes the actual pose, not just the inspector label.
-    auto resource = anim::ai4animation::loadAsset(std::filesystem::path(AFTERLIGHT_ROOT) /
-                                                  "game/assets/animations/ai4animation/biped/controller.a4c");
+    auto resource =
+        testAssets().load<anim::Asset>(AssetPath("/Game/animations/ai4animation/biped/controller"));
     anim::Instance normal(*resource), zombie(*resource);
     normal.setAttribute("locomotion.style", "Neutral");
     zombie.setAttribute("locomotion.style", "Zombie");

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "id": "cc6d9f83ea7dbb2f0739d50f31b4f001",
+  "name": "Afterlight",
+  "startupMap": "/Game/Maps/RainCourt",
+  "scripts": [
+    "/Game/scripts/3c/locomotion",
+    "/Game/scripts/3c/camera",
+    "/Game/scripts/3c/controller",
+    "/Game/scripts/gameplay/interactions",
+    "/Game/scripts/gameplay/companion",
+    "/Game/scripts/bootstrap"
+  ]
+}

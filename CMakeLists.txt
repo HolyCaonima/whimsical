@@ -51,6 +51,12 @@ set_target_properties(onnxruntime PROPERTIES
   IMPORTED_IMPLIB "${DEPS}/onnxruntime/lib/onnxruntime.lib"
   IMPORTED_LOCATION "${DEPS}/onnxruntime/lib/onnxruntime.dll"
   INTERFACE_INCLUDE_DIRECTORIES "${DEPS}/onnxruntime/include")
+add_library(afterlight_assets
+  engine/assets/Json.cpp engine/assets/Asset.cpp engine/assets/Project.cpp engine/assets/AssetManager.cpp)
+target_include_directories(afterlight_assets PUBLIC engine)
+target_compile_definitions(afterlight_assets PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_options(afterlight_assets PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(afterlight_assets PRIVATE duktape)
 add_library(afterlight_animation
   engine/animation/SkinnedMesh.cpp
   engine/animation/Animation.cpp engine/animation/ai4animation/Controller.cpp
@@ -59,13 +65,14 @@ target_include_directories(afterlight_animation PUBLIC engine "${DEPS}/glm")
 target_compile_definitions(afterlight_animation PUBLIC GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE
   GLM_FORCE_CTOR_INIT GLM_ENABLE_EXPERIMENTAL NOMINMAX)
 target_compile_options(afterlight_animation PRIVATE /W4 /permissive- /utf-8)
-target_link_libraries(afterlight_animation PRIVATE onnxruntime)
+target_link_libraries(afterlight_animation PUBLIC afterlight_assets PRIVATE onnxruntime)
 function(afterlight_copy_onnx TARGET)
   add_custom_command(TARGET ${TARGET} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:onnxruntime>" "$<TARGET_FILE_DIR:${TARGET}>"
     VERBATIM)
 endfunction()
 add_library(afterlight_core
+  engine/assets/EngineAssets.cpp engine/scene/SceneAsset.cpp engine/scene/ScenePersistence.cpp
   engine/ui/AnimationInspector.cpp
   engine/core/World.cpp engine/core/RenderScene.cpp engine/navigation/Navigation.cpp engine/scripting/ScriptRuntime.cpp
   engine/physics/PhysicsScene.cpp engine/animation/AnimationCollision.cpp
@@ -93,6 +100,11 @@ add_custom_target(afterlight_shaders DEPENDS ${SPIRV})
 add_dependencies(Afterlight afterlight_shaders)
 target_compile_definitions(Afterlight PRIVATE AFTERLIGHT_SHADERS="${CMAKE_BINARY_DIR}/shaders")
 enable_testing()
+add_executable(asset_scene_tests tests/AssetSceneTests.cpp)
+target_link_libraries(asset_scene_tests PRIVATE afterlight_core)
+target_compile_options(asset_scene_tests PRIVATE /W4 /permissive- /utf-8)
+afterlight_copy_onnx(asset_scene_tests)
+add_test(NAME project_assets_scene COMMAND asset_scene_tests)
 add_executable(afterlight_tests tests/CoreTests.cpp)
 target_link_libraries(afterlight_tests PRIVATE afterlight_core)
 afterlight_copy_onnx(afterlight_tests)

@@ -1,0 +1,11 @@
+ALAS1
+{"id":"d1838ee93503e58e6a2742c92ab97c67","name":"bootstrap","version":1,"type":"Script","storage":"embedded","metadata":{}}
+function fixedUpdate(dt, input) {
+    // Publish the physical stance before a click can request a path through low clearance.
+    Locomotion.prepare(dt, input);
+    Controller.tick(dt, input);
+    Locomotion.tick(dt, input);
+    Companion.tick(dt);
+    CameraRig.tick(dt, input);
+    Engine.status(Locomotion.state, Controller.message);
+}

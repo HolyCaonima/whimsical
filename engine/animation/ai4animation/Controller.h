@@ -2,6 +2,7 @@
 #include "animation/Animation.h"
 #include "OnnxModel.h"
 #include <map>
+#include <istream>
 
 namespace afterlight::animation::ai4animation {
 struct Foot {
@@ -27,11 +28,27 @@ struct ControllerAsset {
     bool poseAxes = true;
     float window = .5f, predictionRate = 10, contactPower = 3;
     float trajectoryCorrection = .25f, minTimescale = 1, maxTimescale = 1.5f;
-    static std::shared_ptr<const ControllerAsset> load(const std::filesystem::path& directory);
+    static std::shared_ptr<const ControllerAsset> decode(std::istream&,
+                                                         std::shared_ptr<const OnnxModel> network,
+                                                         std::shared_ptr<const OnnxModel> postprocessor);
     void validate() const;
     const std::vector<vec3>& guidance(const Context&) const;
 };
-std::shared_ptr<const Asset> loadAsset(const std::filesystem::path& controllerPath);
+class ControllerResource final : public Asset {
+  public:
+    std::shared_ptr<const ControllerAsset> data;
+    explicit ControllerResource(std::shared_ptr<const ControllerAsset> value) : data(std::move(value)) {}
+    std::shared_ptr<const Skeleton> skeleton() const override {
+        return data->skeleton;
+    }
+    std::unique_ptr<Solver> createSolver() const override;
+    std::string solverLabel() const override {
+        return "AI4Animation / ONNX";
+    }
+    std::vector<EnumAttribute> attributes() const override {
+        return data->attributes;
+    }
+};
 struct SequenceFrame {
     Transform root;
     vec3 rootVelocity{0};

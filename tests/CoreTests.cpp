@@ -1,3 +1,4 @@
+#include "TestProject.h"
 #include "core/World.h"
 #include "core/FrameMailbox.h"
 #include "navigation/Navigation.h"
@@ -21,7 +22,7 @@ static void tickAnimated(ScriptRuntime& scripts, World& world, const Input& inpu
 int main() {
     try {
         World w;
-        ScriptRuntime js(w);
+        ScriptRuntime js(w, testAssets());
         js.initialize();
         check(w.playerId != 0, "JS must spawn player");
         check(w.objects().size() > 20 && w.physics().size() == w.objects().size(),
@@ -112,7 +113,7 @@ int main() {
         check(center && std::isfinite(center->x) && std::isfinite(center->z),
               "Physical ground picking failed");
         World interactionWorld;
-        ScriptRuntime gameplay(interactionWorld);
+        ScriptRuntime gameplay(interactionWorld, testAssets());
         gameplay.initialize();
         Input click;
         tickAnimated(gameplay, interactionWorld, click);
@@ -251,7 +252,7 @@ int main() {
         // The world has to publish those events on the caller's behalf; forgetting to
         // would leave the renderer showing stale geometry with no way to notice.
         World tracked;
-        ScriptRuntime trackedJs(tracked);
+        ScriptRuntime trackedJs(tracked, testAssets());
         trackedJs.initialize();
         auto opened = tracked.snapshot({}, 1, 0, 0);
         check(opened.proxies.size() == tracked.objects().size() &&

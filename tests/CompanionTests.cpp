@@ -1,3 +1,4 @@
+#include "TestProject.h"
 #include "scripting/ScriptRuntime.h"
 #include "animation/SkinnedMesh.h"
 #include <iostream>
@@ -11,7 +12,7 @@ static void check(bool value, const char* message) {
 int main(int argc, char** argv) {
     try {
         World world;
-        ScriptRuntime scripts(world);
+        ScriptRuntime scripts(world, testAssets());
         scripts.initialize();
         Input input;
         uint32_t dog = 0;

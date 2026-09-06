@@ -1,5 +1,4 @@
 #include "Controller.h"
-#include <fstream>
 #include <algorithm>
 #include <stdexcept>
 
@@ -58,13 +57,12 @@ void ControllerAsset::validate() const {
         }
     }
 }
-std::shared_ptr<const ControllerAsset> ControllerAsset::load(const std::filesystem::path& directory) {
-    auto assetPath = directory.extension() == ".a4c" ? directory : directory / "controller.a4c";
-    auto modelDirectory = assetPath.parent_path();
-    std::ifstream file(assetPath, std::ios::binary);
+std::shared_ptr<const ControllerAsset>
+ControllerAsset::decode(std::istream& file, std::shared_ptr<const OnnxModel> network,
+                        std::shared_ptr<const OnnxModel> postprocessor) {
     auto read = [&](void* data, size_t size) {
         if (!file.read(static_cast<char*>(data), std::streamsize(size)))
-            throw std::runtime_error("Truncated/missing controller.a4c");
+            throw std::runtime_error("Truncated animation controller payload");
     };
     auto u = [&]() {
         uint32_t value;
@@ -167,30 +165,12 @@ std::shared_ptr<const ControllerAsset> ControllerAsset::load(const std::filesyst
         }
         a->actions.push_back(std::move(rule));
     }
-    a->network = std::make_shared<OnnxModel>(modelDirectory / "network.onnx");
-    a->postprocessor = std::make_shared<OnnxModel>(modelDirectory / "postprocessor.onnx");
+    a->network = std::move(network);
+    a->postprocessor = std::move(postprocessor);
     a->validate();
     return a;
 }
-std::shared_ptr<const Asset> loadAsset(const std::filesystem::path& controllerPath) {
-    class ControllerResource final : public Asset {
-        std::shared_ptr<const ControllerAsset> data_;
-
-      public:
-        explicit ControllerResource(std::shared_ptr<const ControllerAsset> data) : data_(std::move(data)) {}
-        std::shared_ptr<const Skeleton> skeleton() const override {
-            return data_->skeleton;
-        }
-        std::unique_ptr<Solver> createSolver() const override {
-            return std::make_unique<Controller>(data_);
-        }
-        std::string solverLabel() const override {
-            return "AI4Animation / ONNX";
-        }
-        std::vector<EnumAttribute> attributes() const override {
-            return data_->attributes;
-        }
-    };
-    return std::make_shared<ControllerResource>(ControllerAsset::load(controllerPath));
+std::unique_ptr<Solver> ControllerResource::createSolver() const {
+    return std::make_unique<Controller>(data);
 }
 } // namespace afterlight::animation::ai4animation

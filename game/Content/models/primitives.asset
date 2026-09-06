@@ -1,0 +1,22 @@
+ALAS1
+{"id":"5243b47586b555b6fb85079ff5bbcc4d","name":"primitives","version":1,"type":"Data","storage":"embedded","metadata":{}}
+{
+  "box": {
+    "generator": "unit_box",
+    "dimensions": [
+      1,
+      1,
+      1
+    ]
+  },
+  "capsule": {
+    "generator": "capsule",
+    "radius": 0.4,
+    "height": 2,
+    "segments": 24,
+    "hemisphereRings": 8
+  },
+  "units": "meters",
+  "upAxis": "Y",
+  "forwardAxis": "+Z"
+}

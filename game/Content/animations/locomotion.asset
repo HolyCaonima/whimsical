@@ -1,0 +1,26 @@
+ALAS1
+{"id":"a351d60d3a14a99f3546c6b9dec44acf","name":"locomotion","version":1,"type":"Data","storage":"embedded","metadata":{}}
+{
+  "source": "ai4animation_biped",
+  "idleAction": "Idle",
+  "moveAction": "Locomotion",
+  "states": [
+    "Idle",
+    "TurnInPlace",
+    "Starting",
+    "Walking",
+    "Running",
+    "Crouching",
+    "Stopping",
+    "Interacting"
+  ],
+  "walkSpeed": 2.4,
+  "runSpeed": 4.8,
+  "crouchSpeed": 1.25,
+  "standingHeight": 2,
+  "crouchHeight": 1.3,
+  "arrivalResponse": 1,
+  "arrivalRadius": 0.1,
+  "interactionFacingTolerance": 0.2,
+  "note": "Gameplay supplies desired velocity and facing. Animation predicts root motion; physics constrains it. Arrival, blockage and interaction use the actual body pose."
+}

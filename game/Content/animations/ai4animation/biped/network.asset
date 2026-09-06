@@ -1,0 +1,2 @@
+ALAS1
+{"id": "9180dadc0791c46727cbf3180fabf09d", "name": "network", "version": 1, "type": "OnnxModel", "storage": "external", "metadata": {"source": "external\\AI4AnimationPy\\Demos\\Locomotion\\Biped\\Models\\Network.pt", "source_sha256": "6b678c4db63c92db34cc1f3d61bd91deb7b80358174cc3e77055394ea6d4dd01", "onnx_sha256": "0a3b7874fa547b3ec9fb51f0e94ca4a2cd264410592c85c8c445c318a01de49a", "input_shape": [1, 441], "output_shape": [1, 16, 279], "iterations": 3, "max_abs_error": 3.0994415283203125e-06, "license": "CC-BY-NC-4.0"}, "source": "network.onnx"}

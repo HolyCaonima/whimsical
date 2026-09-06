@@ -49,7 +49,7 @@ powershell -ExecutionPolicy Bypass -File tools/build.ps1 -Test
 # 原生窗口自动运行、GPU readback 截图、正常退出
 .\build\bin\Release\Afterlight.exe --frames 90 --capture
 
-# 点击移动、镜头、resize、最小化恢复、取消命令
+# 点击移动、镜头、resize、最小化恢复、取消命令、运行中重载 Map
 .\build\bin\Release\Afterlight.exe --smoke --width 960 --height 600
 
 # 1280×800 默认；也可指定尺寸、调试视图和无 HUD 截图
@@ -70,25 +70,24 @@ Release 构建默认**关闭** validation（每帧约 1 ms CPU，足以把贴着
 
 ```text
 engine/
-  core/                   世界、实体、材质、相机、持久化 RenderScene、不可变帧快照和 mailbox
+  assets/                 Project、虚拟路径、资产注册表、统一 .asset 和类型加载
+  scene/                  Map 描述、Scene Save/Load 与持久 Object 身份
+  core/                   世界、实体、材质、相机、常驻 RenderScene、不可变帧快照和 mailbox
   platform/               Win32 窗口、输入、焦点／尺寸事件
   navigation/             膨胀障碍栅格 A*、路径平滑、连续碰撞移动
   animation/              统一骨架/姿态/求解器框架、AI4Animation 原生运行时和 ONNX 推理
   scripting/              Duktape runtime 和 C++ ↔ JS binding
   render/                 Vulkan、几何、BLAS/TLAS、pass graph、NRD、HUD
     shaders/              G-buffer / DI / GI / reuse / resolve / composite
-game/
-  assets/
-    animations/           locomotion 参数、骨架元数据和 ONNX 权重
-    models/               基础几何描述、双足人和狗的蒙皮网格
-    materials/            可直接修改的线性 PBR 材质参数
-    textures/             纹理资源
-    levels/               关卡配置和场景数据
-  scripts/
-    3c/                   controller.js / locomotion.js / camera.js
-    gameplay/             通用交互、同伴跟随规则
-    levels/               rain_court.js：本关卡摆放与事件
-    bootstrap.js          脚本生命周期入口
+game/                     可整体搬迁的独立项目
+  .project                项目 ID、默认 Map、公共脚本加载顺序
+  Content/                /Game 虚拟路径根
+    Maps/                 RainCourt.asset：对象、材质、灯、相机、导航和玩法状态
+    animations/           控制器、配置、ONNX 纯头资产与独立模型
+    models/               内嵌蒙皮网格和模型描述
+    materials/            PBR 材质配置资产
+    physics/              碰撞配置资产
+    scripts/              3C、通用玩法、Map 初始化脚本，均为内嵌 Script 资产
 tests/                    原生核心、独立物理场景与真实 JS 接口测试
 tools/                    固定依赖下载、构建、验证脚本
 docs/                     架构、渲染约定、第三方来源、验证记录
@@ -131,6 +130,8 @@ NRD 4.17.3 实际参与 GPU 计算，使用 RELAX 的原生 SPIR-V、资源池�
 3C 包含加速、刹车、原地转向、行走、跑步、蹲行速度与物理净空、交互。独立 Physics Scene 存储 box/capsule、查询层与生命周期；角色移动、root motion、蹲起净空和 0.25 m 庭院导航共用该场景的查询。动画关节附属碰撞体支持原生及 JS 更新。当前为查询／运动学后端，未包含受力积分、刚体堆叠和 ragdoll；楼梯、跳跃／翻越、坡面、多层导航、动画图混合和多角色控制仍需扩展。当前双足模型尚未接入蹲姿动画。
 
 Animation 底层支持可替换 Solver、骨骼 FK、root motion/物理反馈、接触和 FABRIK。双足/四足 AI4Animation CxM 通过 ONNX Runtime 原生推理接入，与未来 clip graph、motion matching 处于同一层级。默认关卡已使用双足人和跟随狗，蒙皮网格同时参与光栅与光追。详细入口、模型导出、验证和上游非商业许可见 [Animation](docs/animation.md)。
+
+项目路径、资产格式、对象身份、保存与加载入口见 [Project / Asset / Scene](docs/projects-assets-scenes.md)。支持 `--project <目录或.project>` 与 `--map /Game/Maps/RainCourt`；默认运行 game 项目的默认 Map。
 
 更多实现约定见 [架构](docs/architecture.md)、[Physics Scene](docs/physics-scene.md)、[渲染说明](docs/rendering.md)、[验证记录](docs/verification.md)。
 

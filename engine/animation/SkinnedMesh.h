@@ -1,6 +1,7 @@
 #pragma once
 #include "core/Math.h"
-#include <filesystem>
+#include "assets/Asset.h"
+#include <istream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -15,11 +16,11 @@ struct SkinBinding {
     mat4 inverseBind;
 };
 // Mesh resources are independent of the animation solver; bindings resolve by skeleton joint name.
-struct SkinnedMesh {
+struct SkinnedMesh : Asset {
     std::vector<SkinVertex> vertices;
     std::vector<uint32_t> indices;
     std::vector<SkinBinding> bindings;
-    static std::shared_ptr<const SkinnedMesh> load(const std::filesystem::path&);
+    static std::shared_ptr<SkinnedMesh> decode(std::istream&);
 };
 struct DeformedVertex {
     vec3 position, normal;

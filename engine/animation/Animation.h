@@ -1,5 +1,6 @@
 #pragma once
 #include "core/Math.h"
+#include "assets/Asset.h"
 #include <memory>
 #include <map>
 #include <string>
@@ -88,7 +89,7 @@ class Solver {
     virtual void reset(const Context&) = 0;
     virtual void evaluate(const Context&, Output&) = 0;
 };
-class Asset {
+class Asset : public afterlight::Asset {
   public:
     virtual ~Asset() = default;
     virtual std::shared_ptr<const Skeleton> skeleton() const = 0;

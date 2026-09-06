@@ -3,6 +3,8 @@
 Requires torch, numpy, onnx, onnxruntime, einops, scikit-learn. Training is never invoked.
 Only load trusted upstream .pt files: PyTorch's full-module format is Python pickle.
 """
+import io
+from asset_format import write_asset, asset_reference
 import argparse
 import hashlib
 import importlib
@@ -69,15 +71,19 @@ def export_model(source, destination, iterations):
             errors.append(float(np.max(np.abs(actual - expected))))
             fixtures.append((features, expected))
     # Native C++ tests consume the same PyTorch golden vectors, including nonzero inputs.
-    with destination.with_suffix(".golden").open("wb") as f:
+    with io.BytesIO() as f:
         f.write(struct.pack("<III", len(fixtures), x.numel(), fixtures[0][1].size))
         for features, expected in fixtures:
             f.write(features.astype("<f4").tobytes())
             f.write(expected.astype("<f4").tobytes())
+        write_asset(destination.with_name(destination.stem + "_golden.asset"), "Binary", f.getvalue(), {"format": "PyTorchGolden"})
     print(destination.name, type(model).__module__, tuple(x.shape), "->", expected.shape, "max error", max(errors), flush=True)
-    return {"source": str(source.relative_to(ROOT) if source.is_relative_to(ROOT) else source), "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+    result = {"source": str(source.relative_to(ROOT) if source.is_relative_to(ROOT) else source), "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
             "onnx_sha256": hashlib.sha256(destination.read_bytes()).hexdigest(), "input_shape": list(x.shape),
             "output_shape": list(expected.shape), "iterations": iterations, "max_abs_error": max(errors)}
+
+    write_asset(destination.with_suffix(".asset"), "OnnxModel", metadata=result, source=destination.name)
+    return result
 
 
 def quaternion_matrix(q):
@@ -176,7 +182,7 @@ def export_rig(demo, dest):
                    {"action": "Locomotion", "attribute": "locomotion.style", "guidance": "",
                     "choices": {option["value"]: option["value"] for option in options}}]
     # Compact non-weight metadata. All network parameters live exclusively in ONNX.
-    with (dest / "controller.a4c").open("wb") as f:
+    with io.BytesIO() as f:
         def u(n): f.write(struct.pack("<I", n))
         def floats(v): f.write(np.asarray(v, dtype="<f4").tobytes())
         def string(s):
@@ -205,6 +211,9 @@ def export_rig(demo, dest):
             string(action["action"]); string(action["attribute"]); string(action["guidance"])
             u(len(action["choices"]))
             for value, guidance in action["choices"].items(): string(value); string(guidance)
+        write_asset(dest / "controller.asset", "AnimationController", f.getvalue(),
+                    {"network": asset_reference(dest / "network.asset"),
+                     "postprocessor": asset_reference(dest / "postprocessor.asset"), "license": "CC-BY-NC-4.0"})
     return {"joints": joints, "contacts": contacts, "feet": feet, "guidances": list(guidances),
             "attributes": attributes, "actions": actions,
             "samples": 16, "window": .5, "prediction_hz": 10, "pose_axes": kind == "Biped",
@@ -215,7 +224,7 @@ def export_rig(demo, dest):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--character", choices=["biped", "quadruped", "all"], default="all")
-    parser.add_argument("--output", type=Path, default=ROOT / "game/assets/animations/ai4animation")
+    parser.add_argument("--output", type=Path, default=ROOT / "game/Content/animations/ai4animation")
     parser.add_argument("--checkpoint", type=Path, help="Export a standalone upstream model; --output must be an .onnx path")
     parser.add_argument("--iterations", type=int, default=3, help="CxM denoising iterations baked into a standalone ONNX graph")
     args = parser.parse_args()
@@ -225,7 +234,7 @@ def main():
         if args.output.suffix != ".onnx": parser.error("--checkpoint requires --output FILE.onnx")
         args.output.parent.mkdir(parents=True, exist_ok=True)
         result = export_model(args.checkpoint.resolve(), args.output, args.iterations)
-        args.output.with_suffix(".json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+        write_asset(args.output.with_name(args.output.stem + "_metadata.asset"), "Data", json.dumps(result, indent=2).encode())
         return
     for kind in ["Biped", "Quadruped"]:
         if args.character not in ["all", kind.lower()]: continue
@@ -233,12 +242,14 @@ def main():
         source = demo / "Models" if kind == "Biped" else demo
         dest = args.output / kind.lower()
         dest.mkdir(parents=True, exist_ok=True)
+        network = export_model(source / "Network.pt", dest / "network.onnx", 3 if kind == "Biped" else 1)
+        postprocessor = export_model(source / ("PostProcessor.pt" if kind == "Biped" else "Postprocessor.pt"), dest / "postprocessor.onnx", 0)
         metadata = export_rig(demo, dest)
-        metadata["network"] = export_model(source / "Network.pt", dest / "network.onnx", 3 if kind == "Biped" else 1)
-        metadata["postprocessor"] = export_model(source / ("PostProcessor.pt" if kind == "Biped" else "Postprocessor.pt"), dest / "postprocessor.onnx", 0)
+        metadata["network"] = network
+        metadata["postprocessor"] = postprocessor
         metadata["upstream_commit"] = "bfb5866681f7ea6dac9984be05181de5955eb48b"
         metadata["license"] = "CC-BY-NC-4.0"
-        (dest / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+        write_asset(dest / "metadata.asset", "Data", (json.dumps(metadata, indent=2) + "\n").encode())
 
 
 if __name__ == "__main__": main()

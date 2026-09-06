@@ -6,17 +6,12 @@
 #include "animation/Animation.h"
 #include "animation/SkinnedMesh.h"
 #include <map>
+#include "assets/Asset.h"
 #include "navigation/Navigation.h"
 namespace afterlight {
-struct RenderComponent {
-    Shape shape = Shape::Box;
-    vec3 scale{1}, offset{0}, animationScale{1};
-    uint32_t material = 0;
-    bool visible = true;
-};
 struct GameObject {
     uint32_t id = 0;
-    std::string name;
+    std::string name, persistentId;
     vec3 position{0};
     float yaw = 0;
     RenderComponent render;
@@ -26,9 +21,13 @@ struct GameObject {
     std::vector<PhysicsPose> joints;
 };
 class World {
+    friend class ScenePersistence;
+    AssetRef mapAsset_;
+    std::map<std::string, uint32_t> objectIds_;
     struct AnimatedObject {
         std::unique_ptr<animation::Instance> instance;
         animation::Input input;
+        std::optional<AssetRef> asset;
         bool applyRootMotion = true;
         vec3 rootOffset{0}; // Skeleton origin relative to physical object's centre.
         std::shared_ptr<const SkinnedMesh> mesh;
@@ -50,6 +49,16 @@ class World {
     void attachAnimationInstance(uint32_t, std::unique_ptr<animation::Instance>, bool, vec3);
 
   public:
+    std::vector<AssetRef> sceneScripts;
+    Json sceneData = Json::object();
+    std::map<std::string, std::string> sceneReferences;
+    ObjectPath objectPath(uint32_t) const;
+    uint32_t resolveObject(const ObjectPath&) const;
+    uint32_t findObject(const std::string& persistentId) const;
+    const AssetRef& mapAsset() const {
+        return mapAsset_;
+    }
+    void clearScene();
     std::vector<Material> materials;
     std::vector<Light> lights;
     Camera camera;
@@ -70,7 +79,7 @@ class World {
         return scene_;
     }
     uint32_t spawn(std::string name, Shape, vec3 position, vec3 scale, uint32_t material, bool blocking,
-                   bool interactable);
+                   bool interactable, std::string persistentId = {});
     void destroy(uint32_t);
     void setEnabled(uint32_t, bool);
     void setVisible(uint32_t, bool);

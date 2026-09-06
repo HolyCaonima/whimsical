@@ -40,8 +40,10 @@ class FrameMailbox {
         // Merging and storing under one lock is what makes this correct: were the
         // consumer able to take the old snapshot in between, it would be handed a delta
         // reaching further back than its mirror and would rebuild anyway.
-        if (latest_ && delivered_ != sequence_)
+        if (latest_ && delivered_ != sequence_) {
             shared->delta.prepend(latest_->delta);
+            shared->resetHistory = shared->resetHistory || latest_->resetHistory;
+        }
         latest_ = std::move(shared);
         ++sequence_;
         ready_.notify_one();

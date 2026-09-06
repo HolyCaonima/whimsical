@@ -1,12 +1,11 @@
 #include "SkinnedMesh.h"
-#include <fstream>
+
 #include <stdexcept>
 namespace afterlight {
-std::shared_ptr<const SkinnedMesh> SkinnedMesh::load(const std::filesystem::path& path) {
-    std::ifstream file(path, std::ios::binary);
+std::shared_ptr<SkinnedMesh> SkinnedMesh::decode(std::istream& file) {
     auto read = [&](void* p, size_t n) {
         if (!file.read(static_cast<char*>(p), std::streamsize(n)))
-            throw std::runtime_error("Cannot read skin mesh: " + path.string());
+            throw std::runtime_error("Truncated skin mesh payload");
     };
     auto u = [&]() {
         uint32_t v;

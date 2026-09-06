@@ -2,6 +2,15 @@
 #include <algorithm>
 #include <stdexcept>
 namespace afterlight {
+std::vector<AnimationColliderDescription> AnimationCollision::describe(uint32_t owner) const {
+    std::vector<AnimationColliderDescription> result;
+    for (const auto& b : bindings_)
+        if (b.owner == owner) {
+            const auto& body = scene_.body(b.body);
+            result.push_back({b.joint, body.shape, b.local, body.blocking});
+        }
+    return result;
+}
 static PhysicsPose combine(PhysicsPose a, PhysicsPose b) {
     return {a.position + a.rotation * b.position, glm::normalize(a.rotation * b.rotation)};
 }

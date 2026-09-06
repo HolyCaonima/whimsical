@@ -1,4 +1,6 @@
 """Render native --dump-poses output with the exported skins, for close-up rig inspection."""
+import io
+from asset_format import read_asset
 import argparse
 import json
 import struct
@@ -13,7 +15,7 @@ from export_onnx import ROOT, quaternion_matrix
 
 
 def load_skin(path):
-    with path.open('rb') as f:
+    with io.BytesIO(read_asset(path)[1]) as f:
         assert f.read(4) == b'SKN1'
         nv, ni, nb = struct.unpack('<III', f.read(12))
         names, binds = [], []
@@ -30,9 +32,9 @@ def load_skin(path):
 
 def render(directory):
     for kind, mesh in [('biped', 'biped'), ('quadruped', 'dog')]:
-        metadata = json.loads((ROOT / 'game/assets/animations/ai4animation' / kind / 'metadata.json').read_text())
+        metadata = json.loads(read_asset(ROOT / 'game/Content/animations/ai4animation' / kind / 'metadata.asset')[1])
         names = [j['name'] for j in metadata['joints']]
-        bindings, inverse, vertices, triangles = load_skin(ROOT / 'game/assets/models' / (mesh + '.skin'))
+        bindings, inverse, vertices, triangles = load_skin(ROOT / 'game/Content/models' / (mesh + '.asset'))
         mapping = [names.index(n) for n in bindings]
         snapshots = json.loads((directory / (kind + '.json')).read_text())
         selected = [s for s in snapshots if s['frame'] in [0, 120, 225, 240]]

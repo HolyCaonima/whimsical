@@ -1,0 +1,2 @@
+ALAS1
+{"id": "793ec4905938f8b9e3cc47e338f83941", "name": "postprocessor", "version": 1, "type": "OnnxModel", "storage": "external", "metadata": {"source": "external\\AI4AnimationPy\\Demos\\Locomotion\\Biped\\Models\\PostProcessor.pt", "source_sha256": "43b3d03fb4a4df217966905535057b20e65e0d31de5866d5c570cff8119d36b9", "onnx_sha256": "c5fb1219fa1460750fabd08460c171c22683ab941342ec5b29bd064d8456fd58", "input_shape": [1, 456], "output_shape": [1, 64], "iterations": 0, "max_abs_error": 7.152557373046875e-07, "license": "CC-BY-NC-4.0"}, "source": "postprocessor.onnx"}

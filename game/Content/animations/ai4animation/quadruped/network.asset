@@ -1,0 +1,2 @@
+ALAS1
+{"id": "0c9b87a5a350cb8f967e5888078a94c8", "name": "network", "version": 1, "type": "OnnxModel", "storage": "external", "metadata": {"source": "external\\AI4AnimationPy\\Demos\\Locomotion\\Quadruped\\Network.pt", "source_sha256": "9a8bfceeab8a873139ff2c1ba77a5a2cccc8ab966e5242c017237f8e11d2fc90", "onnx_sha256": "cd9e88ba37da9d41c01721c9aae1596f698728cc4980255ae3003853bc4e8ea3", "input_shape": [1, 339], "output_shape": [1, 16, 327], "iterations": 1, "max_abs_error": 9.5367431640625e-07, "license": "CC-BY-NC-4.0"}, "source": "network.onnx"}

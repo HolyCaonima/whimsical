@@ -15,7 +15,7 @@ World → Instance → Solver
 World：物理接受 root motion → FK → 关节碰撞体 / 不可变骨架与蒙皮快照
 ```
 
-`Asset` 持有可共享的不可变资源，`createSolver()` 创建每角色独立的播放状态。`Library` 按资源扩展名注册加载器并缓存资产；注册发生在组合入口 `ScriptRuntime`。当前 `.a4c` 注册到 AI4Animation，未来后端注册自己的资源类型即可。World、Instance、Input 和 Output 中没有算法枚举或 neural 专用字段。
+`Asset` 持有可共享的不可变资源，`createSolver()` 创建每角色独立的播放状态。公共 `AssetManager` 按 `.asset` 头部类型注册加载器并缓存资产，注册发生在 `registerEngineAssets` 组合入口。AnimationController 的内嵌 A4C2 描述通过 AssetRef 引用 OnnxModel 纯头资产，未来后端注册自己的类型即可。World、Instance、Input 和 Output 中没有算法枚举或 neural 专用字段。
 
 ## 表现属性与风格 UI
 
@@ -47,7 +47,7 @@ AI4Animation 在下一次 10 Hz 预测时读取所选风格，沿用既有序列
 
 默认 Rain Court 的 Kiln 使用双足 ONNX 控制器与上游人体网格，Ash 使用四足 ONNX 控制器与狗网格。胶囊保留为不可见的运动学碰撞体。Locomotion 和 Companion 用实际移动速度、朝向与动作名驱动统一动画输入，二者均使用 `rootMotion:false`，由 gameplay 负责移动。Companion 定期寻路到主角后方，转向、加速追赶，并在靠近时减速停下；导航和连续扫掠复用 PhysicsScene。
 
-网格由 `export_meshes.py` 从原始 GLB 离线导出成 `SKN1` 格式的 `.skin`：骨骼绑定、位置、法线、线性顶点颜色、四个关节索引/权重和三角形索引。原始皮肤骨架中不参与求解的骨骼映射到最近的求解器祖先，并保留绑定姿态修正。狗的 base-color 纹理离线采样为顶点颜色；当前未增加运行时纹理采样或 GPU 蒙皮。资产来源和几何数量见 `game/assets/models/characters.json`。
+网格由 `export_meshes.py` 从原始 GLB 离线导出成 内嵌 `SKN1` 格式的 `.asset`：骨骼绑定、位置、法线、线性顶点颜色、四个关节索引/权重和三角形索引。原始皮肤骨架中不参与求解的骨骼映射到最近的求解器祖先，并保留绑定姿态修正。狗的 base-color 纹理离线采样为顶点颜色；当前未增加运行时纹理采样或 GPU 蒙皮。资产来源和几何数量见 `game/Content/models/characters.asset`。
 
 当前预训练双足资产提供 Idle 及多种移动风格，没有接入专门的蹲姿动画；Ctrl 仍改变移动速度和物理净空，人体网格保持该模型的直立姿态。
 
@@ -75,9 +75,9 @@ ONNX 图包含冻结的统计归一化、ELU/线性/FiLM、按 channel 分组的
 ## 使用
 
 ```cpp
-animation::Library library;
-library.registerLoader(".a4c", animation::ai4animation::loadAsset);
-auto asset = library.load("game/assets/animations/ai4animation/biped/controller.a4c");
+AssetManager assets{Project(projectDirectory)};
+registerEngineAssets(assets);
+auto asset = assets.load<animation::Asset>(AssetPath("/Game/animations/ai4animation/biped/controller"));
 world.attachAnimation(id, *asset, true, {0,-1,0});
 world.setAnimationAttribute(id, "locomotion.style", "Neutral");
 animation::Input input;
@@ -89,11 +89,11 @@ world.updateAnimations(1.f/60);
 ```
 
 ```javascript
-// Relative to game/assets. Gameplay-controlled movement uses rootMotion:false.
-Engine.animation(id, 'animations/ai4animation/biped/controller.a4c', {
+// Project virtual paths. Gameplay-controlled movement uses rootMotion:false.
+Engine.animation(id, '/Game/animations/ai4animation/biped/controller', {
     rootMotion: false, rootOffset: {x:0, y:-1, z:0}
 });
-Engine.skinMesh(id, 'models/biped.skin');
+Engine.skinMesh(id, '/Game/models/biped');
 // Persistent setting, independent of per-frame input:
 Engine.animationAttribute(id, 'locomotion.style', 'Neutral');
 var controls = Engine.animationAttributes(id); // {solver, attributes:[{key,label,type,value,defaultValue,options}]}
@@ -117,7 +117,7 @@ python tools/animation/verify_vendor.py
 powershell -ExecutionPolicy Bypass -File tools/build.ps1 -Test
 ```
 
-导出只依赖离线 Python 环境；运行 exe 不需要 Python。导出器直接导入原始模型定义，跳过包的 GUI/ECS 初始化，执行 eval forward，并产生 ONNX、PyTorch golden、骨架/指导姿态元数据 `.a4c` 和可读 `metadata.json`。`.a4c` 不含网络权重；它是 `A4C2` 标记的 little-endian 元数据流，字段顺序由 exporter 与 ControllerAsset.cpp 对齐。V2 在原有骨架/指导姿态后增加通用枚举属性声明和后端动作绑定表；旧 V1 资产需重新导出，网络权重不变。
+导出只依赖离线 Python 环境；运行 exe 不需要 Python。导出器直接导入原始模型定义，跳过包的 GUI/ECS 初始化，执行 eval forward，并产生 ONNX 及对应纯头 `.asset`、内嵌 golden/metadata/controller 资产。controller.asset 不含网络权重，其载荷是 `A4C2` 标记的 little-endian 元数据流，字段顺序由 exporter 与 ControllerAsset.cpp 对齐。V2 在原有骨架/指导姿态后增加通用枚举属性声明和后端动作绑定表；旧 V1 资产需重新导出，网络权重不变。
 
 也可导出单独的原始 MLP、Autoencoder、SequentialMLP、CategoricalEncoderDecoder 或 CxM checkpoint：`python tools/animation/export_onnx.py --checkpoint PATH.pt --output PATH.onnx --iterations 3`。此入口导出模型推理图；要用于 locomotion Controller，仍需满足上述特征 ABI 和配套骨架/接触资产。只应对可信 checkpoint 使用 PyTorch 的完整模块 pickle 加载。
 
@@ -149,8 +149,10 @@ python tools/animation/inspect_poses.py captures/rig-check
 python tools/animation/reference_runtime.py captures/rig-reference
 ```
 
-前两条导出包含骨长还原和 IK 的原生姿态，并用实际 `.skin` 资源生成正侧面近照。第三条直接执行 external 中原始 Biped `Predict/Animate`、Actor、FABRIK/LegIK 和 PyTorch 模型，固定 Idle→Neutral、2 m/s、60 Hz 输入，用于区分原生移植与模型自身表现；仅跳过 UI 和 scene 初始化。它是离线诊断，不进入游戏运行时。
+前两条导出包含骨长还原和 IK 的原生姿态，并用实际 SkinnedMesh `.asset` 资源生成正侧面近照。第三条直接执行 external 中原始 Biped `Predict/Animate`、Actor、FABRIK/LegIK 和 PyTorch 模型，固定 Idle→Neutral、2 m/s、60 Hz 输入，用于区分原生移植与模型自身表现；仅跳过 UI 和 scene 初始化。它是离线诊断，不进入游戏运行时。
 
 ## 来源许可
 
 上游代码、模型及其移植部分遵循 [CC BY-NC 4.0](../external/AI4AnimationPy/LICENSE)，版权归 Meta Platforms, Inc. and affiliates；不得将本次引入误认为 MIT/商业可自由使用。ONNX Runtime 自身采用 MIT，见 `third_party/onnxruntime/LICENSE`。原始训练资源许可保持原状。
+
+统一资源信封、持久引用、项目路径和场景中的动画属性保存见 [Project / Asset / Scene](projects-assets-scenes.md)。

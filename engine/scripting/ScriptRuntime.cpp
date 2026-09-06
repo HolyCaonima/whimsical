@@ -1,13 +1,30 @@
 #include "ScriptRuntime.h"
 #include "navigation/Navigation.h"
-#include "animation/ai4animation/Controller.h"
+#include "scene/ScenePersistence.h"
 #include "ui/AnimationInspector.h"
-#include <fstream>
-#include <sstream>
 #include <iostream>
 #include <stdexcept>
-#include <filesystem>
 namespace afterlight {
+static AssetManager& assets(duk_context* c) {
+    duk_push_heap_stash(c);
+    duk_get_prop_string(c, -1, "assets");
+    auto* a = static_cast<AssetManager*>(duk_get_pointer(c, -1));
+    duk_pop_2(c);
+    return *a;
+}
+static ScriptRuntime& runtime(duk_context* c) {
+    duk_push_heap_stash(c);
+    duk_get_prop_string(c, -1, "runtime");
+    auto* r = static_cast<ScriptRuntime*>(duk_get_pointer(c, -1));
+    duk_pop_2(c);
+    return *r;
+}
+static void pushJson(duk_context* c, const Json& j) {
+    const auto text = j.dump();
+    duk_push_lstring(c, text.data(), text.size());
+    duk_json_decode(c, -1);
+}
+
 static World& world(duk_context* c) {
     duk_push_heap_stash(c);
     duk_get_prop_string(c, -1, "world");
@@ -100,6 +117,14 @@ static void pushHit(duk_context* c, const PhysicsHit& hit) {
     duk_put_prop_string(c, -2, "normal");
 }
 enum Op {
+    SceneLoad,
+    SceneSave,
+    SceneData,
+    SetSceneData,
+    SceneObject,
+    GetObjectPath,
+    FindObject,
+    CameraState,
     Log,
     MaterialAdd,
     Spawn,
@@ -237,18 +262,48 @@ static duk_ret_t callNative(duk_context* c) {
             return 0;
         }
         case ReadJson: {
-            std::filesystem::path relative = duk_require_string(c, 0);
-            if (relative.is_absolute() || relative.string().find("..") != std::string::npos)
-                throw std::runtime_error("Asset path must be relative");
-            std::ifstream file(std::filesystem::path(AFTERLIGHT_ROOT) / "game" / "assets" / relative);
-            if (!file)
-                throw std::runtime_error("Cannot open asset: " + relative.string());
-            std::stringstream s;
-            s << file.rdbuf();
-            duk_push_string(c, s.str().c_str());
-            duk_json_decode(c, -1);
+            auto asset = assets(c).load<DataAsset>(AssetPath(duk_require_string(c, 0)));
+            pushJson(c, asset->data);
             return 1;
         }
+        case SceneLoad:
+            runtime(c).requestScene(AssetPath(duk_require_string(c, 0)).string());
+            return 0;
+        case SceneSave: {
+            auto ref = runtime(c).saveScene(AssetPath(duk_require_string(c, 0)), duk_require_string(c, 1));
+            pushJson(c, ref.json());
+            return 1;
+        }
+        case SceneData:
+            pushJson(c, w.sceneData);
+            return 1;
+        case SetSceneData: {
+            duk_dup(c, 0);
+            duk_json_encode(c, -1);
+            auto data = Json::parse(duk_require_string(c, -1));
+            (void)data.members();
+            w.sceneData = std::move(data);
+            duk_pop(c);
+            return 0;
+        }
+        case SceneObject:
+            duk_push_uint(c, w.findObject(w.sceneReferences.at(duk_require_string(c, 0))));
+            return 1;
+        case GetObjectPath: {
+            auto path = w.objectPath(duk_require_uint(c, 0)).string();
+            duk_push_string(c, path.c_str());
+            return 1;
+        }
+        case FindObject:
+            duk_push_uint(c, w.resolveObject(ObjectPath(duk_require_string(c, 0))));
+            return 1;
+        case CameraState:
+            pushJson(c, {{"yaw", w.camera.yaw},
+                         {"pitch", w.camera.pitch},
+                         {"distance", w.camera.distance},
+                         {"x", w.camera.target.x},
+                         {"z", w.camera.target.z}});
+            return 1;
         case LightIntensity:
             w.lights.at(duk_require_uint(c, 0)).colorIntensity.w = num(c, 1);
             return 0;
@@ -335,14 +390,7 @@ static duk_ret_t callNative(duk_context* c) {
             return 1;
         }
         case AnimationAttach: {
-            std::filesystem::path path = duk_require_string(c, 1);
-            if (path.is_absolute() || path.string().find("..") != std::string::npos)
-                throw std::invalid_argument("Animation asset path must be relative to game/assets");
-            duk_push_heap_stash(c);
-            duk_get_prop_string(c, -1, "animations");
-            auto* library = static_cast<animation::Library*>(duk_get_pointer(c, -1));
-            duk_pop_2(c);
-            auto asset = library->load(std::filesystem::path(AFTERLIGHT_ROOT) / "game/assets" / path);
+            auto asset = assets(c).load<animation::Asset>(AssetPath(duk_require_string(c, 1)));
             bool applyRoot = true;
             vec3 offset(0);
             if (duk_is_object(c, 2)) {
@@ -425,12 +473,8 @@ static duk_ret_t callNative(duk_context* c) {
             w.detachAnimation(duk_require_uint(c, 0));
             return 0;
         case SkinMesh: {
-            std::filesystem::path path = duk_require_string(c, 1);
-            if (path.is_absolute() || path.string().find("..") != std::string::npos)
-                throw std::invalid_argument("Mesh asset path must be relative to game/assets");
-            w.setSkinnedMesh(
-                duk_require_uint(c, 0),
-                SkinnedMesh::load(std::filesystem::path(AFTERLIGHT_ROOT) / "game/assets" / path));
+            w.setSkinnedMesh(duk_require_uint(c, 0),
+                             assets(c).load<SkinnedMesh>(AssetPath(duk_require_string(c, 1))));
             return 0;
         }
         case NavigationConfig: {
@@ -455,16 +499,21 @@ static duk_ret_t callNative(duk_context* c) {
     }
     duk_throw_raw(c);
 }
-ScriptRuntime::ScriptRuntime(World& w) : world_(w), owner_(std::this_thread::get_id()) {
-    animations_.registerLoader(".a4c", animation::ai4animation::loadAsset);
+ScriptRuntime::ScriptRuntime(World& w, AssetManager& a)
+    : world_(w), assets_(a), owner_(std::this_thread::get_id()) {
+    createContext();
+}
+void ScriptRuntime::createContext() {
     context_ = duk_create_heap_default();
     if (!context_)
         throw std::runtime_error("JS heap creation failed");
     duk_push_heap_stash(context_);
-    duk_push_pointer(context_, &w);
+    duk_push_pointer(context_, &world_);
     duk_put_prop_string(context_, -2, "world");
-    duk_push_pointer(context_, &animations_);
-    duk_put_prop_string(context_, -2, "animations");
+    duk_push_pointer(context_, &assets_);
+    duk_put_prop_string(context_, -2, "assets");
+    duk_push_pointer(context_, this);
+    duk_put_prop_string(context_, -2, "runtime");
     duk_pop(context_);
     duk_push_object(context_);
     struct Binding {
@@ -472,7 +521,15 @@ ScriptRuntime::ScriptRuntime(World& w) : world_(w), owner_(std::this_thread::get
         Op op;
         int nargs;
     };
-    const Binding bindings[] = {{"log", Log, 1},
+    const Binding bindings[] = {{"loadScene", SceneLoad, 1},
+                                {"saveScene", SceneSave, 2},
+                                {"sceneData", SceneData, 0},
+                                {"setSceneData", SetSceneData, 1},
+                                {"sceneObject", SceneObject, 1},
+                                {"objectPath", GetObjectPath, 1},
+                                {"findObject", FindObject, 1},
+                                {"cameraState", CameraState, 0},
+                                {"log", Log, 1},
                                 {"material", MaterialAdd, 8},
                                 {"spawn", Spawn, 11},
                                 {"light", AddLight, 8},
@@ -530,14 +587,14 @@ void ScriptRuntime::checkedCall(int args) {
     duk_pop(context_);
 }
 void ScriptRuntime::evaluateFile(const std::string& path) {
-    std::ifstream f(std::string(AFTERLIGHT_ROOT) + "/game/scripts/" + path);
-    if (!f)
-        throw std::runtime_error("Missing script " + path);
-    std::stringstream s;
-    s << f.rdbuf();
-    execute(s.str(), path);
+    auto asset = assets_.load<ScriptAsset>(AssetPath(path));
+    evaluateSource(asset->source, path);
 }
 void ScriptRuntime::execute(const std::string& source, const std::string& label) {
+    evaluateSource(source, label);
+    processSceneRequest();
+}
+void ScriptRuntime::evaluateSource(const std::string& source, const std::string& label) {
     if (std::this_thread::get_id() != owner_)
         throw std::logic_error("JS execution must run on the owner thread");
     duk_push_string(context_, label.c_str());
@@ -549,11 +606,40 @@ void ScriptRuntime::execute(const std::string& source, const std::string& label)
     checkedCall(0);
 }
 void ScriptRuntime::initialize() {
-    for (auto name : {"3c/locomotion.js", "3c/camera.js", "3c/controller.js", "gameplay/interactions.js",
-                      "gameplay/companion.js", "levels/rain_court.js", "bootstrap.js"})
-        evaluateFile(name);
+    if (!assets_.project().startupMap().empty())
+        loadScene(assets_.project().startupMap());
+    else
+        startScripts();
+}
+void ScriptRuntime::startScripts() {
+    for (const auto& path : assets_.project().scripts())
+        evaluateFile(path.string());
+    for (const auto& script : world_.sceneScripts)
+        evaluateFile(assets_.resolve(script).path.string());
     duk_get_global_string(context_, "initialize");
-    checkedCall(0);
+    if (duk_is_function(context_, -1))
+        checkedCall(0);
+    else
+        duk_pop(context_);
+}
+void ScriptRuntime::loadScene(const AssetPath& path) {
+    if (std::this_thread::get_id() != owner_)
+        throw std::logic_error("Scene loading requires the owner thread");
+    ScenePersistence::load(world_, assets_, path);
+    duk_destroy_heap(context_);
+    context_ = nullptr;
+    createContext();
+    startScripts();
+}
+AssetRef ScriptRuntime::saveScene(const AssetPath& path, const std::string& name) {
+    return ScenePersistence::save(world_, assets_, path, name);
+}
+void ScriptRuntime::processSceneRequest() {
+    if (pendingScene_.empty())
+        return;
+    auto path = std::move(pendingScene_);
+    pendingScene_.clear();
+    loadScene(AssetPath(path));
 }
 void ScriptRuntime::tick(float dt, const Input& rawInput) {
     if (std::this_thread::get_id() != owner_)
@@ -567,6 +653,12 @@ void ScriptRuntime::tick(float dt, const Input& rawInput) {
     world_.hovered = captured ? 0 : world_.pick(input.mouseX, input.mouseY, input);
     auto ground = world_.groundAt(input.mouseX, input.mouseY, input);
     duk_get_global_string(context_, "fixedUpdate");
+    if (duk_is_undefined(context_, -1)) {
+        duk_pop(context_);
+        world_.updateAnimations(dt);
+        processSceneRequest();
+        return;
+    }
     duk_push_number(context_, dt);
     duk_push_object(context_);
     duk_push_boolean(context_, captured);
@@ -602,5 +694,6 @@ void ScriptRuntime::tick(float dt, const Input& rawInput) {
     }
     checkedCall(2);
     world_.updateAnimations(dt);
+    processSceneRequest();
 }
 } // namespace afterlight

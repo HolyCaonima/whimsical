@@ -1,0 +1,31 @@
+ALAS1
+{"id":"a9e66093bf4e9cfa6105fea211d3e7b6","name":"profiles","version":1,"type":"Data","storage":"embedded","metadata":{}}
+{
+  "ground": {
+    "layer": 1,
+    "blocking": true,
+    "walkable": true,
+    "pickable": false
+  },
+  "obstacle": {
+    "layer": 1,
+    "blocking": true,
+    "walkable": false,
+    "pickable": true
+  },
+  "decoration": {
+    "layer": 1,
+    "blocking": false,
+    "walkable": false,
+    "pickable": false
+  },
+  "character": {
+    "layer": 2,
+    "blocking": true,
+    "walkable": false,
+    "pickable": true,
+    "shape": "capsule",
+    "radius": 0.4,
+    "height": 2
+  }
+}

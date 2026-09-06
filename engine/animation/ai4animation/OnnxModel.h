@@ -1,17 +1,17 @@
 #pragma once
-#include <filesystem>
+#include "assets/Asset.h"
 #include <memory>
 #include <vector>
 
 namespace afterlight::animation::ai4animation {
 // Immutable ONNX session shared by characters. Runtime tensors remain per invocation.
 // Exported graphs include normalization, CxM iterations and the FiLM motion decoder.
-class OnnxModel {
+class OnnxModel : public afterlight::Asset {
     struct Impl;
     std::unique_ptr<Impl> impl_;
 
   public:
-    explicit OnnxModel(const std::filesystem::path&);
+    explicit OnnxModel(const std::string& bytes);
     ~OnnxModel();
     size_t inputSize() const;
     size_t outputSize() const;

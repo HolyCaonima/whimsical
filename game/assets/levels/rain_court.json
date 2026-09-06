@@ -1,1 +1,0 @@
-{"name":"The Rain Court","bounds":{"min":[-13,0,-11],"max":[13,8,11]},"spawn":[0,1,3.2],"navigationCellSize":0.25,"camera":{"yaw":0.72,"pitch":0.86,"distance":30},"lighting":{"exposure":1.15,"directCandidates":8,"spatialNeighbors":4,"giBounces":1}}

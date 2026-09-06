@@ -21,11 +21,11 @@ struct OnnxModel::Impl {
     std::string inputName, outputName;
     std::vector<int64_t> inputShape, outputShape;
     size_t inputs, outputs;
-    explicit Impl(const std::filesystem::path& path) {
+    explicit Impl(const std::string& bytes) {
         Ort::SessionOptions options;
         options.SetIntraOpNumThreads(1); // Avoid a thread pool and spinning per character asset.
         options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-        session = Ort::Session(environment(), path.c_str(), options);
+        session = Ort::Session(environment(), bytes.data(), bytes.size(), options);
         if (session.GetInputCount() != 1 || session.GetOutputCount() != 1)
             throw std::runtime_error("Animation ONNX expects one feature input and one output");
         Ort::AllocatorWithDefaultOptions allocator;
@@ -43,7 +43,7 @@ struct OnnxModel::Impl {
         outputs = elements(outputShape);
     }
 };
-OnnxModel::OnnxModel(const std::filesystem::path& path) : impl_(std::make_unique<Impl>(path)) {}
+OnnxModel::OnnxModel(const std::string& bytes) : impl_(std::make_unique<Impl>(bytes)) {}
 OnnxModel::~OnnxModel() = default;
 size_t OnnxModel::inputSize() const {
     return impl_->inputs;

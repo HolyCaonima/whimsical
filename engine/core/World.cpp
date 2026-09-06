@@ -4,6 +4,39 @@
 #include <algorithm>
 #include <cmath>
 namespace afterlight {
+ObjectPath World::objectPath(uint32_t id) const {
+    return ObjectPath(mapAsset_.path, entity(id).persistentId);
+}
+uint32_t World::findObject(const std::string& id) const {
+    auto found = objectIds_.find(id);
+    return found == objectIds_.end() ? 0 : found->second;
+}
+uint32_t World::resolveObject(const ObjectPath& objectPath) const {
+    return objectPath.map == mapAsset_.path ? findObject(objectPath.object) : 0;
+}
+void World::clearScene() {
+    for (auto& o : objects_)
+        if (o.alive)
+            destroy(o.id);
+    // Keep Entity tombstones and RenderScene/PhysicsScene allocators: stale runtime
+    // identities cannot alias the next Map, and delta revisions remain monotonic.
+    materials.clear();
+    lights.clear();
+    animations_.clear();
+    camera = {};
+    navigation = {};
+    sceneData = Json::object();
+    sceneReferences.clear();
+    sceneScripts.clear();
+    mapAsset_ = {};
+    playerId = selected = hovered = 0;
+    path.clear();
+    hasDestination = false;
+    destination = vec3(0);
+    state = "Idle";
+    message.clear();
+    resetHistory = true;
+}
 const GameObject& World::entity(uint32_t id) const {
     if (!id || id > objects_.size() || !objects_[id - 1].alive)
         throw std::out_of_range("Invalid object");
@@ -13,10 +46,16 @@ GameObject& World::mutableObject(uint32_t id) {
     return const_cast<GameObject&>(entity(id));
 }
 uint32_t World::spawn(std::string name, Shape shape, vec3 position, vec3 scale, uint32_t material,
-                      bool blocking, bool interactable) {
+                      bool blocking, bool interactable, std::string persistentId) {
     if (material >= materials.size())
         throw std::out_of_range("Invalid material");
+    if (persistentId.empty())
+        persistentId = newPersistentId();
+    validatePersistentId(persistentId);
+    if (objectIds_.count(persistentId))
+        throw std::invalid_argument("Duplicate Object identity");
     GameObject o;
+    o.persistentId = std::move(persistentId);
     o.id = uint32_t(objects_.size() + 1);
     o.name = std::move(name);
     o.position = position;
@@ -41,6 +80,7 @@ uint32_t World::spawn(std::string name, Shape shape, vec3 position, vec3 scale, 
     attributes.interactable = interactable;
     o.proxy = scene_.create(proxyTransform(o), attributes);
     objects_.push_back(o);
+    objectIds_.emplace(o.persistentId, o.id);
     return o.id;
 }
 ProxyTransform World::proxyTransform(const GameObject& o) {
@@ -122,6 +162,13 @@ void World::setVisible(uint32_t id, bool visible) {
 void World::destroy(uint32_t id) {
     auto& o = mutableObject(id);
     animations_.erase(id);
+    objectIds_.erase(o.persistentId);
+    for (auto ref = sceneReferences.begin(); ref != sceneReferences.end();) {
+        if (ref->second == o.persistentId)
+            ref = sceneReferences.erase(ref);
+        else
+            ++ref;
+    }
     physics_.destroy(o.physical);
     animationCollision_.remove(id);
     o.alive = o.enabled = false;
@@ -212,6 +259,8 @@ void World::attachAnimation(uint32_t id, std::shared_ptr<const animation::Skelet
 }
 void World::attachAnimation(uint32_t id, const animation::Asset& asset, bool applyRoot, vec3 offset) {
     attachAnimationInstance(id, std::make_unique<animation::Instance>(asset), applyRoot, offset);
+    if (!asset.header().id.empty())
+        animations_.at(id).asset = asset.reference();
 }
 void World::attachAnimationInstance(uint32_t id, std::unique_ptr<animation::Instance> instance,
                                     bool applyRoot, vec3 offset) {
@@ -230,7 +279,7 @@ void World::attachAnimationInstance(uint32_t id, std::unique_ptr<animation::Inst
             if (before[i].name != after[i].name || before[i].parent != after[i].parent)
                 throw std::invalid_argument("Detach animation before changing skeleton layout");
     }
-    animations_[id] = {std::move(instance), {}, applyRoot, offset};
+    animations_[id] = {std::move(instance), {}, {}, applyRoot, offset};
 }
 void World::setAnimationAttribute(uint32_t id, const std::string& key, const std::string& value) {
     animations_.at(id).instance->setAttribute(key, value);
@@ -274,6 +323,7 @@ void World::resetAnimation(uint32_t id) {
 void World::setAnimationSolver(uint32_t id, std::unique_ptr<animation::Solver> solver) {
     entity(id);
     animations_.at(id).instance->setSolver(std::move(solver));
+    animations_.at(id).asset.reset();
 }
 const animation::Output& World::animationOutput(uint32_t id) const {
     entity(id);

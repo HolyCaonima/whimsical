@@ -1,4 +1,5 @@
 #include "core/World.h"
+#include "assets/EngineAssets.h"
 #include "core/FrameMailbox.h"
 #include "scripting/ScriptRuntime.h"
 #include "platform/Window.h"
@@ -22,6 +23,8 @@ int main(int argc, char** argv) {
         bool demo = false, smoke = false;
         bool physicsDebug = false;
         uint32_t stress = 0;
+        std::filesystem::path projectPath = std::filesystem::path(AFTERLIGHT_ROOT) / "game";
+        std::string mapPath;
         for (int i = 1; i < argc; i++) {
             std::string arg = argv[i];
             auto number = [&]() {
@@ -29,7 +32,14 @@ int main(int argc, char** argv) {
                     throw std::runtime_error("Missing value for " + arg);
                 return std::stoi(argv[++i]);
             };
-            if (arg == "--frames")
+            if (arg == "--project" || arg == "--map") {
+                if (i + 1 >= argc)
+                    throw std::runtime_error("Missing value for " + arg);
+                if (arg == "--project")
+                    projectPath = argv[++i];
+                else
+                    mapPath = argv[++i];
+            } else if (arg == "--frames")
                 options.maxFrames = uint32_t(std::max(1, number()));
             else if (arg == "--width")
                 width = uint32_t(std::clamp(number(), 640, 2560));
@@ -81,7 +91,8 @@ int main(int argc, char** argv) {
                 std::cout << "Afterlight [--frames N] [--capture] [--width 1280] [--height 800] [--view "
                              "0..7] [--no-hud] [--validation] [--no-validation] [--present "
                              "fifo|mailbox|immediate] [--demo] [--smoke] [--stress N] [--full-upload] "
-                             "[--audit NAME] [--audit-motion] [--physics-debug]\n";
+                             "[--audit NAME] [--audit-motion] [--physics-debug] [--project DIR] [--map "
+                             "/Game/Maps/Name]\n";
                 return 0;
             } else
                 throw std::runtime_error("Unknown option " + arg);
@@ -108,10 +119,15 @@ int main(int argc, char** argv) {
         }
         std::cout << "AFTERLIGHT | C++ engine / JavaScript gameplay / Vulkan RT\n";
         Window window(width, height);
+        AssetManager assets{Project(projectPath)};
+        registerEngineAssets(assets);
         World world;
-        ScriptRuntime scripts(world);
+        ScriptRuntime scripts(world, assets);
         scripts.setHudEnabled(options.hud);
-        scripts.initialize();
+        if (mapPath.empty())
+            scripts.initialize();
+        else
+            scripts.loadScene(AssetPath(mapPath));
         // A level-sized scene in which the number of objects that change each tick stays
         // fixed no matter how many exist. That is the measurement that separates the two
         // architectures: per-frame work proportional to the scene climbs with --stress,
@@ -239,6 +255,11 @@ int main(int argc, char** argv) {
                             input.pressed[VK_ESCAPE] = true;
                             smokeStage++;
                             std::cout << "[Smoke] Cancel movement\n";
+                        } else if (smokeStage == 6 && f >= 125) {
+                            scripts.loadScene(world.mapAsset().path);
+                            stressMoving.clear(); // These transient entities belonged to the previous scene.
+                            smokeStage++;
+                            std::cout << "[Smoke] Reload Map / rebuild gameplay bindings\n";
                         }
                     }
                     if (input.pressed[VK_F1])
@@ -296,7 +317,7 @@ int main(int argc, char** argv) {
             throw std::runtime_error(mainError);
         if (!renderError.empty())
             throw std::runtime_error(renderError);
-        if (smoke && smokeStage != 6)
+        if (smoke && smokeStage != 7)
             throw std::runtime_error("Smoke scenario did not complete");
         std::cout << "Shutdown clean. Simulation ticks=" << tick << ", rendered frames=" << rendered.load()
                   << ", validation errors=" << validationErrors << "\n";

@@ -1,4 +1,5 @@
 """Bake the original GLB skins into engine meshes; source files remain untouched."""
+from asset_format import read_asset, write_asset
 import io
 import json
 import struct
@@ -31,7 +32,7 @@ def export(source, controller, output):
             n=nodes[i]; t=np.eye(4);t[:3,:3]=quaternion_matrix(n.get('rotation',[0,0,0,1]));t[:3,3]=n.get('translation',[0,0,0])
             worlds[i]=world(parents[i])@t if i in parents else t
         return worlds[i]
-    metadata=json.loads(controller.read_text()); joints=metadata['joints']; names=[j['name'] for j in joints]
+    metadata=json.loads(read_asset(controller)[1]); joints=metadata['joints']; names=[j['name'] for j in joints]
     rest=[]
     for j in joints:
         t=np.eye(4);t[:3,:3]=quaternion_matrix(j['rotation_xyzw']);t[:3,3]=j['position']
@@ -65,13 +66,14 @@ def export(source, controller, output):
             for a,b,c,j,v in zip(p,n,colors,ids,weights): vertices.append((a,b,c,j,v))
             indices.extend((accessor(prim['indices']).reshape(-1)+base).tolist())
     output.parent.mkdir(parents=True,exist_ok=True)
-    with output.open('wb') as f:
+    with io.BytesIO() as f:
         f.write(b'SKN1');f.write(struct.pack('<III',len(vertices),len(indices),len(bindings)))
         for name,bind in bindings:
             s=name.encode();f.write(struct.pack('<I',len(s)));f.write(s);f.write(bind.T.astype('<f4').tobytes())
         for p,n,c,j,w in vertices:
             f.write(np.concatenate((p,n,c)).astype('<f4').tobytes());f.write(j.astype('<u4').tobytes());f.write(w.astype('<f4').tobytes())
         f.write(np.asarray(indices,dtype='<u4').tobytes())
+        write_asset(output, "SkinnedMesh", f.getvalue(), {"license": "CC-BY-NC-4.0"})
     # Verify bind-space bounds using the same palette as the native implementation.
     palette=[rest[names.index(name)]@b for name,b in bindings]
     deformed=np.array([sum(w[k]*(palette[j[k]]@np.r_[p,1])[:3] for k in range(4)) for p,n,c,j,w in vertices])
@@ -80,4 +82,4 @@ def export(source, controller, output):
 
 if __name__=='__main__':
     for name,path in [('biped','Geno/Model.glb'),('dog','Quadruped/Dog.glb')]:
-        export(UPSTREAM/'Demos/_ASSETS_'/path,ROOT/'game/assets/animations/ai4animation'/('biped' if name=='biped' else 'quadruped')/'metadata.json',ROOT/'game/assets/models'/f'{name}.skin')
+        export(UPSTREAM/'Demos/_ASSETS_'/path,ROOT/'game/Content/animations/ai4animation'/('biped' if name=='biped' else 'quadruped')/'metadata.asset',ROOT/'game/Content/models'/f'{name}.asset')

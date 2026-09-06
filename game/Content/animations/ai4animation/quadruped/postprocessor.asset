@@ -1,0 +1,2 @@
+ALAS1
+{"id": "6fde16803c7a5829a9c6703ac81b62e1", "name": "postprocessor", "version": 1, "type": "OnnxModel", "storage": "external", "metadata": {"source": "external\\AI4AnimationPy\\Demos\\Locomotion\\Quadruped\\Postprocessor.pt", "source_sha256": "e6ac7a3d796bcece1a09fb36f985fe54471988ee9e0021dbf10e0215599ef4a9", "onnx_sha256": "0613b1b4242b21d9b881c88d50a5253218cd4dea359b8095f0af3760f66f3f20", "input_shape": [1, 504], "output_shape": [1, 64], "iterations": 0, "max_abs_error": 1.0132789611816406e-06, "license": "CC-BY-NC-4.0"}, "source": "postprocessor.onnx"}

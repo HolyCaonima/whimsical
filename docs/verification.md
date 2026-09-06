@@ -1,5 +1,18 @@
 # 实际验证记录
 
+## 2026-09-06：Project / Asset / Scene Save/Load
+
+存储契约补充验证：AssetHeader 使用 `PayloadStorage::Inline/External`，类型加载器不再绑定存储模式；同类型两种存储共用解码器。测试确认裸 payload 不注册、不能取得 AssetRef、虚拟路径不接受 `.onnx` 或按文件名回退，移动 payload 仅更新 asset 头部地址；外置资产不能混入内嵌字节，Scene Save 始终输出 inline。Release 重建与全部 6 组 CTest 再次通过；离线引用工具和现有四个 ONNX 纯头资产的依赖也已核对。
+
+- Release 全工程构建成功；新增 `afterlight_assets` 和 `project_assets_scene`。CTest 共 6/6 通过，原有五组行为断言保留（最终测试约 14 秒）。
+- 新测试验证独立 Project 创建/重开/搬迁、虚拟路径、类型检查、重复 ID、版本、纯头外部映射、依赖环、缓存生命周期、资产移动后的 ID 引用；以及 Map 完整往返、Save As、重复加载后的 Entity/Physics 失效、动画属性、网格、关节碰撞体、玩法重绑定、空场景、失败预检与 JS 延迟切图。
+- `Afterlight.exe --project E:/RTSGames/game/.project --map /Game/Maps/RainCourt --smoke --width 960 --height 600` 完成 160 GPU 帧，包含既有输入/resize/最小化流程和第 125 帧后的 Map 重载。RTX 3080、validation 开启，**0 个 validation errors**，两线程正常退出。最终 1100×700，48 render slots，2 次 TLAS rebuild。截图已打开核对，庭院、Kiln、Ash、HUD 显示正常。此 smoke 用于正确性，不作为性能基准。
+- 报告：`captures/project-scene-smoke-report.json`；日志：`captures/project-scene-smoke.log`；截图：`captures/project-scene-smoke.bmp`。
+- 原 ONNX、A4C2、SKN1、golden 载荷迁移前后逐字节一致。新版网格导出器在临时输出中重新导出两套网格，载荷与原资产相同且保留原 ID。
+- 新版 ONNX 导出器完整导出 biped/quadruped 的 network/postprocessor 及 `.asset`，PyTorch 对照最大绝对误差分别为 3.10e-6、7.15e-7、9.54e-7、1.01e-6；控制器字节、依赖 ID/虚拟路径、纯头布局也核对通过。输出位于 `build/asset-export-check/`。
+- 架构、格式、API 和当前边界见 [Project / Asset / Scene](projects-assets-scenes.md)。
+
+
 2026-09-05，Windows x64 / Visual Studio 2019 16.9 / MSVC 19.28，显卡 NVIDIA GeForce RTX 3080，驱动 591.44。
 
 ## 构建和核心功能

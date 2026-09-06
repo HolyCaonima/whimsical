@@ -13,6 +13,12 @@ struct Material {
     vec4 emissionMetallic{0};
 };
 enum class Shape : uint32_t { Box, Capsule };
+struct RenderComponent {
+    Shape shape = Shape::Box;
+    vec3 scale{1}, offset{0}, animationScale{1};
+    uint32_t material = 0;
+    bool visible = true;
+};
 // A renderable occupies a stable slot for its whole lifetime. Transform and attributes
 // are separate because a transform changes orders of magnitude more often, and the two
 // map onto disjoint halves of a GPU instance so each can be rewritten on its own.

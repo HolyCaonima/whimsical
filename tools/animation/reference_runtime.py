@@ -3,6 +3,7 @@
 Only scene/UI initialization is replaced. No files under external are modified.
 The fixed input schedule matches animation_tests --dump-poses.
 """
+from asset_format import read_asset
 import ast
 import importlib
 import json
@@ -56,7 +57,7 @@ def run(directory):
     # SCRIPT_DIR / ASSETS_PATH are setup assignments, unrelated to the runtime.
     statements = [node for node in statements if all(isinstance(t, ast.Name) and t.id.isupper() and t.id not in ['SCRIPT_DIR', 'ASSETS_PATH'] for t in node.targets)]
     exec(compile(ast.Module(body=statements + [cls], type_ignores=[]), str(demo / 'Program.py'), 'exec'), scope)
-    metadata = json.loads((ROOT / 'game/assets/animations/ai4animation/biped/metadata.json').read_text())
+    metadata = json.loads(read_asset(ROOT / 'game/Content/animations/ai4animation/biped/metadata.asset')[1])
     names = [j['name'] for j in metadata['joints']]
     worlds = []
     for joint in metadata['joints']:

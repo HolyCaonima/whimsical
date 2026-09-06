@@ -1,8 +1,10 @@
+#include "TestProject.h"
 #include "animation/Animation.h"
 #include "animation/ai4animation/Controller.h"
 #include "core/World.h"
 #include "scripting/ScriptRuntime.h"
 #include <fstream>
+#include <sstream>
 #include <iostream>
 #include <stdexcept>
 using namespace afterlight;
@@ -15,9 +17,11 @@ static void check(bool value, const char* message) {
 static void close(float a, float b, const char* message, float eps = .0002f) {
     check(std::abs(a - b) < eps, message);
 }
-static void golden(const std::filesystem::path& directory, const char* name) {
-    ai::OnnxModel model(directory / (std::string(name) + ".onnx"));
-    std::ifstream file(directory / (std::string(name) + ".golden"), std::ios::binary);
+static void golden(const std::string& kind, const char* name) {
+    std::string path = "/Game/animations/ai4animation/" + kind + "/" + name;
+    auto model = testAssets().load<ai::OnnxModel>(AssetPath(path));
+    auto fixture = testAssets().load<BinaryAsset>(AssetPath(path + "_golden"));
+    std::istringstream file(fixture->bytes, std::ios::binary);
     auto read = [&](void* data, size_t n) {
         check(bool(file.read(static_cast<char*>(data), std::streamsize(n))),
               "Missing/truncated PyTorch golden fixture");
@@ -31,7 +35,7 @@ static void golden(const std::filesystem::path& directory, const char* name) {
     for (uint32_t i = 0; i < count; ++i) {
         read(x.data(), inputs * 4);
         read(expected.data(), outputs * 4);
-        auto actual = model.run(x);
+        auto actual = model->run(x);
         check(actual.size() == expected.size(), "ONNX output shape mismatch");
         for (size_t j = 0; j < actual.size(); ++j) {
             float error = std::abs(actual[j] - expected[j]);
@@ -40,7 +44,7 @@ static void golden(const std::filesystem::path& directory, const char* name) {
                   "Native ONNX differs from original PyTorch");
         }
     }
-    std::cout << directory.filename().string() << "/" << name << " max error: " << maxError << "\n";
+    std::cout << kind << "/" << name << " max error: " << maxError << "\n";
 }
 // Independent peer demonstrates that World and Instance contain no neural-model assumptions.
 class ConstantSolver final : public anim::Solver {
@@ -108,13 +112,14 @@ static void framework() {
 }
 static void scriptIntegration() {
     World world;
-    ScriptRuntime script(world);
+    ScriptRuntime script(world, testAssets());
     script.initialize();
     auto id = world.playerId;
-    script.execute("Engine.animation(" + std::to_string(id) +
-                   ", 'animations/ai4animation/biped/controller.a4c', {rootMotion:false,rootOffset:{y:-1}});"
-                   "Engine.animationInput(" +
-                   std::to_string(id) + ", {action:'Idle'});");
+    script.execute(
+        "Engine.animation(" + std::to_string(id) +
+        ", '/Game/animations/ai4animation/biped/controller', {rootMotion:false,rootOffset:{y:-1}});"
+        "Engine.animationInput(" +
+        std::to_string(id) + ", {action:'Idle'});");
     Input input;
     script.tick(1.f / 60, input);
     check(world.entity(id).joints.size() == 23, "JS tick must evaluate attached animation");
@@ -158,10 +163,10 @@ static void sequence() {
     s.rebase({}, {{3, 0, 0}, quat(1, 0, 0, 0)});
     close(s.frames[2].root.position.x, 5, "Prediction physics feedback rebasing");
 }
-static void controller(const std::filesystem::path& directory) {
-    golden(directory, "network");
-    golden(directory, "postprocessor");
-    auto asset = ai::ControllerAsset::load(directory);
+static void controller(const std::string& kind) {
+    golden(kind, "network");
+    golden(kind, "postprocessor");
+    auto asset = testController(kind);
     anim::Instance instance(asset->skeleton, std::make_unique<ai::Controller>(asset), asset->attributes);
     anim::Instance repeat(asset->skeleton, std::make_unique<ai::Controller>(asset), asset->attributes);
     anim::Input input;
@@ -199,12 +204,11 @@ static void controller(const std::filesystem::path& directory) {
         if (i < 70 || i >= 110)
             root = anim::compose(root, out.rootMotion);
     }
-    std::cout << directory.filename().string() << " 180 controller ticks passed\n";
+    std::cout << kind << " 180 controller ticks passed\n";
 }
 static void characterPoseRegression() {
-    auto base = std::filesystem::path(AFTERLIGHT_ROOT) / "game/assets/animations/ai4animation";
     for (const char* kind : {"biped", "quadruped"}) {
-        auto asset = ai::ControllerAsset::load(base / kind);
+        auto asset = testController(kind);
         const auto& skeleton = *asset->skeleton;
         auto index = [&](const char* name) {
             auto it = std::find_if(skeleton.joints().begin(), skeleton.joints().end(),
@@ -257,8 +261,7 @@ static void characterPoseRegression() {
 static void dumpPoses(const std::filesystem::path& directory, const std::string& style) {
     std::filesystem::create_directories(directory);
     for (const char* kind : {"biped", "quadruped"}) {
-        auto asset = ai::ControllerAsset::load(std::filesystem::path(AFTERLIGHT_ROOT) /
-                                               "game/assets/animations/ai4animation" / kind);
+        auto asset = testController(kind);
         anim::Instance instance(asset->skeleton, std::make_unique<ai::Controller>(asset), asset->attributes);
         if (asset->poseAxes)
             instance.setAttribute("locomotion.style", style);
@@ -302,9 +305,8 @@ int main(int argc, char** argv) {
         framework();
         sequence();
         scriptIntegration();
-        auto base = std::filesystem::path(AFTERLIGHT_ROOT) / "game/assets/animations/ai4animation";
-        controller(base / "biped");
-        controller(base / "quadruped");
+        controller("biped");
+        controller("quadruped");
         characterPoseRegression();
         std::cout << "Animation tests passed\n";
         return 0;

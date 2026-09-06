@@ -1,6 +1,0 @@
-{
-  "ground": { "layer": 1, "blocking": true, "walkable": true, "pickable": false },
-  "obstacle": { "layer": 1, "blocking": true, "walkable": false, "pickable": true },
-  "decoration": { "layer": 1, "blocking": false, "walkable": false, "pickable": false },
-  "character": { "layer": 2, "blocking": true, "walkable": false, "pickable": true, "shape": "capsule", "radius": 0.4, "height": 2 }
-}
