@@ -35,6 +35,25 @@ BodyHandle AnimationCollision::bind(uint32_t owner, uint32_t joint, const Collid
     bindings_.push_back({owner, joint, handle, local});
     return handle;
 }
+void AnimationCollision::replace(uint32_t owner,
+                                 const std::vector<AnimationColliderDescription>& descriptions,
+                                 PhysicsPose root, const std::vector<PhysicsPose>& joints, bool enabled) {
+    AnimationCollision staged(scene_);
+    try {
+        for (const auto& b : descriptions) {
+            if (b.joint >= joints.size())
+                throw std::invalid_argument("Joint collider index outside pose");
+            staged.bind(owner, b.joint, b.shape, b.local, b.blocking);
+        }
+        staged.update(owner, root, joints);
+        staged.setEnabled(owner, enabled);
+    } catch (...) {
+        staged.remove(owner);
+        throw;
+    }
+    remove(owner);
+    bindings_.insert(bindings_.end(), staged.bindings_.begin(), staged.bindings_.end());
+}
 void AnimationCollision::update(uint32_t owner, PhysicsPose root, const std::vector<PhysicsPose>& joints) {
     validPose(root);
     for (const auto& pose : joints)

@@ -169,6 +169,7 @@ enum Op {
     MaterialAdd,
     Create,
     AddComponent,
+    SetComponent,
     AddComponents,
     ReadComponent,
     RemoveComponent,
@@ -246,6 +247,7 @@ static duk_ret_t callNative(duk_context* c) {
             duk_push_uint(c, ScenePersistence::createEntity(w, description, assets(c)));
             return 1;
         }
+        case SetComponent:
         case AddComponent: {
             Entity e = duk_require_uint(c, 0);
             std::string type = duk_require_string(c, 1);
@@ -254,7 +256,10 @@ static duk_ret_t callNative(duk_context* c) {
             auto data = Json::parse(duk_require_string(c, -1));
             duk_pop(c);
             auto description = SceneEntity::fromJson({{"components", {{type, data}}}});
-            ScenePersistence::addComponents(w, e, description, assets(c));
+            if (duk_get_current_magic(c) == SetComponent)
+                componentCatalog().update(w, e, type, description.components.values.at(type), assets(c));
+            else
+                ScenePersistence::addComponents(w, e, description, assets(c));
             return 0;
         }
         case AddComponents: {
@@ -272,9 +277,11 @@ static duk_ret_t callNative(duk_context* c) {
             const auto& type = componentCatalog().get(duk_require_string(c, 1));
             if (!type.present(w.registry(), e))
                 throw std::invalid_argument("Component absent: " + type.name);
-            auto value = type.capture(w, e, assets(c));
+            auto value = type.inspect(w, e);
             if (!value)
                 throw std::invalid_argument("Component is derived, not authored: " + type.name);
+            if (type.resolveReferences)
+                type.resolveReferences(*value, assets(c));
             pushJson(c, type.encode(*value));
             return 1;
         }
@@ -334,11 +341,11 @@ static duk_ret_t callNative(duk_context* c) {
             return 0;
         }
         case AddLight: {
-            Light l;
-            l.positionRadius = {num(c, 0), num(c, 1), num(c, 2), num(c, 3)};
-            l.colorIntensity = {num(c, 4), num(c, 5), num(c, 6), num(c, 7)};
-            w.resources.lights.push_back(l);
-            duk_push_uint(c, uint32_t(w.resources.lights.size() - 1));
+            SceneEntity description;
+            description.name = "Light";
+            description.components.set(SceneTransform{{{num(c, 0), num(c, 1), num(c, 2)}}});
+            description.components.set(PointLight{{num(c, 4), num(c, 5), num(c, 6)}, num(c, 7), num(c, 3)});
+            duk_push_uint(c, ScenePersistence::createEntity(w, description, assets(c)));
             return 1;
         }
         case GetPose: {
@@ -495,7 +502,8 @@ static duk_ret_t callNative(duk_context* c) {
                          {"z", w.resources.camera.target.z}});
             return 1;
         case LightIntensity:
-            w.resources.lights.at(duk_require_uint(c, 0)).colorIntensity.w = num(c, 1);
+            w.edit<PointLight>(duk_require_uint(c, 0),
+                               [&](PointLight& light) { light.intensity = num(c, 1); });
             return 0;
         case ConfigureCollider: {
             uint32_t id = duk_require_uint(c, 0);
@@ -753,6 +761,7 @@ void ScriptRuntime::createContext() {
                                 {"material", MaterialAdd, 8},
                                 {"create", Create, 1},
                                 {"addComponent", AddComponent, 3},
+                                {"setComponent", SetComponent, 3},
                                 {"addComponents", AddComponents, 2},
                                 {"component", ReadComponent, 2},
                                 {"removeComponent", RemoveComponent, 2},
@@ -890,12 +899,22 @@ void ScriptRuntime::processUiInput(Input& input) {
 void ScriptRuntime::loadScene(const AssetPath& path) {
     if (std::this_thread::get_id() != owner_)
         throw std::logic_error("Scene loading requires the owner thread");
-    ScenePersistence::load(world_, assets_, path);
+    auto observers = world_.deferObservers();
+    std::exception_ptr publicationFailure;
+    try {
+        ScenePersistence::load(world_, assets_, path);
+    } catch (const ScenePersistence::CommittedError&) {
+        publicationFailure = std::current_exception();
+    }
     uiBindings_.reset();
     duk_destroy_heap(context_);
     context_ = nullptr;
     createContext();
+    world_.commitChanges();
     startScripts();
+    observers.commit();
+    if (publicationFailure)
+        std::rethrow_exception(publicationFailure);
 }
 AssetRef ScriptRuntime::saveScene(const AssetPath& path, const std::string& name) {
     return ScenePersistence::save(world_, assets_, path, name);

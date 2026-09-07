@@ -13,7 +13,6 @@ struct SceneResources {
     std::map<std::string, std::string> references;
     std::vector<Material> materials;
     std::map<uint32_t, std::shared_ptr<const MaterialAsset>> materialAssets;
-    std::vector<Light> lights;
     Camera camera;
     NavigationSettings navigation;
 };
@@ -33,19 +32,20 @@ class World {
 
   public:
     World();
-    ~World() {
-        clearScene();
-    }
+    ~World() = default;
     World(const World&) = delete;
     World& operator=(const World&) = delete;
     Changes::Batch changes() {
         return Changes::Batch(storage_.changes);
     }
+    Changes::Notifications deferObservers() {
+        return Changes::Notifications(storage_.changes);
+    }
     void commitChanges() {
         storage_.changes.flush();
     }
     template <class T, class F> void onChange(F&& f) {
-        storage_.changes.subscribe<T>(std::forward<F>(f));
+        storage_.changes.observe<T>(std::forward<F>(f));
     }
     SceneResources resources;
     GameplayState gameplay;
@@ -53,7 +53,7 @@ class World {
     RenderSystem render{storage_, resources.materials};
     TransformSystem transforms{storage_};
     MotionSystem motion{storage_, transforms, resources.navigation};
-    AnimationSystem animation{storage_, motion};
+    AnimationSystem animation{storage_, motion, transforms};
     const Registry& registry() const {
         return storage_.registry;
     }
@@ -65,18 +65,21 @@ class World {
     }
     template <class T, class F> void edit(Entity e, F&& edit) {
         static_assert(!SystemOwned<T>::value, "Use the component's owning system");
+        auto batch = changes();
         T draft = get<T>(e);
         edit(draft);
-        if (auto c = componentCatalog().find(typeid(T)); c && c->validateRuntime)
-            c->validateRuntime(&draft);
+        componentCatalog().checkNative(*this, e, typeid(T), &draft);
         storage_.registry.get<T>(e) = std::move(draft);
         storage_.changes.mark<T>(e);
+        batch.commit();
     }
     template <class T, class... Args> void add(Entity e, Args&&... args) {
         static_assert(!SystemOwned<T>::value, "Use the component's owning system");
+        auto batch = changes();
         T value{std::forward<Args>(args)...};
-        componentCatalog().checkNativeAdd(*this, e, typeid(T), &value);
+        componentCatalog().checkNative(*this, e, typeid(T), &value);
         storage_.registry.emplace<T>(e, std::move(value));
+        batch.commit();
     }
     template <class T> void remove(Entity e) {
         static_assert(!std::is_same_v<T, Identity> && !std::is_same_v<T, Disabled>,
@@ -84,8 +87,13 @@ class World {
         if (auto c = componentCatalog().find(typeid(T)))
             componentCatalog().remove(*this, e, c->name);
         else {
+            auto batch = changes();
             storage_.registry.remove<T>(e);
+            batch.commit();
         }
+    }
+    template <class T> void set(Entity e, T value, AssetManager& assets) {
+        componentCatalog().update(*this, e, componentCatalog().document(typeid(T)).name, value, assets);
     }
     Entity create(std::string name = {}, std::string persistentId = {});
     void destroy(Entity); // Hierarchy subtree, children first.

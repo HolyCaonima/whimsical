@@ -25,6 +25,7 @@ class RenderSystem {
   public:
     RenderSystem(SceneStorage&, const std::vector<Material>&);
     void add(Entity, RenderComponent, std::shared_ptr<const StaticMesh> = {});
+    void set(Entity, RenderComponent, std::shared_ptr<const StaticMesh>);
     void remove(Entity);
     void publishTransform(Entity);
     void publishAttributes(Entity);
@@ -52,11 +53,14 @@ class MotionSystem {
     SceneStorage& s;
     TransformSystem& transforms;
     NavigationSettings& navigation;
+    vec3 characterPosition(Entity, vec3) const;
 
   public:
     MotionSystem(SceneStorage&, TransformSystem&, NavigationSettings&);
     void add(Entity, PhysicsBody);
     void remove(Entity);
+    ColliderSettings collider(Entity) const;
+    void set(Entity, PhysicsBody);
     void configureCollider(Entity, uint32_t layer, bool blocking, bool walkable, bool pickable);
     void setColliderShape(Entity, const ColliderShape&);
     void setSolid(Entity, bool);
@@ -67,16 +71,17 @@ class MotionSystem {
     vec3 rootMotion(Entity, vec3, float);
     float setCharacterHeight(Entity, float);
     void bindRootMotion(Entity, RootMotionBinding);
-    void consumeRootMotion(Entity, const animation::Transform&, vec3 offset);
+    PhysicsPose solveRootMotion(Entity, const animation::Transform&, vec3 offset) const;
     std::vector<vec3> findPath(Entity, vec3) const;
 };
 class AnimationSystem {
     SceneStorage& s;
     MotionSystem& motion;
+    TransformSystem& transforms;
     void attachAnimationInstance(Entity, std::unique_ptr<animation::Instance>, vec3);
 
   public:
-    AnimationSystem(SceneStorage&, MotionSystem&);
+    AnimationSystem(SceneStorage&, MotionSystem&, TransformSystem&);
     void attachAnimation(Entity, std::shared_ptr<const animation::Skeleton>,
                          std::unique_ptr<animation::Solver>, vec3 offset = vec3(0));
     void attachAnimation(Entity, const animation::Asset&, vec3 offset = vec3(0),
@@ -89,6 +94,7 @@ class AnimationSystem {
         batch.commit();
     }
     void detachAnimation(Entity);
+    void configureAnimation(Entity, vec3, const animation::AttributeValues&);
     void setAnimationAttribute(Entity, const std::string&, const std::string&);
     AnimationInspection inspectAnimation(Entity) const;
     void setSkinnedMesh(Entity, std::shared_ptr<const SkinnedMesh>);
@@ -98,13 +104,14 @@ class AnimationSystem {
     void setAnimationSolver(Entity, std::unique_ptr<animation::Solver>);
     const animation::Output& animationOutput(Entity) const;
     void update(float dt);
-    void setAnimationJoints(Entity, std::vector<PhysicsPose>,
-                            std::shared_ptr<const animation::Skeleton> = {});
+    void setAnimationJoints(Entity, std::vector<PhysicsPose>);
+    void setAnimationJoints(Entity, std::vector<PhysicsPose>, std::shared_ptr<const animation::Skeleton>);
     void removeJoints(Entity);
     void removeJointColliders(Entity);
     std::vector<AnimationColliderDescription> describeColliders(Entity e) const {
         return s.jointColliders.describe(e);
     }
+    void setAnimationColliders(Entity, const std::vector<AnimationColliderDescription>&);
     BodyHandle addAnimationCollider(Entity, uint32_t, const ColliderShape&, PhysicsPose, bool);
 };
 } // namespace afterlight

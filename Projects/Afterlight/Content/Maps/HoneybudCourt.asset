@@ -1,7 +1,7 @@
 ALAS1
 {"id": "d3ba56b8cba6483c84816c14b8f4d738", "name": "HoneybudCourt", "type": "Map", "version": 1, "storage": "embedded", "metadata": {"authoring": "Blender MCP", "description": "Original warm miniature garden kit; see SourceArt/Honeybud."}}
 {
-  "version": 5,
+  "version": 6,
   "materials": [
     {
       "shader": {
@@ -1277,106 +1277,6 @@ ALAS1
         "id": "44f944121b5b4f0088bad72ff5c315da",
         "path": "/Game/materials/Honeybud/awning"
       }
-    }
-  ],
-  "lights": [
-    {
-      "positionRadius": [
-        -7,
-        10,
-        3,
-        1.15
-      ],
-      "colorIntensity": [
-        1,
-        0.73,
-        0.44,
-        620
-      ]
-    },
-    {
-      "positionRadius": [
-        8,
-        10,
-        5,
-        4.0
-      ],
-      "colorIntensity": [
-        0.66,
-        0.79,
-        1,
-        65
-      ]
-    },
-    {
-      "positionRadius": [
-        2,
-        8,
-        -8,
-        1.5
-      ],
-      "colorIntensity": [
-        1,
-        0.75,
-        0.46,
-        470
-      ]
-    },
-    {
-      "positionRadius": [
-        -3.1,
-        2.2,
-        3,
-        0.18
-      ],
-      "colorIntensity": [
-        1,
-        0.65,
-        0.27,
-        5
-      ]
-    },
-    {
-      "positionRadius": [
-        3,
-        2.2,
-        3.2,
-        0.18
-      ],
-      "colorIntensity": [
-        1,
-        0.65,
-        0.27,
-        5
-      ]
-    },
-    {
-      "positionRadius": [
-        -8.1,
-        2.2,
-        -5.1,
-        0.18
-      ],
-      "colorIntensity": [
-        1,
-        0.65,
-        0.27,
-        5
-      ]
-    },
-    {
-      "positionRadius": [
-        8.5,
-        2.2,
-        -5.2,
-        0.18
-      ],
-      "colorIntensity": [
-        1,
-        0.65,
-        0.27,
-        5
-      ]
     }
   ],
   "camera": {
@@ -31009,6 +30909,167 @@ ALAS1
         "rootMotion": {
           "mode": "grounded",
           "preserveAnchor": true
+        }
+      }
+    },
+    {
+      "id": "51a6a131534348bbb5608f29c6487fa8",
+      "name": "Light 1",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -7,
+            10,
+            3
+          ]
+        },
+        "light": {
+          "radius": 1.15,
+          "color": [
+            1,
+            0.73,
+            0.44
+          ],
+          "intensity": 620
+        }
+      }
+    },
+    {
+      "id": "e497e7e7d7fb4a9b95fd8c5f0041dd48",
+      "name": "Light 2",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            8,
+            10,
+            5
+          ]
+        },
+        "light": {
+          "radius": 4.0,
+          "color": [
+            0.66,
+            0.79,
+            1
+          ],
+          "intensity": 65
+        }
+      }
+    },
+    {
+      "id": "a177d0a49f22440fbe8f1fed55afcd3b",
+      "name": "Light 3",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            2,
+            8,
+            -8
+          ]
+        },
+        "light": {
+          "radius": 1.5,
+          "color": [
+            1,
+            0.75,
+            0.46
+          ],
+          "intensity": 470
+        }
+      }
+    },
+    {
+      "id": "ef74fd70a086449dbc94772ae4a1b961",
+      "name": "Light 4",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -3.1,
+            2.2,
+            3
+          ]
+        },
+        "light": {
+          "radius": 0.18,
+          "color": [
+            1,
+            0.65,
+            0.27
+          ],
+          "intensity": 5
+        }
+      }
+    },
+    {
+      "id": "f4400422d6c543ba88722a62c7107a61",
+      "name": "Light 5",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            3,
+            2.2,
+            3.2
+          ]
+        },
+        "light": {
+          "radius": 0.18,
+          "color": [
+            1,
+            0.65,
+            0.27
+          ],
+          "intensity": 5
+        }
+      }
+    },
+    {
+      "id": "c8858e2430234e48ad745860111ca4ce",
+      "name": "Light 6",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -8.1,
+            2.2,
+            -5.1
+          ]
+        },
+        "light": {
+          "radius": 0.18,
+          "color": [
+            1,
+            0.65,
+            0.27
+          ],
+          "intensity": 5
+        }
+      }
+    },
+    {
+      "id": "d69f549d6f684d28aa44ee651437fdb0",
+      "name": "Light 7",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            8.5,
+            2.2,
+            -5.2
+          ]
+        },
+        "light": {
+          "radius": 0.18,
+          "color": [
+            1,
+            0.65,
+            0.27
+          ],
+          "intensity": 5
         }
       }
     }

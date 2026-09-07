@@ -49,8 +49,8 @@ proxy 拆成两半，因为它们的变化频率相差一到两个数量级：`P
 | Binding | 作用 |
 | --- | --- |
 | `Engine.material(r,g,b,roughness,er,eg,eb,metallic)` | 返回材质索引 |
-| `Engine.create({name,components})` / `addComponent` / `removeComponent` | 创建实体或组合能力；不隐式创建物理或显示资源 |
-| `Engine.light(x,y,z,radius,r,g,b,intensity)` | 创建球形位置扰动的解析灯 |
+| `Engine.create({name,components})` / `addComponent` / `setComponent` / `removeComponent` | 创建实体或组合能力；不隐式创建物理或显示资源 |
+| `Engine.light(x,y,z,radius,r,g,b,intensity)` | 创建 Transform + PointLight 实体，返回实体 ID |
 | `Engine.position(id)` / `transform(id,pose)` / `localTransform(id,pose)` | 读取世界姿态／写世界姿态／写局部姿态 |
 | `Engine.parent(id,parent,keepWorld)` / `renderScale(id,scale)` | 设置刚体层级／独立修改显示尺寸 |
 | `Engine.move(id,dx,dz)` | 执行碰撞扫掠和滑移，返回实际位置 |
@@ -59,7 +59,7 @@ proxy 拆成两半，因为它们的变化频率相差一到两个数量级：`P
 | `Engine.camera(x,y,z,yaw,pitch,distance)` | 提交相机状态 |
 | `Engine.showPath(points)` / `status(state,message)` | 提交指令反馈 |
 | `Engine.solid(id,bool)` / `setMaterial(id,index)` | 玩法引起的碰撞／外观变化 |
-| `Engine.lightIntensity(index,value)` | 动态灯强度 |
+| `Engine.lightIntensity(id,value)` | 修改光源组件强度 |
 | `Engine.readJson(path)` | 经 AssetManager 从虚拟路径读取 Data 资产 |
 | `Engine.animation(id,path,options)` / `animationInput(id,input)` | 绑定动画资源并提交动作意图 |
 | `Engine.skinMesh(id,path)` | 按骨骼名字将蒙皮网格绑定到已挂接动画的实体 |

@@ -257,7 +257,7 @@ if(Engine.alive(stale))throw Error('stale');
 Engine.enabled(parent,false);
 )JS");
     auto document = ScenePersistence::capture(w, testAssets());
-    check(document.entities.size() == 3 && document.json().at("version").uint() == 5,
+    check(document.entities.size() == 3 && document.json().at("version").uint() == 6,
           "Persist live entities in component schema");
     auto decoded = SceneDocument::fromJson(Json::parse(document.json().dump()));
     check(decoded.json() == document.json(), "Optional component roundtrip is lossless");
@@ -302,11 +302,20 @@ static void componentContracts() {
                 throw std::invalid_argument("Negative energy");
         });
     contract.dependencies = {{"transform"}};
+    contract.validate = [](const ComponentSet& set, const std::any& value) {
+        if (std::any_cast<const Energy&>(value).value > 50 && !set.contains("interactable"))
+            throw std::invalid_argument("High energy requires interactable");
+    };
     auto prepare = contract.prepare;
     contract.prepare = [prepare](const World& world, Entity entity, const std::any& value,
                                  AssetManager& assets) {
         ++preparations;
-        return prepare(world, entity, value, assets);
+        auto install = prepare(world, entity, value, assets);
+        return [install, value](ComponentAccess& access) {
+            install(access);
+            if (std::any_cast<const Energy&>(value).value == 42)
+                throw std::runtime_error("Injected failure after component installation");
+        };
     };
     componentCatalog().add(std::move(contract));
     int notifications = 0;
@@ -323,6 +332,8 @@ if(Engine.component(actor,'energy').value!==3)throw Error('authored copy');
     check(notifications == 1, "One notification after component group commits");
     rejects([&] { w.edit<Energy>(e, [](Energy& v) { v.value = -1; }); },
             "Native edit shares component validation");
+    rejects([&] { w.edit<Energy>(e, [](Energy& v) { v.value = 100; }); },
+            "Native drafts share complete composition validation");
     check(w.get<Energy>(e).value == 3 && notifications == 1,
           "Rejected draft never changes state or publishes");
     w.edit<Energy>(e, [](Energy& v) { v.value = 7; });
@@ -336,6 +347,8 @@ try { Engine.addComponents(empty,{transform:{},energy:{value:9},render:{material
 catch(e) { if(Engine.hasComponent(empty,'transform')||Engine.hasComponent(empty,'energy'))throw Error('partial preparation'); }
 try { Engine.addComponents(empty,{transform:{},joints:[],jointColliders:[{joint:0,shape:{type:'box',halfExtents:[1,1,1]},local:{},blocking:false}]}); throw Error('expected binding reject'); }
 catch(e) { if(Engine.hasComponent(empty,'transform')||Engine.hasComponent(empty,'joints')||Engine.hasComponent(empty,'jointColliders'))throw Error('partial installation'); }
+try { Engine.addComponents(empty,{transform:{},energy:{value:42}}); throw Error('expected late failure'); }
+catch(e) { if(Engine.hasComponent(empty,'transform')||Engine.hasComponent(empty,'energy'))throw Error('failed installer survived rollback'); }
 if(!Engine.data(empty).keep)throw Error('rollback changed preexisting data');
 )JS");
     check(w.physics().size() == 0, "Failed component group releases its derived bindings");
@@ -368,10 +381,10 @@ if(!Engine.data(empty).keep)throw Error('rollback changed preexisting data');
     check(preparations == 1 && !w.registry().contains(e) && !w.physics().contains(oldBody),
           "Scene commits prepared components once and cannot alias prior identities or body handles");
     e = w.findObject(id);
-    check(w.get<Energy>(e).value == 7 && notifications == 4,
+    check(w.get<Energy>(e).value == 7 && notifications == 5,
           "Scene commit publishes new components through World subscriptions");
     w.destroy(e);
-    check(notifications == 5, "Entity destruction uses registered component lifecycle");
+    check(notifications == 6, "Entity destruction uses registered component lifecycle");
 }
 static void independentPoseAndMotion() {
     World w;
@@ -411,6 +424,181 @@ static void independentPoseAndMotion() {
     check(!w.has<RootMotionBinding>(e) && !w.has<JointPose>(e) && w.has<Collider>(e),
           "Producer removal releases owned pose and motion consumer");
 }
+static void commitAndRecovery() {
+    Changes changes;
+    bool fail = true;
+    int attempts = 0, notices = 0;
+    changes.subscribe<Counter>([&](Entity) {
+        ++attempts;
+        rejects([&] { changes.requireCommitted(); }, "Queries cannot run during derived synchronization");
+        if (fail)
+            throw std::runtime_error("Backend unavailable");
+    });
+    changes.observe<Counter>([&](Entity) {
+        changes.requireCommitted();
+        ++notices;
+    });
+    {
+        Changes::Batch batch(changes);
+        changes.mark<Counter>(1);
+        rejects([&] { changes.flush(); }, "Cannot flush through an enclosing batch");
+        rejects([&] { batch.commit(); }, "Synchronization failure reaches caller");
+        rejects([&] { batch.commit(); }, "A failed commit still closes its batch exactly once");
+    }
+    rejects([&] { changes.requireCommitted(); }, "Failed synchronization keeps queries closed");
+    fail = false;
+    changes.flush();
+    check(attempts == 2 && notices == 1, "Retry completes lost work before notifying observers");
+    {
+        Changes::Batch abandoned(changes);
+        changes.mark<Counter>(1);
+    }
+    rejects([&] { changes.requireCommitted(); }, "Unfinished batch requires explicit recovery");
+    changes.flush();
+
+    World w;
+    w.resources.materials.emplace_back();
+    int identities = 0;
+    w.onChange<Identity>([&](Entity) { ++identities; });
+    SceneEntity invalid;
+    invalid.components.set(SceneTransform{});
+    SceneRender render;
+    render.appearance.material = 999;
+    invalid.components.set(render);
+    rejects([&] { ScenePersistence::createEntity(w, invalid, testAssets()); }, "Invalid creation rejects");
+    check(w.registry().size() == 0 && identities == 0, "Failed creation has no published lifetime");
+    auto e = w.create();
+    w.transforms.add(e);
+    w.render.add(e, {});
+    PhysicsBody body;
+    body.shape = ColliderShape::capsule(.3f, 2);
+    w.motion.add(e, body);
+    bool throwObserver = true;
+    int completed = 0;
+    w.onChange<Transform>([&](Entity changed) {
+        if (!w.has<Transform>(changed))
+            return;
+        check(near(w.physics().body(w.get<Collider>(changed).body).pose.position,
+                   w.get<Transform>(changed).world.position),
+              "Observers see synchronized physics");
+        rejects([&] { w.transforms.setLocal(changed, {{99, 0, 0}}); }, "Observers cannot mutate components");
+        if (throwObserver)
+            throw std::runtime_error("Observer failed");
+    });
+    w.onChange<Transform>([&](Entity) { ++completed; });
+    rejects([&] { w.transforms.setLocal(e, {{3, 1, 0}}); }, "Observer failure is reported after commit");
+    check(near(w.get<Transform>(e).world.position, {3, 1, 0}) && completed == 1,
+          "Observer failure neither rolls back state nor skips peers");
+    w.commitChanges();
+    check(completed == 1, "Committed observers are never replayed");
+    throwObserver = false;
+    {
+        auto batch = w.changes();
+        w.transforms.setLocal(e, {{4, 1, 0}});
+        rejects([&] { w.motion.moveBody(e, {}, quat(1, 0, 0, 0)); }, "Motion cannot query stale backends");
+        batch.commit();
+    }
+}
+static void editsAndLights() {
+    World w;
+    auto parent = w.create(), e = w.create();
+    w.transforms.add(parent, {{3, 2, 1}, glm::angleAxis(1.f, vec3(0, 1, 0))});
+    w.transforms.add(e, {{1, 0, 0}});
+    w.transforms.setParent(e, parent, false);
+    w.add<PointLight>(e, PointLight{{1, .5f, .2f}, 10, .2f});
+    auto frame = w.snapshot({}, 0, 0, 0);
+    check(frame.lightEntities == std::vector<Entity>{e} &&
+              near(vec3(frame.lights[0].positionRadius), w.get<Transform>(e).world.position) &&
+              w.physics().size() == 0 && w.renderScene().capacity() == 0,
+          "Light follows hierarchy without allocating collider or render geometry");
+    ScriptRuntime script(w, testAssets());
+    script.execute(R"JS(
+var light = Engine.entities(['light'])[0];
+Engine.setComponent(light, 'light', {color:[.2,.4,1],intensity:22,radius:.3});
+if(Engine.component(light,'light').intensity!==22)throw Error('light edit');
+try { Engine.setComponent(light,'light',{intensity:-1}); throw Error('expected invalid light'); }
+catch(e) { if(Engine.component(light,'light').intensity!==22)throw Error('invalid draft escaped'); }
+)JS");
+    auto saved = ScenePersistence::capture(w, testAssets());
+    check(saved.entities[1].components.find<PointLight>()->intensity == 22 &&
+              !saved.json().contains("lights"),
+          "Light uses the same authored component in script and persistence");
+    w.setEnabled(parent, false);
+    check(w.snapshot({}, 1, 0, 0).lights.empty(), "Parent disable removes emitted light");
+    w.setEnabled(parent, true);
+    w.resources.materials.emplace_back();
+    w.render.add(e, {});
+    w.motion.add(e, {});
+    auto slot = w.get<Renderable>(e).slot;
+    auto handle = w.get<Collider>(e).body;
+    SceneRender appearance;
+    appearance.appearance.scale = {2, 3, 4};
+    w.set(e, appearance, testAssets());
+    SceneCollider collider;
+    collider.shape = ColliderShape::box({2, 1, 3});
+    w.set(e, collider, testAssets());
+    check(w.get<Renderable>(e).slot == slot && w.get<Collider>(e).body == handle &&
+              near(w.physics().body(handle).shape.halfExtents, {2, 1, 3}),
+          "Descriptor edits retain independent backend bindings");
+    auto replacement = w.create();
+    w.transforms.add(replacement);
+    w.add<PointLight>(replacement, PointLight{});
+    w.destroy(parent);
+    auto next = w.snapshot({}, 2, 0, 0);
+    check(next.lights.size() == frame.lights.size() && next.lightEntities != frame.lightEntities &&
+              !w.physics().contains(handle),
+          "Same-count light replacement changes history identity and releases subtree");
+}
+class RecoveringSolver : public animation::Solver {
+  public:
+    bool invalid = true;
+    int resets = 0;
+    void reset(const animation::Context&) override {
+        ++resets;
+    }
+    void evaluate(const animation::Context& c, animation::Output& output) override {
+        output.localPose = c.skeleton.restPose();
+        output.rootMotion.position = {1, 0, 0};
+        if (invalid)
+            output.localPose[0].position.x = std::numeric_limits<float>::quiet_NaN();
+    }
+};
+static void animationCommitAndVisualSpace() {
+    World w;
+    w.resources.materials.emplace_back();
+    auto e = w.create();
+    w.transforms.add(e, {{2, 0, 0}, glm::angleAxis(.6f, vec3(0, 1, 0))});
+    auto skeleton = std::make_shared<animation::Skeleton>(std::vector<animation::Joint>{{"root", -1, {}}});
+    auto solver = std::make_unique<RecoveringSolver>();
+    auto control = solver.get();
+    w.animation.attachAnimation(e, skeleton, std::move(solver));
+    w.motion.bindRootMotion(e, {});
+    auto before = w.get<Transform>(e).world;
+    rejects([&] { w.update(.1f); }, "Invalid solver output fails before component commit");
+    check(near(w.get<Transform>(e).world.position, before.position) &&
+              near(w.get<JointPose>(e).model[0].position, {}) &&
+              near(w.animation.animationOutput(e).rootMotion.position, {}),
+          "Failed animation preserves root, joints and accepted output");
+    control->invalid = false;
+    w.update(.1f);
+    check(control->resets == 2 &&
+              near(w.get<Transform>(e).world.position, before.position + before.rotation * vec3(1, 0, 0)),
+          "Solver retry resets history from accepted state");
+    w.render.add(e, {});
+    auto mesh = std::make_shared<SkinnedMesh>();
+    mesh->bindings.push_back({"root", mat4(1)});
+    w.animation.setSkinnedMesh(e, mesh);
+    w.render.setVisualPose(e, {0, 2, 0}, {2, 3, 4});
+    auto frame = w.snapshot({}, 0, 0, 0);
+    const auto& root = w.get<Transform>(e).world;
+    auto expected = root.position + root.rotation * (vec3(0, 2, 0) + vec3(2, 3, 4));
+    check(near(vec3(frame.skins[0].palette[0] * vec4(1, 1, 1, 1)), expected) &&
+              near(vec3(frame.skeletons[0].jointWorld[0][3]), root.position),
+          "Skin applies visual space while skeletal and collision space stay rigid");
+    SceneRender incompatible;
+    incompatible.mesh = AssetRef{};
+    rejects([&] { w.set(e, incompatible, testAssets()); }, "Existing skin participates in update validation");
+}
 static void ranges() {
     RangeAllocator ranges;
     auto a = ranges.allocate(20), b = ranges.allocate(30), c = ranges.allocate(40);
@@ -430,6 +618,7 @@ static void legacyImport() {
     seed.materials.push_back(material);
     auto legacy = seed.json();
     legacy["version"] = 3;
+    legacy["lights"] = Json::array();
     Json object{{"id", newPersistentId()},
                 {"name", "Legacy"},
                 {"position", Json::array({2, 1, 0})},
@@ -459,8 +648,8 @@ static void legacyImport() {
               migrated.entities[0].components.find<SceneRender>() &&
               migrated.entities[0].components.find<SceneCollider>() &&
               !migrated.entities[0].components.find<SceneJoints>() &&
-              migrated.json().at("version").uint() == 5,
-          "Legacy import preserves authored collider semantics while saving optional v5 components");
+              migrated.json().at("version").uint() == 6,
+          "Legacy import preserves authored collider semantics while saving optional v6 components");
 }
 int main() {
     try {
@@ -471,6 +660,9 @@ int main() {
         persistenceAndScripts();
         componentContracts();
         independentPoseAndMotion();
+        commitAndRecovery();
+        editsAndLights();
+        animationCommitAndVisualSpace();
         ranges();
         legacyImport();
         std::cout

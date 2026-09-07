@@ -35,6 +35,13 @@ struct ColliderShape {
         return 2 * (radius + halfSegment);
     }
 };
+void validateColliderShape(const ColliderShape&);
+struct ColliderSettings {
+    ColliderShape shape;
+    BodyMotion motion = BodyMotion::Static;
+    uint32_t layer = CollisionLayer::World;
+    bool blocking = false, walkable = false, pickable = false;
+};
 struct PhysicsBody {
     uint32_t owner = 0;
     ColliderShape shape;

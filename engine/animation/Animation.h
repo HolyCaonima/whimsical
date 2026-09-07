@@ -115,6 +115,7 @@ class Instance {
              std::string solverLabel = "Custom");
     explicit Instance(const Asset&);
     void setAttribute(const std::string& key, const std::string& value);
+    void setAttributes(const AttributeValues&);
     const std::vector<EnumAttribute>& schema() const {
         return schema_;
     }
@@ -126,6 +127,13 @@ class Instance {
     }
     void setSolver(std::unique_ptr<Solver>); // Preserve pose, reset the new solver's history.
     void reset();
+    Output prepare(float dt, Transform actualRoot, const Input&);
+    void accept(Output output) {
+        output_ = std::move(output);
+    }
+    void invalidateHistory() {
+        reset_ = true;
+    }
     const Output& evaluate(float dt, Transform actualRoot, const Input&);
     const Skeleton& skeleton() const {
         return *skeleton_;

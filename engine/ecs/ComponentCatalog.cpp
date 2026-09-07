@@ -79,19 +79,22 @@ void ComponentCatalog::validate(const ComponentSet& set) const {
             c.validate(set, value);
     }
 }
-void ComponentCatalog::checkNativeAdd(const World& w, Entity e, std::type_index type,
-                                      const void* value) const {
+void ComponentCatalog::checkNative(const World& w, Entity e, std::type_index type, const void* value) const {
     w.registry().require(e);
     if (auto c = find(type)) {
-        if (c->validateRuntime)
-            c->validateRuntime(value);
-        for (const auto& dep : c->dependencies)
-            if (!get(dep.name).present(w.registry(), e))
-                throw std::logic_error(c->name + " requires " + dep.name);
+        if (!c->nativeValue)
+            throw std::logic_error("Use the component's owning system");
+        auto combined = inspect(w, e);
+        combined.values[c->name] = c->nativeValue(value);
+        validate(combined);
     }
 }
 void ComponentCatalog::attach(World& w, Entity e, const ComponentSet& set, AssetManager& assets) const {
     w.registry().require(e);
+    auto combined = inspect(w, e);
+    for (const auto& [name, value] : set.values)
+        combined.values[name] = value;
+    validate(combined);
     std::set<std::string> available;
     for (const auto& [name, c] : types)
         if (c.present(w.registry(), e))
@@ -123,7 +126,7 @@ void ComponentCatalog::attach(World& w, Entity e, const ComponentSet& set, Asset
                 continue;
             }
             if (c.validate)
-                c.validate(set, value);
+                c.validate(combined, value);
             plan.emplace_back(&c, c.prepare(w, e, value, assets));
             available.insert(c.name);
             available.insert(c.owns.begin(), c.owns.end());
@@ -138,8 +141,8 @@ void ComponentCatalog::attach(World& w, Entity e, const ComponentSet& set, Asset
     size_t installed = 0;
     try {
         for (auto& entry : plan) {
-            entry.second(access);
             ++installed;
+            entry.second(access);
         }
     } catch (...) {
         // Only new capabilities are rolled back, in reverse dependency order.
@@ -148,6 +151,24 @@ void ComponentCatalog::attach(World& w, Entity e, const ComponentSet& set, Asset
         batch.commit();
         throw;
     }
+    batch.commit();
+}
+void ComponentCatalog::update(World& w, Entity e, const std::string& name, const std::any& value,
+                              AssetManager& assets) const {
+    w.registry().require(e);
+    const auto& c = get(name);
+    if (!c.present(w.registry(), e))
+        throw std::logic_error("Component absent: " + name);
+    auto combined = inspect(w, e);
+    if (!combined.contains(name))
+        throw std::logic_error("Component is derived: " + name);
+    combined.values[name] = value;
+    validate(combined);
+    auto install = c.prepare(w, e, value, assets);
+    auto batch = w.changes();
+    ComponentAccess access(w, w.storage_);
+    install(access);
+    w.storage_.changes.mark(e, c.runtimeType);
     batch.commit();
 }
 static std::vector<ComponentDependency> runtimeDependencies(const ComponentContract& c, const World& w,
@@ -235,12 +256,19 @@ void ComponentCatalog::destroy(World& w, Entity e) const {
             names.insert(name);
     erasePlan(w, e, std::move(names));
 }
-ComponentSet ComponentCatalog::capture(const World& w, Entity e, const AssetManager& assets) const {
+ComponentSet ComponentCatalog::inspect(const World& w, Entity e) const {
     ComponentSet result;
     for (const auto& [name, c] : types)
         if (c.present(w.registry(), e))
-            if (auto value = c.capture(w, e, assets))
+            if (auto value = c.inspect(w, e))
                 result.values.emplace(name, std::move(*value));
+    return result;
+}
+ComponentSet ComponentCatalog::capture(const World& w, Entity e, const AssetManager& assets) const {
+    auto result = inspect(w, e);
+    for (auto& [name, value] : result.values)
+        if (auto& resolve = get(name).resolveReferences)
+            resolve(value, assets);
     return result;
 }
 } // namespace afterlight

@@ -209,8 +209,7 @@ static void scene(const fs::path& directory) {
     auto path = assets.project().startupMap();
     auto original = assets.load<SceneAsset>(path);
     check(original->header().storage == PayloadStorage::Inline, "Rain Court Map must have an inline payload");
-    check(original->scene.entities.size() == 48 && original->scene.lights.size() == 8,
-          "Rain Court migration must preserve authored content");
+    check(original->scene.entities.size() == 56, "Rain Court migration must preserve authored content");
     auto human = assets.load<animation::ai4animation::ControllerResource>(
         AssetPath("/Game/animations/ai4animation/biped/controller"));
     check(human->data->network == assets.load<animation::ai4animation::OnnxModel>(
@@ -315,6 +314,24 @@ static void scene(const fs::path& directory) {
     check(world.gameplay.playerId == entityBefore &&
               ScenePersistence::capture(world, assets).json() == stateBefore,
           "Dependency failure must leave live scene untouched");
+    bool failNotification = true;
+    world.onChange<Identity>([&](Entity e) {
+        if (failNotification && world.registry().contains(e)) {
+            scripts.execute(
+                "if(typeof oldRealmSentinel !== 'undefined')throw Error('observer saw old realm');"
+                "if(Locomotion.id !== Engine.sceneObject('player'))throw Error('observer saw partial "
+                "initialization');");
+            failNotification = false;
+            throw std::runtime_error("Scene observer failed");
+        }
+    });
+    scripts.execute("var oldRealmSentinel = true;");
+    rejects([&] { scripts.loadScene(saved); }, "Post-commit observer failure reaches scene caller");
+    scripts.execute(
+        "if(typeof oldRealmSentinel !== 'undefined')throw Error('old realm survived committed scene');"
+        "if(Locomotion.id !== Engine.sceneObject('player'))throw Error('new realm not initialized');");
+    check(world.gameplay.playerId != entityBefore,
+          "Publication failure cannot mix the old realm with the new World");
     // Reopen the copied project and load the saved asset using a different registry/World.
     AssetManager reopened{Project(directory / ".project")};
     registerEngineAssets(reopened);

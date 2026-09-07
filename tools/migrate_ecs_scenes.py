@@ -1,11 +1,12 @@
 """Upgrade ALAS1 Map payloads to optional ECS components, preserving asset/entity IDs.
 
 Usage: python tools/migrate_ecs_scenes.py <Map.asset> [...]
-The runtime imports v3/v4; new output uses v5. This tool also removes inert recipe colliders from
+The runtime imports v3/v4; new output uses v6. This tool also removes inert recipe colliders from
 authored maps; geometry and collider dimensions remain independent.
 """
 import json
 import sys
+import uuid
 from pathlib import Path
 
 
@@ -38,7 +39,7 @@ def upgrade_v3(scene):
     return scene
 
 
-def upgrade(scene):
+def upgrade_v4(scene):
     if scene['version'] == 5:
         return scene
     scene = upgrade_v3(scene)
@@ -54,6 +55,23 @@ def upgrade(scene):
     return scene
 
 
+def upgrade(scene):
+    if scene['version'] == 6:
+        return scene
+    scene = upgrade_v4(scene)
+    lights = []
+    for index, light in enumerate(scene.pop('lights')):
+        entity = dict(id=uuid.uuid4().hex, name=f'Light {index + 1}', enabled=True, components=dict(
+            transform=dict(position=light['positionRadius'][:3]),
+            light=dict(radius=light['positionRadius'][3], color=light['colorIntensity'][:3], intensity=light['colorIntensity'][3])))
+        lights.append(entity)
+    if 'cyanLight' in scene.get('data', {}):
+        scene['references']['cyanLight'] = lights[scene['data'].pop('cyanLight')]['id']
+    scene['entities'].extend(lights)
+    scene['version'] = 6
+    return scene
+
+
 if __name__ == '__main__':
     for argument in sys.argv[1:]:
         path = Path(argument)
@@ -62,5 +80,5 @@ if __name__ == '__main__':
             raise ValueError(f'Not a Map asset: {path}')
         scene = upgrade(json.loads(payload))
         encoded = json.dumps(scene, ensure_ascii=False, indent=2) if '\n' in payload.strip() else json.dumps(scene, ensure_ascii=False, separators=(',', ':'))
-        path.write_text(magic + '\n' + header + '\n' + encoded + '\n', encoding='utf-8')
+        path.write_bytes((magic + '\n' + header + '\n' + encoded + '\n').encode('utf-8'))
         print(f'{path}: {len(scene["entities"])} entities')

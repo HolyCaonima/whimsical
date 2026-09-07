@@ -7,6 +7,9 @@ class ScenePersistence {
     static void instantiate(World&, const SceneDocument&, AssetManager&);
 
   public:
+    struct CommittedError : std::runtime_error {
+        using std::runtime_error::runtime_error;
+    };
     static uint32_t createEntity(World&, const SceneEntity&, AssetManager&);
     static void addComponents(World&, uint32_t, const SceneEntity&, AssetManager&);
     static SceneDocument capture(const World&, const AssetManager&);

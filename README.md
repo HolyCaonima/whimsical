@@ -197,7 +197,7 @@ ECS 侧当前是单 World、单已加载 Map，尚未引入 streaming、同一 M
 | 文档 | 内容 |
 | --- | --- |
 | [架构](docs/architecture.md) | 线程所有权、帧 mailbox、RenderScene 槽位契约、JS 绑定表、3C 扩展 |
-| [ECS 架构](docs/ecs.md) | 组件契约、所有权与派生关系、接入／移除／提交、Map v5 |
+| [ECS 架构](docs/ecs.md) | 组件契约、所有权与派生关系、接入／修改／移除／提交、Map v6 |
 | [Project / Asset / Scene](docs/projects-assets-scenes.md) | 内容根、虚拟路径、`.asset` 格式、对象身份、Save/Load |
 | [Shader / Material](docs/shader-materials.md) | 表面 ABI、source linking、schema 与容量、持久化迁移 |
 | [渲染说明](docs/rendering.md) | 每帧数据、G-buffer 格式、DI/GI、NRD、同步与资源生命周期 |

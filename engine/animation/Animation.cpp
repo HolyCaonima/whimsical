@@ -110,6 +110,21 @@ void Instance::setAttribute(const std::string& key, const std::string& value) {
         throw std::invalid_argument("Unsupported value for animation attribute " + key + ": " + value);
     attributes_[key] = value;
 }
+void Instance::setAttributes(const AttributeValues& values) {
+    AttributeValues draft;
+    for (const auto& attribute : schema_)
+        draft[attribute.key] = attribute.defaultValue;
+    for (const auto& [key, value] : values) {
+        auto attribute =
+            std::find_if(schema_.begin(), schema_.end(), [&](const auto& a) { return a.key == key; });
+        if (attribute == schema_.end() ||
+            std::none_of(attribute->options.begin(), attribute->options.end(),
+                         [&](const auto& option) { return option.value == value; }))
+            throw std::invalid_argument("Unsupported animation attribute: " + key + "=" + value);
+        draft[key] = value;
+    }
+    attributes_ = std::move(draft);
+}
 void Instance::setSolver(std::unique_ptr<Solver> solver) {
     if (!solver)
         throw std::invalid_argument("Missing animation solver");
@@ -121,19 +136,35 @@ void Instance::reset() {
     output_.localPose = skeleton_->restPose();
     reset_ = true;
 }
-const Output& Instance::evaluate(float dt, Transform root, const Input& input) {
+Output Instance::prepare(float dt, Transform root, const Input& input) {
     if (!std::isfinite(dt) || dt <= 0)
         throw std::invalid_argument("Animation dt must be positive");
     Context c{dt, root, *skeleton_, output_.localPose, input, attributes_};
-    if (reset_) {
-        solver_->reset(c);
-        reset_ = false;
+    try {
+        if (reset_) {
+            solver_->reset(c);
+            reset_ = false;
+        }
+        Output next;
+        solver_->evaluate(c, next);
+        if (next.localPose.size() != skeleton_->size())
+            throw std::runtime_error("Solver produced wrong pose size");
+        auto valid = [](const Transform& p) {
+            float q = glm::dot(p.rotation, p.rotation);
+            if (!std::isfinite(glm::length(p.position)) || !std::isfinite(q) || std::abs(q - 1) > .001f)
+                throw std::runtime_error("Solver produced non-rigid pose");
+        };
+        valid(next.rootMotion);
+        for (const auto& p : next.localPose)
+            valid(p);
+        return next;
+    } catch (...) {
+        reset_ = true; // Solver history is rebuilt from the last accepted pose on retry.
+        throw;
     }
-    Output next;
-    solver_->evaluate(c, next);
-    if (next.localPose.size() != skeleton_->size())
-        throw std::runtime_error("Solver produced wrong pose size");
-    output_ = std::move(next);
+}
+const Output& Instance::evaluate(float dt, Transform root, const Input& input) {
+    accept(prepare(dt, root, input));
     return output_;
 }
 void solveFabrik(const Skeleton& skeleton, Pose& model, const std::vector<unsigned>& chain, vec3 target,

@@ -19,8 +19,10 @@ bool SceneStorage::enabled(Entity e) const {
     return true;
 }
 void TransformSystem::add(Entity e, PhysicsPose pose) {
+    auto batch = Changes::Batch(s.changes);
     validateRigidPose(pose);
     s.registry.emplace<Transform>(e, Transform{pose, pose});
+    batch.commit();
 }
 void TransformSystem::remove(Entity e) {
     s.removeComponent(e, typeid(Transform));
@@ -39,6 +41,7 @@ void TransformSystem::setLocal(Entity e, const PhysicsPose& pose) {
         return;
     auto batch = Changes::Batch(s.changes);
     t.local = pose;
+    s.changes.mark<Transform>(e);
     propagate(e);
     batch.commit();
 }
@@ -63,6 +66,7 @@ void TransformSystem::setParent(Entity e, Entity parent, bool keepWorld) {
         siblings.erase(std::find(siblings.begin(), siblings.end(), e));
     }
     t.parent = parent;
+    s.changes.mark<Transform>(e);
     if (parent)
         s.registry.get<Transform>(parent).children.push_back(e);
     if (keepWorld)

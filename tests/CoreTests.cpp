@@ -28,7 +28,7 @@ int main() {
         check(w.gameplay.playerId != 0, "JS must spawn player");
         check(w.registry().entities().size() > 20 && w.physics().size() == w.registry().view<Collider>().size(),
               "Physical scene not populated");
-        check(w.resources.lights.size() >= 6, "RT lights not populated");
+        check(w.registry().view<PointLight>().size() >= 6, "RT lights not populated");
         auto route = Navigation::findPath(w.physics(), vec3(-8, 0, 4), vec3(-2, 0, 4), w.motion.agent(w.gameplay.playerId));
         check(!route.empty(), "A* must route around cargo");
         vec3 last(-8, 0, 4);
@@ -256,7 +256,7 @@ int main() {
         ScriptRuntime trackedJs(tracked, testAssets());
         trackedJs.initialize();
         auto opened = tracked.snapshot({}, 1, 0, 0);
-        check(opened.proxies.size() == tracked.registry().entities().size() &&
+        check(opened.proxies.size() == tracked.registry().view<Renderable>().size() &&
                   opened.delta.structural.size() == opened.proxies.size(),
               "The first snapshot must present every proxy as newly created");
         check(tracked.snapshot({}, 2, 0, 0).delta.empty(),

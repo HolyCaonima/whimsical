@@ -1405,7 +1405,8 @@ struct Renderer::Impl {
                                         frame.lights.size() * sizeof(Light)) != 0;
             materialsChanged = !(frame.materials == previous->materials);
             // Stable light slots permit parameter animation; topology changes restart history.
-            reset = reset || frame.lights.size() != previous->lights.size() || materialsChanged;
+            reset = reset || frame.lightEntities != previous->lightEntities ||
+                    frame.lights.size() != previous->lights.size() || materialsChanged;
         }
         if (materialsChanged)
             updateMaterials(frame);

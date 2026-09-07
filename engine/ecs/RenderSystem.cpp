@@ -29,6 +29,21 @@ void RenderSystem::add(Entity e, RenderComponent appearance, std::shared_ptr<con
                                    s.enabled(e) && appearance.visible, s.registry.has<Interactable>(e)});
     if (r.mesh)
         s.changes.mark<GeometryChanged>(e);
+    s.changes.mark<Renderable>(e);
+    batch.commit();
+}
+void RenderSystem::set(Entity e, RenderComponent appearance, std::shared_ptr<const StaticMesh> mesh) {
+    validateRenderAppearance(appearance);
+    if (appearance.material >= materials.size())
+        throw std::invalid_argument("Invalid material");
+    if (mesh && s.registry.has<Skin>(e))
+        throw std::invalid_argument("Remove skin before static geometry");
+    auto batch = Changes::Batch(s.changes);
+    setStaticMesh(e, std::move(mesh));
+    s.registry.get<Renderable>(e).appearance = appearance;
+    s.changes.mark<RenderTransformChanged>(e);
+    s.changes.mark<RenderAttributesChanged>(e);
+    s.changes.mark<Renderable>(e);
     batch.commit();
 }
 void RenderSystem::remove(Entity e) {
@@ -45,6 +60,7 @@ void RenderSystem::publishAttributes(Entity e) {
                                      s.enabled(e) && r->appearance.visible, s.registry.has<Interactable>(e)});
 }
 void RenderSystem::setStaticMesh(Entity e, std::shared_ptr<const StaticMesh> mesh) {
+    auto batch = Changes::Batch(s.changes);
     if (mesh && s.registry.has<Skin>(e))
         throw std::invalid_argument("Remove skin before binding static geometry");
     auto& r = s.registry.get<Renderable>(e);
@@ -52,8 +68,11 @@ void RenderSystem::setStaticMesh(Entity e, std::shared_ptr<const StaticMesh> mes
         return;
     r.mesh = std::move(mesh);
     s.changes.mark<GeometryChanged>(e);
+    s.changes.mark<Renderable>(e);
+    batch.commit();
 }
 void RenderSystem::setVisualPose(Entity e, vec3 offset, vec3 scale) {
+    auto batch = Changes::Batch(s.changes);
     for (int i = 0; i < 3; ++i)
         if (!std::isfinite(offset[i]) || !std::isfinite(scale[i]) || scale[i] <= 0)
             throw std::invalid_argument("Invalid visual pose");
@@ -61,25 +80,45 @@ void RenderSystem::setVisualPose(Entity e, vec3 offset, vec3 scale) {
     r.offset = offset;
     r.animationScale = scale;
     s.changes.mark<RenderTransformChanged>(e);
+    s.changes.mark<Renderable>(e);
+    batch.commit();
 }
 void RenderSystem::setMaterial(Entity e, uint32_t material) {
+    auto batch = Changes::Batch(s.changes);
     if (material >= materials.size())
         throw std::out_of_range("Invalid material");
     s.registry.get<Renderable>(e).appearance.material = material;
     s.changes.mark<RenderAttributesChanged>(e);
+    s.changes.mark<Renderable>(e);
+    batch.commit();
 }
 void RenderSystem::setScale(Entity e, vec3 scale) {
+    auto batch = Changes::Batch(s.changes);
     for (int i = 0; i < 3; ++i)
         if (!std::isfinite(scale[i]) || scale[i] <= 0)
             throw std::invalid_argument("Invalid render scale");
     s.registry.get<Renderable>(e).appearance.scale = scale;
     s.changes.mark<RenderTransformChanged>(e);
+    s.changes.mark<Renderable>(e);
+    batch.commit();
 }
 void RenderSystem::setVisible(Entity e, bool visible) {
+    auto batch = Changes::Batch(s.changes);
     s.registry.get<Renderable>(e).appearance.visible = visible;
     s.changes.mark<RenderAttributesChanged>(e);
+    s.changes.mark<Renderable>(e);
+    batch.commit();
 }
 void RenderSystem::extract(Frame& f, bool debug) {
+    s.changes.requireCommitted();
+    for (auto e : s.registry.view<Transform, PointLight>()) {
+        if (!s.enabled(e))
+            continue;
+        const auto& light = s.registry.get<PointLight>(e);
+        f.lightEntities.push_back(e);
+        f.lights.push_back({vec4(s.registry.get<Transform>(e).world.position, light.radius),
+                            vec4(light.color, light.intensity)});
+    }
     for (auto e : s.registry.view<Renderable>()) {
         const auto& r = s.registry.get<Renderable>(e);
         if (r.mesh)
@@ -101,8 +140,13 @@ void RenderSystem::extract(Frame& f, bool debug) {
             Frame::Skin draw;
             draw.slot = s.registry.get<Renderable>(e).slot;
             draw.mesh = skin->mesh;
+            const auto& appearance = s.registry.get<Renderable>(e).appearance;
+            auto root = glm::translate(mat4(1), t.position) * glm::mat4_cast(t.rotation);
+            auto visual = root * glm::translate(mat4(1), appearance.offset) *
+                          glm::scale(mat4(1), appearance.scale * appearance.animationScale) *
+                          glm::inverse(root);
             for (size_t j = 0; j < skin->joints.size(); ++j)
-                draw.palette.push_back(pose.jointWorld[skin->joints[j]] *
+                draw.palette.push_back(visual * pose.jointWorld[skin->joints[j]] *
                                        skin->mesh->bindings[j].inverseBind);
             f.skins.push_back(std::move(draw));
         }

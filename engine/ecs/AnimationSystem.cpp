@@ -3,28 +3,36 @@
 #include "core/CpuProfile.h"
 #include <algorithm>
 namespace afterlight {
-static void publishJoints(SceneStorage& s, Entity e, std::vector<PhysicsPose> joints) {
+static void validateJoints(const SceneStorage& s, Entity e, const std::vector<PhysicsPose>& joints) {
     s.registry.get<Transform>(e);
     for (const auto& p : joints)
         validateRigidPose(p);
     for (const auto& binding : s.jointColliders.describe(e))
         if (binding.joint >= joints.size())
             throw std::invalid_argument("Joint layout still has collider bindings");
+}
+static void publishJoints(SceneStorage& s, Entity e, std::vector<PhysicsPose> joints) {
+    validateJoints(s, e, joints);
     if (auto j = s.registry.tryGet<JointPose>(e))
         j->model = std::move(joints);
     else
         s.registry.emplace<JointPose>(e, JointPose{std::move(joints)});
     s.changes.mark<JointPoseChanged>(e);
+    s.changes.mark<JointPose>(e);
 }
-static std::vector<PhysicsPose> modelPose(const Animator& a) {
-    auto model = a.solver().skeleton().toModel(a.solver().output().localPose);
+static std::vector<PhysicsPose> modelPose(const Animator& a, const animation::Output& output) {
+    auto model = a.solver().skeleton().toModel(output.localPose);
     std::vector<PhysicsPose> joints;
     joints.reserve(model.size());
     for (const auto& p : model)
         joints.push_back({p.position + a.rootOffset, p.rotation});
     return joints;
 }
-AnimationSystem::AnimationSystem(SceneStorage& storage, MotionSystem& m) : s(storage), motion(m) {
+static std::vector<PhysicsPose> modelPose(const Animator& a) {
+    return modelPose(a, a.solver().output());
+}
+AnimationSystem::AnimationSystem(SceneStorage& storage, MotionSystem& m, TransformSystem& t)
+    : s(storage), motion(m), transforms(t) {
     auto sync = [this](Entity e) {
         if (auto j = s.registry.tryGet<JointPose>(e))
             s.jointColliders.update(e, s.registry.get<Transform>(e).world, j->model);
@@ -38,10 +46,14 @@ AnimationSystem::AnimationSystem(SceneStorage& storage, MotionSystem& m) : s(sto
         if (!binding || !binding->preserveAnchor)
             return;
         auto& a = s.registry.get<Animator>(change.entity);
-        a.rootOffset.y -= change.centerDelta;
+        auto localDelta =
+            glm::inverse(s.registry.get<Transform>(change.entity).world.rotation) * change.centerDelta;
+        a.rootOffset -= localDelta;
         for (auto& joint : s.registry.get<JointPose>(change.entity).model)
-            joint.position.y -= change.centerDelta;
+            joint.position -= localDelta;
         s.changes.mark<JointPoseChanged>(change.entity);
+        s.changes.mark<JointPose>(change.entity);
+        s.changes.mark<Animator>(change.entity);
     });
 }
 void AnimationSystem::attachAnimation(Entity e, std::shared_ptr<const animation::Skeleton> skeleton,
@@ -80,16 +92,41 @@ void AnimationSystem::attachAnimationInstance(Entity e, std::unique_ptr<animatio
         for (size_t i = 0; i < before.size(); ++i)
             if (before[i].name != after[i].name || before[i].parent != after[i].parent)
                 throw std::invalid_argument("Detach animation before changing skeleton layout");
-        *a = Animator{std::move(instance), offset};
-    } else
-        s.registry.emplace<Animator>(e, Animator{std::move(instance), offset});
-    publishJoints(s, e, modelPose(s.registry.get<Animator>(e)));
-    s.registry.get<JointPose>(e).skeleton =
-        std::make_shared<animation::Skeleton>(s.registry.get<Animator>(e).solver().skeleton());
+    }
+    Animator draft{std::move(instance), offset};
+    auto joints = modelPose(draft);
+    validateJoints(s, e, joints);
+    auto layout = std::make_shared<animation::Skeleton>(draft.solver().skeleton());
+    if (auto a = s.registry.tryGet<Animator>(e))
+        *a = std::move(draft);
+    else
+        s.registry.emplace<Animator>(e, std::move(draft));
+    publishJoints(s, e, std::move(joints));
+    s.registry.get<JointPose>(e).skeleton = std::move(layout);
+    s.changes.mark<Animator>(e);
+    batch.commit();
+}
+void AnimationSystem::configureAnimation(Entity e, vec3 offset,
+                                         const animation::AttributeValues& attributes) {
+    auto batch = Changes::Batch(s.changes);
+    if (!std::isfinite(glm::length(offset)))
+        throw std::invalid_argument("Invalid root offset");
+    auto& a = s.registry.get<Animator>(e);
+    auto joints = modelPose(a);
+    for (auto& joint : joints)
+        joint.position += offset - a.rootOffset;
+    validateJoints(s, e, joints);
+    a.instance->setAttributes(attributes);
+    a.rootOffset = offset;
+    publishJoints(s, e, std::move(joints));
+    s.changes.mark<Animator>(e);
     batch.commit();
 }
 void AnimationSystem::setAnimationAttribute(Entity e, const std::string& key, const std::string& value) {
+    auto batch = Changes::Batch(s.changes);
     s.registry.get<Animator>(e).instance->setAttribute(key, value);
+    s.changes.mark<Animator>(e);
+    batch.commit();
 }
 AnimationInspection AnimationSystem::inspectAnimation(Entity e) const {
     auto a = s.registry.tryGet<Animator>(e);
@@ -138,40 +175,72 @@ void AnimationSystem::setSkinnedMesh(Entity e, std::shared_ptr<const SkinnedMesh
     else
         s.registry.emplace<Skin>(e, Skin{std::move(mesh), std::move(mapping)});
     s.changes.mark<GeometryChanged>(e);
+    s.changes.mark<Skin>(e);
     batch.commit();
 }
 void AnimationSystem::setAnimationInput(Entity e, animation::Input input) {
+    auto batch = Changes::Batch(s.changes);
     s.registry.get<Animator>(e).input = std::move(input);
+    s.changes.mark<Animator>(e);
+    batch.commit();
 }
 void AnimationSystem::resetAnimation(Entity e) {
+    auto batch = Changes::Batch(s.changes);
     auto& a = s.registry.get<Animator>(e);
     a.instance->reset();
     publishJoints(s, e, modelPose(a));
+    s.changes.mark<Animator>(e);
+    batch.commit();
 }
 void AnimationSystem::setAnimationSolver(Entity e, std::unique_ptr<animation::Solver> solver) {
+    auto batch = Changes::Batch(s.changes);
     auto& a = s.registry.get<Animator>(e);
     a.instance->setSolver(std::move(solver));
     a.asset.reset();
     publishJoints(s, e, modelPose(a));
+    s.changes.mark<Animator>(e);
+    batch.commit();
 }
 const animation::Output& AnimationSystem::animationOutput(Entity e) const {
     return s.registry.get<Animator>(e).instance->output();
+}
+void AnimationSystem::setAnimationJoints(Entity e, std::vector<PhysicsPose> joints) {
+    auto current = s.registry.tryGet<JointPose>(e);
+    setAnimationJoints(e, std::move(joints), current ? current->skeleton : nullptr);
 }
 void AnimationSystem::setAnimationJoints(Entity e, std::vector<PhysicsPose> joints,
                                          std::shared_ptr<const animation::Skeleton> layout) {
     if (s.registry.has<Animator>(e))
         throw std::logic_error("Solved joints are owned by Animator");
-    if (!layout)
-        if (auto current = s.registry.tryGet<JointPose>(e))
-            layout = current->skeleton;
+    if (!layout && s.registry.has<Skin>(e))
+        throw std::logic_error("Skin requires a joint layout");
     if (layout && layout->size() != joints.size())
         throw std::invalid_argument("Joint layout size mismatch");
-    if (auto current = s.registry.tryGet<JointPose>(e);
-        current && s.registry.has<Skin>(e) && layout != current->skeleton)
-        throw std::logic_error("Remove skin before changing joint layout");
+    if (auto current = s.registry.tryGet<JointPose>(e); current && layout && current->skeleton) {
+        const auto& before = current->skeleton->joints();
+        const auto& after = layout->joints();
+        bool same = before.size() == after.size() &&
+                    std::equal(before.begin(), before.end(), after.begin(), [](const auto& a, const auto& b) {
+                        return a.name == b.name && a.parent == b.parent;
+                    });
+        if (same)
+            layout = current->skeleton;
+        else if (s.registry.has<Skin>(e))
+            throw std::logic_error("Remove skin before changing joint layout");
+    }
     auto batch = Changes::Batch(s.changes);
     publishJoints(s, e, std::move(joints));
     s.registry.get<JointPose>(e).skeleton = std::move(layout);
+    batch.commit();
+}
+void AnimationSystem::setAnimationColliders(Entity e,
+                                            const std::vector<AnimationColliderDescription>& bindings) {
+    auto batch = Changes::Batch(s.changes);
+    s.jointColliders.replace(e, bindings, s.registry.get<Transform>(e).world,
+                             s.registry.get<JointPose>(e).model, s.enabled(e));
+    if (!s.registry.has<JointColliders>(e))
+        s.registry.emplace<JointColliders>(e);
+    s.changes.mark<JointColliders>(e);
     batch.commit();
 }
 BodyHandle AnimationSystem::addAnimationCollider(Entity e, uint32_t joint, const ColliderShape& shape,
@@ -189,6 +258,8 @@ BodyHandle AnimationSystem::addAnimationCollider(Entity e, uint32_t joint, const
     return h;
 }
 void AnimationSystem::update(float dt) {
+    s.changes.requireWritable();
+    s.changes.requireCommitted();
     CpuScope scope("Animation Evaluation / Root Motion / Joint Colliders");
     auto entities = s.registry.view<Animator, Transform>();
     auto depth = [&](Entity e) {
@@ -205,9 +276,25 @@ void AnimationSystem::update(float dt) {
         auto& a = s.registry.get<Animator>(e);
         const auto& t = s.registry.get<Transform>(e).world;
         animation::Transform root{t.position + t.rotation * a.rootOffset, t.rotation};
-        const auto& output = a.instance->evaluate(dt, root, a.input);
-        motion.consumeRootMotion(e, output.rootMotion, a.rootOffset);
-        publishJoints(s, e, modelPose(a));
+        auto output = a.instance->prepare(dt, root, a.input);
+        std::vector<PhysicsPose> joints;
+        PhysicsPose acceptedRoot;
+        try {
+            joints = modelPose(a, output);
+            validateJoints(s, e, joints);
+            acceptedRoot = motion.solveRootMotion(e, output.rootMotion, a.rootOffset);
+            validateRigidPose(acceptedRoot);
+        } catch (...) {
+            a.instance->invalidateHistory();
+            throw;
+        }
+        auto batch = Changes::Batch(s.changes);
+        // Commit the accepted solver output, root and joints together. Backend/observer
+        // failures after this point keep committed state and use normal forward recovery.
+        a.instance->accept(std::move(output));
+        transforms.setTransform(e, acceptedRoot);
+        publishJoints(s, e, std::move(joints));
+        batch.commit();
     }
 }
 } // namespace afterlight

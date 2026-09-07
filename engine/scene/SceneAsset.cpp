@@ -1,13 +1,11 @@
 #include "SceneAsset.h"
+#include "ecs/Components.h"
 #include <set>
 #include <stdexcept>
 
 namespace afterlight {
 static Json vector(vec3 v) {
     return Json::array({v.x, v.y, v.z});
-}
-static Json vector(vec4 v) {
-    return Json::array({v.x, v.y, v.z, v.w});
 }
 static vec3 vector3(const Json& j) {
     if (j.elements().size() != 3)
@@ -56,11 +54,10 @@ static Json migrateEntity(const Json& item) {
 }
 Json SceneDocument::json() const {
     validate();
-    Json j{{"version", 5},
+    Json j{{"version", 6},
            {"scripts", Json::array()},
            {"entities", Json::array()},
            {"materials", Json::array()},
-           {"lights", Json::array()},
            {"camera",
             {{"target", vector(camera.target)},
              {"yaw", camera.yaw},
@@ -82,9 +79,6 @@ Json SceneDocument::json() const {
     j["materialAssets"] = Json::array();
     for (const auto& m : materialAssets)
         j["materialAssets"].push({{"index", m.first}, {"asset", m.second.json()}});
-    for (const auto& l : lights)
-        j["lights"].push(
-            {{"positionRadius", vector(l.positionRadius)}, {"colorIntensity", vector(l.colorIntensity)}});
     for (const auto& r : references)
         j["references"][r.first] = r.second;
     for (const auto& e : entities)
@@ -93,7 +87,7 @@ Json SceneDocument::json() const {
 }
 SceneDocument SceneDocument::fromJson(const Json& j) {
     auto version = j.at("version").uint();
-    if (version != 3 && version != 4 && version != 5)
+    if (version != 3 && version != 4 && version != 5 && version != 6)
         throw std::invalid_argument("Unsupported Map version");
     SceneDocument s;
     for (const auto& script : j.at("scripts").elements())
@@ -103,8 +97,17 @@ SceneDocument SceneDocument::fromJson(const Json& j) {
     if (j.contains("materialAssets"))
         for (const auto& m : j.at("materialAssets").elements())
             s.materialAssets.emplace(m.at("index").uint(), AssetRef::fromJson(m.at("asset")));
-    for (const auto& l : j.at("lights").elements())
-        s.lights.push_back({vector4(l.at("positionRadius")), vector4(l.at("colorIntensity"))});
+    // Older maps import global lights as ordinary entities. New saves only use components.
+    if (version < 6)
+        for (const auto& l : j.at("lights").elements()) {
+            auto p = vector4(l.at("positionRadius")), c = vector4(l.at("colorIntensity"));
+            SceneEntity light;
+            light.id = newPersistentId();
+            light.name = "Light";
+            light.components.set(SceneTransform{{vec3(p)}});
+            light.components.set(PointLight{vec3(c), c.w, p.w});
+            s.entities.push_back(std::move(light));
+        }
     const auto& camera = j.at("camera");
     s.camera.target = vector3(camera.at("target"));
     s.camera.yaw = float(camera.at("yaw").number());

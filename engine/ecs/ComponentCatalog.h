@@ -41,9 +41,10 @@ struct ComponentContract {
     std::function<void(const ComponentSet&, const std::any&)> validate;
     std::function<void(const std::any&)> validateValue;
     std::function<PreparedComponent(const World&, Entity, const std::any&, AssetManager&)> prepare;
-    std::function<std::optional<std::any>(const World&, Entity, const AssetManager&)> capture;
+    std::function<std::optional<std::any>(const World&, Entity)> inspect;
+    std::function<void(std::any&, const AssetManager&)> resolveReferences;
     std::function<void(ComponentAccess&, Entity)> erase;
-    std::function<void(const void*)> validateRuntime;
+    std::function<std::any(const void*)> nativeValue;
 };
 class ComponentCatalog {
     std::map<std::string, ComponentContract> types;
@@ -58,10 +59,12 @@ class ComponentCatalog {
         return types;
     }
     void validate(const ComponentSet&) const;
-    void checkNativeAdd(const World&, Entity, std::type_index, const void*) const;
+    void checkNative(const World&, Entity, std::type_index, const void*) const;
     void attach(World&, Entity, const ComponentSet&, AssetManager&) const;
+    void update(World&, Entity, const std::string&, const std::any&, AssetManager&) const;
     void remove(World&, Entity, const std::string&) const;
     void destroy(World&, Entity) const;
+    ComponentSet inspect(const World&, Entity) const;
     ComponentSet capture(const World&, Entity, const AssetManager&) const;
 };
 ComponentCatalog& componentCatalog();

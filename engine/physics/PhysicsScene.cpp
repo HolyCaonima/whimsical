@@ -659,4 +659,7 @@ bool PhysicsScene::resizeCharacter(BodyHandle h, float height) {
     setPose(h, pose);
     return true;
 }
+void validateColliderShape(const ColliderShape& shape) {
+    validate(shape);
+}
 } // namespace afterlight

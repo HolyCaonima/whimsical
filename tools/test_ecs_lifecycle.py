@@ -33,7 +33,7 @@ def run():
     _, header, payload = (ROOT / 'Projects/Afterlight/Content/Maps/RainCourt.asset').read_text().split('\n', 2)
     scene = json.loads(payload)
     scene.update(entities=[dict(id=uuid.uuid4().hex, name='Data only', enabled=True, components=dict(data={}))],
-                 scripts=[], references={}, player='', materials=[], materialAssets=[], lights=[], data={})
+                 scripts=[], references={}, player='', materials=[], materialAssets=[], data={})
     (project / '.project').write_text(json.dumps(dict(version=1, id=uuid.uuid4().hex, name='Empty ECS',
                                                    startupMap='/Game/Empty', scripts=[])))
     (content / 'Empty.asset').write_text('ALAS1\n' + header + '\n' + json.dumps(scene))

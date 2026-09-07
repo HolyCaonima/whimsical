@@ -148,6 +148,7 @@ struct Frame {
     // members is what makes publishing a snapshot a single flat copy.
     std::vector<Material> materials;
     std::vector<Light> lights;
+    std::vector<uint32_t> lightEntities; // Packed light identity for temporal history.
     Camera camera;
     Input input;
     vec3 player{0}, destination{0};
@@ -161,7 +162,6 @@ struct Frame {
 // thread deep-copies a Frame and the renderer can hold on to older ones for free.
 using FrameRef = std::shared_ptr<const Frame>;
 inline mat4 transform(const ProxyTransform& t) {
-    return glm::translate(mat4(1), t.position) * glm::mat4_cast(t.rotation) *
-           glm::scale(mat4(1), t.scale);
+    return glm::translate(mat4(1), t.position) * glm::mat4_cast(t.rotation) * glm::scale(mat4(1), t.scale);
 }
 } // namespace afterlight

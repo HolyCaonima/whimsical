@@ -25,6 +25,8 @@ class AnimationCollision {
     }
     BodyHandle bind(uint32_t owner, uint32_t joint, const ColliderShape&, PhysicsPose local,
                     bool blocking = false);
+    void replace(uint32_t owner, const std::vector<AnimationColliderDescription>&, PhysicsPose root,
+                 const std::vector<PhysicsPose>& joints, bool enabled);
     void update(uint32_t owner, PhysicsPose root, const std::vector<PhysicsPose>& joints);
     void setEnabled(uint32_t owner, bool);
     void remove(uint32_t owner);

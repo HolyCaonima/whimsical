@@ -15,12 +15,7 @@ struct SceneRender {
     RenderComponent appearance;
     std::optional<AssetRef> mesh;
 };
-struct SceneCollider {
-    ColliderShape shape;
-    BodyMotion motion = BodyMotion::Static;
-    uint32_t layer = CollisionLayer::World;
-    bool blocking = false, walkable = false, pickable = false;
-};
+using SceneCollider = ColliderSettings;
 struct SceneAnimation {
     AssetRef asset;
     vec3 rootOffset{0};
@@ -45,7 +40,6 @@ struct SceneDocument {
     std::vector<SceneEntity> entities;
     std::vector<MaterialDefinition> materials;
     std::map<uint32_t, AssetRef> materialAssets;
-    std::vector<Light> lights;
     Camera camera;
     NavigationSettings navigation;
     std::string player;

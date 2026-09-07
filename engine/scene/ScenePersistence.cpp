@@ -4,13 +4,13 @@
 #include <set>
 namespace afterlight {
 SceneDocument ScenePersistence::capture(const World& world, const AssetManager& assets) {
+    world.storage_.changes.requireCommitted();
     SceneDocument s;
     const auto& r = world.resources;
     for (const auto& material : r.materials)
         s.materials.push_back(MaterialDefinition::capture(material, assets));
     for (const auto& material : r.materialAssets)
         s.materialAssets.emplace(material.first, assets.resolve(material.second->reference()));
-    s.lights = r.lights;
     s.camera = r.camera;
     s.navigation = r.navigation;
     for (const auto& script : r.scripts)
@@ -35,14 +35,18 @@ void ScenePersistence::addComponents(World& world, uint32_t e, const SceneEntity
     componentCatalog().attach(world, e, o.components, assets);
 }
 uint32_t ScenePersistence::createEntity(World& world, const SceneEntity& o, AssetManager& assets) {
+    auto batch = world.changes();
     auto e = world.create(o.name, o.id);
     try {
         addComponents(world, e, o, assets);
         world.setEnabled(e, o.enabled);
     } catch (...) {
         world.destroy(e);
+        world.storage_.changes.forget(e);
+        batch.commit();
         throw;
     }
+    batch.commit();
     return e;
 }
 void ScenePersistence::instantiate(World& world, const SceneDocument& s, AssetManager& assets) {
@@ -57,7 +61,6 @@ void ScenePersistence::instantiate(World& world, const SceneDocument& s, AssetMa
             r.materials.push_back(material->parameters);
         }
     }
-    r.lights = s.lights;
     r.camera = s.camera;
     r.navigation = s.navigation;
     for (const auto& script : s.scripts) {
@@ -96,7 +99,9 @@ void ScenePersistence::load(World& world, AssetManager& assets, const AssetPath&
     staged.storage_.registry.continueIdentitySequence(world.registry());
     staged.storage_.physics.continueHandleSequence(world.physics());
     instantiate(staged, map->scene, assets);
-    world.clearScene();
+    auto oldEntities = world.registry().entities();
+    world.storage_.changes.requireCommitted();
+    auto batch = world.changes();
     // Transfer the validated scene once. Systems/subscriptions remain attached to
     // their World; only owned state and backend bindings cross this boundary.
     world.storage_.registry.exchangeScene(staged.storage_.registry);
@@ -108,12 +113,24 @@ void ScenePersistence::load(World& world, AssetManager& assets, const AssetPath&
     std::swap(world.gameplay, staged.gameplay);
     world.resources.mapAsset = map->reference();
     world.gameplay.message = map->header().name;
-    auto batch = world.changes();
-    for (auto e : world.registry().entities())
+    world.resetHistory = true;
+    for (auto e : oldEntities) {
+        world.storage_.changes.mark<Identity>(e);
+        for (const auto& [name, c] : componentCatalog().entries())
+            if (c.present(staged.registry(), e))
+                world.storage_.changes.mark(e, c.runtimeType);
+    }
+    for (auto e : world.registry().entities()) {
+        world.storage_.changes.mark<Identity>(e);
         for (const auto& [name, c] : componentCatalog().entries())
             if (c.present(world.registry(), e))
                 world.storage_.changes.mark(e, c.runtimeType);
-    batch.commit();
+    }
+    try {
+        batch.commit();
+    } catch (const std::exception& error) {
+        throw CommittedError(std::string("Scene committed; publication failed: ") + error.what());
+    }
 }
 AssetRef ScenePersistence::save(World& world, AssetManager& assets, const AssetPath& path,
                                 const std::string& name) {

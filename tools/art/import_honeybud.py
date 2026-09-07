@@ -80,7 +80,11 @@ lights=[{'positionRadius':[-7,10,3,1.15],'colorIntensity':[1,.73,.44,620]},
         {'positionRadius':[2,8,-8,1.5],'colorIntensity':[1,.75,.46,470]}]
 for p in [(-3.1,2.2,3),(3,2.2,3.2),(-8.1,2.2,-5.1),(8.5,2.2,-5.2)]:
     lights.append({'positionRadius':[*p,.18],'colorIntensity':[1,.65,.27,5]})
-scene={'version':5,'entities':objects,'materials':materials,'materialAssets':material_assets,'lights':lights,
+for index, light in enumerate(lights):
+    objects.append(dict(id=uuid.uuid4().hex,name=f'Light {index + 1}',enabled=True,components=dict(
+        transform=dict(position=light['positionRadius'][:3]),
+        light=dict(radius=light['positionRadius'][3],color=light['colorIntensity'][:3],intensity=light['colorIntensity'][3]))))
+scene={'version':6,'entities':objects,'materials':materials,'materialAssets':material_assets,
        'camera':{'target':[0,.5,-.8],'yaw':.32,'pitch':.57,'distance':27.5,'fov':.72},
        'navigation':{'min':[-10.6,0,-8.7],'max':[10.6,8,8.7],'cellSize':.25,'planeTolerance':.03},
        'player':references['player'],'references':references,'data':{'theme':'Honeybud Court'},

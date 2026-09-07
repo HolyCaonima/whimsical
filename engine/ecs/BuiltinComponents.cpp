@@ -56,8 +56,8 @@ void binding(ComponentContract& c, Prepare prepare, Capture capture) {
     c.prepare = [prepare](const World& w, Entity e, const std::any& v, AssetManager& a) -> PreparedComponent {
         return prepare(w, e, std::any_cast<const D&>(v), a);
     };
-    c.capture = [capture](const World& w, Entity e, const AssetManager& a) -> std::optional<std::any> {
-        std::optional<D> value = capture(w, e, a);
+    c.inspect = [capture](const World& w, Entity e) -> std::optional<std::any> {
+        std::optional<D> value = capture(w, e);
         return value ? std::optional<std::any>(std::move(*value)) : std::nullopt;
     };
 }
@@ -101,16 +101,25 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
                 Entity parent = v.parent.empty() ? 0 : w.findObject(v.parent);
                 if (!v.parent.empty() && !parent)
                     throw std::invalid_argument("Missing parent entity");
-                if (parent)
+                if (parent) {
                     w.get<Transform>(parent);
+                    for (auto p = parent; p; p = w.get<Transform>(p).parent)
+                        if (p == e)
+                            throw std::invalid_argument("Transform hierarchy cycle");
+                }
                 return [e, v, parent](ComponentAccess& access) {
                     auto& w = access.world;
-                    w.transforms.add(e, v.local);
-                    if (parent)
+                    if (w.has<Transform>(e)) {
                         w.transforms.setParent(e, parent, false);
+                        w.transforms.setLocal(e, v.local);
+                    } else {
+                        w.transforms.add(e, v.local);
+                        if (parent)
+                            w.transforms.setParent(e, parent, false);
+                    }
                 };
             },
-            [](const World& w, Entity e, const AssetManager&) {
+            [](const World& w, Entity e) {
                 const auto& t = w.get<Transform>(e);
                 return SceneTransform{t.local, t.parent ? w.get<Identity>(t.parent).persistentId : ""};
             });
@@ -176,16 +185,24 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
                 auto mesh = v.mesh ? a.load<StaticMesh>(*v.mesh) : nullptr;
                 return [e, v, mesh](ComponentAccess& access) {
                     auto& w = access.world;
-                    w.render.add(e, v.appearance, mesh);
+                    if (w.has<Renderable>(e))
+                        w.render.set(e, v.appearance, mesh);
+                    else
+                        w.render.add(e, v.appearance, mesh);
                 };
             },
-            [](const World& w, Entity e, const AssetManager& a) {
+            [](const World& w, Entity e) {
                 const auto& r = w.get<Renderable>(e);
                 SceneRender v{r.appearance};
                 if (r.mesh)
-                    v.mesh = a.resolve(r.mesh->reference());
+                    v.mesh = r.mesh->reference();
                 return v;
             });
+        c.resolveReferences = [](std::any& value, const AssetManager& assets) {
+            auto& v = std::any_cast<SceneRender&>(value);
+            if (v.mesh)
+                v.mesh = assets.resolve(*v.mesh);
+        };
         c.erase = [](ComponentAccess& access, Entity e) {
             auto& w = access.world;
             auto& s = access.storage;
@@ -200,6 +217,9 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
     {
         auto c = component<Collider, SceneCollider>("collider");
         c.dependencies = {{"transform"}};
+        c.validateValue = [](const std::any& value) {
+            validateColliderShape(std::any_cast<const SceneCollider&>(value).shape);
+        };
         codec<SceneCollider>(
             c,
             [](const Json& j) {
@@ -241,11 +261,14 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
                 b.pickable = v.pickable;
                 return [e, b](ComponentAccess& access) {
                     auto& w = access.world;
-                    w.motion.add(e, b);
+                    if (w.has<Collider>(e))
+                        w.motion.set(e, b);
+                    else
+                        w.motion.add(e, b);
                 };
             },
-            [](const World& w, Entity e, const AssetManager&) {
-                const auto& b = w.physics().body(w.get<Collider>(e).body);
+            [](const World& w, Entity e) {
+                const auto& b = w.motion.collider(e);
                 return SceneCollider{b.shape, b.motion, b.layer, b.blocking, b.walkable, b.pickable};
             });
         c.erase = [](ComponentAccess& access, Entity e) {
@@ -286,8 +309,14 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
             });
         binding<SceneAnimation>(
             c,
-            [](const World&, Entity e, const SceneAnimation& v, AssetManager& a) {
+            [](const World& w, Entity e, const SceneAnimation& v, AssetManager& a) -> PreparedComponent {
                 auto asset = a.load<animation::Asset>(v.asset);
+                if (auto current = w.registry().tryGet<Animator>(e);
+                    current && current->asset && current->asset->id == asset->header().id) {
+                    return [e, v](ComponentAccess& access) {
+                        access.world.animation.configureAnimation(e, v.rootOffset, v.attributes);
+                    };
+                }
                 auto instance = std::make_shared<std::unique_ptr<animation::Instance>>(
                     std::make_unique<animation::Instance>(*asset));
                 for (const auto& [key, value] : v.attributes)
@@ -300,12 +329,16 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
                     w.animation.attachPrepared(e, std::move(*instance), v.rootOffset, asset->reference());
                 };
             },
-            [](const World& w, Entity e, const AssetManager& a) {
+            [](const World& w, Entity e) {
                 const auto& v = w.get<Animator>(e);
-                if (!v.asset)
-                    throw std::invalid_argument("Cannot save an unregistered animation solver");
-                return SceneAnimation{a.resolve(*v.asset), v.rootOffset, v.solver().attributes()};
+                return SceneAnimation{v.asset.value_or(AssetRef{}), v.rootOffset, v.solver().attributes()};
             });
+        c.resolveReferences = [](std::any& value, const AssetManager& assets) {
+            auto& v = std::any_cast<SceneAnimation&>(value);
+            if (v.asset.id.empty())
+                throw std::invalid_argument("Cannot save an unregistered animation solver");
+            v.asset = assets.resolve(v.asset);
+        };
         c.erase = [](ComponentAccess& access, Entity e) { access.storage.registry.remove<Animator>(e); };
         catalog.add(std::move(c));
     }
@@ -355,7 +388,7 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
                     w.motion.bindRootMotion(e, v);
                 };
             },
-            [](const World& w, Entity e, const AssetManager&) { return w.get<RootMotionBinding>(e); });
+            [](const World& w, Entity e) { return w.get<RootMotionBinding>(e); });
         c.erase = [](ComponentAccess& access, Entity e) {
             access.storage.registry.remove<RootMotionBinding>(e);
         };
@@ -407,7 +440,7 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
                     w.animation.setAnimationJoints(e, v.poses, layout);
                 };
             },
-            [](const World& w, Entity e, const AssetManager&) -> std::optional<SceneJoints> {
+            [](const World& w, Entity e) -> std::optional<SceneJoints> {
                 if (w.has<Animator>(e))
                     return std::nullopt;
                 const auto& j = w.get<JointPose>(e);
@@ -436,9 +469,11 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
                     w.animation.setSkinnedMesh(e, mesh);
                 };
             },
-            [](const World& w, Entity e, const AssetManager& a) {
-                return a.resolve(w.get<Skin>(e).mesh->reference());
-            });
+            [](const World& w, Entity e) { return w.get<Skin>(e).mesh->reference(); });
+        c.resolveReferences = [](std::any& value, const AssetManager& assets) {
+            auto& ref = std::any_cast<AssetRef&>(value);
+            ref = assets.resolve(ref);
+        };
         c.erase = [](ComponentAccess& access, Entity e) {
             auto& w = access.world;
             access.storage.renderScene.geometryChanged(w.get<Renderable>(e).slot);
@@ -449,6 +484,12 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
     {
         auto c = component<JointColliders, SceneJointColliders>("jointColliders");
         c.dependencies = {{"joints", cascade}};
+        c.validateValue = [](const std::any& value) {
+            for (const auto& b : std::any_cast<const SceneJointColliders&>(value).bindings) {
+                validateColliderShape(b.shape);
+                validateRigidPose(b.local);
+            }
+        };
         codec<SceneJointColliders>(
             c,
             [](const Json& j) {
@@ -472,27 +513,41 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
             [](const World&, Entity e, const SceneJointColliders& v, AssetManager&) {
                 return [e, v](ComponentAccess& access) {
                     auto& w = access.world;
-                    const auto size = w.get<JointPose>(e).model.size();
-                    for (const auto& b : v.bindings)
-                        if (b.joint >= size)
-                            throw std::invalid_argument("Joint collider index outside pose");
-                    access.storage.registry.emplace<JointColliders>(e);
-                    try {
-                        for (const auto& b : v.bindings)
-                            w.animation.addAnimationCollider(e, b.joint, b.shape, b.local, b.blocking);
-                    } catch (...) {
-                        w.animation.removeJointColliders(e);
-                        throw;
-                    }
+                    w.animation.setAnimationColliders(e, v.bindings);
                 };
             },
-            [](const World& w, Entity e, const AssetManager&) {
-                return SceneJointColliders{w.animation.describeColliders(e)};
-            });
+            [](const World& w, Entity e) { return SceneJointColliders{w.animation.describeColliders(e)}; });
         c.erase = [](ComponentAccess& access, Entity e) {
             access.storage.jointColliders.remove(e);
             access.storage.registry.remove<JointColliders>(e);
         };
+        catalog.add(std::move(c));
+    }
+    {
+        auto c = dataComponent<PointLight>(
+            "light",
+            [](const Json& j) {
+                PointLight v;
+                if (j.contains("color"))
+                    v.color = vector3(j.at("color"));
+                if (j.contains("intensity"))
+                    v.intensity = float(j.at("intensity").number());
+                if (j.contains("radius"))
+                    v.radius = float(j.at("radius").number());
+                return v;
+            },
+            [](const PointLight& v) {
+                return Json{{"color", vector(v.color)}, {"intensity", v.intensity}, {"radius", v.radius}};
+            },
+            [](const PointLight& v) {
+                for (int i = 0; i < 3; ++i)
+                    if (!std::isfinite(v.color[i]) || v.color[i] < 0)
+                        throw std::invalid_argument("Invalid light color");
+                if (!std::isfinite(v.intensity) || v.intensity < 0 || !std::isfinite(v.radius) ||
+                    v.radius <= 0)
+                    throw std::invalid_argument("Invalid light intensity or radius");
+            });
+        c.dependencies = {{"transform"}};
         catalog.add(std::move(c));
     }
     catalog.add(dataComponent<Interactable>(

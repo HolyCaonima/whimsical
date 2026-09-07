@@ -72,12 +72,14 @@ void World::destroy(Entity e) {
     batch.commit();
 }
 void World::clearScene() {
+    auto batch = changes();
     for (auto e : registry().entities())
         if (registry().contains(e))
             destroy(e);
     resources = {};
     gameplay = {};
     resetHistory = true;
+    batch.commit();
 }
 static vec3 rayDirection(const Camera& camera, float x, float y, const Input& input) {
     auto inv = glm::inverse(camera.projection(float(std::max(input.width, 1u)) / std::max(input.height, 1u)) *
@@ -110,7 +112,6 @@ Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug,
     f.proxies = storage_.renderScene.proxies();
     f.delta = storage_.renderScene.publish();
     f.materials = resources.materials;
-    f.lights = resources.lights;
     f.camera = resources.camera;
     f.input = input;
     if (auto t = registry().tryGet<Transform>(gameplay.playerId))
