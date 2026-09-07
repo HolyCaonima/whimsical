@@ -1,5 +1,7 @@
 #include "ScenePersistence.h"
 #include "core/World.h"
+#include <algorithm>
+#include <set>
 namespace afterlight {
 SceneDocument ScenePersistence::capture(const World& world, const AssetManager& assets) {
     SceneDocument s;
@@ -23,82 +25,14 @@ SceneDocument ScenePersistence::capture(const World& world, const AssetManager& 
         o.id = identity.persistentId;
         o.name = identity.name;
         o.enabled = !world.has<Disabled>(e);
-        o.interactable = world.has<Interactable>(e);
-        if (auto t = world.registry().tryGet<Transform>(e))
-            o.transform =
-                SceneTransform{t->local, t->parent ? world.get<Identity>(t->parent).persistentId : ""};
-        if (auto render = world.registry().tryGet<Renderable>(e)) {
-            o.render = SceneRender{render->appearance};
-            if (render->mesh)
-                o.render->mesh = assets.resolve(render->mesh->reference());
-        }
-        if (auto c = world.registry().tryGet<Collider>(e)) {
-            const auto& b = world.physics().body(c->body);
-            o.collider = SceneCollider{b.shape, b.motion, b.layer, b.blocking, b.walkable, b.pickable};
-        }
-        if (auto a = world.registry().tryGet<Animator>(e)) {
-            if (!a->asset)
-                throw std::invalid_argument("Cannot save an unregistered animation solver: " + identity.name);
-            o.animation = SceneAnimation{assets.resolve(*a->asset), a->applyRootMotion, a->rootOffset,
-                                         a->instance->attributes()};
-        } else if (auto j = world.registry().tryGet<JointPose>(e))
-            o.joints = j->model;
-        if (auto skin = world.registry().tryGet<Skin>(e))
-            o.skin = assets.resolve(skin->mesh->reference());
-        if (auto data = world.registry().tryGet<ScriptData>(e))
-            o.data = data->value;
-        o.jointColliders = world.storage_.jointColliders.describe(e);
+        o.components = componentCatalog().capture(world, e, assets);
         s.entities.push_back(std::move(o));
     }
     s.validate();
     return s;
 }
 void ScenePersistence::addComponents(World& world, uint32_t e, const SceneEntity& o, AssetManager& assets) {
-    if (o.data)
-        world.add<ScriptData>(e, ScriptData{*o.data});
-    if (o.transform) {
-        Entity parent = 0;
-        if (!o.transform->parent.empty()) {
-            parent = world.findObject(o.transform->parent);
-            if (!parent)
-                throw std::invalid_argument("Missing parent entity");
-            world.get<Transform>(parent);
-        }
-        world.transforms.add(e, o.transform->local);
-        if (parent)
-            world.transforms.setParent(e, parent, false);
-    }
-    if (o.interactable)
-        world.add<Interactable>(e);
-    if (o.render) {
-        if (o.render->appearance.material >= world.resources.materials.size())
-            throw std::invalid_argument("Invalid material");
-        auto mesh = o.render->mesh ? assets.load<StaticMesh>(*o.render->mesh) : nullptr;
-        world.render.add(e, o.render->appearance, std::move(mesh));
-    }
-    if (o.collider) {
-        const auto& c = *o.collider;
-        PhysicsBody b;
-        b.shape = c.shape;
-        b.motion = c.motion;
-        b.layer = c.layer;
-        b.blocking = c.blocking;
-        b.walkable = c.walkable;
-        b.pickable = c.pickable;
-        world.motion.add(e, b);
-    }
-    if (o.animation) {
-        const auto& a = *o.animation;
-        auto asset = assets.load<animation::Asset>(a.asset);
-        if (world.has<Animator>(e))
-            throw std::logic_error("Animator already present");
-        world.animation.attachAnimation(e, *asset, a.rootMotion, a.rootOffset, a.attributes);
-    } else if (o.joints)
-        world.animation.setAnimationJoints(e, *o.joints);
-    if (o.skin)
-        world.animation.setSkinnedMesh(e, assets.load<SkinnedMesh>(*o.skin));
-    for (const auto& c : o.jointColliders)
-        world.animation.addAnimationCollider(e, c.joint, c.shape, c.local, c.blocking);
+    componentCatalog().attach(world, e, o.components, assets);
 }
 uint32_t ScenePersistence::createEntity(World& world, const SceneEntity& o, AssetManager& assets) {
     auto e = world.create(o.name, o.id);
@@ -132,21 +66,26 @@ void ScenePersistence::instantiate(World& world, const SceneDocument& s, AssetMa
     }
     r.data = s.data;
     r.references = s.references;
-    // Identity and hierarchy are resolved before any spatial backend or solver binds.
-    for (const auto& o : s.entities) {
-        auto e = world.create(o.name, o.id);
-        if (o.transform)
-            world.transforms.add(e, o.transform->local);
-    }
+    // Create all identities, then instantiate parents before children. Component
+    // ordering within each entity comes entirely from the catalog.
     for (const auto& o : s.entities)
-        if (o.transform && !o.transform->parent.empty())
-            world.transforms.setParent(world.findObject(o.id), world.findObject(o.transform->parent), false);
-    for (auto o : s.entities) {
-        o.transform.reset();
+        world.create(o.name, o.id);
+    std::set<std::string> installed;
+    std::function<void(const SceneEntity&)> install = [&](const SceneEntity& o) {
+        if (installed.count(o.id))
+            return;
+        if (auto t = o.components.find<SceneTransform>(); t && !t->parent.empty()) {
+            auto parent = std::find_if(s.entities.begin(), s.entities.end(),
+                                       [&](const auto& candidate) { return candidate.id == t->parent; });
+            install(*parent);
+        }
         auto e = world.findObject(o.id);
         addComponents(world, e, o, assets);
         world.setEnabled(e, o.enabled);
-    }
+        installed.insert(o.id);
+    };
+    for (const auto& o : s.entities)
+        install(o);
     world.gameplay.playerId = s.player.empty() ? 0 : world.findObject(s.player);
     world.gameplay.selected = world.gameplay.playerId;
     world.resetHistory = true;
@@ -154,11 +93,27 @@ void ScenePersistence::instantiate(World& world, const SceneDocument& s, AssetMa
 void ScenePersistence::load(World& world, AssetManager& assets, const AssetPath& path) {
     const auto map = assets.load<SceneAsset>(path);
     World staged;
+    staged.storage_.registry.continueIdentitySequence(world.registry());
+    staged.storage_.physics.continueHandleSequence(world.physics());
     instantiate(staged, map->scene, assets);
     world.clearScene();
-    instantiate(world, map->scene, assets);
+    // Transfer the validated scene once. Systems/subscriptions remain attached to
+    // their World; only owned state and backend bindings cross this boundary.
+    world.storage_.registry.exchangeScene(staged.storage_.registry);
+    world.storage_.physics.exchangeScene(staged.storage_.physics);
+    world.storage_.renderScene.exchangeScene(staged.storage_.renderScene);
+    world.storage_.jointColliders.exchangeBindings(staged.storage_.jointColliders);
+    world.objectIds_.swap(staged.objectIds_);
+    std::swap(world.resources, staged.resources);
+    std::swap(world.gameplay, staged.gameplay);
     world.resources.mapAsset = map->reference();
     world.gameplay.message = map->header().name;
+    auto batch = world.changes();
+    for (auto e : world.registry().entities())
+        for (const auto& [name, c] : componentCatalog().entries())
+            if (c.present(world.registry(), e))
+                world.storage_.changes.mark(e, c.runtimeType);
+    batch.commit();
 }
 AssetRef ScenePersistence::save(World& world, AssetManager& assets, const AssetPath& path,
                                 const std::string& name) {

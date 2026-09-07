@@ -154,25 +154,7 @@ static void pushPose(duk_context* c, const PhysicsPose& p) {
     duk_put_prop_string(c, -2, "rotation");
 }
 static bool hasComponent(const World& w, Entity e, const std::string& type) {
-    if (type == "transform")
-        return w.has<Transform>(e);
-    if (type == "render")
-        return w.has<Renderable>(e);
-    if (type == "collider")
-        return w.has<Collider>(e);
-    if (type == "animator")
-        return w.has<Animator>(e);
-    if (type == "skin")
-        return w.has<Skin>(e);
-    if (type == "joints")
-        return w.has<JointPose>(e);
-    if (type == "jointColliders")
-        return w.has<JointColliders>(e);
-    if (type == "interactable")
-        return w.has<Interactable>(e);
-    if (type == "data")
-        return w.has<ScriptData>(e);
-    throw std::invalid_argument("Unknown component: " + type);
+    return componentCatalog().get(type).present(w.registry(), e);
 }
 enum Op {
     SceneLoad,
@@ -187,6 +169,8 @@ enum Op {
     MaterialAdd,
     Create,
     AddComponent,
+    AddComponents,
+    ReadComponent,
     RemoveComponent,
     HasComponent,
     Entities,
@@ -273,29 +257,31 @@ static duk_ret_t callNative(duk_context* c) {
             ScenePersistence::addComponents(w, e, description, assets(c));
             return 0;
         }
+        case AddComponents: {
+            auto e = duk_require_uint(c, 0);
+            duk_dup(c, 1);
+            duk_json_encode(c, -1);
+            auto set = ComponentSet::fromJson(Json::parse(duk_require_string(c, -1)));
+            duk_pop(c);
+            componentCatalog().attach(w, e, set, assets(c));
+            return 0;
+        }
+        case ReadComponent: {
+            auto e = duk_require_uint(c, 0);
+            w.registry().require(e);
+            const auto& type = componentCatalog().get(duk_require_string(c, 1));
+            if (!type.present(w.registry(), e))
+                throw std::invalid_argument("Component absent: " + type.name);
+            auto value = type.capture(w, e, assets(c));
+            if (!value)
+                throw std::invalid_argument("Component is derived, not authored: " + type.name);
+            pushJson(c, type.encode(*value));
+            return 1;
+        }
         case RemoveComponent: {
             Entity e = duk_require_uint(c, 0);
             std::string type = duk_require_string(c, 1);
-            if (type == "transform")
-                w.remove<Transform>(e);
-            else if (type == "render")
-                w.remove<Renderable>(e);
-            else if (type == "collider")
-                w.remove<Collider>(e);
-            else if (type == "animator")
-                w.remove<Animator>(e);
-            else if (type == "skin")
-                w.remove<Skin>(e);
-            else if (type == "joints")
-                w.remove<JointPose>(e);
-            else if (type == "jointColliders")
-                w.remove<JointColliders>(e);
-            else if (type == "interactable")
-                w.remove<Interactable>(e);
-            else if (type == "data")
-                w.remove<ScriptData>(e);
-            else
-                throw std::invalid_argument("Unknown removable component: " + type);
+            componentCatalog().remove(w, e, type);
             return 0;
         }
         case HasComponent: {
@@ -308,10 +294,10 @@ static duk_ret_t callNative(duk_context* c) {
             duk_push_boolean(c, w.registry().contains(duk_require_uint(c, 0)));
             return 1;
         case Entities: {
-            std::vector<std::string> types;
+            std::vector<const ComponentContract*> types;
             for (duk_uarridx_t i = 0; i < duk_get_length(c, 0); ++i) {
                 duk_get_prop_index(c, 0, i);
-                types.push_back(duk_require_string(c, -1));
+                types.push_back(&componentCatalog().get(duk_require_string(c, -1)));
                 duk_pop(c);
             }
             duk_push_array(c);
@@ -319,7 +305,7 @@ static duk_ret_t callNative(duk_context* c) {
             for (auto e : w.registry().entities()) {
                 bool matches = true;
                 for (const auto& type : types)
-                    matches = hasComponent(w, e, type) && matches;
+                    matches = type->present(w.registry(), e) && matches;
                 if (matches) {
                     duk_push_uint(c, e);
                     duk_put_prop_index(c, -2, index++);
@@ -621,17 +607,19 @@ static duk_ret_t callNative(duk_context* c) {
             return 1;
         }
         case AnimationAttach: {
-            auto asset = assets(c).load<animation::Asset>(AssetPath(duk_require_string(c, 1)));
-            bool applyRoot = true;
-            vec3 offset(0);
+            SceneAnimation animation;
+            animation.asset = assets(c).reference(AssetPath(duk_require_string(c, 1)));
             if (duk_is_object(c, 2)) {
-                applyRoot = boolProp(c, 2, "rootMotion", true);
+                if (duk_has_prop_string(c, 2, "rootMotion"))
+                    throw std::invalid_argument("Use the rootMotion component");
                 duk_get_prop_string(c, 2, "rootOffset");
                 if (duk_is_object(c, -1))
-                    offset = readVec(c, -1);
+                    animation.rootOffset = readVec(c, -1);
                 duk_pop(c);
             }
-            w.animation.attachAnimation(duk_require_uint(c, 0), *asset, applyRoot, offset);
+            ComponentSet set;
+            set.set(std::move(animation));
+            componentCatalog().attach(w, duk_require_uint(c, 0), set, assets(c));
             return 0;
         }
         case AnimationAttribute:
@@ -765,6 +753,8 @@ void ScriptRuntime::createContext() {
                                 {"material", MaterialAdd, 8},
                                 {"create", Create, 1},
                                 {"addComponent", AddComponent, 3},
+                                {"addComponents", AddComponents, 2},
+                                {"component", ReadComponent, 2},
                                 {"removeComponent", RemoveComponent, 2},
                                 {"hasComponent", HasComponent, 2},
                                 {"entities", Entities, 1},

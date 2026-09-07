@@ -88,6 +88,7 @@ class PhysicsScene {
     std::vector<uint32_t> free_;
     std::thread::id owner_ = std::this_thread::get_id();
     uint64_t revision_ = 0;
+    uint32_t nextGeneration_ = 1;
     DynamicAabbTree broadphase_;
     void checkThread() const;
     Slot& require(BodyHandle);
@@ -98,6 +99,10 @@ class PhysicsScene {
     PhysicsScene() = default;
     PhysicsScene(const PhysicsScene&) = delete;
     PhysicsScene& operator=(const PhysicsScene&) = delete;
+    void continueHandleSequence(const PhysicsScene& previous) {
+        nextGeneration_ = previous.nextGeneration_;
+    }
+    void exchangeScene(PhysicsScene&);
     BodyHandle create(const PhysicsBody&);
     void destroy(BodyHandle);
     bool contains(BodyHandle) const;
@@ -119,9 +124,8 @@ class PhysicsScene {
     MoveResult moveAndSlide(const CapsuleQuery&, vec3 delta, QueryFilter = {}) const;
     std::vector<PhysicsHit> overlapShape(const ShapeQuery&, QueryFilter = {}) const;
     std::optional<PhysicsHit> sweepShape(const ShapeQuery&, vec3 delta, quat targetRotation,
-                                        QueryFilter = {}) const;
-    BodyMoveResult moveAndSlide(const ShapeQuery&, vec3 delta, quat targetRotation,
-                                QueryFilter = {}) const;
+                                         QueryFilter = {}) const;
+    BodyMoveResult moveAndSlide(const ShapeQuery&, vec3 delta, quat targetRotation, QueryFilter = {}) const;
     // Keep feet fixed; reject expansion into ceilings or other bodies.
     bool resizeCharacter(BodyHandle, float height);
 };

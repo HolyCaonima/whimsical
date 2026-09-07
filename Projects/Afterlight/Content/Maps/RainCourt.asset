@@ -1,7 +1,7 @@
 ALAS1
 {"id": "ac82d4e0213b364b2f00aa883568db0b", "name": "RainCourt", "version": 1, "type": "Map", "storage": "embedded", "metadata": {"description": "The Rain Court: authored scene and persistent gameplay state"}}
 {
-  "version": 4,
+  "version": 5,
   "materials": [
     {
       "shader": {
@@ -2659,7 +2659,6 @@ ALAS1
             "id": "2bba3c43df0465a492c7f61d22925992",
             "path": "/Game/animations/ai4animation/biped/controller"
           },
-          "rootMotion": true,
           "rootOffset": [
             0,
             -1,
@@ -2672,6 +2671,10 @@ ALAS1
         "skin": {
           "id": "60d964cdd9c23c78ff55830a80c4d552",
           "path": "/Game/models/biped"
+        },
+        "rootMotion": {
+          "mode": "grounded",
+          "preserveAnchor": true
         }
       }
     },
@@ -2730,7 +2733,6 @@ ALAS1
             "id": "901c6c7656b1191e461e33dc134f56e9",
             "path": "/Game/animations/ai4animation/quadruped/controller"
           },
-          "rootMotion": true,
           "rootOffset": [
             0,
             -0.35,
@@ -2741,6 +2743,10 @@ ALAS1
         "skin": {
           "id": "919b358044ecf70cfa51fe26ef161dfa",
           "path": "/Game/models/dog"
+        },
+        "rootMotion": {
+          "mode": "grounded",
+          "preserveAnchor": true
         }
       }
     }

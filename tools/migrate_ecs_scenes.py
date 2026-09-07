@@ -1,7 +1,7 @@
 """Upgrade ALAS1 Map payloads to optional ECS components, preserving asset/entity IDs.
 
 Usage: python tools/migrate_ecs_scenes.py <Map.asset> [...]
-The runtime can still import v3. This tool also removes inert recipe colliders from
+The runtime imports v3/v4; new output uses v5. This tool also removes inert recipe colliders from
 authored maps; geometry and collider dimensions remain independent.
 """
 import json
@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 
-def upgrade(scene):
+def upgrade_v3(scene):
     if scene['version'] == 4:
         return scene
     if scene['version'] != 3:
@@ -38,6 +38,22 @@ def upgrade(scene):
     return scene
 
 
+def upgrade(scene):
+    if scene['version'] == 5:
+        return scene
+    scene = upgrade_v3(scene)
+    for entity in scene['entities']:
+        components = entity['components']
+        if components.get('jointColliders') == []:
+            del components['jointColliders']
+        if 'animator' in components:
+            root = components['animator'].pop('rootMotion', True)
+            if root:
+                components['rootMotion'] = dict(mode='grounded', preserveAnchor=True)
+    scene['version'] = 5
+    return scene
+
+
 if __name__ == '__main__':
     for argument in sys.argv[1:]:
         path = Path(argument)
@@ -45,5 +61,6 @@ if __name__ == '__main__':
         if magic != 'ALAS1' or json.loads(header)['type'] != 'Map':
             raise ValueError(f'Not a Map asset: {path}')
         scene = upgrade(json.loads(payload))
-        path.write_text(magic + '\n' + header + '\n' + json.dumps(scene, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+        encoded = json.dumps(scene, ensure_ascii=False, indent=2) if '\n' in payload.strip() else json.dumps(scene, ensure_ascii=False, separators=(',', ':'))
+        path.write_text(magic + '\n' + header + '\n' + encoded + '\n', encoding='utf-8')
         print(f'{path}: {len(scene["entities"])} entities')

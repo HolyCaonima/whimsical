@@ -93,7 +93,8 @@ void RenderScene::setVisible(uint32_t slot, bool visible) {
     setAttributes(slot, attributes);
 }
 void RenderScene::geometryChanged(uint32_t slot) {
-    if (!proxy(slot).live) return;
+    if (!proxy(slot).live)
+        return;
     ++revision_;
     ++topology_;
     mark(slot, MarkStructural);
@@ -112,5 +113,17 @@ SceneDelta RenderScene::publish() {
     for (auto slot : delta.attributes)
         marks_[slot] = 0;
     return delta;
+}
+void RenderScene::exchangeScene(RenderScene& other) {
+    proxies_.swap(other.proxies_);
+    free_.swap(other.free_);
+    marks_.assign(proxies_.size(), 0);
+    pending_ = {};
+    revision_ += other.revision_ + 1;
+    topology_ += other.topology_ + 1;
+    for (uint32_t slot = 0; slot < proxies_.size(); ++slot)
+        mark(slot, MarkStructural);
+    other.marks_.assign(other.proxies_.size(), 0);
+    other.pending_ = {};
 }
 } // namespace afterlight

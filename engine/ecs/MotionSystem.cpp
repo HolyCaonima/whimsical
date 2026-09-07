@@ -1,5 +1,17 @@
 #include "Systems.h"
 namespace afterlight {
+MotionSystem::MotionSystem(SceneStorage& storage, TransformSystem& t, NavigationSettings& n)
+    : s(storage), transforms(t), navigation(n) {
+    s.changes.subscribe<WorldPoseChanged>([this](Entity e) {
+        if (auto c = s.registry.tryGet<Collider>(e))
+            s.physics.setPose(c->body, s.registry.get<Transform>(e).world);
+    });
+    s.changes.subscribe<EffectiveEnabledChanged>([this](Entity e) {
+        if (auto c = s.registry.tryGet<Collider>(e))
+            s.physics.setEnabled(c->body, s.enabled(e));
+    });
+}
+
 void MotionSystem::add(Entity e, PhysicsBody body) {
     auto& t = s.registry.get<Transform>(e);
     if (s.registry.has<Collider>(e))
@@ -11,19 +23,14 @@ void MotionSystem::add(Entity e, PhysicsBody body) {
     s.registry.emplace<Collider>(e, Collider{h});
 }
 void MotionSystem::remove(Entity e) {
-    s.registry.require(e);
-    if (auto a = s.registry.tryGet<Animator>(e); a && a->applyRootMotion)
-        throw std::logic_error("Detach root-motion animator before removing its collider");
-    if (auto c = s.registry.tryGet<Collider>(e))
-        s.physics.destroy(c->body);
-    s.registry.remove<Collider>(e);
+    s.removeComponent(e, typeid(Collider));
 }
 void MotionSystem::configureCollider(Entity e, uint32_t layer, bool blocking, bool walkable, bool pickable) {
     s.physics.setProperties(s.registry.get<Collider>(e).body, layer, blocking, walkable, pickable);
 }
 void MotionSystem::setColliderShape(Entity e, const ColliderShape& shape) {
-    if (auto a = s.registry.tryGet<Animator>(e);
-        a && a->applyRootMotion && shape.type != ColliderType::Capsule)
+    if (auto a = s.registry.tryGet<RootMotionBinding>(e);
+        a && a->mode == RootMotionBinding::Mode::Grounded && shape.type != ColliderType::Capsule)
         throw std::logic_error("Root motion requires a capsule collider");
     s.physics.setShape(s.registry.get<Collider>(e).body, shape);
 }
@@ -87,16 +94,38 @@ float MotionSystem::setCharacterHeight(Entity e, float height) {
     float before = pose.position.y;
     s.physics.resizeCharacter(h, height);
     pose.position = s.physics.body(h).pose.position;
-    if (auto a = s.registry.tryGet<Animator>(e)) {
-        float offset = before - pose.position.y;
-        a->rootOffset.y += offset;
-        // Stance changes preserve the animated foot anchor immediately, including
-        // queries/extraction before the next solver step. JointPose is a derived cache.
-        for (auto& joint : s.registry.get<JointPose>(e).model)
-            joint.position.y += offset;
-    }
+    s.changes.emit(CharacterResized{e, pose.position.y - before});
     transforms.setTransform(e, pose);
     return s.physics.body(h).shape.height();
+}
+void MotionSystem::bindRootMotion(Entity e, RootMotionBinding binding) {
+    s.registry.get<Animator>(e);
+    if (binding.mode == RootMotionBinding::Mode::Grounded)
+        (void)agent(e);
+    if (binding.mode == RootMotionBinding::Mode::Kinematic)
+        s.registry.get<Collider>(e);
+    s.registry.emplace<RootMotionBinding>(e, binding);
+}
+void MotionSystem::consumeRootMotion(Entity e, const animation::Transform& delta, vec3 offset) {
+    auto binding = s.registry.tryGet<RootMotionBinding>(e);
+    if (!binding)
+        return;
+    auto pose = s.registry.get<Transform>(e).world;
+    auto translation = delta.position + offset - delta.rotation * offset;
+    auto rotation = glm::normalize(pose.rotation * delta.rotation);
+    switch (binding->mode) {
+    case RootMotionBinding::Mode::Transform:
+        transforms.setTransform(e, {pose.position + pose.rotation * translation, rotation});
+        break;
+    case RootMotionBinding::Mode::Kinematic:
+        moveBody(e, pose.rotation * translation, rotation, binding->mask);
+        break;
+    case RootMotionBinding::Mode::Grounded: {
+        auto forward = delta.rotation * vec3(0, 0, 1);
+        rootMotion(e, translation, std::atan2(forward.x, forward.z));
+        break;
+    }
+    }
 }
 std::vector<vec3> MotionSystem::findPath(Entity e, vec3 target) const {
     return Navigation::findPath(s.physics, feet(e), target, agent(e), navigation);

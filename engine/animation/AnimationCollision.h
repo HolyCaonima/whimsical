@@ -20,6 +20,9 @@ class AnimationCollision {
 
   public:
     explicit AnimationCollision(PhysicsScene& scene) : scene_(scene) {}
+    void exchangeBindings(AnimationCollision& other) {
+        bindings_.swap(other.bindings_);
+    }
     BodyHandle bind(uint32_t owner, uint32_t joint, const ColliderShape&, PhysicsPose local,
                     bool blocking = false);
     void update(uint32_t owner, PhysicsPose root, const std::vector<PhysicsPose>& joints);

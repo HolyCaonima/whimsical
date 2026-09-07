@@ -5,6 +5,7 @@
 #include "navigation/Navigation.h"
 #include "animation/AnimationCollision.h"
 #include <optional>
+#include "ecs/ComponentCatalog.h"
 namespace afterlight {
 struct SceneTransform {
     PhysicsPose local;
@@ -22,21 +23,20 @@ struct SceneCollider {
 };
 struct SceneAnimation {
     AssetRef asset;
-    bool rootMotion = true;
     vec3 rootOffset{0};
     animation::AttributeValues attributes;
 };
+struct SceneJoints {
+    std::vector<PhysicsPose> poses;
+    std::vector<animation::Joint> layout;
+};
+struct SceneJointColliders {
+    std::vector<AnimationColliderDescription> bindings;
+};
 struct SceneEntity {
     std::string id, name;
-    bool enabled = true, interactable = false;
-    std::optional<SceneTransform> transform;
-    std::optional<SceneRender> render;
-    std::optional<SceneCollider> collider;
-    std::optional<SceneAnimation> animation;
-    std::optional<AssetRef> skin;
-    std::optional<Json> data;
-    std::optional<std::vector<PhysicsPose>> joints;
-    std::vector<AnimationColliderDescription> jointColliders;
+    bool enabled = true;
+    ComponentSet components;
     Json json() const;
     static SceneEntity fromJson(const Json&);
 };

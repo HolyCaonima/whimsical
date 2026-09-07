@@ -6,7 +6,7 @@
 
 UI 由独立 **uiCore / RmlUi** 驱动：项目 JS 通过 `Engine.ui` 操作文档、DOM 和事件，控制台与项目角色面板共用 RmlUi 布局和 Vulkan UI 后端。接口、线程边界、示例及当前后端能力见 [UI Core](docs/ui-core.md)。
 
-对象与场景已迁移为 ECS：能力按需组合，父子变换、组件生命周期、脚本、Map v4 和增量几何资源管理见 [ECS 架构](docs/ecs.md)。
+对象与场景已迁移为 ECS：能力按需组合，父子变换、组件生命周期、统一组件契约、变更提交、Map v5 和增量几何资源管理见 [ECS 架构](docs/ecs.md)。
 
 ## 直接运行
 

@@ -1,8 +1,11 @@
 #pragma once
 #include "ecs/Systems.h"
 #include "assets/MaterialAsset.h"
+#include "ecs/ComponentCatalog.h"
 #include <type_traits>
 namespace afterlight {
+template <class T, class = void> struct SystemOwned : std::false_type {};
+template <class T> struct SystemOwned<T, std::void_t<typename T::Ownership>> : std::true_type {};
 struct SceneResources {
     AssetRef mapAsset;
     std::vector<AssetRef> scripts;
@@ -24,15 +27,31 @@ struct GameplayState {
 // Composition root and scene lifecycle. Domain operations belong to systems.
 class World {
     friend class ScenePersistence;
+    friend class ComponentCatalog;
     SceneStorage storage_;
     std::map<std::string, Entity> objectIds_;
 
   public:
+    World();
+    ~World() {
+        clearScene();
+    }
+    World(const World&) = delete;
+    World& operator=(const World&) = delete;
+    Changes::Batch changes() {
+        return Changes::Batch(storage_.changes);
+    }
+    void commitChanges() {
+        storage_.changes.flush();
+    }
+    template <class T, class F> void onChange(F&& f) {
+        storage_.changes.subscribe<T>(std::forward<F>(f));
+    }
     SceneResources resources;
     GameplayState gameplay;
     bool resetHistory = true;
     RenderSystem render{storage_, resources.materials};
-    TransformSystem transforms{storage_, render};
+    TransformSystem transforms{storage_};
     MotionSystem motion{storage_, transforms, resources.navigation};
     AnimationSystem animation{storage_, motion};
     const Registry& registry() const {
@@ -45,46 +64,27 @@ class World {
         return registry().has<T>(e);
     }
     template <class T, class F> void edit(Entity e, F&& edit) {
-        static_assert(!std::is_same_v<T, Transform> && !std::is_same_v<T, Collider> &&
-                          !std::is_same_v<T, Renderable> && !std::is_same_v<T, Animator> &&
-                          !std::is_same_v<T, Skin> && !std::is_same_v<T, JointPose> &&
-                          !std::is_same_v<T, JointColliders> && !std::is_same_v<T, Identity> &&
-                          !std::is_same_v<T, Disabled>,
-                      "Use the component's owning system");
-        edit(storage_.registry.get<T>(e));
+        static_assert(!SystemOwned<T>::value, "Use the component's owning system");
+        T draft = get<T>(e);
+        edit(draft);
+        if (auto c = componentCatalog().find(typeid(T)); c && c->validateRuntime)
+            c->validateRuntime(&draft);
+        storage_.registry.get<T>(e) = std::move(draft);
+        storage_.changes.mark<T>(e);
     }
     template <class T, class... Args> void add(Entity e, Args&&... args) {
-        static_assert(!std::is_same_v<T, Transform> && !std::is_same_v<T, Collider> &&
-                          !std::is_same_v<T, Renderable> && !std::is_same_v<T, Animator> &&
-                          !std::is_same_v<T, Skin> && !std::is_same_v<T, JointPose> &&
-                          !std::is_same_v<T, JointColliders> && !std::is_same_v<T, Identity> &&
-                          !std::is_same_v<T, Disabled>,
-                      "Use the component's owning system");
-        storage_.registry.emplace<T>(e, std::forward<Args>(args)...);
-        if constexpr (std::is_same_v<T, Interactable>)
-            render.publishAttributes(e);
+        static_assert(!SystemOwned<T>::value, "Use the component's owning system");
+        T value{std::forward<Args>(args)...};
+        componentCatalog().checkNativeAdd(*this, e, typeid(T), &value);
+        storage_.registry.emplace<T>(e, std::move(value));
     }
     template <class T> void remove(Entity e) {
-        if constexpr (std::is_same_v<T, Transform>)
-            transforms.remove(e);
-        else if constexpr (std::is_same_v<T, Collider>)
-            motion.remove(e);
-        else if constexpr (std::is_same_v<T, Renderable>)
-            render.remove(e);
-        else if constexpr (std::is_same_v<T, Animator>)
-            animation.detachAnimation(e);
-        else if constexpr (std::is_same_v<T, Skin>)
-            animation.removeSkin(e);
-        else if constexpr (std::is_same_v<T, JointPose>)
-            animation.removeJoints(e);
-        else if constexpr (std::is_same_v<T, JointColliders>)
-            animation.removeJointColliders(e);
+        static_assert(!std::is_same_v<T, Identity> && !std::is_same_v<T, Disabled>,
+                      "Use entity lifecycle API");
+        if (auto c = componentCatalog().find(typeid(T)))
+            componentCatalog().remove(*this, e, c->name);
         else {
-            static_assert(!std::is_same_v<T, Identity> && !std::is_same_v<T, Disabled>,
-                          "Use entity lifecycle API");
             storage_.registry.remove<T>(e);
-            if constexpr (std::is_same_v<T, Interactable>)
-                render.publishAttributes(e);
         }
     }
     Entity create(std::string name = {}, std::string persistentId = {});
@@ -102,9 +102,11 @@ class World {
         return resources.mapAsset;
     }
     const PhysicsScene& physics() const {
+        storage_.changes.requireCommitted();
         return storage_.physics;
     }
     const RenderScene& renderScene() const {
+        storage_.changes.requireCommitted();
         return storage_.renderScene;
     }
     // Script/input/motion -> animation/root motion -> joint colliders. Transform edits

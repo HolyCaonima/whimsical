@@ -33,9 +33,9 @@ AI4Animation 在下一次 10 Hz 预测时读取所选风格，沿用既有序列
 
 单位米，Y 向上，+Z 朝前。`Skeleton` 要求唯一骨骼名和 parent-before-child 顺序，支持多个根。`Pose` 始终是 parent-local；FK 得到 model-space；RenderSystem 再合成层级世界变换。`JointPose.model` / `animationJoints` 接口中的姿态实际上是 **相对角色根的 model-space**，不是 parent-local；AnimationCollision 在此空间上合成角色根和附属碰撞体偏移。
 
-`AnimationSystem::attachAnimation` 指定骨架、求解器、root motion 策略及骨架原点相对物理物体中心的偏移。胶囊中心在离地 1 米时可用 `{0,-1,0}` 让动画根落地。`World::update(dt)` 在 `ScriptRuntime::tick` 的 gameplay fixedUpdate 之后调用。原生无 JS 调度者直接调用它。
+`AnimationSystem::attachAnimation` 指定骨架、求解器及骨架原点相对实体根的偏移。胶囊中心在离地 1 米时可用 `{0,-1,0}` 让动画根落地。`World::update(dt)` 在 `ScriptRuntime::tick` 的 gameplay fixedUpdate 之后调用。原生无 JS 调度者直接调用它。
 
-`rootMotion=true` 时 MotionSystem 通过现有角色 sweep/slide 与站立查询接受位移；神经控制器在下一帧用真实根姿态校正缓存预测，阻挡位移不会累加。`false` 用于 gameplay 已经驱动位移的角色，上层消费姿态而不重复移动角色。此时也会把 gameplay 的真实根姿态反馈给求解器。
+根运动由独立 RootMotionBinding 消费，可选择直接 Transform、任意形状的 kinematic 碰撞移动或直立胶囊的 grounded 移动。未挂接该组件时只求解姿态。神经控制器在下一帧用实际根姿态校正预测，阻挡位移不会累加。
 
 `setAnimationSolver` 在相同骨架上替换求解器并保留当前姿态。禁用实体暂停求解，销毁实体释放求解器和碰撞体。瞬移或需要清空接触锁定时调用 `resetAnimation`。`detachAnimation` 释放求解器及关节碰撞体、清空关节姿态并移除之后的骨架快照；改用不同骨架布局前先 detach，然后重新绑定对应关节碰撞体。
 
@@ -43,9 +43,9 @@ AI4Animation 在下一次 10 Hz 预测时读取所选风格，沿用既有序列
 
 ## 蒙皮和当前场景
 
-`SkinnedMesh` 按骨骼名字绑定到 Animation 骨架，与具体 Solver 无关。RenderSystem 将当前 joint-world 矩阵乘以资源的 inverse-bind 矩阵，生成快照中的 palette。渲染线程执行 CPU 线性混合蒙皮，将同一份变形顶点用于 G-buffer 和光追几何，并按姿态变化 refit 每个角色的动态 BLAS。网格绑定改变时只创建/释放对应几何资源；静态与其他角色 BLAS 保留。禁用角色仍保留网格与最终姿态。运动向量保存上一次实际渲染的变形位置，因此丢弃仿真快照、重复呈现与窗口恢复不会误用 simulation 的前一帧。
+`SkinnedMesh` 按骨骼名字绑定到 JointPose 的布局；该姿态可来自 Animator，也可由原生或脚本手工提供，与具体 Solver 无关。RenderSystem 将当前 joint-world 矩阵乘以资源的 inverse-bind 矩阵，生成快照中的 palette。渲染线程执行 CPU 线性混合蒙皮，将同一份变形顶点用于 G-buffer 和光追几何，并按姿态变化 refit 每个角色的动态 BLAS。网格绑定改变时只创建/释放对应几何资源；静态与其他角色 BLAS 保留。禁用角色仍保留网格与最终姿态。运动向量保存上一次实际渲染的变形位置，因此丢弃仿真快照、重复呈现与窗口恢复不会误用 simulation 的前一帧。
 
-默认 Rain Court 的 Kiln 使用双足 ONNX 控制器与上游人体网格，Ash 使用四足 ONNX 控制器与狗网格。胶囊保留为不可见的运动学碰撞体。Locomotion 和 Companion 用实际移动速度、朝向与动作名驱动统一动画输入，二者均使用 `rootMotion:false`，由 gameplay 负责移动。Companion 定期寻路到主角后方，转向、加速追赶，并在靠近时减速停下；导航和连续扫掠复用 PhysicsScene。
+默认 Rain Court 的 Kiln 使用双足 ONNX 控制器与上游人体网格，Ash 使用四足 ONNX 控制器与狗网格。胶囊保留为不可见的运动学碰撞体。Locomotion 和 Companion 用实际移动速度、朝向与动作名驱动统一动画输入，二者显式挂接 grounded RootMotionBinding，由 gameplay 提供意图、求解器生成根运动。Companion 定期寻路到主角后方，转向、加速追赶，并在靠近时减速停下；导航和连续扫掠复用 PhysicsScene。
 
 网格由 `export_meshes.py` 从原始 GLB 离线导出成 内嵌 `SKN1` 格式的 `.asset`：骨骼绑定、位置、法线、线性顶点颜色、四个关节索引/权重和三角形索引。原始皮肤骨架中不参与求解的骨骼映射到最近的求解器祖先，并保留绑定姿态修正。狗的 base-color 纹理离线采样为顶点颜色；当前未增加运行时纹理采样或 GPU 蒙皮。资产来源和几何数量见 `Projects/Afterlight/Content/models/characters.asset`。
 
@@ -78,20 +78,21 @@ ONNX 图包含冻结的统计归一化、ELU/线性/FiLM、按 channel 分组的
 AssetManager assets{Project(projectDirectory)};
 registerEngineAssets(assets);
 auto asset = assets.load<animation::Asset>(AssetPath("/Game/animations/ai4animation/biped/controller"));
-world.attachAnimation(id, *asset, true, {0,-1,0});
-world.setAnimationAttribute(id, "locomotion.style", "Neutral");
+world.animation.attachAnimation(id, *asset, {0,-1,0});
+world.motion.bindRootMotion(id, {RootMotionBinding::Mode::Grounded, CollisionLayer::All, true});
+world.animation.setAnimationAttribute(id, "locomotion.style", "Neutral");
 animation::Input input;
 input.action = "Locomotion";
 input.desiredVelocity = {0,0,1};
-world.setAnimationInput(id, input);
+world.animation.setAnimationInput(id, input);
 // Each native simulation tick, after gameplay:
-world.updateAnimations(1.f/60);
+world.update(1.f/60);
 ```
 
 ```javascript
-// Project virtual paths. Gameplay-controlled movement uses rootMotion:false.
+// Project virtual paths. No rootMotion component means gameplay controls movement.
 Engine.animation(id, '/Game/animations/ai4animation/biped/controller', {
-    rootMotion: false, rootOffset: {x:0, y:-1, z:0}
+    rootOffset: {x:0, y:-1, z:0}
 });
 Engine.skinMesh(id, '/Game/models/biped');
 // Persistent setting, independent of per-frame input:
@@ -104,7 +105,7 @@ Engine.animationReset(id);
 Engine.animationDetach(id);
 ```
 
-原生绑定网格使用 `world.setSkinnedMesh(id, SkinnedMesh::load(path))`；先挂接骨架，再绑定网格。更换同骨架 Solver 不需要重新绑定网格。
+原生绑定网格使用 `world.animation.setSkinnedMesh(id, assets.load<SkinnedMesh>(path))`；先挂接骨架，再绑定网格。更换同骨架 Solver 不需要重新绑定网格。
 
 ## 导出和验证
 
@@ -127,7 +128,7 @@ powershell -ExecutionPolicy Bypass -File tools/build.ps1 -Test
 
 ### 跟随与根运动
 
-人和狗均使用 `rootMotion:true`：Locomotion / Companion 负责寻路、目标速度和动作意图；Solver 同时生成身体动作与根位移/旋转；MotionSystem 通过碰撞和可行走区域检查应用根运动，下一帧实际根姿态反馈给 Solver。该分工同样适用于未来带 root motion 的 clip 或 motion matching 求解器，不在玩法脚本内绑定神经网络类型。
+人和狗均显式挂接 grounded RootMotionBinding：Locomotion / Companion 负责寻路、目标速度和动作意图；Solver 同时生成身体动作与根位移/旋转；MotionSystem 通过碰撞和可行走区域检查应用根运动，下一帧实际根姿态反馈给 Solver。该分工同样适用于未来带 root motion 的 clip 或 motion matching 求解器，不在玩法脚本内绑定神经网络类型。
 
 对应原始四足 `Program.Control` → `RootModule.Series.Control` → `Program.Animate`：先对目标速度/方向平滑并预测 0.5 秒轨迹，每 0.1 秒预测一次动作序列，再每帧采样/混合序列中的根姿态与骨骼。上游不会先把 Actor 转到目标方向，再丢弃网络的根旋转。脚本直接修改狗的 yaw 会绕过预测的转向和脚步，并迫使缓存每帧重定位；原先每 0.45 秒重新寻路因此产生周期性的转向突变。停止时传零 facing，沿用 controller 内的轨迹方向，避免追着残余路径点旋转。
 

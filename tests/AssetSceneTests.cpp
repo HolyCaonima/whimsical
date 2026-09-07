@@ -66,11 +66,8 @@ static void payloadStorage(const fs::path& directory) {
             "Payload files cannot acquire asset references");
     rejects([&] { AssetPath direct("/Game/blobs/weights.onnx"); },
             "Virtual asset paths cannot target a payload extension");
-    rejects(
-        [&] {
-            AssetRef::fromJson({{"id", ref.id}, {"path", "/Game/blobs/weights.onnx"}});
-        },
-        "Serialized asset references cannot point directly to a payload");
+    rejects([&] { AssetRef::fromJson({{"id", ref.id}, {"path", "/Game/blobs/weights.onnx"}}); },
+            "Serialized asset references cannot point directly to a payload");
     rejects([&] { assets.save(wrapper, external, "inline bytes"); },
             "External storage cannot also contain an inline payload");
     auto ambiguous = inlineHeader.json();
@@ -237,7 +234,8 @@ static void scene(const fs::path& directory) {
     auto deletedId = world.get<Identity>(dead).persistentId;
     world.resources.references["temporary"] = deletedId;
     world.destroy(dead);
-    check(!world.resources.references.count("temporary"), "Destroy must remove named references to dead Objects");
+    check(!world.resources.references.count("temporary"),
+          "Destroy must remove named references to dead Objects");
     auto prop = spawnTest(world, "Duplicate name", Shape::Box, {1, 10, 0}, {1, 2, 3}, 0, false, false);
     auto other = spawnTest(world, "Duplicate name", Shape::Box, {2, 10, 0}, {1, 1, 1}, 1, false, false);
     world.transforms.setTransform(prop, {{3, 10, 1}, glm::angleAxis(.4f, vec3(0, 1, 0))});
@@ -245,8 +243,8 @@ static void scene(const fs::path& directory) {
     world.render.setVisible(prop, false);
     world.setEnabled(other, false);
     world.animation.setAnimationJoints(prop, {{{0, 1, 0}, quat(1, 0, 0, 0)}});
-    world.animation.addAnimationCollider(prop, 0, ColliderShape::box(vec3(.1f)), {{0, .2f, 0}, quat(1, 0, 0, 0)},
-                               false);
+    world.animation.addAnimationCollider(prop, 0, ColliderShape::box(vec3(.1f)),
+                                         {{0, .2f, 0}, quat(1, 0, 0, 0)}, false);
     world.animation.addAnimationCollider(oldPlayer, 0, ColliderShape::capsule(.1f, .3f), {}, false);
     world.animation.setAnimationAttribute(oldPlayer, "locomotion.style", "Zombie");
     world.resources.navigation.planeTolerance = .03f;
@@ -272,7 +270,8 @@ static void scene(const fs::path& directory) {
     scripts.loadScene(saved);
     check(world.gameplay.playerId != oldPlayer && !world.physics().contains(oldBody),
           "Reload must invalidate old Entity and physics identities");
-    rejects([&] { world.registry().require(oldPlayer); }, "A stale Entity must never target a newly loaded Object");
+    rejects([&] { world.registry().require(oldPlayer); },
+            "A stale Entity must never target a newly loaded Object");
     check(world.resolveObject(savedObjectPath) == world.gameplay.playerId && !world.findObject(deletedId),
           "Object identity must survive while deleted objects stay absent");
     check(ScenePersistence::capture(world, assets).json() == expected,
@@ -302,8 +301,8 @@ static void scene(const fs::path& directory) {
     rejects([&] { bad.json(); }, "Dangling persistent references must be rejected");
     bad = original->scene;
     for (auto& o : bad.entities)
-        if (o.animation) {
-            o.animation->asset.id = newPersistentId();
+        if (auto animation = o.components.find<SceneAnimation>()) {
+            animation->asset.id = newPersistentId();
             break;
         }
     auto badHeader = header("Map");
@@ -313,7 +312,8 @@ static void scene(const fs::path& directory) {
     auto entityBefore = world.gameplay.playerId;
     rejects([&] { scripts.loadScene(AssetPath("/Game/Maps/Broken")); },
             "Missing dependency must reject scene loading");
-    check(world.gameplay.playerId == entityBefore && ScenePersistence::capture(world, assets).json() == stateBefore,
+    check(world.gameplay.playerId == entityBefore &&
+              ScenePersistence::capture(world, assets).json() == stateBefore,
           "Dependency failure must leave live scene untouched");
     // Reopen the copied project and load the saved asset using a different registry/World.
     AssetManager reopened{Project(directory / ".project")};
@@ -365,8 +365,11 @@ static void staticAssets(const fs::path& directory) {
     shaderHeader.metadata = standard->header().metadata;
     auto shaderRef = assets.save(AssetPath("/Game/TestShader"), shaderHeader, standard->source);
     Json material{{"shader", shaderRef.json()},
-                  {"properties", {{"baseColor", Json::array({1,1,1})}, {"roughness", .8},
-                                  {"uvScale", Json::array({2,2})}, {"normalStrength", .5}}},
+                  {"properties",
+                   {{"baseColor", Json::array({1, 1, 1})},
+                    {"roughness", .8},
+                    {"uvScale", Json::array({2, 2})},
+                    {"normalStrength", .5}}},
                   {"textures", {{"baseColor", texRef.json()}}}};
     auto matRef = assets.save(AssetPath("/Game/Linen"), header("Material"), material.dump());
     SceneDocument scene;
@@ -374,13 +377,13 @@ static void staticAssets(const fs::path& directory) {
     scene.materialAssets = {{0, matRef}, {1, matRef}};
     for (int i = 0; i < 2; ++i) {
         SceneEntity o;
-        o.transform.emplace();
-        o.render.emplace();
+        o.components.set(SceneTransform{});
+        o.components.set(SceneRender{});
         o.id = newPersistentId();
         o.name = "Triangle";
-        o.render->mesh = meshRef;
-        o.transform->local.position = vec3(float(i) * 2, 0, 0);
-        o.render->appearance.material = uint32_t(i);
+        o.components.find<SceneRender>()->mesh = meshRef;
+        o.components.find<SceneTransform>()->local.position = vec3(float(i) * 2, 0, 0);
+        o.components.find<SceneRender>()->appearance.material = uint32_t(i);
         scene.entities.push_back(o);
     }
     AssetPath map("/Game/Kit");
@@ -399,13 +402,14 @@ static void staticAssets(const fs::path& directory) {
     fs::rename(directory / "Content/Triangle.asset", directory / "Content/MovedTriangle.asset");
     assets.scan();
     ScenePersistence::load(world, assets, map);
-    check(ScenePersistence::capture(world, assets).entities[0].render->mesh->path ==
+    check(ScenePersistence::capture(world, assets).entities[0].components.find<SceneRender>()->mesh->path ==
               AssetPath("/Game/MovedTriangle"),
           "Static meshes must survive an asset move by ID");
     auto id = world.registry().entities().back();
     world.setEnabled(id, false);
     auto disabled = world.snapshot({}, 1, 0, 0);
-    check(disabled.staticMeshes.size() == 2 && !disabled.proxies[world.get<Renderable>(id).slot].attributes.visible,
+    check(disabled.staticMeshes.size() == 2 &&
+              !disabled.proxies[world.get<Renderable>(id).slot].attributes.visible,
           "Visibility toggles must retain static geometry bindings");
     world.clearScene();
     auto empty = world.snapshot({}, 2, 0, 0);

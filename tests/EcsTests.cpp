@@ -1,5 +1,6 @@
 #include "TestProject.h"
 #include "core/World.h"
+#include "ecs/DataComponent.h"
 #include "core/FrameMailbox.h"
 #include "scene/ScenePersistence.h"
 #include "scripting/ScriptRuntime.h"
@@ -110,11 +111,8 @@ static void hierarchy() {
           "Published snapshots remain immutable");
     rejects([&] { w.transforms.setParent(parent, child); }, "Hierarchy cycles must fail before mutation");
     auto local = w.get<Transform>(child).local;
-    rejects(
-        [&] {
-            w.transforms.setLocal(child, {{std::numeric_limits<float>::quiet_NaN(), 0, 0}});
-        },
-        "Reject invalid local pose");
+    rejects([&] { w.transforms.setLocal(child, {{std::numeric_limits<float>::quiet_NaN(), 0, 0}}); },
+            "Reject invalid local pose");
     check(w.get<Transform>(child).local.position == local.position, "Rejected write preserves authored pose");
     w.setEnabled(parent, false);
     check(!w.enabled(child) && !w.physics().body(joint).enabled,
@@ -148,7 +146,7 @@ static void animationLifetime() {
     auto e = w.create();
     w.transforms.add(e);
     auto skeleton = std::make_shared<animation::Skeleton>(std::vector<animation::Joint>{{"root", -1, {}}});
-    w.animation.attachAnimation(e, skeleton, std::make_unique<RestSolver>(), false);
+    w.animation.attachAnimation(e, skeleton, std::make_unique<RestSolver>());
     check(!w.has<Collider>(e) && !w.has<Renderable>(e),
           "Headless animation needs neither rendering nor physics");
     w.update(.1f);
@@ -220,8 +218,9 @@ static void updateDependencies() {
     w.motion.add(parent, body);
     auto skeleton = std::make_shared<animation::Skeleton>(std::vector<animation::Joint>{{"root", -1, {}}});
     float seenChild = -1, seenParent = -1;
-    w.animation.attachAnimation(child, skeleton, std::make_unique<ObservedSolver>(seenChild), false);
-    w.animation.attachAnimation(parent, skeleton, std::make_unique<ObservedSolver>(seenParent), true);
+    w.animation.attachAnimation(child, skeleton, std::make_unique<ObservedSolver>(seenChild));
+    w.animation.attachAnimation(parent, skeleton, std::make_unique<ObservedSolver>(seenParent));
+    w.motion.bindRootMotion(parent, {RootMotionBinding::Mode::Grounded});
     w.update(.1f);
     check(std::abs(seenChild - 2.1f) < .0001f && seenParent == 0,
           "Animation evaluates hierarchy ancestors before children, independent of creation order");
@@ -258,11 +257,12 @@ if(Engine.alive(stale))throw Error('stale');
 Engine.enabled(parent,false);
 )JS");
     auto document = ScenePersistence::capture(w, testAssets());
-    check(document.entities.size() == 3 && document.json().at("version").uint() == 4,
+    check(document.entities.size() == 3 && document.json().at("version").uint() == 5,
           "Persist live entities in component schema");
     auto decoded = SceneDocument::fromJson(Json::parse(document.json().dump()));
     check(decoded.json() == document.json(), "Optional component roundtrip is lossless");
-    check(decoded.entities.back().joints && decoded.entities.back().joints->empty(),
+    check(decoded.entities.back().components.find<SceneJoints>() &&
+              decoded.entities.back().components.find<SceneJoints>()->poses.empty(),
           "Empty authored joint component retains presence");
     auto directory = std::filesystem::path(AFTERLIGHT_ROOT) / "build" / ("ecs-" + newPersistentId());
     AssetManager local{Project::create(directory, "ECS lifecycle")};
@@ -283,11 +283,133 @@ Engine.enabled(parent,false);
     check(near(w.get<Transform>(child).world.position, {4, 0, 0}) && !w.enabled(child),
           "Loaded hierarchy derives world transform and activation");
     auto invalid = restored;
-    invalid.entities.back().transform->parent = newPersistentId();
+    invalid.entities.back().components.find<SceneTransform>()->parent = newPersistentId();
     rejects([&] { invalid.validate(); }, "Missing parent must fail validation");
     invalid = restored;
-    invalid.entities[1].transform->parent = invalid.entities.back().id;
+    invalid.entities[1].components.find<SceneTransform>()->parent = invalid.entities.back().id;
     rejects([&] { invalid.validate(); }, "Serialized hierarchy cycle must fail validation");
+}
+struct Energy {
+    int value;
+};
+static void componentContracts() {
+    static int preparations = 0;
+    auto contract = dataComponent<Energy>(
+        "energy", [](const Json& j) { return Energy{int(j.at("value").number())}; },
+        [](const Energy& v) { return Json{{"value", v.value}}; },
+        [](const Energy& v) {
+            if (v.value < 0)
+                throw std::invalid_argument("Negative energy");
+        });
+    contract.dependencies = {{"transform"}};
+    auto prepare = contract.prepare;
+    contract.prepare = [prepare](const World& world, Entity entity, const std::any& value,
+                                 AssetManager& assets) {
+        ++preparations;
+        return prepare(world, entity, value, assets);
+    };
+    componentCatalog().add(std::move(contract));
+    int notifications = 0;
+    World w;
+    w.onChange<Energy>([&](Entity) { ++notifications; });
+    ScriptRuntime scripts(w, testAssets());
+    scripts.execute(R"JS(
+var actor=Engine.create({name:'Contract',components:{energy:{value:3},transform:{}}});
+if(Engine.component(actor,'energy').value!==3||Engine.entities(['energy']).length!==1)throw Error('registered codec/query');
+var value=Engine.component(actor,'energy');value.value=20;
+if(Engine.component(actor,'energy').value!==3)throw Error('authored copy');
+)JS");
+    auto e = w.registry().entities().front();
+    check(notifications == 1, "One notification after component group commits");
+    rejects([&] { w.edit<Energy>(e, [](Energy& v) { v.value = -1; }); },
+            "Native edit shares component validation");
+    check(w.get<Energy>(e).value == 3 && notifications == 1,
+          "Rejected draft never changes state or publishes");
+    w.edit<Energy>(e, [](Energy& v) { v.value = 7; });
+    check(notifications == 2, "Native edit publishes through the same contract");
+    rejects([&] { w.remove<Transform>(e); }, "Registered dependency participates in native removal");
+    auto data = w.create("Unchanged");
+    rejects([&] { w.add<Energy>(data, Energy{1}); }, "Native attach shares dependencies");
+    scripts.execute(R"JS(
+var empty=Engine.create({components:{data:{keep:true}}});
+try { Engine.addComponents(empty,{transform:{},energy:{value:9},render:{material:999}}); throw Error('expected reject'); }
+catch(e) { if(Engine.hasComponent(empty,'transform')||Engine.hasComponent(empty,'energy'))throw Error('partial preparation'); }
+try { Engine.addComponents(empty,{transform:{},joints:[],jointColliders:[{joint:0,shape:{type:'box',halfExtents:[1,1,1]},local:{},blocking:false}]}); throw Error('expected binding reject'); }
+catch(e) { if(Engine.hasComponent(empty,'transform')||Engine.hasComponent(empty,'joints')||Engine.hasComponent(empty,'jointColliders'))throw Error('partial installation'); }
+if(!Engine.data(empty).keep)throw Error('rollback changed preexisting data');
+)JS");
+    check(w.physics().size() == 0, "Failed component group releases its derived bindings");
+    auto document = ScenePersistence::capture(w, testAssets());
+    auto decoded = SceneDocument::fromJson(Json::parse(document.json().dump()));
+    check(decoded.entities.front().components.find<Energy>()->value == 7,
+          "Registered component persists without SceneEntity edits");
+    auto revision = w.physics().revision();
+    w.motion.add(e, {});
+    {
+        auto batch = w.changes();
+        w.transforms.setLocal(e, {{1, 0, 0}});
+        w.transforms.setLocal(e, {{2, 0, 0}});
+        rejects([&] { (void)w.snapshot({}, 0, 0, 0); },
+                "Extraction cannot observe uncommitted backend state");
+        batch.commit();
+    }
+    check(w.physics().revision() == revision + 2 &&
+              near(w.physics().body(w.get<Collider>(e).body).pose.position, {2, 0, 0}),
+          "Batch commits only the final derived pose");
+    auto oldBody = w.get<Collider>(e).body;
+    auto id = w.get<Identity>(e).persistentId;
+    auto directory =
+        std::filesystem::path(AFTERLIGHT_ROOT) / "build" / ("component-contract-" + newPersistentId());
+    AssetManager local{Project::create(directory, "Component contracts")};
+    registerEngineAssets(local);
+    auto saved = ScenePersistence::save(w, local, AssetPath("/Game/Maps/Contracts"), "Contracts");
+    preparations = 0;
+    ScenePersistence::load(w, local, saved.path);
+    check(preparations == 1 && !w.registry().contains(e) && !w.physics().contains(oldBody),
+          "Scene commits prepared components once and cannot alias prior identities or body handles");
+    e = w.findObject(id);
+    check(w.get<Energy>(e).value == 7 && notifications == 4,
+          "Scene commit publishes new components through World subscriptions");
+    w.destroy(e);
+    check(notifications == 5, "Entity destruction uses registered component lifecycle");
+}
+static void independentPoseAndMotion() {
+    World w;
+    w.resources.materials.emplace_back();
+    auto layout = std::make_shared<animation::Skeleton>(std::vector<animation::Joint>{{"root", -1, {}}});
+    auto e = w.create();
+    w.transforms.add(e);
+    w.render.add(e, {});
+    w.animation.setAnimationJoints(e, {{{0, 1, 0}}}, layout);
+    auto mesh = std::make_shared<SkinnedMesh>();
+    mesh->bindings.push_back({"root", mat4(1)});
+    w.animation.setSkinnedMesh(e, mesh);
+    check(!w.has<Animator>(e) && w.snapshot({}, 0, 0, 0).skins.size() == 1,
+          "Named manual pose drives skin without Animator");
+    auto before = w.get<JointPose>(e).model;
+    rejects([&] { w.animation.setAnimationJoints(e, {}); }, "Bound joint layout cannot shrink");
+    check(w.get<JointPose>(e).model.size() == before.size(), "Rejected pose keeps its derived state");
+    w.remove<JointPose>(e);
+    check(!w.has<Skin>(e) && w.has<Renderable>(e),
+          "Removing pose cascades its skin while preserving render capability");
+    float observed = 0;
+    w.animation.attachAnimation(e, layout, std::make_unique<ObservedSolver>(observed));
+    w.motion.bindRootMotion(e, {});
+    w.update(.25f);
+    check(!w.has<Collider>(e) && near(w.get<Transform>(e).world.position, {.25f, 0, 0}),
+          "Transform root motion needs no collider or ground");
+    w.remove<RootMotionBinding>(e);
+    PhysicsBody body;
+    body.shape = ColliderShape::box(vec3(.2f));
+    body.motion = BodyMotion::Kinematic;
+    w.motion.add(e, body);
+    w.motion.bindRootMotion(e, {RootMotionBinding::Mode::Kinematic});
+    w.update(.25f);
+    check(near(w.get<Transform>(e).world.position, {.5f, 0, 0}),
+          "Box collider can consume kinematic root motion");
+    w.remove<Animator>(e);
+    check(!w.has<RootMotionBinding>(e) && !w.has<JointPose>(e) && w.has<Collider>(e),
+          "Producer removal releases owned pose and motion consumer");
 }
 static void ranges() {
     RangeAllocator ranges;
@@ -333,10 +455,12 @@ static void legacyImport() {
                 {"jointColliders", Json::array()}};
     legacy["objects"] = Json::array({object});
     auto migrated = SceneDocument::fromJson(legacy);
-    check(migrated.entities.size() == 1 && migrated.entities[0].transform && migrated.entities[0].render &&
-              migrated.entities[0].collider && !migrated.entities[0].joints &&
-              migrated.json().at("version").uint() == 4,
-          "Legacy import preserves authored collider semantics while saving optional v4 components");
+    check(migrated.entities.size() == 1 && migrated.entities[0].components.find<SceneTransform>() &&
+              migrated.entities[0].components.find<SceneRender>() &&
+              migrated.entities[0].components.find<SceneCollider>() &&
+              !migrated.entities[0].components.find<SceneJoints>() &&
+              migrated.json().at("version").uint() == 5,
+          "Legacy import preserves authored collider semantics while saving optional v5 components");
 }
 int main() {
     try {
@@ -345,6 +469,8 @@ int main() {
         animationLifetime();
         updateDependencies();
         persistenceAndScripts();
+        componentContracts();
+        independentPoseAndMotion();
         ranges();
         legacyImport();
         std::cout

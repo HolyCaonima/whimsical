@@ -29,6 +29,7 @@ class RenderScene {
     void mark(uint32_t slot, Mark kind);
 
   public:
+    void exchangeScene(RenderScene&);
     const std::vector<RenderProxy>& proxies() const {
         return proxies_;
     }

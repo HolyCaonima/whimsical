@@ -1,7 +1,7 @@
 ALAS1
 {"id": "d3ba56b8cba6483c84816c14b8f4d738", "name": "HoneybudCourt", "type": "Map", "version": 1, "storage": "embedded", "metadata": {"authoring": "Blender MCP", "description": "Original warm miniature garden kit; see SourceArt/Honeybud."}}
 {
-  "version": 4,
+  "version": 5,
   "materials": [
     {
       "shader": {
@@ -30921,7 +30921,6 @@ ALAS1
             "id": "2bba3c43df0465a492c7f61d22925992",
             "path": "/Game/animations/ai4animation/biped/controller"
           },
-          "rootMotion": true,
           "rootOffset": [
             0,
             -1,
@@ -30934,6 +30933,10 @@ ALAS1
         "skin": {
           "id": "60d964cdd9c23c78ff55830a80c4d552",
           "path": "/Game/models/biped"
+        },
+        "rootMotion": {
+          "mode": "grounded",
+          "preserveAnchor": true
         }
       }
     },
@@ -30992,7 +30995,6 @@ ALAS1
             "id": "901c6c7656b1191e461e33dc134f56e9",
             "path": "/Game/animations/ai4animation/quadruped/controller"
           },
-          "rootMotion": true,
           "rootOffset": [
             0,
             -0.35,
@@ -31003,6 +31005,10 @@ ALAS1
         "skin": {
           "id": "919b358044ecf70cfa51fe26ef161dfa",
           "path": "/Game/models/dog"
+        },
+        "rootMotion": {
+          "mode": "grounded",
+          "preserveAnchor": true
         }
       }
     }

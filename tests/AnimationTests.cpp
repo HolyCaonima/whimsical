@@ -94,6 +94,7 @@ static void framework() {
     world.motion.configureCollider(1, CollisionLayer::World, true, true, false);
     auto owner = spawnTest(world, "actor", Shape::Capsule, {0, 1, 0}, {1, 1, 1}, 0, false, false);
     world.animation.attachAnimation(owner, skeleton, std::make_unique<ConstantSolver>(1.f));
+    world.motion.bindRootMotion(owner, {RootMotionBinding::Mode::Grounded});
     world.update(.1f);
     close(world.get<Transform>(owner).world.position.x, .1f, "Animation root motion reaches physics");
     auto collider = world.animation.addAnimationCollider(owner, 2, ColliderShape::box(vec3(.1f)), {}, false);
@@ -116,11 +117,11 @@ static void scriptIntegration() {
     ScriptRuntime script(world, testAssets());
     script.initialize();
     auto id = world.gameplay.playerId;
-    script.execute(
-        "Engine.animation(" + std::to_string(id) +
-        ", '/Game/animations/ai4animation/biped/controller', {rootMotion:false,rootOffset:{y:-1}});"
-        "Engine.animationInput(" +
-        std::to_string(id) + ", {action:'Idle'});");
+    script.execute("Engine.animationDetach(" + std::to_string(id) + ");Engine.animation(" +
+                   std::to_string(id) +
+                   ", '/Game/animations/ai4animation/biped/controller', {rootOffset:{y:-1}});"
+                   "Engine.animationInput(" +
+                   std::to_string(id) + ", {action:'Idle'});");
     Input input;
     script.tick(1.f / 60, input);
     check(world.get<JointPose>(id).model.size() == 23, "JS tick must evaluate attached animation");

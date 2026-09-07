@@ -149,7 +149,7 @@ Separation separation(CapsuleQuery c, const PhysicsBody& b) {
 }
 float shapeRadius(const ColliderShape& shape) {
     return shape.type == ColliderType::Box ? glm::length(shape.halfExtents)
-                                          : shape.radius + shape.halfSegment;
+                                           : shape.radius + shape.halfSegment;
 }
 vec3 supportPoint(const PhysicsBody& b, vec3 direction) {
     vec3 local = glm::conjugate(b.pose.rotation) * direction;
@@ -157,8 +157,7 @@ vec3 supportPoint(const PhysicsBody& b, vec3 direction) {
     if (b.shape.type == ColliderType::Box)
         point = glm::sign(local) * b.shape.halfExtents;
     else
-        point = glm::normalize(local) * b.shape.radius +
-                vec3(0, glm::sign(local.y) * b.shape.halfSegment, 0);
+        point = glm::normalize(local) * b.shape.radius + vec3(0, glm::sign(local.y) * b.shape.halfSegment, 0);
     return b.pose.position + b.pose.rotation * point;
 }
 Separation separation(const ShapeQuery& a, const PhysicsBody& b) {
@@ -168,8 +167,7 @@ Separation separation(const ShapeQuery& a, const PhysicsBody& b) {
         PhysicsBody local = b;
         local.pose = {inverse * (b.pose.position - a.pose.position), inverse * b.pose.rotation};
         auto hit = separation(CapsuleQuery{vec3(0), a.shape.radius, a.shape.height()}, local);
-        return {hit.distance, a.pose.rotation * hit.normal,
-                a.pose.position + a.pose.rotation * hit.point};
+        return {hit.distance, a.pose.rotation * hit.normal, a.pose.position + a.pose.rotation * hit.point};
     }
     if (b.shape.type == ColliderType::Capsule) {
         PhysicsBody other;
@@ -310,6 +308,8 @@ BodyHandle PhysicsScene::create(const PhysicsBody& b) {
     checkThread();
     validate(b.shape);
     validate(b.pose);
+    if (!nextGeneration_)
+        throw std::overflow_error("Physics handle generation exhausted");
     uint32_t index;
     if (free_.empty()) {
         index = uint32_t(slots_.size());
@@ -319,6 +319,7 @@ BodyHandle PhysicsScene::create(const PhysicsBody& b) {
         free_.pop_back();
     }
     auto& s = slots_[index];
+    s.generation = nextGeneration_++;
     s.body = b;
     s.bounds = bodyBounds(b);
     s.alive = true;
@@ -332,11 +333,17 @@ void PhysicsScene::destroy(BodyHandle h) {
         broadphase_.remove(s.leaf);
     s.leaf = -1;
     s.alive = false;
-    ++s.generation;
-    if (!s.generation)
-        ++s.generation;
     free_.push_back(h.slot);
     ++revision_;
+}
+void PhysicsScene::exchangeScene(PhysicsScene& other) {
+    checkThread();
+    other.checkThread();
+    slots_.swap(other.slots_);
+    free_.swap(other.free_);
+    std::swap(broadphase_, other.broadphase_);
+    std::swap(nextGeneration_, other.nextGeneration_);
+    revision_ += other.revision_ + 1;
 }
 const PhysicsBody& PhysicsScene::body(BodyHandle h) const {
     return require(h).body;
@@ -547,13 +554,13 @@ std::vector<PhysicsHit> PhysicsScene::overlapShape(const ShapeQuery& query, Quer
             continue;
         auto contact = separation(query, s.body);
         if (contact.distance < -Epsilon)
-            hits.push_back({{i, s.generation}, s.body.owner, contact.point, contact.normal,
-                            contact.distance, 0});
+            hits.push_back(
+                {{i, s.generation}, s.body.owner, contact.point, contact.normal, contact.distance, 0});
     }
     return hits;
 }
 std::optional<PhysicsHit> PhysicsScene::sweepShape(const ShapeQuery& query, vec3 delta, quat target,
-                                                  QueryFilter filter) const {
+                                                   QueryFilter filter) const {
     checkThread();
     validate(query.shape);
     validate(query.pose);
@@ -566,7 +573,7 @@ std::optional<PhysicsHit> PhysicsScene::sweepShape(const ShapeQuery& query, vec3
     // whose start and end boxes occupy exactly the same space.
     vec3 extent(radius + Skin);
     PhysicsBounds broad{glm::min(query.pose.position, query.pose.position + delta) - extent,
-                         glm::max(query.pose.position, query.pose.position + delta) + extent};
+                        glm::max(query.pose.position, query.pose.position + delta) + extent};
     std::optional<PhysicsHit> hit;
     float closest = 1;
     for (auto i : broadphase_.overlap(broad)) {
@@ -587,8 +594,8 @@ std::optional<PhysicsHit> PhysicsScene::sweepShape(const ShapeQuery& query, vec3
                 break;
             if (contact.distance <= Epsilon || iteration == 127) {
                 closest = t;
-                hit = PhysicsHit{{i, s.generation}, s.body.owner, contact.point, contact.normal,
-                                  length * t, t};
+                hit =
+                    PhysicsHit{{i, s.generation}, s.body.owner, contact.point, contact.normal, length * t, t};
                 break;
             }
             if (closing <= Epsilon)

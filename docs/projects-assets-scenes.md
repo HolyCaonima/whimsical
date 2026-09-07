@@ -2,7 +2,7 @@
 
 ## 架构边界
 
-`Project` 是独立内容根，`AssetManager` 是该 Project 的唯一资产注册与加载入口。`Asset` 是不可变资源；`SceneDocument` 是可序列化描述；`World` 是描述实例化后的运行时世界。`RenderScene` 仍是常驻渲染代理集合，常驻不等于磁盘持久化。
+`Project` 是独立内容根，`AssetManager` 是该 Project 的唯一资产注册与加载入口。`Asset` 是不可变资源；`SceneDocument` 是可序列化描述，其组件集合由 ComponentCatalog 统一编解码、校验与挂接；`World` 是描述实例化后的运行时世界。`RenderScene` 仍是常驻渲染代理集合，常驻不等于磁盘持久化。
 
 本次移除了 `animation::Library` 和 ScriptRuntime、ControllerAsset、SkinnedMesh 中的项目文件访问。类型解码器接收字节流和已解析依赖；ONNX Runtime 从 AssetManager 读取的字节建立 session。Renderer 只消费 Frame 中的 mesh 与姿态，不认识项目目录或持久 ID。SPIR-V 和 captures 是引擎构建／诊断文件，不属于 Project Content。
 
@@ -100,7 +100,7 @@ clearCache、重扫、保存不销毁 World、Solver 或 Frame 持有的旧资�
 | BodyHandle slot/generation | PhysicsScene 临时句柄 | 否 |
 | 材质／灯表下标 | Map 自身的表内索引 | 是，与 GPU/Entity 句柄无关 |
 
-切图保留 Entity ID 序列和 RenderScene/PhysicsScene 分配器，Registry 只存活实体：Entity 继续递增，物理槽 generation 递增，旧句柄不会指向新对象。渲染槽可复用，但通过 structural delta 发布；revision/topology 不归零，mailbox 增量链保持连续。切图重置时域历史，首个加载快照被覆盖时该标记仍会保留。
+切图一次转移准备好的组件与后端存储，并延续 Entity ID、物理 generation 和渲染版本序列。Registry 只存活实体，旧实体与物理句柄不会指向新对象。新渲染槽表通过 structural delta 发布，revision/topology 不归零。切图重置时域历史，首个加载快照被覆盖时该标记仍会保留。
 
 当前是单 World、单已加载 Map。尚未引入 streaming、同一 Map 多实例或跨 Map 活实体解析。持久 ID 查询使用映射表，热点继续使用整数 Entity。
 
@@ -108,7 +108,7 @@ clearCache、重扫、保存不销毁 World、Solver 或 Frame 持有的旧资�
 
 SceneDocument 保存：对象 ID/显示名/位置/旋转/启用/交互；RenderComponent 的 primitive、scale/offset/animationScale、材质索引和可见性；主碰撞体 shape/motion/layer/查询属性；关节碰撞体 joint/local/shape/blocking；动画与 mesh 引用、root-motion 选项、rootOffset 和实例属性；材质值表、灯表、相机、导航（含 planeTolerance）；player Object ID、命名 Object 引用、Map 脚本引用和显式 gameplay JSON data。
 
-Map 现写入 `version: 4`，以 `entities[].components` 保存实际存在的能力与父级持久 ID，变换保存 local。版本 3 在读取边界转换，1/2 仍被拒绝；ALAS1 资产信封版本仍为 1。六张现有地图、生成器及验证脚本已同步迁移，详细字段、组件依赖和脚本入口见 [ECS 架构](ecs.md)。
+Map 现写入 `version: 5`，以 `entities[].components` 保存实际存在的能力与父级持久 ID，变换保存 local。版本 3/4 在读取边界转换，1/2 仍被拒绝；ALAS1 资产信封版本仍为 1。六张现有地图、生成器及验证脚本已同步迁移，详细字段、组件依赖和脚本入口见 [ECS 架构](ecs.md)。
 
 材质可作为 Map 内嵌值；复用的材质是注册的 Material 资产。Shader 与 Texture 按持久 ID 解析。CPU 材质不保存 descriptor index，World 和 Frame 仅持有参数值与不可变资产引用，纹理绑定由 renderer 分配。
 

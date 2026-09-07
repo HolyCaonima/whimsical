@@ -1,98 +1,124 @@
-# ECS 对象与场景架构
+# ECS 组件契约
 
-实体是身份，能力由组件组成。`World::create()` 只创建 Identity，不分配 Transform、物理体、渲染槽或动画实例。`GameObject`、按形状推导碰撞的生产 `spawn` 配方及 World 内的动画旁表已经删除。World 保留组合入口、实体/地图生命周期、持久身份索引和快照发布；运动、层级、动画与渲染提取分别位于 `engine/ecs/`。
+实体只提供身份；能力由独立组件组合。World 管理实体、场景资源、系统调度和快照发布。组件接入不再依赖 World 的类型分支、SceneEntity 的固定可选字段或 ScriptRuntime 的组件名单。
 
-## 存储与边界
+## 一处注册，贯通全部入口
 
-`Registry` 使用按类型独立的有序组件池。查询从指定的第一个组件池开始，返回满足组件交集的 Entity ID；不遍历一个带全部可选字段的对象数组。选择有序池是为了保持现有物理/动画的确定性顺序、稳定组件地址，并支持带 unique_ptr 的求解器实例。当前没有引入 archetype 搬迁、任务线程或外部 ECS 依赖；后续可在不改变系统/序列化契约的情况下换成紧凑池。
+`ComponentCatalog` 是进程内的组件契约表，在启动阶段注册，运行阶段只读。每份契约声明：
 
-Entity 为非零 uint32，跨同一个 World 的地图重载保持递增，永不复用；耗尽时明确拒绝创建。存储只包含活实体，没有无限增长的 GameObject 墓碑。BodyHandle 继续使用物理后端的 slot/generation，Render slot 继续由 RenderScene 复用。三种身份互不替代，磁盘只保存持久 ID。
+- 稳定名称、运行时类型、描述类型及存在查询。
+- 描述的编解码、值校验和组合校验。
+- 必需依赖，以及依赖被移除时拒绝或级联移除的策略。
+- 由该组件拥有的派生组件，例如 Animator 拥有 JointPose。
+- 只读准备、安装、捕获与释放动作。
 
-| 组件 | 状态及写入入口 | 必需依赖 |
+`SceneEntity.components` 是按契约名称索引的描述集合，内容是描述值，不保存运行时句柄。脚本创建、组件组接入、查询、移除和 Map 读写使用同一张表。未知组件报错；未注册的原生普通数据仍可作为瞬态组件使用。Identity 和 Disabled 属于实体生命周期元数据，分别对应 Map 的 id/name 与 enabled，不走普通组件挂接接口。
+
+普通数据组件用 `dataComponent<T>` 注册即可，不需要编辑 World、场景结构或脚本分支：
+
+```cpp
+#include "ecs/DataComponent.h"
+struct Energy { int value; };
+auto type = dataComponent<Energy>("energy",
+    [](const Json& j) { return Energy{int(j.at("value").number())}; },
+    [](const Energy& v) { return Json{{"value", v.value}}; },
+    [](const Energy& v) {
+        if (v.value < 0) throw std::invalid_argument("Negative energy");
+    });
+type.dependencies = {{"transform"}};
+componentCatalog().add(std::move(type));
+```
+
+这个类型可经 `World::add/edit/remove<Energy>` 使用，也可经脚本及 Map 使用。原生 edit 先编辑副本，校验成功后替换并通知；失败不改变原值。原生 add 同样检查注册依赖。依赖为条件性的后端能力应由所属系统编辑，不通过普通数据 edit 改变其结构关系。
+
+带后端资源的组件通过 `component<Runtime, Description>` 定义契约。`prepare(const World&, ...)` 解析资产、创建待安装资源，只能读取世界；返回 `PreparedComponent`。安装和释放时，目录提供 `ComponentAccess`，允许访问组件存储及后端，不需要为扩展类型增加 World 的友元或类型分支。运行时类型声明 `using Ownership = SystemComponent`，阻止普通 add/edit 绕开其生命周期。组件保存资源句柄，不保存临时准备 World 的地址。
+
+## 所有权与派生关系
+
+| 组件 | 权威状态 / 派生状态 | 依赖 |
 | --- | --- | --- |
-| Identity | 名称、持久 ID；World 创建/销毁 | 无 |
-| Transform | local 是权威；world、children 是派生缓存；TransformSystem 写入 | 父级若非零，必须有 Transform |
-| Disabled | 本地启用标记；有效状态沿父链计算 | 无 |
-| Renderable | 外观、可选不可变静态网格；RenderSystem 管理派生槽位 | Transform |
-| Collider | PhysicsScene 中的唯一 BodyHandle；MotionSystem 管理体生命周期 | Transform |
-| Interactable | 交互标记；不隐式创建碰撞或渲染 | 无 |
-| Animator | 独立 Instance/Solver、输入、资产属性与根绑定 | Transform；rootMotion 还需要胶囊 Collider |
-| JointPose | 手工模型空间姿态，或 Animator 输出经 FK 得到的派生缓存 | Transform；有 Animator 时禁止手工覆盖 |
-| JointColliders | 关节碰撞能力标记；描述/体由 AnimationCollision 持有 | JointPose |
-| Skin | 不可变网格与按骨骼名生成的映射 | Animator、Renderable；不能同时绑定静态网格 |
-| ScriptData | 实体级 JSON 对象，脚本读取的是副本，显式写回 | 无 |
+| Transform | local、parent / world、children | 父级必须有 Transform |
+| Renderable | 外观、不可变静态网格 / render slot | Transform |
+| Collider | PhysicsScene 独占形状、运动分类、层、查询标志；组件持有唯一 BodyHandle | Transform |
+| Animator | Instance/Solver、输入、属性、根偏移 / 求解输出 | Transform |
+| RootMotionBinding | 根运动消费策略、碰撞 mask、是否保持动画锚点 | Animator；碰撞移动策略还依赖 Collider |
+| JointPose | 手工模型空间姿态及可选骨架布局；有 Animator 时是其拥有的 FK 结果 | Transform |
+| JointColliders | 绑定描述和物理体由 AnimationCollision 持有 | JointPose |
+| Skin | 不可变网格 / 根据 JointPose 布局解析的关节映射 | JointPose、Renderable |
+| Interactable | 交互标记 | 无 |
+| ScriptData | 实体级 JSON 对象 | 无 |
 
-碰撞 shape/motion/layer/flags 只在 PhysicsScene 中维护；没有另一份待同步的 Collider 描述。物理体 pose 是 Transform 的空间索引缓存，脚本不能直接写它。动画 Instance 独占 solver/local pose；JointPose 只缓存一次 FK，碰撞附件和渲染提取共同消费。站姿高度改变时 MotionSystem 调整 Animator 根偏移及其派生 JointPose，以保持脚底锚点，随后传播 Transform。
+Transform 的 world 是空间事实；物理体 pose、关节附件 pose 和 render proxy 是派生镜像。PhysicsScene 中的形状与查询标志不在 ECS 再保存一份。Animator 独占 solver/local pose，JointPose 缓存一次 FK，碰撞附件和蒙皮共用这个结果。手工 JointPose 可携带骨架名称及父子布局，直接驱动 Skin，不必创建 Animator。
 
-材质与资产绑定、环境灯、当前轨道相机、导航参数属于 SceneResources；选中状态、当前玩家、UI 路径反馈属于 GameplayState。它们是世界级资源，不给每个实体附赠一份。项目自身的车辆速度、圈数等规则仍由项目脚本负责；需要随实体持久化的数据放入 ScriptData。自定义原生运行时数据可通过 `add<T>/edit<T>/remove<T>` 组合；新磁盘组件必须显式扩展 SceneEntity 的编解码与依赖校验，未知格式不会被静默忽略。
+Skin 与静态 mesh 共用当前后端的一个 render binding，因此二者不能同时挂到一个 Renderable；该限制在绑定入口校验，不要求所有渲染实体拥有 Animator。蒙皮资源与动画求解器仍分离。
 
-## 生命周期与层级
+RootMotionBinding 可选 `transform`、`kinematic` 或 `grounded`。前者直接合成刚体位移/旋转，不需要物理体；kinematic 接受任意受支持的碰撞形状及完整旋转；grounded 使用现有直立胶囊和地面可站立查询。Animator 自身不再要求胶囊，也不隐式选择移动方式。没有 RootMotionBinding 时只求解姿态，游戏代码可独立移动实体。场景明确为人和狗选择 grounded。
 
-组件由所属系统挂接；Registry 只读接口用于查询，内建组件不能通过 World 通用 add/edit 绕过后端生命周期。删除 Collider 释放该体；删除 Renderable 同时移除依赖它的 Skin，但保留 Animator；删除 Animator 释放 Skin、求解姿态和关节碰撞，保留独立的主碰撞体与 Renderable。删除不存在的 Animator 不会移除手工 JointPose。移除被空间能力使用的 Transform，或被 root motion 使用的 Collider，会报错，调用方需先移除依赖能力。
+`preserveAnchor` 是显式策略。角色高度变化时 MotionSystem 发布中心位移，AnimationSystem 仅为选择该策略的实体补偿根偏移和关节缓存。MotionSystem 不再直接改写 Animator 或 JointPose。
 
-`destroy(entity)` 按子级优先销毁整棵子树，并清理持久引用、选择、悬停和玩家反馈。`clearScene` 释放活组件，保留 ID 序列、物理/渲染分配器及递增 delta 版本。旧 JS Entity、旧 BodyHandle 无法落到新实体上；未被消费的旧 Frame 继续持有不可变资产与数值快照。
+材质、灯光、相机、导航参数和场景数据属于 SceneResources；选择、玩家与 UI 反馈属于 GameplayState；车辆规则继续由项目脚本拥有。
 
-Transform 层级是刚体平移与旋转：`world = parent.world * local`。没有共享的“物体缩放”：RenderComponent 的尺寸和 ColliderShape 的尺寸独立，避免非均匀父级缩放产生无法用刚体表达的剪切/胶囊形变。
+## 接入、移除与提交
 
-- `setLocal` 修改父级空间姿态，`setTransform` 接收世界姿态并反算 local。
-- `setParent(child,parent,keepWorld=true)` 默认保留世界姿态；false 保留 local。0 解除父级；自环、环路和无 Transform 父级在写入前被拒绝。
-- 父级变动只传播其子树，立即更新世界变换、关联体、关节附件与代理；之后同一 JS tick 内的查询可见新状态。
-- 父级禁用不覆盖子级本地 Disabled。恢复父级后，本地禁用的子级仍保持禁用。禁用动画保留最终姿态和网格绑定。
-- Maple Circuit 的 16 个车轮使用车身父级；脚本只写轮胎自转/转向的局部姿态。
+组件组接入分为三个步骤：校验现有组件和依赖；按依赖拓扑顺序准备全部资源；在一个变更批次内安装。字典顺序不决定安装顺序。准备失败不修改已有实体；安装失败时，目录逆序释放本组已完成的安装，保留原有能力。单个安装器必须在发布自己的组件前完成构造，或清理自身尚未完成的后端动作。释放动作不得抛异常。
 
-## 更新依赖
+移除先计算完整计划，确认不会留下悬空依赖，然后执行。规则均来自目录：移除被使用的 Transform 会拒绝；移除 Renderable 会级联 Skin；移除 Animator 会释放其拥有的 JointPose，以及依赖它的 Skin、JointColliders、RootMotionBinding，保留独立 Collider 与 Renderable。直接移除 solver 拥有的 JointPose 会拒绝。不存在的 Animator 不拥有任何东西，因此不会删除手工姿态。空 JointColliders 也保留组件存在性。
 
-采用显式顺序，而非为当前单线程仿真引入通用任务图：
+Registry 在组件实际增删时发布类型通知。普通数据编辑发布同样的类型通知；系统修改空间、姿态或外观时发布明确的派生失效通知。`Changes` 按类型和实体合并这些通知，只记录失效，不复制状态：
 
 ```text
-平台输入 / picking
-  → JS fixedUpdate（组件编辑、导航、运动学移动、动画输入）
-    → AnimationSystem（按层级深度，父级先于子级）
-      → solver.evaluate
-      → MotionSystem 接受 root motion → TransformSystem 传播
-      → 一次 FK → JointPose → AnimationCollision
-    → 待处理地图请求 / JS realm 生命周期 → UI 更新
-  → RenderSystem.extract → 不可变 Frame → FrameMailbox
-  → 渲染线程资源同步 / 蒙皮 / BLAS / TLAS / 绘制
+TransformSystem：local / parent → 整个子树的 world
+    → WorldPoseChanged
+        → MotionSystem：主物理体 pose
+        → AnimationSystem：关节附件 pose
+        → RenderSystem：proxy transform
+启停 → EffectiveEnabledChanged → 物理、附件、render attributes
+JointPoseChanged → 关节附件
+渲染外观变更 → transform / attributes / geometry 各自的通知
 ```
 
-Transform 编辑同步传播，因此物理查询和拾取之前没有隐含的“记得 flush”要求。每个 Animator 的根运动在其子级求解之前提交，顺序不依赖实体创建顺序。`snapshot` 不推进求解器；无 JS 的宿主调用 `World::update(dt)` 即可运行动画阶段。结构编辑发生在脚本阶段/系统入口，渲染线程从不访问 Registry、PhysicsScene、JS heap 或 ONNX 实例。
+常规系统调用和脚本调用返回前完成提交，同一 JS tick 的后续查询可见更新。原生调用者可显式使用 `auto batch = world.changes()` 合并多次写入，再调用 `batch.commit()`；批次中的 Registry 是编辑状态，禁止对外做后端查询或帧提取。这个批次只合并通知，不承诺回滚任意原生代码的写入；组件组接入的回滚由目录负责。异常路径若留下未提交的原生编辑，需由调用者处理并 `commitChanges()`，不会默默返回过期的后端结果。
 
-## 场景与脚本
+订阅者读取最终权威状态、更新自己拥有的派生资源，不在通知中发起新的实体结构编辑。通知无资源句柄；释放几何这类需要旧绑定的生命周期动作在目录释放步骤中直接处理，避免实体已删除后丢失失效事件。新增普通数据或后端可用 `World::onChange<T>` 消费结构及数据变化；删除时订阅者必须按组件是否仍存在处理解绑。
 
-Map 新写入 version 4，`entities[].components` 只包含实际存在的能力。父级保存持久 ID，Transform 保存 local；world、children、运行时句柄、Skin 骨骼索引、solver 输出不入盘。ScriptData 保存在 `components.data`；场景全局 JSON 继续保存在顶层 data。空实体和空手工 JointPose 也能往返。
+## 层级与调度
 
-加载先校验组件/父级依赖和环路，在临时 World 完成全部资产、属性、骨骼和物理校验后替换活场景；实例化依次建立身份、local、父链，再挂接后端能力。加载失败保持原 World 和 JS realm。版本 3 仅在读取边界转换；版本 1/2 仍不接受。六张现有 Map 和内容生成/渲染验证工具均已迁移，资产及实体持久 ID 不变。
+Transform 层级保持刚体平移与旋转：`world = parent.world * local`。渲染尺寸和碰撞尺寸独立，不用共享缩放给刚体后端制造剪切或胶囊形变。
+
+`setParent(child,parent,keepWorld=true)` 默认保持世界姿态，false 保持 local，0 解除父级。环路与缺失父级在写入前拒绝。父级修改只传播子树；禁用继承不覆盖子级本地 Disabled。Maple Circuit 的车轮仍通过局部姿态跟随车身。
+
+更新顺序保持明确的单线程阶段：脚本 fixedUpdate → 按层级父先子后求解 Animator → RootMotionBinding 消费根运动并提交变换 → FK / JointPose 提交 → 地图请求及 JS realm/UI → RenderSystem.extract → 不可变 Frame / FrameMailbox → 渲染线程。
+
+snapshot 不推进求解器。渲染线程不访问 Registry、PhysicsScene、JS heap 或 ONNX Instance；它仍独占 GPU 资源及 fence 后的创建、更新、释放。静态资产共享、按实例蒙皮、几何空闲区复用和局部 BLAS 更新沿用既有实现。
+
+## Map v5 与场景替换
+
+Map v5 保存实际存在的组件描述。父级使用持久 ID，Transform 保存 local；world、children、slot、BodyHandle、骨骼映射和 solver 输出不入盘。手工 joints 可以是姿态数组，或 `{poses, layout}`；求解器拥有的 joints 不捕获为手工组件。`Engine.component` 返回可保存的描述副本，读取派生组件会明确报错。
+
+场景加载先建立身份，按父先子后实例化实体，再由目录决定实体内部的组件顺序。所有资产与后端准备在隔离 World 中完成。验证成功后释放旧场景、一次转移 Registry 和后端绑定及资源，不重复创建求解器。系统和订阅关系留在所属 World，最终发布新组件通知。加载失败保留原世界和 JS realm。
+
+实体 ID 和物理句柄 generation 序列跨地图延续，旧引用不能落到新对象上。RenderScene 的 revision/topology 跨替换单调推进；整张地图替换允许一次完整同步，局部组件变更仍只影响相关资源。未消费的旧 Frame 继续持有不可变资产和数值快照。
+
+v3/v4 只在读取边界迁移：Animator 的 rootMotion 布尔值被转换为独立 grounded 组件，并显式开启原有锚点策略。六张现有地图与生成工具已迁移为 v5，资产和实体持久 ID 不变。
 
 ```js
-var actor = Engine.create({name:'Sensor', components:{
+var e = Engine.create({name:'Sensor', components:{
     transform:{position:[1,2,3]},
-    collider:{shape:{type:'box', halfExtents:[.5,.5,.5]}, blocking:false, pickable:true},
     data:{count:0}
 }});
-Engine.addComponent(actor, 'render', {material:0, scale:[1,1,1]});
-Engine.hasComponent(actor, 'collider');
+Engine.addComponents(e, {
+    render:{material:0,scale:[1,1,1]},
+    collider:{shape:{type:'box',halfExtents:[.5,.5,.5]},pickable:true},
+    interactable:{}
+});
+var description = Engine.component(e,'render'); // 副本
 Engine.entities(['transform','render']);
-Engine.parent(actor, parentEntity, true);
-Engine.localTransform(actor, {position:{x:1,y:0,z:0}, rotation:{w:1}});
-var value = Engine.data(actor); value.count++; Engine.setData(actor, value);
-Engine.removeComponent(actor, 'render');
-Engine.destroy(actor);
-Engine.alive(actor); // false
+Engine.removeComponent(e,'render');
+Engine.destroy(e);
 ```
 
-组件描述的向量沿用 Map 数组格式；既有 `position/transform/moveBody` 等调用的向量继续使用 `{x,y,z}`。`Engine.spawn` 和混合物理/显示尺寸的 `Engine.pose` 已移除，分别使用 create/组件挂接、transform/renderScale。已有导航、碰撞查询、动画、UI、场景 save/load 入口保留。
+组件描述沿用 Map 的数组向量；既有 transform/moveBody 等命令仍使用 `{x,y,z}`。`Engine.animation` 是 Animator 接入的便捷入口，不再接收 rootMotion 开关；用 `Engine.addComponent(e,'rootMotion',{mode:'grounded',preserveAnchor:true})` 明确接入消费策略。
 
-## 增量渲染资源
+## 关键验证
 
-RenderScene 是派生渲染镜像，不是可供业务独立编辑的第二个场景。变换、属性、几何绑定分开记脏；相同值不产生变换/属性事件。geometryChanged 同时记结构槽和递增 topology，跨丢帧仍可检测。禁用/可见性变化不改变 skin/static draw 集合。
-
-渲染线程按 topology 变化同步几何绑定。静态网格按不可变资产共享；蒙皮资源按实体实例独立。增删/替换只创建或释放受影响的 BLAS；顶点/索引范围由可合并空闲区复用，现有网格索引和 BLAS 不移动。共享 GPU buffer 仅容量不足时增长，增长复制数据/更新描述符，不重建其他 BLAS。最后一个静态引用释放资源；蒙皮解绑释放对应动态资源。纹理集合变化也复用仍被引用的图片。
-
-动画姿态变化只蒙皮并 refit 对应实例；重复快照只在需要时收敛一次运动向量。几何变化可能要求 TLAS BUILD，但不意味着重建其引用的全部 BLAS、shader、纹理或代理。GPU 资源仍只在渲染线程、帧 fence 完成之后管理。
-
-## 验证入口
-
-`ecs_lifecycle` 覆盖独立组件组合、组件依赖、失败写入、层级传播/环路、继承启停、创建顺序无关的动画更新、即时站姿锚点、级联销毁、句柄失效、脚本与持久化及几何范围复用。原有玩法/物理/动画/UI 测试已迁移到组件接口。
-
-`python tools/test_ecs_lifecycle.py` 执行真实 Vulkan 生命周期测试，强制启用 validation，验证蒙皮启停/重绑、静态共享/最后引用释放、大网格替换/缓冲增长。预期仅 7 次几何构建、3 次释放、一次初始代理重同步，且 validation 错误为 0。`--smoke` 继续验证窗口操作和地图重载。
+`ecs_lifecycle` 在原有生命周期覆盖上验证：注册新组件后脚本/原生/持久化一致；失败 draft 与组件组回滚；依赖和派生资源移除；批次提交只同步最终姿态；场景只准备一次且旧句柄失效；手工姿态蒙皮；无碰撞和盒体的根运动。`project_assets_scene` 与 `animation_runtime` 验证既有场景、脚本和求解链路。GPU 生命周期诊断入口仍为 `tools/test_ecs_lifecycle.py`。

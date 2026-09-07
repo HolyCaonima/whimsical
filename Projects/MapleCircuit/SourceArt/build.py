@@ -288,7 +288,7 @@ for name in ('track','vehicle','race','hud','main'):
     scripts.append('/Game/scripts/'+name)
 PROJECT.joinpath('.project').write_text(json.dumps(dict(version=1,id=uid('project'),name='Maple Circuit',
     startupMap='/Game/Maps/MapleCircuit',scripts=scripts),indent=2)+'\n',encoding='utf-8')
-scene=dict(version=4,entities=objects,materials=material,materialAssets=[],
+scene=dict(version=5,entities=objects,materials=material,materialAssets=[],
     lights=[dict(positionRadius=[0,78,0,1.0],colorIntensity=[1,.94,.8,42000])],
     camera=dict(target=[-60,1,-30],yaw=math.pi,pitch=.27,distance=10,fov=.95),
     navigation=dict(min=[-120,0,-120],max=[120,12,120],cellSize=1,planeTolerance=.03),

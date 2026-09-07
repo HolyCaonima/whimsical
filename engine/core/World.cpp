@@ -2,15 +2,25 @@
 #include "CpuProfile.h"
 #include "debug/PhysicsDebug.h"
 namespace afterlight {
+World::World() {
+    storage_.removeComponent = [this](Entity e, std::type_index type) {
+        auto c = componentCatalog().find(type);
+        if (!c)
+            throw std::logic_error("Unregistered managed component");
+        componentCatalog().remove(*this, e, c->name);
+    };
+}
 Entity World::create(std::string name, std::string persistentId) {
     if (persistentId.empty())
         persistentId = newPersistentId();
     validatePersistentId(persistentId);
     if (objectIds_.count(persistentId))
         throw std::invalid_argument("Duplicate entity identity");
+    auto batch = changes();
     Entity e = storage_.registry.create();
     storage_.registry.emplace<Identity>(e, Identity{std::move(name), persistentId});
     objectIds_.emplace(std::move(persistentId), e);
+    batch.commit();
     return e;
 }
 ObjectPath World::objectPath(Entity e) const {
@@ -25,25 +35,24 @@ Entity World::resolveObject(const ObjectPath& path) const {
 }
 void World::setEnabled(Entity e, bool value) {
     storage_.registry.require(e);
+    auto batch = changes();
     if (value)
         storage_.registry.remove<Disabled>(e);
     else if (!has<Disabled>(e))
         storage_.registry.emplace<Disabled>(e);
     transforms.refreshEnabled(e);
+    batch.commit();
 }
 void World::destroy(Entity e) {
     storage_.registry.require(e);
+    auto batch = changes();
     if (auto t = registry().tryGet<Transform>(e)) {
         auto children = t->children;
         for (auto child : children)
             destroy(child);
     }
     auto id = get<Identity>(e).persistentId;
-    animation.detachAnimation(e);
-    animation.removeJoints(e);
-    motion.remove(e);
-    render.remove(e);
-    transforms.remove(e);
+    componentCatalog().destroy(*this, e);
     objectIds_.erase(id);
     for (auto it = resources.references.begin(); it != resources.references.end();)
         if (it->second == id)
@@ -60,6 +69,7 @@ void World::destroy(Entity e) {
         gameplay.path.clear();
         gameplay.hasDestination = false;
     }
+    batch.commit();
 }
 void World::clearScene() {
     for (auto e : registry().entities())
@@ -93,6 +103,7 @@ Entity World::pick(float x, float y, const Input& input) const {
     return has<Interactable>(hit->owner) || hit->owner == gameplay.playerId ? hit->owner : 0;
 }
 Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug, bool physicsDebug) {
+    storage_.changes.requireCommitted();
     CpuScope scope("ECS Render Extraction");
     Frame f;
     render.extract(f, physicsDebug);

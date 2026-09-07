@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <typeindex>
 #include <vector>
+#include <functional>
 
 namespace afterlight {
 using Entity = uint32_t;
@@ -16,11 +17,15 @@ class Registry {
     struct Storage {
         virtual ~Storage() = default;
         virtual void erase(Entity) = 0;
+        virtual bool contains(Entity) const = 0;
     };
     template <class T> struct Pool : Storage {
         std::map<Entity, T> values;
         void erase(Entity e) override {
             values.erase(e);
+        }
+        bool contains(Entity e) const override {
+            return values.count(e) != 0;
         }
     };
     std::map<std::type_index, std::unique_ptr<Storage>> pools_;
@@ -38,6 +43,15 @@ class Registry {
     }
 
   public:
+    std::function<void(Entity, std::type_index)> onStructure;
+    void continueIdentitySequence(const Registry& previous) {
+        next_ = previous.next_;
+    }
+    void exchangeScene(Registry& other) {
+        pools_.swap(other.pools_);
+        live_.swap(other.live_);
+        std::swap(next_, other.next_);
+    }
     Entity create() {
         if (!next_)
             throw std::overflow_error("Entity identity space exhausted");
@@ -55,7 +69,11 @@ class Registry {
     void destroy(Entity e) {
         require(e);
         for (auto& p : pools_)
-            p.second->erase(e);
+            if (p.second->contains(e)) {
+                p.second->erase(e);
+                if (onStructure)
+                    onStructure(e, p.first);
+            }
         live_.erase(e);
     }
     template <class T, class... Args> T& emplace(Entity e, Args&&... args) {
@@ -63,6 +81,8 @@ class Registry {
         auto result = pool<T>().values.try_emplace(e, std::forward<Args>(args)...);
         if (!result.second)
             throw std::logic_error("Component already present");
+        if (onStructure)
+            onStructure(e, typeid(T));
         return result.first->second;
     }
     template <class T> const T* tryGet(Entity e) const {
@@ -88,10 +108,16 @@ class Registry {
         return const_cast<T&>(static_cast<const Registry&>(*this).get<T>(e));
     }
     template <class T> void remove(Entity e) {
+        remove(e, typeid(T));
+    }
+    void remove(Entity e, std::type_index type) {
         require(e);
-        auto p = pools_.find(typeid(T));
-        if (p != pools_.end())
+        auto p = pools_.find(type);
+        if (p != pools_.end() && p->second->contains(e)) {
             p->second->erase(e);
+            if (onStructure)
+                onStructure(e, type);
+        }
     }
     template <class First, class... Rest> std::vector<Entity> view() const {
         std::vector<Entity> result;

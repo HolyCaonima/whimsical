@@ -95,6 +95,7 @@ add_library(afterlight_core
   engine/assets/EngineAssets.cpp engine/scene/SceneAsset.cpp engine/scene/ScenePersistence.cpp
   engine/ui/EngineUi.cpp engine/scripting/UiBindings.cpp
   engine/core/World.cpp engine/core/RenderScene.cpp engine/navigation/Navigation.cpp engine/scripting/ScriptRuntime.cpp
+  engine/ecs/ComponentCatalog.cpp engine/ecs/BuiltinComponents.cpp
   engine/ecs/TransformSystem.cpp engine/ecs/MotionSystem.cpp engine/ecs/AnimationSystem.cpp engine/ecs/RenderSystem.cpp
   engine/physics/PhysicsScene.cpp engine/physics/DynamicAabbTree.cpp engine/animation/AnimationCollision.cpp
 )
