@@ -9,7 +9,7 @@ DI 的 reservoir 算法直接使用 NVIDIA RTXDI-Library，而不是继续维护
 - 初始候选：8 个离散灯样本，CPU 构建 90% power / 10% uniform 混合 CDF，GPU binary search，PDF 随分布存储。初始 RIS 完成后 M=1，与 SDK initial sampling 的约定一致。
 - temporal/spatial 分为独立 dispatch：temporal 最多 20 帧，空间 4 个邻居，短历史区域 8 个；开启 ray-traced bias correction，关闭旧可见性 shortcut，最终选中灯重新查当前 TLAS。
 
-当前引擎仍只有球形位置扰动的解析局部灯。没有新增 emissive triangle、环境灯 importance sampling、ReGIR、checkerboard、BRDF/light MIS 或 ReSTIR PT；这些需要相应灯光／采样架构支持。GI 继续使用原实现。SDK 空间算法包含 pairwise MIS 分支，本接入选择 ray-traced 分支。
+当前引擎支持五类物理光源，共用归一化采样与 `(light ID, uniform UV)` reservoir 测度，见 [物理光源](physical-lights.md)。没有新增 emissive triangle、环境灯 importance sampling、ReGIR、checkerboard、BRDF/light MIS 或 ReSTIR PT；这些需要相应灯光／采样架构支持。GI 继续使用原实现。SDK 空间算法包含 pairwise MIS 分支，本接入选择 ray-traced 分支。
 
 ## 动态阴影与单套 NRD
 

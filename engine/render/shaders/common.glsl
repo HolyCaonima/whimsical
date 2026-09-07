@@ -12,10 +12,7 @@ struct Material {
     vec4 properties[8];
     ivec4 textures[2];
 };
-struct Light {
-    vec4 positionRadius;
-    vec4 colorIntensity;
-};
+#include "../../lighting/LightSampling.h"
 struct Vertex {
     vec4 position;
     vec4 normal;
@@ -183,14 +180,11 @@ MaterialContext rayMaterialContext(uint instanceIndex, uint primitive, vec2 bary
     ctx.footprint = max(.001, distance / g.resolution.y);
     return ctx;
 }
-bool visible(vec3 p, vec3 n, vec3 target) {
-    vec3 delta = target-p;
-    float distance = length(delta);
-    if (distance < .03) return true;
-    vec3 origin = p+n*.012, direction = delta/distance;
+bool visibleRay(vec3 origin, vec3 direction, float distance, uint mask) {
+    if (distance <= .001) return true;
     rayQueryEXT query;
-    rayQueryInitializeEXT(query, scene, gl_RayFlagsTerminateOnFirstHitEXT, 0xff,
-                          origin, .001, direction, max(.002,distance-.025));
+    rayQueryInitializeEXT(query, scene, gl_RayFlagsTerminateOnFirstHitEXT, mask,
+                          origin, .001, direction, distance);
     while (rayQueryProceedEXT(query)) {
         if (rayQueryGetIntersectionTypeEXT(query, false) == gl_RayQueryCandidateIntersectionTriangleEXT) {
             MaterialContext ctx = rayMaterialContext(
@@ -204,6 +198,20 @@ bool visible(vec3 p, vec3 n, vec3 target) {
         }
     }
     return rayQueryGetIntersectionTypeEXT(query,true) == gl_RayQueryCommittedIntersectionNoneEXT;
+}
+bool visibleTo(vec3 p, vec3 n, vec3 target, uint mask) {
+    vec3 origin = p+n*.002, delta = target-origin;
+    float distance = length(delta);
+    if (distance <= .002) return true;
+    return visibleRay(origin, delta/distance, distance-.001, mask);
+}
+bool visible(vec3 p, vec3 n, vec3 target) {
+    return visibleTo(p,n,target,0xffu);
+}
+bool lightVisible(vec3 p, vec3 n, PhysicalLightSample l) {
+    if (dot(l.weight, l.weight) == 0) return false;
+    if (l.distance > 1.e29) return visibleRay(p+n*.002,l.direction,l.distance,0x01u);
+    return visibleTo(p,n,l.position,0x01u);
 }
 bool traceSurface(vec3 origin, vec3 direction, out Surface hit, out float distance) {
     rayQueryEXT query;
@@ -259,13 +267,6 @@ vec3 specularBrdf(Surface s, vec3 v, vec3 l) {
     vec3 f0 = mix(vec3(.04), s.albedo, s.metallic), F = f0 + (1 - f0) * pow(1 - vh, 5);
     return D * G * F / max(4 * nv * nl, 1e-5);
 }
-vec4 lightSample() {
-    uint id = min(uint(random() * float(g.counts.y)), g.counts.y - 1);
-    Light l = lights[id];
-    float z = 1 - 2 * random(), a = 2 * PI * random();
-    vec3 unit = vec3(sqrt(max(0, 1 - z * z)) * cos(a), z, sqrt(max(0, 1 - z * z)) * sin(a));
-    return vec4(l.positionRadius.xyz + unit * l.positionRadius.w, float(id));
-}
 vec3 giDirection(Surface s, GIReservoir r) {
     return r.normalKind.w < 0 ? r.positionDistance.xyz : safeNormalize(r.positionDistance.xyz - s.p);
 }
@@ -295,17 +296,16 @@ void giFinalize(inout GIReservoir r) {
     r.stats.y = min(r.stats.y, 16);
 }
 #ifdef SURFACE_PASS
-vec3 secondaryLighting(Surface s) {
+vec3 secondaryLighting(Surface s, vec3 viewDirection) {
     if (g.counts.y == 0) return s.emission;
-    vec4 l = lightSample();
-    vec3 direction = safeNormalize(l.xyz - s.p);
-    float nl = max(dot(s.n, direction), 0), d2 = dot(l.xyz - s.p, l.xyz - s.p);
-    Light light = lights[uint(l.w + .5)];
-    vec3 result = light.colorIntensity.rgb * light.colorIntensity.a * float(g.counts.y) * nl /
-                  (PI * (d2 + light.positionRadius.w * light.positionRadius.w));
-    if (nl <= 0 || !visible(s.p, s.n, l.xyz))
+    uint id = min(uint(random()*float(g.counts.y)), g.counts.y-1);
+    PhysicalLightSample l = samplePhysicalLight(lights[id], s.p, vec2(random(),random()));
+    float nl = max(dot(s.n, l.direction), 0);
+    vec3 brdf = s.albedo*(1-s.metallic)/PI + specularBrdf(s,viewDirection,l.direction);
+    vec3 result = l.weight * brdf * (float(g.counts.y)*nl);
+    if (nl <= 0 || !lightVisible(s.p, s.n, l))
         result = vec3(0);
-    return result * s.albedo * (1 - s.metallic) + s.emission;
+    return result + s.emission;
 }
 #endif
 // Isotropic GGX visible-normal sampling in the stretched view hemisphere.

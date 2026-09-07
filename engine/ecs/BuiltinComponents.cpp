@@ -160,6 +160,8 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
                     a.material = j.at("material").uint();
                 if (j.contains("visible"))
                     a.visible = j.at("visible").boolean();
+                if (j.contains("castShadow"))
+                    a.castShadow = j.at("castShadow").boolean();
                 if (j.contains("mesh"))
                     v.mesh = AssetRef::fromJson(j.at("mesh"));
                 validateRenderAppearance(a);
@@ -172,7 +174,7 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
                        {"offset", vector(a.offset)},
                        {"animationScale", vector(a.animationScale)},
                        {"material", a.material},
-                       {"visible", a.visible}};
+                       {"visible", a.visible}, {"castShadow", a.castShadow}};
                 if (v.mesh)
                     j["mesh"] = v.mesh->json();
                 return j;
@@ -524,29 +526,35 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
         catalog.add(std::move(c));
     }
     {
-        auto c = dataComponent<PointLight>(
+        auto c = dataComponent<LightComponent>(
             "light",
             [](const Json& j) {
-                PointLight v;
+                LightComponent v;
+                if (j.contains("type"))
+                    v.type = parseLightType(j.at("type").string());
                 if (j.contains("color"))
                     v.color = vector3(j.at("color"));
                 if (j.contains("intensity"))
                     v.intensity = float(j.at("intensity").number());
                 if (j.contains("radius"))
                     v.radius = float(j.at("radius").number());
+                if (j.contains("width")) v.width = float(j.at("width").number());
+                if (j.contains("height")) v.height = float(j.at("height").number());
+                if (j.contains("length")) v.length = float(j.at("length").number());
+                if (j.contains("innerAngle")) v.innerAngle = float(j.at("innerAngle").number());
+                if (j.contains("outerAngle")) v.outerAngle = float(j.at("outerAngle").number());
+                if (j.contains("angularRadius")) v.angularRadius = float(j.at("angularRadius").number());
+                if (j.contains("twoSided")) v.twoSided = j.at("twoSided").boolean();
                 return v;
             },
-            [](const PointLight& v) {
-                return Json{{"color", vector(v.color)}, {"intensity", v.intensity}, {"radius", v.radius}};
+            [](const LightComponent& v) {
+                return Json{{"type", lightTypeName(v.type)}, {"color", vector(v.color)},
+                            {"intensity", v.intensity}, {"radius", v.radius},
+                            {"width", v.width}, {"height", v.height}, {"length", v.length},
+                            {"innerAngle", v.innerAngle}, {"outerAngle", v.outerAngle},
+                            {"angularRadius", v.angularRadius}, {"twoSided", v.twoSided}};
             },
-            [](const PointLight& v) {
-                for (int i = 0; i < 3; ++i)
-                    if (!std::isfinite(v.color[i]) || v.color[i] < 0)
-                        throw std::invalid_argument("Invalid light color");
-                if (!std::isfinite(v.intensity) || v.intensity < 0 || !std::isfinite(v.radius) ||
-                    v.radius <= 0)
-                    throw std::invalid_argument("Invalid light intensity or radius");
-            });
+            validateLight);
         c.dependencies = {{"transform"}};
         catalog.add(std::move(c));
     }

@@ -68,7 +68,7 @@ powershell -ExecutionPolicy Bypass -File tools/build.ps1 -Test
 .\Run.cmd
 ```
 
-依赖全部位于 `third_party/`，不需要系统安装 Vulkan SDK。bootstrap 使用固定版本和 `tools/dependencies.lock.json` 中的 SHA-256 校验下载。CMake、GLSL 编译器、DXC 也随工程依赖下载，来源见 [固定依赖](docs/third-party.md)。`-Test` 运行 15 组 CTest：ECS 生命周期、资产／场景、玩法、物理、动画、Shader 编译、UI、控制台、性能计时与渲染审计。
+依赖全部位于 `third_party/`，不需要系统安装 Vulkan SDK。bootstrap 使用固定版本和 `tools/dependencies.lock.json` 中的 SHA-256 校验下载。CMake、GLSL 编译器、DXC 也随工程依赖下载，来源见 [固定依赖](docs/third-party.md)。`-Test` 运行 16 组 CTest：ECS 生命周期、资产／场景、玩法、物理、动画、Shader 编译、UI、控制台、性能计时与渲染审计。
 
 表面 Shader 由随附 glslang 在运行时按 pass 编译，因此当前开发运行时需要源码树在位；离线 cook 与持久二进制缓存是后续工作。
 
@@ -142,7 +142,7 @@ captures/                 实际 GPU 截图和运行报告
 
 ## 引擎结构
 
-**ECS 与组件契约。** 实体只提供身份，能力由组件组合。`ComponentCatalog` 是进程内唯一的组件契约表：一处注册即贯通原生 API、JS 脚本、Map 读写和依赖校验，新增普通数据组件不需要改 World、场景结构或脚本分支。系统只拥有自己的派生状态——Transform 的 world 是空间事实，物理体 pose、关节附件、render proxy 都是镜像；`Changes` 在提交边界合并失效通知并驱动后端同步。组件组接入按依赖拓扑准备资源，失败逆序回滚。父子变换保持刚体平移与旋转，Maple Circuit 的车轮只提交局部旋转。Map 写 `version: 5`，保存实际存在的组件描述与父级持久 ID。详见 [ECS 架构](docs/ecs.md)。
+**ECS 与组件契约。** 实体只提供身份，能力由组件组合。`ComponentCatalog` 是进程内唯一的组件契约表：一处注册即贯通原生 API、JS 脚本、Map 读写和依赖校验，新增普通数据组件不需要改 World、场景结构或脚本分支。系统只拥有自己的派生状态——Transform 的 world 是空间事实，物理体 pose、关节附件、render proxy 都是镜像；`Changes` 在提交边界合并失效通知并驱动后端同步。组件组接入按依赖拓扑准备资源，失败逆序回滚。父子变换保持刚体平移与旋转，Maple Circuit 的车轮只提交局部旋转。Map 写 `version: 7`，保存实际存在的组件描述与父级持久 ID。详见 [ECS 架构](docs/ecs.md)。
 
 **Shader → Material。** `ShaderAsset` 拥有 GLSL 表面函数体、有序属性／纹理 schema、material model 和 render state；`MaterialAsset` 拥有解析后的取值和纹理引用。`engine/render/shaders/surface.glsl` 的 `EvaluateSurface` 是公共 ABI，同一份表面代码同时供 G-buffer 光栅化和六个 ray query pass 使用，通过 source linking 生成 dispatch 表，不需要 SBT 或 callable shader。当前只支持 `opaque` 与 `masked`，透明混合在资产加载时明确拒绝。详见 [Shader / Material](docs/shader-materials.md)。
 
@@ -174,11 +174,13 @@ DI 接入固定版本 RTXDI-Library：8 个 power/uniform RIS 候选、SDK 时�
 
 NRD 4.17.3 实际参与 GPU 计算，使用 RELAX 的原生 SPIR-V、资源池、每 pass 常量、sampled/storage bindings 和两个 sampler；不是仅有接口占位。
 
+五类光源示例：`Afterlight.exe --map /Game/Maps/PhysicalLights`。Space 切换恒功率发光几何动画；组件接口、物理公式和验证命令见 [物理光源](docs/physical-lights.md)。
+
 ## 当前实现边界
 
-这是可继续开发的第一版基础，不是大型游戏的最终渲染器。DI 使用 NVIDIA RTXDI SDK，GI 保留自写实现；集成范围和当前近似见 [RTXDI 集成](docs/rtxdi-integration.md)。当前 GI 是 **一次二次表面命中上的漫反射重采样**；镜面间接光使用独立 GGX VNDF 路径和 NRD，尚无 ReSTIR PT、多跳路径重采样或 GI 的完整 MIS。历史长度与 GI Jacobian 有限幅，属于有偏实时方案。
+这是可继续开发的第一版基础，不是大型游戏的最终渲染器。DI 使用 NVIDIA RTXDI SDK，GI 保留自写实现；集成范围和当前近似见 [RTXDI 集成](docs/rtxdi-integration.md)。当前 GI 是 **一次二次表面命中上的辐亮度重采样**；镜面间接光使用独立 GGX VNDF 路径和 NRD，尚无 ReSTIR PT、多跳路径重采样或 GI 的完整 MIS。历史长度与 GI Jacobian 有限幅，属于有偏实时方案。
 
-灯光是具有球形位置扰动的解析灯，用于柔和光追阴影；发光材质支持二次光线命中，但还没有 emissive mesh light importance sampling。基础 mesh 共享静态 BLAS，蒙皮角色各自持有动态 BLAS 并随姿态 refit；TLAS 在只有变换变化时走 `UPDATE`，在拓扑变化（槽位增长或改绑几何体）时重建。当前采用一帧 GPU in flight 和保守 pass barrier，还没有 async compute、自动资源别名、流式场景或 GPU-driven indirect draw。资源上限为 1024 个 instance、256 个 material、256 盏灯和 64 张纹理，超限明确报错——Honeybud Court 的 667 个对象已经占掉实例上限的六成。
+灯光支持 Directional、Spot、Point、Rect、Capsule，共享物理单位、发光几何、能量归一化及采样 PDF，详见 [物理光源](docs/physical-lights.md)。发光材质支持二次光线命中，但还没有 emissive mesh light importance sampling。基础 mesh 共享静态 BLAS，蒙皮角色各自持有动态 BLAS 并随姿态 refit；TLAS 在只有变换变化时走 `UPDATE`，在拓扑变化（槽位增长或改绑几何体）时重建。当前采用一帧 GPU in flight 和保守 pass barrier，还没有 async compute、自动资源别名、流式场景或 GPU-driven indirect draw。资源上限为 1024 个 instance、256 个 material、256 盏灯和 64 张纹理，超限明确报错——Honeybud Court 的 667 个对象已经占掉实例上限的六成。
 
 **没有 3D 透明混合**：表面只有 opaque 和 masked，Maple Circuit 的漂移烟团因此使用不透明网格加缩放消散。透明材质模式、深度策略、排序或 OIT 与合成阶段是引擎侧待补的契约，不应由项目脚本绕过。引擎也**没有音频系统**。
 
@@ -197,7 +199,7 @@ ECS 侧当前是单 World、单已加载 Map，尚未引入 streaming、同一 M
 | 文档 | 内容 |
 | --- | --- |
 | [架构](docs/architecture.md) | 线程所有权、帧 mailbox、RenderScene 槽位契约、JS 绑定表、3C 扩展 |
-| [ECS 架构](docs/ecs.md) | 组件契约、所有权与派生关系、接入／修改／移除／提交、Map v6 |
+| [ECS 架构](docs/ecs.md) | 组件契约、所有权与派生关系、接入／修改／移除／提交、Map v7 |
 | [Project / Asset / Scene](docs/projects-assets-scenes.md) | 内容根、虚拟路径、`.asset` 格式、对象身份、Save/Load |
 | [Shader / Material](docs/shader-materials.md) | 表面 ABI、source linking、schema 与容量、持久化迁移 |
 | [渲染说明](docs/rendering.md) | 每帧数据、G-buffer 格式、DI/GI、NRD、同步与资源生命周期 |

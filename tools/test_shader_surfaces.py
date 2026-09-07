@@ -7,6 +7,7 @@ are modified. The generated projects, logs and audit captures remain inspectable
 """
 import copy
 import json
+import math
 from pathlib import Path
 import shutil
 import struct
@@ -28,6 +29,18 @@ def write_asset(path, kind, payload, identity=None):
     data = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
     path.write_bytes(b"ALAS1\n" + json.dumps(header).encode() + b"\n" + data)
     return dict(id=header["id"], path="/Game/" + path.stem)
+
+
+def set_point_lights(scene, lights):
+    """Migrate old diagnostic W/sr fixtures to v7 ECS radiant-power components."""
+    scene["version"] = 7
+    scene.pop("lights", None)
+    scene["entities"] = [e for e in scene["entities"] if "light" not in e["components"]]
+    for l in lights:
+        p, c = l["positionRadius"], l["colorIntensity"]
+        scene["entities"].append(dict(id=uuid.uuid4().hex, name="Light", enabled=True, components=dict(
+            transform=dict(position=p[:3]), light=dict(type="point", radius=p[3], color=c[:3],
+            intensity=c[3]*4*math.pi*sum(c[:3])))))
 
 
 def run():
@@ -59,7 +72,6 @@ def run():
     template = copy.deepcopy(scene["entities"][0])
     scene.update(scripts=[], entities=[], materials=[], materialAssets=[], player="", references={}, data={})
     scene["camera"].update(target=[0, 0, 0], yaw=.6, pitch=.9, distance=13, fov=.62)
-    scene["lights"] = [dict(positionRadius=[0, 6, 0, .1], colorIntensity=[1, 1, 1, 75])]
     for name, color in (("Paving", [.65, .65, .65]), ("Standard", [.8, .2, .1]), ("Foliage", [.1, .8, .2])):
         scene["materials"].append(dict(shader=refs[name], properties=dict(baseColor=color), textures={}))
     for name, position, scale, material in (("Ground", [0, -.25, 0], [8, .5, 8], 0),
@@ -73,8 +85,9 @@ def run():
             obj["components"]["render"]["mesh"] = quad
         scene["entities"].append(obj)
     captures = {}
+    set_point_lights(scene, [dict(positionRadius=[0, 6, 0, .1], colorIntensity=[1, 1, 1, 75])])
     for case, visible, coverage in (("absent", False, 0), ("discarded", True, 0), ("foliage", True, 1)):
-        scene["entities"][-1]["components"]["render"]["visible"] = visible
+        scene["entities"][2]["components"]["render"]["visible"] = visible
         scene["materials"][-1]["properties"]["coverage"] = coverage
         write_asset(content / "Test.asset", "Map", scene)
         audit = tag + "-" + case

@@ -241,6 +241,9 @@ var value=Engine.data(data);value.health=20;Engine.setData(data,value);
 if(Engine.data(data).health!==20)throw Error('entity data');
 var parent=Engine.create({name:'Parent',components:{transform:{position:[3,0,0]}}});
 var child=Engine.create({name:'Child',components:{transform:{position:[1,0,0]},render:{material:0}}});
+if(!Engine.component(child,'render').castShadow)throw Error('default shadow visibility');
+var appearance=Engine.component(child,'render');appearance.castShadow=false;
+Engine.setComponent(child,'render',appearance);
 Engine.parent(child,parent,false);
 if(Engine.position(child).x!==4)throw Error('hierarchy binding');
 if(Engine.entities(['render']).length!==1||Engine.hasComponent(data,'transform'))throw Error('query');
@@ -257,7 +260,7 @@ if(Engine.alive(stale))throw Error('stale');
 Engine.enabled(parent,false);
 )JS");
     auto document = ScenePersistence::capture(w, testAssets());
-    check(document.entities.size() == 3 && document.json().at("version").uint() == 6,
+    check(document.entities.size() == 3 && document.json().at("version").uint() == 7,
           "Persist live entities in component schema");
     auto decoded = SceneDocument::fromJson(Json::parse(document.json().dump()));
     check(decoded.json() == document.json(), "Optional component roundtrip is lossless");
@@ -282,6 +285,9 @@ Engine.enabled(parent,false);
     auto child = w.findObject(document.entities.back().id);
     check(near(w.get<Transform>(child).world.position, {4, 0, 0}) && !w.enabled(child),
           "Loaded hierarchy derives world transform and activation");
+    check(!w.get<Renderable>(child).appearance.castShadow &&
+              !w.renderScene().proxy(w.get<Renderable>(child).slot).attributes.castShadow,
+          "Shadow visibility survives scripting, persistence and render extraction");
     auto invalid = restored;
     invalid.entities.back().components.find<SceneTransform>()->parent = newPersistentId();
     rejects([&] { invalid.validate(); }, "Missing parent must fail validation");
@@ -505,7 +511,7 @@ static void editsAndLights() {
     w.transforms.add(parent, {{3, 2, 1}, glm::angleAxis(1.f, vec3(0, 1, 0))});
     w.transforms.add(e, {{1, 0, 0}});
     w.transforms.setParent(e, parent, false);
-    w.add<PointLight>(e, PointLight{{1, .5f, .2f}, 10, .2f});
+    w.add<LightComponent>(e, LightComponent{{1, .5f, .2f}, 10, .2f});
     auto frame = w.snapshot({}, 0, 0, 0);
     check(frame.lightEntities == std::vector<Entity>{e} &&
               near(vec3(frame.lights[0].positionRadius), w.get<Transform>(e).world.position) &&
@@ -520,7 +526,7 @@ try { Engine.setComponent(light,'light',{intensity:-1}); throw Error('expected i
 catch(e) { if(Engine.component(light,'light').intensity!==22)throw Error('invalid draft escaped'); }
 )JS");
     auto saved = ScenePersistence::capture(w, testAssets());
-    check(saved.entities[1].components.find<PointLight>()->intensity == 22 &&
+    check(saved.entities[1].components.find<LightComponent>()->intensity == 22 &&
               !saved.json().contains("lights"),
           "Light uses the same authored component in script and persistence");
     w.setEnabled(parent, false);
@@ -542,7 +548,7 @@ catch(e) { if(Engine.component(light,'light').intensity!==22)throw Error('invali
           "Descriptor edits retain independent backend bindings");
     auto replacement = w.create();
     w.transforms.add(replacement);
-    w.add<PointLight>(replacement, PointLight{});
+    w.add<LightComponent>(replacement, LightComponent{});
     w.destroy(parent);
     auto next = w.snapshot({}, 2, 0, 0);
     check(next.lights.size() == frame.lights.size() && next.lightEntities != frame.lightEntities &&
@@ -648,7 +654,7 @@ static void legacyImport() {
               migrated.entities[0].components.find<SceneRender>() &&
               migrated.entities[0].components.find<SceneCollider>() &&
               !migrated.entities[0].components.find<SceneJoints>() &&
-              migrated.json().at("version").uint() == 6,
+              migrated.json().at("version").uint() == 7,
           "Legacy import preserves authored collider semantics while saving optional v6 components");
 }
 int main() {

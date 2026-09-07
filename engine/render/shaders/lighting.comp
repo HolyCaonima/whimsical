@@ -33,7 +33,7 @@ void main() {
     if (traceSurface(s.p + s.n * .012, direction, secondary, hitDistance)) {
         fresh.positionDistance = vec4(secondary.p, hitDistance);
         fresh.normalKind = vec4(secondary.n, float(secondary.id));
-        fresh.radiancePdf.rgb = secondaryLighting(secondary);
+        fresh.radiancePdf.rgb = secondaryLighting(secondary,-direction);
     } else {
         fresh.positionDistance = vec4(direction, 150);
         fresh.normalKind = vec4(0, 0, 0, -1);
@@ -53,7 +53,7 @@ void main() {
     float specDistance = 0;
     if (dot(direction, s.n) > 0 && specPdf > 1e-7) {
         if (traceSurface(s.p + s.n * .012, direction, secondary, specDistance))
-            spec = secondaryLighting(secondary);
+            spec = secondaryLighting(secondary,-direction);
         else
             spec = sky(direction);
         spec *= specularBrdf(s, v, direction) * max(dot(s.n, direction), 0) / specPdf;

@@ -288,9 +288,12 @@ for name in ('track','vehicle','race','hud','main'):
     scripts.append('/Game/scripts/'+name)
 PROJECT.joinpath('.project').write_text(json.dumps(dict(version=1,id=uid('project'),name='Maple Circuit',
     startupMap='/Game/Maps/MapleCircuit',scripts=scripts),indent=2)+'\n',encoding='utf-8')
-objects.append(dict(id=uid('sun'),name='Sun',enabled=True,components=dict(
-    transform=dict(position=[0,78,0]),light=dict(radius=1.0,color=[1,.94,.8],intensity=42000))))
-scene=dict(version=6,entities=objects,materials=material,materialAssets=[],
+lighting=json.loads((PROJECT/'SourceArt/lighting.json').read_text())
+objects.extend(lighting['lights'])
+for entity in objects:
+    if entity['name'] in lighting['renderOverrides']:
+        entity['components']['render'].update(lighting['renderOverrides'][entity['name']])
+scene=dict(version=7,entities=objects,materials=material,materialAssets=[],
     camera=dict(target=[-60,1,-30],yaw=math.pi,pitch=.27,distance=10,fov=.95),
     navigation=dict(min=[-120,0,-120],max=[120,12,120],cellSize=1,planeTolerance=.03),
     player=references['car0'],references=references,data=data,scripts=[])

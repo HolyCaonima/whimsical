@@ -1,0 +1,570 @@
+{
+  "RainCourt": {
+    "lights": [
+      {
+        "id": "612a194ecbca4cf8bd7c692c52244e33",
+        "name": "Service door / warm panel",
+        "enabled": true,
+        "components": {
+          "transform": {
+            "position": [
+              5.2,
+              3.05,
+              -3.9
+            ],
+            "rotation": [
+              0.48541341662490867,
+              0.0,
+              0.0,
+              0.8742847447831472
+            ]
+          },
+          "light": {
+            "type": "rect",
+            "intensity": 65,
+            "color": [
+              1,
+              0.57,
+              0.25
+            ],
+            "width": 1.1,
+            "height": 0.16
+          }
+        }
+      },
+      {
+        "id": "a727670b1ac64a9597e20dc351fc3d9d",
+        "name": "Power console / cyan tube",
+        "enabled": true,
+        "components": {
+          "transform": {
+            "position": [
+              -6,
+              1.65,
+              -2.55
+            ],
+            "rotation": [
+              0,
+              0,
+              -0.7071067811865476,
+              0.7071067811865476
+            ]
+          },
+          "light": {
+            "type": "capsule",
+            "intensity": 40,
+            "color": [
+              0.08,
+              0.75,
+              1
+            ],
+            "radius": 0.06,
+            "length": 0.7
+          }
+        }
+      },
+      {
+        "id": "544fe566b4fa42b2a22f3eab1729988e",
+        "name": "North wall / warm downlight 1",
+        "enabled": true,
+        "components": {
+          "transform": {
+            "position": [
+              -9,
+              3.4,
+              -8.02
+            ],
+            "rotation": [
+              0.4583244573384107,
+              0.0,
+              0.0,
+              0.8887849525084521
+            ]
+          },
+          "light": {
+            "type": "spot",
+            "intensity": 120,
+            "color": [
+              1,
+              0.62,
+              0.3
+            ],
+            "radius": 0.11,
+            "innerAngle": 0.3,
+            "outerAngle": 0.75
+          }
+        }
+      },
+      {
+        "id": "d627b6b011ec4d2d81aeb3a938194611",
+        "name": "North wall / warm downlight 2",
+        "enabled": true,
+        "components": {
+          "transform": {
+            "position": [
+              -3.5,
+              3.4,
+              -8.02
+            ],
+            "rotation": [
+              0.4583244573384107,
+              0.0,
+              0.0,
+              0.8887849525084521
+            ]
+          },
+          "light": {
+            "type": "spot",
+            "intensity": 120,
+            "color": [
+              1,
+              0.62,
+              0.3
+            ],
+            "radius": 0.11,
+            "innerAngle": 0.3,
+            "outerAngle": 0.75
+          }
+        }
+      },
+      {
+        "id": "b6708c9829da43928c26462e64b9ba26",
+        "name": "North wall / warm downlight 3",
+        "enabled": true,
+        "components": {
+          "transform": {
+            "position": [
+              2,
+              3.4,
+              -8.02
+            ],
+            "rotation": [
+              0.4583244573384107,
+              0.0,
+              0.0,
+              0.8887849525084521
+            ]
+          },
+          "light": {
+            "type": "spot",
+            "intensity": 120,
+            "color": [
+              1,
+              0.62,
+              0.3
+            ],
+            "radius": 0.11,
+            "innerAngle": 0.3,
+            "outerAngle": 0.75
+          }
+        }
+      },
+      {
+        "id": "6b701cafccbf4ea6ab42b2eb10b169f3",
+        "name": "North wall / warm downlight 4",
+        "enabled": true,
+        "components": {
+          "transform": {
+            "position": [
+              7.5,
+              3.4,
+              -8.02
+            ],
+            "rotation": [
+              0.4583244573384107,
+              0.0,
+              0.0,
+              0.8887849525084521
+            ]
+          },
+          "light": {
+            "type": "spot",
+            "intensity": 120,
+            "color": [
+              1,
+              0.62,
+              0.3
+            ],
+            "radius": 0.11,
+            "innerAngle": 0.3,
+            "outerAngle": 0.75
+          }
+        }
+      },
+      {
+        "id": "0f1f622d42124ebbb28cdec9ae159b27",
+        "name": "Clouded moon / blue key",
+        "enabled": true,
+        "components": {
+          "transform": {
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0.7649555645897169,
+              0.2677344476064009,
+              0.0,
+              0.585799666923875
+            ]
+          },
+          "light": {
+            "type": "directional",
+            "intensity": 1.7,
+            "color": [
+              0.38,
+              0.58,
+              1
+            ],
+            "angularRadius": 0.035
+          }
+        }
+      },
+      {
+        "id": "88aa08d66cf44747a6281d2719eca410",
+        "name": "Open courtyard / sky bounce",
+        "enabled": true,
+        "components": {
+          "transform": {
+            "position": [
+              9,
+              7,
+              2
+            ],
+            "rotation": [
+              0.4701305488523592,
+              -0.604453562810176,
+              0.0,
+              0.6431276369756348
+            ]
+          },
+          "light": {
+            "type": "rect",
+            "intensity": 500,
+            "color": [
+              0.32,
+              0.55,
+              1
+            ],
+            "width": 7,
+            "height": 5
+          }
+        }
+      },
+      {
+        "id": "82b91084b830553cbcb0e8b1e9227ff2",
+        "name": "Supply cache / amber marker",
+        "enabled": true,
+        "components": {
+          "transform": {
+            "position": [
+              3,
+              1.25,
+              6.7
+            ]
+          },
+          "light": {
+            "type": "point",
+            "intensity": 8,
+            "color": [
+              1,
+              0.48,
+              0.17
+            ],
+            "radius": 0.09
+          }
+        }
+      }
+    ],
+    "data": {
+      "cyanLightPower": 40
+    }
+  },
+  "HoneybudCourt": {
+    "lights": [
+      {
+        "id": "51a6a131534348bbb5608f29c6487fa8",
+        "name": "Garden sun / late afternoon",
+        "enabled": true,
+        "components": {
+          "transform": {
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0.7207642388030705,
+              0.36038211940153525,
+              0.0,
+              0.5921348157964436
+            ]
+          },
+          "light": {
+            "type": "directional",
+            "intensity": 6.5,
+            "color": [
+              1,
+              0.82,
+              0.58
+            ],
+            "angularRadius": 0.014
+          }
+        }
+      },
+      {
+        "id": "e497e7e7d7fb4a9b95fd8c5f0041dd48",
+        "name": "Open garden / broad sky",
+        "enabled": true,
+        "components": {
+          "transform": {
+            "position": [
+              8,
+              9,
+              6
+            ],
+            "rotation": [
+              0.6355125422881595,
+              -0.564900037589475,
+              0.0,
+              0.5263190630462192
+            ]
+          },
+          "light": {
+            "type": "rect",
+            "intensity": 1800,
+            "color": [
+              0.64,
+              0.8,
+              1
+            ],
+            "width": 9,
+            "height": 7
+          }
+        }
+      },
+      {
+        "id": "a177d0a49f22440fbe8f1fed55afcd3b",
+        "name": "Cottage roof / warm rim",
+        "enabled": true,
+        "components": {
+          "transform": {
+            "position": [
+              1,
+              7,
+              -6
+            ],
+            "rotation": [
+              0.3805954120108741,
+              -0.06343256866847902,
+              0.0,
+              0.9225635162894703
+            ]
+          },
+          "light": {
+            "type": "rect",
+            "intensity": 750,
+            "color": [
+              1,
+              0.75,
+              0.46
+            ],
+            "width": 5,
+            "height": 3
+          }
+        }
+      },
+      {
+        "id": "ef74fd70a086449dbc94772ae4a1b961",
+        "name": "Garden lantern / warm globe 1",
+        "enabled": true,
+        "components": {
+          "transform": {
+            "position": [
+              -3.1,
+              2.2,
+              3
+            ]
+          },
+          "light": {
+            "type": "point",
+            "intensity": 35,
+            "color": [
+              1,
+              0.6,
+              0.25
+            ],
+            "radius": 0.12
+          }
+        }
+      },
+      {
+        "id": "f4400422d6c543ba88722a62c7107a61",
+        "name": "Garden lantern / warm globe 2",
+        "enabled": true,
+        "components": {
+          "transform": {
+            "position": [
+              3,
+              2.2,
+              3.2
+            ]
+          },
+          "light": {
+            "type": "point",
+            "intensity": 35,
+            "color": [
+              1,
+              0.6,
+              0.25
+            ],
+            "radius": 0.12
+          }
+        }
+      },
+      {
+        "id": "c8858e2430234e48ad745860111ca4ce",
+        "name": "Garden lantern / warm globe 3",
+        "enabled": true,
+        "components": {
+          "transform": {
+            "position": [
+              -8.1,
+              2.2,
+              -5.1
+            ]
+          },
+          "light": {
+            "type": "point",
+            "intensity": 35,
+            "color": [
+              1,
+              0.6,
+              0.25
+            ],
+            "radius": 0.12
+          }
+        }
+      },
+      {
+        "id": "d69f549d6f684d28aa44ee651437fdb0",
+        "name": "Garden lantern / warm globe 4",
+        "enabled": true,
+        "components": {
+          "transform": {
+            "position": [
+              8.5,
+              2.2,
+              -5.2
+            ]
+          },
+          "light": {
+            "type": "point",
+            "intensity": 35,
+            "color": [
+              1,
+              0.6,
+              0.25
+            ],
+            "radius": 0.12
+          }
+        }
+      },
+      {
+        "id": "5e93e01293aa5949b3ec3ab619889281",
+        "name": "Fountain / soft water accent",
+        "enabled": true,
+        "components": {
+          "transform": {
+            "position": [
+              -2,
+              5.5,
+              2.3
+            ],
+            "rotation": [
+              0.8028284211116913,
+              0.22479195791127354,
+              0.0,
+              0.5522092917669216
+            ]
+          },
+          "light": {
+            "type": "spot",
+            "intensity": 130,
+            "color": [
+              0.65,
+              0.85,
+              1
+            ],
+            "radius": 0.55,
+            "innerAngle": 0.32,
+            "outerAngle": 0.6
+          }
+        }
+      },
+      {
+        "id": "be5b84310f0c577c8f3642d5ec03d1b8",
+        "name": "Cottage window / warm spill",
+        "enabled": true,
+        "components": {
+          "transform": {
+            "position": [
+              3,
+              1.8,
+              -3.2
+            ],
+            "rotation": [
+              0.24708746132252,
+              0.0,
+              0.0,
+              0.968993181842469
+            ]
+          },
+          "light": {
+            "type": "rect",
+            "intensity": 20,
+            "color": [
+              1,
+              0.65,
+              0.32
+            ],
+            "width": 0.8,
+            "height": 0.8
+          }
+        }
+      },
+      {
+        "id": "dd8c8f0d7a7759ad992a08349d1e4ce3",
+        "name": "Pergola / warm hanging tube",
+        "enabled": true,
+        "components": {
+          "transform": {
+            "position": [
+              -5.2,
+              2.5,
+              -3.2
+            ],
+            "rotation": [
+              0,
+              0,
+              -0.7071067811865476,
+              0.7071067811865476
+            ]
+          },
+          "light": {
+            "type": "capsule",
+            "intensity": 25,
+            "color": [
+              1,
+              0.65,
+              0.32
+            ],
+            "radius": 0.045,
+            "length": 2
+          }
+        }
+      }
+    ]
+  }
+}

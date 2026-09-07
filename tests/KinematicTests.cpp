@@ -165,9 +165,9 @@ static void transformsAndScript() {
               sameRotation(attached.pose.rotation, full), "Joint colliders must follow full root rotation");
     auto document = ScenePersistence::capture(world, testAssets());
     auto encoded = document.json();
-    check(encoded.at("version").uint() == 4, "Quaternion maps must declare their updated schema");
+    check(encoded.at("version").uint() == 7, "Maps must declare the current component schema");
     auto decoded = SceneDocument::fromJson(Json::parse(encoded.dump()));
-    check(sameRotation(decoded.entities.back().transform->local.rotation, full), "Quaternion scene data did not round-trip");
+    check(sameRotation(decoded.entities.back().components.find<SceneTransform>()->local.rotation, full), "Quaternion scene data did not round-trip");
     // The migrated project and a saved Shader-backed map exercise disk IO.
     auto legacy = testAssets().load<SceneAsset>(AssetPath("/Game/Maps/RainCourt"));
     check(!legacy->scene.entities.empty(), "Migrated project map must remain loadable");

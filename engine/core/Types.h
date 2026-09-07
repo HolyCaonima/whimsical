@@ -2,6 +2,7 @@
 #include "ConsoleTypes.h"
 #include "Input.h"
 #include "Math.h"
+#include "Light.h"
 #include "assets/Material.h"
 #include "animation/Animation.h"
 #include <vector>
@@ -24,6 +25,7 @@ struct RenderComponent {
     vec3 scale{1}, offset{0}, animationScale{1};
     uint32_t material = 0;
     bool visible = true;
+    bool castShadow = true;
 };
 // A renderable occupies a stable slot for its whole lifetime. Transform and attributes
 // are separate because a transform changes orders of magnitude more often, and the two
@@ -45,9 +47,10 @@ struct ProxyAttributes {
     Shape shape = Shape::Box;
     bool visible = true;
     bool interactable = false;
+    bool castShadow = true;
     bool operator==(const ProxyAttributes& o) const {
         return entity == o.entity && material == o.material && shape == o.shape && visible == o.visible &&
-               interactable == o.interactable;
+               interactable == o.interactable && castShadow == o.castShadow;
     }
     bool operator!=(const ProxyAttributes& o) const {
         return !(*this == o);
@@ -83,10 +86,6 @@ struct SceneDelta {
     // a dropped snapshot leaves the consumer's mirror stranded at a revision no delta
     // chains to, and its only recovery is to rewrite the entire scene.
     void prepend(const SceneDelta& dropped);
-};
-struct alignas(16) Light {
-    vec4 positionRadius{0, 5, 0, .4f};
-    vec4 colorIntensity{1, 1, 1, 40};
 };
 struct Camera {
     vec3 target{0, 0, 0};

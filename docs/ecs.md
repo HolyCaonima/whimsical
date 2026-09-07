@@ -45,7 +45,7 @@ componentCatalog().add(std::move(type));
 | JointPose | 手工模型空间姿态及可选骨架布局；有 Animator 时是其拥有的 FK 结果 | Transform |
 | JointColliders | 绑定描述和物理体由 AnimationCollision 持有 | JointPose |
 | Skin | 不可变网格 / 根据 JointPose 布局解析的关节映射 | JointPose、Renderable |
-| PointLight | 颜色、强度、采样半径 / Frame 中的世界位置与灯数组 | Transform |
+| LightComponent | 类型、RGB 能量比例、物理强度、发光尺寸 / Frame 中的世界姿态与归一化光源 | Transform |
 | Interactable | 交互标记 | 无 |
 | ScriptData | 实体级 JSON 对象 | 无 |
 
@@ -96,15 +96,15 @@ Transform 层级保持刚体平移与旋转：`world = parent.world * local`。�
 
 snapshot 不推进求解器。渲染线程不访问 Registry、PhysicsScene、JS heap 或 ONNX Instance；它仍独占 GPU 资源及 fence 后的创建、更新、释放。静态资产共享、按实例蒙皮、几何空闲区复用和局部 BLAS 更新沿用既有实现。
 
-## Map v6 与场景替换
+## Map v7 与场景替换
 
-Map v6 保存实际存在的组件描述。父级使用持久 ID，Transform 保存 local；world、children、slot、BodyHandle、骨骼映射和 solver 输出不入盘。手工 joints 可以是姿态数组，或 `{poses, layout}`；求解器拥有的 joints 不捕获为手工组件。`Engine.component` 返回可保存的描述副本，读取派生组件会明确报错。
+Map v7 保存实际存在的组件描述。父级使用持久 ID，Transform 保存 local；world、children、slot、BodyHandle、骨骼映射和 solver 输出不入盘。手工 joints 可以是姿态数组，或 `{poses, layout}`；求解器拥有的 joints 不捕获为手工组件。`Engine.component` 返回可保存的描述副本，读取派生组件会明确报错。
 
 场景加载先建立身份，按父先子后实例化实体，再由目录决定实体内部的组件顺序。所有资产与后端准备在隔离 World 中完成。验证成功后一次交换 Registry、后端绑定及资源，旧状态随隔离 World 一起销毁，不在交换前逐个发布销毁回调，也不重复创建求解器。系统和订阅关系留在所属 World，最终发布旧实体移除和新实体接入通知。准备失败保留原世界和 JS realm。脚本加载延迟外部观察者，直到新 realm 的初始化完成；发布阶段失败不撤销已交换的世界，也不会继续使用旧 realm。`ScenePersistence::CommittedError` 标识交换完成后的发布失败，需按已提交状态处理。脚本初始化本身的错误也发生在交换之后。
 
 实体 ID 和物理句柄 generation 序列跨地图延续，旧引用不能落到新对象上。RenderScene 的 revision/topology 跨替换单调推进；整张地图替换允许一次完整同步，局部组件变更仍只影响相关资源。未消费的旧 Frame 继续持有不可变资产和数值快照。
 
-v3/v4/v5 只在读取边界迁移：Animator 的 rootMotion 布尔值被转换为独立 grounded 组件，并显式开启原有锚点策略。旧顶层 lights 导入为 Transform + PointLight 实体。现有地图与生成工具已迁移为 v6，已有资产和实体持久 ID 不变。新灯具使用实体 ID，Rain Court 的 cyanLight 改为持久角色引用。`Engine.light` 返回实体 ID，`Engine.lightIntensity` 接受该 ID；可以用普通组件 API 创建／编辑 light。灯具继承启停与层级，Frame 携带与灯数组对应的实体 ID，同数量替换也会使渲染历史失效；参数变化不触发几何重建。
+v3–v6 只在读取边界迁移：Animator 的 rootMotion 布尔值被转换为独立 grounded 组件，并显式开启原有锚点策略。旧顶层 lights 导入为 Transform + LightComponent 实体。现有地图与生成工具已迁移为 v7，已有资产和实体持久 ID 不变。新灯具使用实体 ID，Rain Court 的 cyanLight 改为持久角色引用。`Engine.light` 返回实体 ID，`Engine.lightIntensity` 接受该 ID；可以用普通组件 API 创建／编辑 light。灯具继承启停与层级，Frame 携带与灯数组对应的实体 ID，同数量替换也会使渲染历史失效；参数变化不触发几何重建。
 
 ```js
 var e = Engine.create({name:'Sensor', components:{
@@ -129,3 +129,5 @@ Engine.destroy(e);
 ## 关键验证
 
 `ecs_lifecycle` 在原有生命周期覆盖上验证：提交重试与观察者异常隔离；光源组合、更新、启停、持久化和替换身份；求解失败恢复及蒙皮视觉空间；注册新组件后脚本/原生/持久化一致；失败 draft 与组件组回滚；依赖和派生资源移除；批次提交只同步最终姿态；场景只准备一次且旧句柄失效；手工姿态蒙皮；无碰撞和盒体的根运动。`project_assets_scene` 与 `animation_runtime` 验证既有场景、脚本和求解链路。GPU 生命周期诊断入口仍为 `tools/test_ecs_lifecycle.py`。
+
+五类物理光源的字段、单位与旧强度转换见 [物理光源](physical-lights.md)。

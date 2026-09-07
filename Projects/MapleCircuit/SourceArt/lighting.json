@@ -1,0 +1,582 @@
+{
+  "lights": [
+    {
+      "id": "05d83f64cc9c4c4c94ef5b7d2dfae77b",
+      "name": "Circuit sun / clear afternoon",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "rotation": [
+            0.5208888992603634,
+            0.28648889459319987,
+            0.0,
+            0.8041137157778703
+          ]
+        },
+        "light": {
+          "type": "directional",
+          "intensity": 9.5,
+          "color": [
+            1,
+            0.86,
+            0.68
+          ],
+          "angularRadius": 0.009
+        }
+      }
+    },
+    {
+      "id": "81dddfab9ebb5e148d5d8afb2c7be515",
+      "name": "Starting grid / broad sky reflection",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -48,
+            12,
+            -38
+          ],
+          "rotation": [
+            0.3298533275151249,
+            -0.35983999365286357,
+            0.0,
+            0.8727611135328538
+          ]
+        },
+        "light": {
+          "type": "rect",
+          "intensity": 1000,
+          "color": [
+            0.65,
+            0.82,
+            1
+          ],
+          "width": 18,
+          "height": 10
+        }
+      }
+    },
+    {
+      "id": "ddbe001e3a5d5363b661782bc47cf2af",
+      "name": "Street luminaire / Lamp_0",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -49.288629745262654,
+            6.1,
+            -30.380718256300607
+          ],
+          "rotation": [
+            0.7071067811865475,
+            0.0,
+            0.0,
+            0.7071067811865475
+          ]
+        },
+        "light": {
+          "type": "spot",
+          "intensity": 40,
+          "color": [
+            1,
+            0.77,
+            0.46
+          ],
+          "radius": 0.14,
+          "innerAngle": 0.5,
+          "outerAngle": 0.95
+        }
+      }
+    },
+    {
+      "id": "27de6e697d04558ba8e59c9cf7a76bd7",
+      "name": "Street luminaire / Lamp_24",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -49.798050588885964,
+            6.1,
+            -2.804130003279851
+          ],
+          "rotation": [
+            0.7071067811865475,
+            0.0,
+            0.0,
+            0.7071067811865475
+          ]
+        },
+        "light": {
+          "type": "spot",
+          "intensity": 40,
+          "color": [
+            1,
+            0.77,
+            0.46
+          ],
+          "radius": 0.14,
+          "innerAngle": 0.5,
+          "outerAngle": 0.95
+        }
+      }
+    },
+    {
+      "id": "8a26699b128d55229c45c5908555fdd7",
+      "name": "Street luminaire / Lamp_48",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -48.90447920257027,
+            6.1,
+            25.719797566500166
+          ],
+          "rotation": [
+            0.7071067811865475,
+            0.0,
+            0.0,
+            0.7071067811865475
+          ]
+        },
+        "light": {
+          "type": "spot",
+          "intensity": 40,
+          "color": [
+            1,
+            0.77,
+            0.46
+          ],
+          "radius": 0.14,
+          "innerAngle": 0.5,
+          "outerAngle": 0.95
+        }
+      }
+    },
+    {
+      "id": "04a5d15e7a715c1fa96f51353139463b",
+      "name": "Street luminaire / Lamp_72",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -45.05871601093675,
+            6.1,
+            48.51554988922093
+          ],
+          "rotation": [
+            0.7071067811865475,
+            0.0,
+            0.0,
+            0.7071067811865475
+          ]
+        },
+        "light": {
+          "type": "spot",
+          "intensity": 40,
+          "color": [
+            1,
+            0.77,
+            0.46
+          ],
+          "radius": 0.14,
+          "innerAngle": 0.5,
+          "outerAngle": 0.95
+        }
+      }
+    },
+    {
+      "id": "c00b0dfb913f5abab7cadc7a74069d43",
+      "name": "Street luminaire / Lamp_96",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -29.101928047036047,
+            6.1,
+            55.64770111024932
+          ],
+          "rotation": [
+            0.7071067811865475,
+            0.0,
+            0.0,
+            0.7071067811865475
+          ]
+        },
+        "light": {
+          "type": "spot",
+          "intensity": 40,
+          "color": [
+            1,
+            0.77,
+            0.46
+          ],
+          "radius": 0.14,
+          "innerAngle": 0.5,
+          "outerAngle": 0.95
+        }
+      }
+    },
+    {
+      "id": "12570788d60e5173a45ceae918df502d",
+      "name": "Street luminaire / Lamp_120",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -4.17079200478027,
+            6.1,
+            51.47805426462566
+          ],
+          "rotation": [
+            0.7071067811865475,
+            0.0,
+            0.0,
+            0.7071067811865475
+          ]
+        },
+        "light": {
+          "type": "spot",
+          "intensity": 40,
+          "color": [
+            1,
+            0.77,
+            0.46
+          ],
+          "radius": 0.14,
+          "innerAngle": 0.5,
+          "outerAngle": 0.95
+        }
+      }
+    },
+    {
+      "id": "aa9aa79f24fc5865b68eca070ba3ef64",
+      "name": "Street luminaire / Lamp_144",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            4.120802449504207,
+            6.1,
+            39.922169183737026
+          ],
+          "rotation": [
+            0.7071067811865475,
+            0.0,
+            0.0,
+            0.7071067811865475
+          ]
+        },
+        "light": {
+          "type": "spot",
+          "intensity": 40,
+          "color": [
+            1,
+            0.77,
+            0.46
+          ],
+          "radius": 0.14,
+          "innerAngle": 0.5,
+          "outerAngle": 0.95
+        }
+      }
+    },
+    {
+      "id": "8a8bf34a1465577b953afb8086c9abb5",
+      "name": "Street luminaire / Lamp_168",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            36.28619866579308,
+            6.1,
+            17.132995350136063
+          ],
+          "rotation": [
+            0.7071067811865475,
+            0.0,
+            0.0,
+            0.7071067811865475
+          ]
+        },
+        "light": {
+          "type": "spot",
+          "intensity": 40,
+          "color": [
+            1,
+            0.77,
+            0.46
+          ],
+          "radius": 0.14,
+          "innerAngle": 0.5,
+          "outerAngle": 0.95
+        }
+      }
+    },
+    {
+      "id": "1bc43772d6ed5a2f8844e92147a87060",
+      "name": "Street luminaire / Lamp_192",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            45.86004737466065,
+            6.1,
+            24.374546253809303
+          ],
+          "rotation": [
+            0.7071067811865475,
+            0.0,
+            0.0,
+            0.7071067811865475
+          ]
+        },
+        "light": {
+          "type": "spot",
+          "intensity": 40,
+          "color": [
+            1,
+            0.77,
+            0.46
+          ],
+          "radius": 0.14,
+          "innerAngle": 0.5,
+          "outerAngle": 0.95
+        }
+      }
+    },
+    {
+      "id": "ca76a72a1f1e57ba96de4cca28b719f4",
+      "name": "Street luminaire / Lamp_216",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            49.292341535216366,
+            6.1,
+            0.555996535284029
+          ],
+          "rotation": [
+            0.7071067811865475,
+            0.0,
+            0.0,
+            0.7071067811865475
+          ]
+        },
+        "light": {
+          "type": "spot",
+          "intensity": 40,
+          "color": [
+            1,
+            0.77,
+            0.46
+          ],
+          "radius": 0.14,
+          "innerAngle": 0.5,
+          "outerAngle": 0.95
+        }
+      }
+    },
+    {
+      "id": "c77728b7077954159f0949a28124aa0f",
+      "name": "Street luminaire / Lamp_240",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            49.26884389449714,
+            6.1,
+            -27.105064414934706
+          ],
+          "rotation": [
+            0.7071067811865475,
+            0.0,
+            0.0,
+            0.7071067811865475
+          ]
+        },
+        "light": {
+          "type": "spot",
+          "intensity": 40,
+          "color": [
+            1,
+            0.77,
+            0.46
+          ],
+          "radius": 0.14,
+          "innerAngle": 0.5,
+          "outerAngle": 0.95
+        }
+      }
+    },
+    {
+      "id": "75f39554b62d5a78978ec5dbd96c17d3",
+      "name": "Street luminaire / Lamp_264",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            43.89656460794135,
+            6.1,
+            -49.884509734844265
+          ],
+          "rotation": [
+            0.7071067811865475,
+            0.0,
+            0.0,
+            0.7071067811865475
+          ]
+        },
+        "light": {
+          "type": "spot",
+          "intensity": 40,
+          "color": [
+            1,
+            0.77,
+            0.46
+          ],
+          "radius": 0.14,
+          "innerAngle": 0.5,
+          "outerAngle": 0.95
+        }
+      }
+    },
+    {
+      "id": "7d3af6cd98845302b5d44758c7c90feb",
+      "name": "Street luminaire / Lamp_288",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            34.81445174866438,
+            6.1,
+            -55.162559985125654
+          ],
+          "rotation": [
+            0.7071067811865475,
+            0.0,
+            0.0,
+            0.7071067811865475
+          ]
+        },
+        "light": {
+          "type": "spot",
+          "intensity": 40,
+          "color": [
+            1,
+            0.77,
+            0.46
+          ],
+          "radius": 0.14,
+          "innerAngle": 0.5,
+          "outerAngle": 0.95
+        }
+      }
+    },
+    {
+      "id": "99023eaeb30754258e6ba58209613304",
+      "name": "Street luminaire / Lamp_312",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            14.38936529169937,
+            6.1,
+            -30.45694451079077
+          ],
+          "rotation": [
+            0.7071067811865475,
+            0.0,
+            0.0,
+            0.7071067811865475
+          ]
+        },
+        "light": {
+          "type": "spot",
+          "intensity": 40,
+          "color": [
+            1,
+            0.77,
+            0.46
+          ],
+          "radius": 0.14,
+          "innerAngle": 0.5,
+          "outerAngle": 0.95
+        }
+      }
+    },
+    {
+      "id": "dafc408c3842528ca63adef9614c40e1",
+      "name": "Street luminaire / Lamp_336",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -19.966697740454755,
+            6.1,
+            -32.83184743328816
+          ],
+          "rotation": [
+            0.7071067811865475,
+            0.0,
+            0.0,
+            0.7071067811865475
+          ]
+        },
+        "light": {
+          "type": "spot",
+          "intensity": 40,
+          "color": [
+            1,
+            0.77,
+            0.46
+          ],
+          "radius": 0.14,
+          "innerAngle": 0.5,
+          "outerAngle": 0.95
+        }
+      }
+    },
+    {
+      "id": "96b66e5aa41d50f18a64709ba9b26ab2",
+      "name": "Street luminaire / Lamp_360",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -44.65807116866531,
+            6.1,
+            -40.0430279277457
+          ],
+          "rotation": [
+            0.7071067811865475,
+            0.0,
+            0.0,
+            0.7071067811865475
+          ]
+        },
+        "light": {
+          "type": "spot",
+          "intensity": 40,
+          "color": [
+            1,
+            0.77,
+            0.46
+          ],
+          "radius": 0.14,
+          "innerAngle": 0.5,
+          "outerAngle": 0.95
+        }
+      }
+    }
+  ],
+  "renderOverrides": {
+    "sky": {
+      "castShadow": false
+    }
+  }
+}

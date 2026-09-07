@@ -1,0 +1,44 @@
+ALAS1
+{"id":"c1c8f0d55b734aaca5480038526b8a38","name":"physical_lights","version":1,"type":"Script","storage":"embedded","metadata":{}}
+// Five ordinary ECS components; no light-specific scene or scripting extension.
+var PhysicalLights = {ids:[], time:0, animate:false, yaw:.15, pitch:.78, distance:25};
+function initialize() {
+    // Saved maps already contain the script-created emitters; reconnect runtime state.
+    var savedLights = Engine.entities(['light']);
+    if (savedLights.length) { PhysicalLights.ids = savedLights; return; }
+    var types = ['spot','point','rect','capsule'];
+    var colors = [[1,.55,.25],[.3,.65,1],[1,.85,.6],[.5,1,.65]];
+    types.forEach(function(type, i) {
+        PhysicalLights.ids.push(Engine.create({name:type,components:{
+            transform:{position:[(i-1.5)*5,4,0],rotation:[Math.SQRT1_2,0,0,Math.SQRT1_2]},
+            light:{type:type,color:colors[i],intensity:700,radius:.4,width:2,height:1,length:2,
+                   innerAngle:.3,outerAngle:.65}
+        }}));
+    });
+    PhysicalLights.ids.push(Engine.create({name:'directional',components:{
+        transform:{rotation:[Math.SQRT1_2,0,0,Math.SQRT1_2]},
+        light:{type:'directional',color:[1,1,1],intensity:.35,angularRadius:.015}
+    }}));
+    Engine.log('Physical lights: Spot / Point / Rect / Capsule from left to right, plus Directional fill. Space animates emission geometry at constant power; Q/R or middle drag rotates the camera.');
+}
+function fixedUpdate(dt,input) {
+    var demo=PhysicalLights;
+    if(input.pressed[32]) demo.animate=!demo.animate;
+    if(demo.animate) {
+        demo.time+=dt;
+        demo.ids.forEach(function(id,i) {
+            var light=Engine.component(id,'light'), wave=.5+.5*Math.sin(demo.time+i);
+            if(light.type==='spot') light.outerAngle=.4+.4*wave;
+            if(light.type==='point') light.radius=.1+.8*wave;
+            if(light.type==='rect') light.width=.5+3*wave;
+            if(light.type==='capsule') light.length=3*wave;
+            if(light.type==='directional') light.angularRadius=.001+.08*wave;
+            Engine.setComponent(id,'light',light);
+        });
+    }
+    demo.yaw+=((input.keys[81]?1:0)-(input.keys[82]?1:0))*dt;
+    if(input.middle) { demo.yaw-=input.dx*.006; demo.pitch=Math.max(.3,Math.min(1.3,demo.pitch+input.dy*.004)); }
+    demo.distance=Math.max(10,Math.min(40,demo.distance-input.wheel*2));
+    Engine.camera(0,.5,0,demo.yaw,demo.pitch,demo.distance);
+}
+function updateUI(dt) {}

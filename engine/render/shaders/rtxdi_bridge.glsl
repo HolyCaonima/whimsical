@@ -26,7 +26,7 @@ layout(set = 0, binding = 15, std430) readonly buffer DiLights {
 
 struct RAB_Surface { Surface data; vec3 viewDirection; float depth; };
 struct RAB_LightInfo { Light data; };
-struct RAB_LightSample { vec3 position; vec3 radiance; };
+struct RAB_LightSample { PhysicalLightSample data; };
 
 RAB_Surface RAB_EmptySurface() {
     return RAB_Surface(Surface(vec3(0), vec3(0,1,0), vec3(0), 1, 0, vec3(0), 0), vec3(0,1,0), 0);
@@ -57,8 +57,10 @@ bool RAB_AreMaterialsSimilar(Surface a, Surface b) {
 ivec2 RAB_ClampSamplePositionIntoView(ivec2 p, bool previousFrame) {
     return clamp(p, ivec2(0), ivec2(g.resolution.xy)-1);
 }
-RAB_LightInfo RAB_EmptyLightInfo() { return RAB_LightInfo(Light(vec4(0), vec4(0))); }
-RAB_LightSample RAB_EmptyLightSample() { return RAB_LightSample(vec3(0), vec3(0)); }
+RAB_LightInfo RAB_EmptyLightInfo() { return RAB_LightInfo(Light(vec4(0),vec4(0),vec4(0),vec4(0),vec4(0),vec4(0))); }
+RAB_LightSample RAB_EmptyLightSample() {
+    return RAB_LightSample(PhysicalLightSample(vec3(0),vec3(0),vec3(0),vec3(0),vec3(0),0,0,0));
+}
 RAB_LightInfo RAB_LoadLightInfo(uint id, bool previousFrame) {
     return RAB_LightInfo(previousFrame ? previousLights[id] : lights[id]);
 }
@@ -66,25 +68,23 @@ RAB_LightInfo RAB_LoadLightInfo(uint id, bool previousFrame) {
 // restarts DI/NRD history; parameter animation uses previousLights and replay.
 int RAB_TranslateLightIndex(uint id, bool toPrevious) { return id < g.counts.y ? int(id) : -1; }
 RAB_LightSample RAB_SamplePolymorphicLight(RAB_LightInfo info, RAB_Surface s, vec2 uv) {
-    float z = 1-2*uv.x, angle = 2*PI*uv.y, r = sqrt(max(0,1-z*z));
-    vec3 point = info.data.positionRadius.xyz + info.data.positionRadius.w * vec3(r*cos(angle),z,r*sin(angle));
-    float d2 = max(dot(point-s.data.p,point-s.data.p), .04);
-    vec3 radiance = info.data.colorIntensity.rgb * info.data.colorIntensity.w /
-        (d2 + info.data.positionRadius.w*info.data.positionRadius.w);
-    return RAB_LightSample(point, radiance);
+    return RAB_LightSample(samplePhysicalLight(info.data,s.data.p,uv));
 }
 void diSignal(RAB_Surface s, RAB_LightSample l, out vec3 diffuse, out vec3 specular) {
-    vec3 direction = safeNormalize(l.position-s.data.p);
+    vec3 direction = l.data.direction;
     float nl = max(dot(s.data.n,direction),0);
-    diffuse = l.radiance * (nl/PI);
-    specular = l.radiance * specularBrdf(s.data,s.viewDirection,direction) * nl;
+    // RTXDI reservoirs live in (light ID, uniform UV), not solid-angle measure.
+    // Include Le/pdfOmega in the target; StreamSample divides only by discrete p(light).
+    // Re-evaluation recomputes the entire UV integrand at the destination surface.
+    diffuse = l.data.weight * (nl/PI);
+    specular = l.data.weight * specularBrdf(s.data,s.viewDirection,direction) * nl;
 }
 float RAB_GetLightSampleTargetPdfForSurface(RAB_LightSample l, RAB_Surface s) {
     vec3 d, sp; diSignal(s,l,d,sp);
     return luminance(d*s.data.albedo*(1-s.data.metallic)+sp);
 }
 bool RAB_GetConservativeVisibility(RAB_Surface s, RAB_LightSample l) {
-    return visible(s.data.p,s.data.n,l.position);
+    return lightVisible(s.data.p,s.data.n,l.data);
 }
 bool RAB_GetTemporalConservativeVisibility(RAB_Surface currentSurface, RAB_Surface previousSurface,
                                          RAB_LightSample l) {

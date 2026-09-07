@@ -16,7 +16,7 @@ import uuid
 
 import numpy as np
 
-from test_shader_surfaces import ROOT, read_asset, write_asset
+from test_shader_surfaces import ROOT, read_asset, write_asset, set_point_lights
 
 
 def create_project(tag):
@@ -32,7 +32,6 @@ def create_project(tag):
     template = copy.deepcopy(scene["entities"][0])
     scene.update(scripts=[], entities=[], materials=[], materialAssets=[], player="", references={}, data={})
     scene["camera"].update(target=[0, 0, 0], yaw=.6, pitch=.9, distance=13, fov=.62)
-    scene["lights"] = [dict(positionRadius=[-3, 6, -1, 0], colorIntensity=[1, 1, 1, 75])]
     for color in ([.5, .5, .5], [.2, .1, .05]):
         scene["materials"].append(dict(shader=shader,
             properties=dict(baseColor=color, roughness=.8, metallic=0), textures={}))
@@ -43,6 +42,7 @@ def create_project(tag):
         obj["components"]["transform"].update(position=position, rotation=[0, 0, 0, 1])
         obj["components"]["render"].update(scale=scale, material=material)
         scene["entities"].append(obj)
+    set_point_lights(scene, [dict(positionRadius=[-3, 6, -1, 0], colorIntensity=[1, 1, 1, 75])])
     write_asset(content / "Test.asset", "Map", scene)
     return project
 

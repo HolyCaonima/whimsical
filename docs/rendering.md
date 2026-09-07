@@ -22,9 +22,9 @@ NRD 只消费 motion XY，`motionVectorScale.z=0`。GLM 用于 Vulkan raster 的
 
 ## DI / GI
 
-DI 直接编译固定版本的 NVIDIA RTXDI-Library（`f12037fa8e97ebc08e9e3edfd2de528ed1772a4b`），通过 `rtxdi_bridge.glsl` 的 RAB 接口接入当前 G-buffer、灯表、材质和 TLAS。Reservoir streaming、packing、时域／空间复用及 ray-traced MIS-like bias correction 使用 SDK 源码。初始 8 个候选来自 CPU 构建的 90% power / 10% uniform 离散灯分布；UV 量化后求 target，保留 engine 现有球形位置扰动的解析灯模型。初始可见性剔除保留 M，最终选中灯每帧重新查询当前 TLAS，不缓存旧阴影。
+DI 直接编译固定版本的 NVIDIA RTXDI-Library（`f12037fa8e97ebc08e9e3edfd2de528ed1772a4b`），通过 `rtxdi_bridge.glsl` 的 RAB 接口接入当前 G-buffer、灯表、材质和 TLAS。Reservoir streaming、packing、时域／空间复用及 ray-traced MIS-like bias correction 使用 SDK 源码。初始 8 个候选来自 CPU 构建的 90% power / 10% uniform 离散灯分布；UV 量化后求 target，以五类物理光源共享采样器计算 Le/pdfOmega，见 [物理光源](physical-lights.md)。初始可见性剔除保留 M，最终选中灯每帧重新查询当前 TLAS，不缓存旧阴影。
 
-时域启用 permutation sampling、最多 20 帧历史、深度／法线匹配；空间阶段读取完整的 temporal 输出，使用 4 个邻居，短历史区域增至 8 个。时域与空间是独立 dispatch，避免邻居读写竞争。灯槽在数量不变时保持索引对应，上一帧灯参数单独保留，参数动画不会全屏 reset；灯数量变化会重启历史。
+时域启用 permutation sampling、最多 20 帧历史、深度／法线匹配；空间阶段读取完整的 temporal 输出，使用 4 个邻居，短历史区域增至 8 个。时域与空间是独立 dispatch，避免邻居读写竞争。灯槽在实体身份数组不变时保持索引对应，上一帧灯参数单独保留，参数动画不会全屏 reset；灯实体增删、启停和同数量替换会重启历史。
 
 DI buffer 使用 SDK 的 16×16 block-linear 地址与 24 字节 packed reservoir，共四层：previous final、initial/temporal/replay、spatial/final、previous replay/initial probe。梯度 pass 在 initial sampling 覆写前读取 previous replay；帧末复制 final 和 replay。四层共 96 字节／对齐像素，与旧 DI 三个 32 字节 buffer 相同（尺寸向 16 对齐会产生少量 padding）。
 
@@ -33,7 +33,7 @@ GI initial sample 从当前 G-buffer 表面发射余弦半球 BRDF 光线。命�
 
 GI 仍使用原有的受限历史与 Jacobian 支持域，相关样本与有限邻居存在偏差；本次仅替换 DI，不把它称为 SDK ReSTIR GI。环境由实际 secondary ray miss 求值，不使用屏幕空间遮蔽或环境探针。
 
-镜面间接光为独立的 GGX VNDF ray。二次表面的 shading 当前为 diffuse NEE 加 emission；这是一次 GI bounce 的基础，不等同多跳 glossy path tracing。
+镜面间接光为独立的 GGX VNDF ray。二次表面的 shading 为 diffuse + GGX NEE 加 emission；这是一次 GI bounce 的基础，不等同多跳 glossy path tracing。
 
 ## NRD
 

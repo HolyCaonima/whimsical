@@ -125,13 +125,19 @@ foreach(SHADER IN LISTS SHADER_FILES)
   add_custom_command(OUTPUT "${OUTPUT}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
     COMMAND "${DEPS}/glslang/bin/glslang.exe" --target-env vulkan1.2 -V "${CMAKE_SOURCE_DIR}/engine/render/shaders/${SHADER}" -I${CMAKE_SOURCE_DIR}/engine/render/shaders -o "${OUTPUT}"
-    DEPENDS "${CMAKE_SOURCE_DIR}/engine/render/shaders/${SHADER}" "${CMAKE_SOURCE_DIR}/engine/render/shaders/common.glsl" VERBATIM)
+    DEPENDS "${CMAKE_SOURCE_DIR}/engine/render/shaders/${SHADER}" "${CMAKE_SOURCE_DIR}/engine/render/shaders/common.glsl"
+      "${CMAKE_SOURCE_DIR}/engine/lighting/LightSampling.h" VERBATIM)
   list(APPEND SPIRV "${OUTPUT}")
 endforeach()
 add_custom_target(afterlight_shaders DEPENDS ${SPIRV})
 add_dependencies(Afterlight afterlight_shaders)
 target_compile_definitions(Afterlight PRIVATE AFTERLIGHT_SHADERS="${CMAKE_BINARY_DIR}/shaders")
 enable_testing()
+add_executable(light_tests tests/LightTests.cpp)
+target_link_libraries(light_tests PRIVATE afterlight_core)
+target_compile_options(light_tests PRIVATE /W4 /permissive- /utf-8)
+afterlight_copy_onnx(light_tests)
+add_test(NAME physical_lights COMMAND light_tests)
 add_executable(ecs_tests tests/EcsTests.cpp)
 target_link_libraries(ecs_tests PRIVATE afterlight_core)
 target_compile_options(ecs_tests PRIVATE /W4 /permissive- /utf-8)

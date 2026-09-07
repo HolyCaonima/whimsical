@@ -17,10 +17,6 @@ struct Disabled {
     using Ownership = SystemComponent;
 };
 struct Interactable {};
-struct PointLight {
-    vec3 color{1};
-    float intensity = 1, radius = .1f;
-};
 struct ScriptData {
     Json value = Json::object();
 };

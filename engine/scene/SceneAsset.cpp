@@ -54,7 +54,7 @@ static Json migrateEntity(const Json& item) {
 }
 Json SceneDocument::json() const {
     validate();
-    Json j{{"version", 6},
+    Json j{{"version", 7},
            {"scripts", Json::array()},
            {"entities", Json::array()},
            {"materials", Json::array()},
@@ -87,7 +87,7 @@ Json SceneDocument::json() const {
 }
 SceneDocument SceneDocument::fromJson(const Json& j) {
     auto version = j.at("version").uint();
-    if (version != 3 && version != 4 && version != 5 && version != 6)
+    if (version < 3 || version > 7)
         throw std::invalid_argument("Unsupported Map version");
     SceneDocument s;
     for (const auto& script : j.at("scripts").elements())
@@ -105,7 +105,7 @@ SceneDocument SceneDocument::fromJson(const Json& j) {
             light.id = newPersistentId();
             light.name = "Light";
             light.components.set(SceneTransform{{vec3(p)}});
-            light.components.set(PointLight{vec3(c), c.w, p.w});
+            light.components.set(LightComponent{vec3(c), c.w * (4*Pi)*(c.x+c.y+c.z), p.w});
             s.entities.push_back(std::move(light));
         }
     const auto& camera = j.at("camera");
@@ -125,6 +125,15 @@ SceneDocument SceneDocument::fromJson(const Json& j) {
         s.references[r.first] = r.second.string();
     for (const auto& item : j.at(version == 3 ? "objects" : "entities").elements()) {
         auto value = version == 3 ? migrateEntity(item) : item;
+        // Legacy intensity was an inverse-square coefficient (W/sr). Convert at
+        // the import boundary; v7 scripts and components always author radiant power.
+        if (version < 7 && value.at("components").contains("light")) {
+            auto& light = value["components"]["light"];
+            float oldIntensity = light.contains("intensity") ? float(light.at("intensity").number()) : 1.f;
+            auto color = light.contains("color") ? vector3(light.at("color")) : vec3(1);
+            light["intensity"] = oldIntensity * (4*Pi)*(color.x+color.y+color.z);
+            light["type"] = "point";
+        }
         if (version < 5) {
             auto fields = value.at("components").members();
             if (auto it = fields.find("jointColliders"); it != fields.end() && it->second.elements().empty())

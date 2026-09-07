@@ -992,7 +992,8 @@ struct Renderer::Impl {
         VkAccelerationStructureInstanceKHR a{};
         a.transform = rowMajor(shadowModel[slot]);
         a.instanceCustomIndex = slot;
-        a.mask = p.live && p.attributes.visible ? 0xffu : 0u;
+        // Bit 0 is shadow visibility; the other bits retain material/reflective rays.
+        a.mask = p.live && p.attributes.visible ? (p.attributes.castShadow ? 0xffu : 0xfeu) : 0u;
         a.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
         if (p.live) {
             auto shaderIndex = materialBindings.materials[p.attributes.material].info.x;
@@ -1338,7 +1339,7 @@ struct Renderer::Impl {
             sourceFrame->cpuProfile && sourceFrame->cpuProfile->request > lastCpuProfileRequest;
         CpuProfiler cpuProfiler(captureCpu, "Render", "Render Frame");
         FrameRef frameRef = sourceFrame;
-        if (options.auditMotion || options.auditOccluder >= 0) {
+        if (options.auditMotion || options.auditOccluder >= 0 || options.auditLight >= 0) {
             Frame diagnostic = *sourceFrame;
             if (options.auditMotion)
                 diagnostic.camera.yaw += .04f * std::sin(float(frameNumber) * .017f);
@@ -1346,6 +1347,11 @@ struct Renderer::Impl {
                 diagnostic.proxies.at(size_t(options.auditOccluder)).transform.position.x +=
                     frameNumber >= 64 ? 2.f : 0.f;
                 diagnostic.forceFullUpload = true;
+            }
+            if (options.auditLight >= 0 && frameNumber >= 64) {
+                auto& light = diagnostic.lights.at(size_t(options.auditLight));
+                light.positionRadius.x += 2.f;
+                light.colorIntensity.w *= .25f;
             }
             frameRef = std::make_shared<const Frame>(std::move(diagnostic));
         }
@@ -1436,13 +1442,11 @@ struct Renderer::Impl {
         auto* distribution = static_cast<vec4*>(reservoirs[2].mapped);
         float totalPower = 0;
         for (const auto& light : frame.lights)
-            totalPower +=
-                glm::dot(vec3(light.colorIntensity), vec3(.2126f, .7152f, .0722f)) * light.colorIntensity.w;
+            totalPower += lightProposalPower(light);
         float cdf = 0;
         for (size_t i = 0; i < frame.lights.size(); ++i) {
             const auto& light = frame.lights[i];
-            float power =
-                glm::dot(vec3(light.colorIntensity), vec3(.2126f, .7152f, .0722f)) * light.colorIntensity.w;
+            float power = lightProposalPower(light);
             float pdf = totalPower > 0 ? .9f * power / totalPower + .1f / frame.lights.size()
                                        : 1.f / frame.lights.size();
             cdf += pdf;

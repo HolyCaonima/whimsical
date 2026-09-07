@@ -344,7 +344,7 @@ static duk_ret_t callNative(duk_context* c) {
             SceneEntity description;
             description.name = "Light";
             description.components.set(SceneTransform{{{num(c, 0), num(c, 1), num(c, 2)}}});
-            description.components.set(PointLight{{num(c, 4), num(c, 5), num(c, 6)}, num(c, 7), num(c, 3)});
+            description.components.set(LightComponent{{num(c, 4), num(c, 5), num(c, 6)}, num(c, 7), num(c, 3)});
             duk_push_uint(c, ScenePersistence::createEntity(w, description, assets(c)));
             return 1;
         }
@@ -502,8 +502,8 @@ static duk_ret_t callNative(duk_context* c) {
                          {"z", w.resources.camera.target.z}});
             return 1;
         case LightIntensity:
-            w.edit<PointLight>(duk_require_uint(c, 0),
-                               [&](PointLight& light) { light.intensity = num(c, 1); });
+            w.edit<LightComponent>(duk_require_uint(c, 0),
+                               [&](LightComponent& light) { light.intensity = num(c, 1); });
             return 0;
         case ConfigureCollider: {
             uint32_t id = duk_require_uint(c, 0);

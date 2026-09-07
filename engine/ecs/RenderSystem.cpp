@@ -26,7 +26,8 @@ void RenderSystem::add(Entity e, RenderComponent appearance, std::shared_ptr<con
     auto& r = s.registry.emplace<Renderable>(e, Renderable{appearance, std::move(mesh)});
     r.slot = s.renderScene.create(proxyTransform(t, r),
                                   {e, appearance.material, appearance.shape,
-                                   s.enabled(e) && appearance.visible, s.registry.has<Interactable>(e)});
+                                   s.enabled(e) && appearance.visible, s.registry.has<Interactable>(e),
+                                   appearance.castShadow});
     if (r.mesh)
         s.changes.mark<GeometryChanged>(e);
     s.changes.mark<Renderable>(e);
@@ -57,7 +58,8 @@ void RenderSystem::publishAttributes(Entity e) {
     if (auto r = s.registry.tryGet<Renderable>(e))
         s.renderScene.setAttributes(r->slot,
                                     {e, r->appearance.material, r->appearance.shape,
-                                     s.enabled(e) && r->appearance.visible, s.registry.has<Interactable>(e)});
+                                     s.enabled(e) && r->appearance.visible, s.registry.has<Interactable>(e),
+                                     r->appearance.castShadow});
 }
 void RenderSystem::setStaticMesh(Entity e, std::shared_ptr<const StaticMesh> mesh) {
     auto batch = Changes::Batch(s.changes);
@@ -111,13 +113,13 @@ void RenderSystem::setVisible(Entity e, bool visible) {
 }
 void RenderSystem::extract(Frame& f, bool debug) {
     s.changes.requireCommitted();
-    for (auto e : s.registry.view<Transform, PointLight>()) {
+    for (auto e : s.registry.view<Transform, LightComponent>()) {
         if (!s.enabled(e))
             continue;
-        const auto& light = s.registry.get<PointLight>(e);
+        const auto& light = s.registry.get<LightComponent>(e);
         f.lightEntities.push_back(e);
-        f.lights.push_back({vec4(s.registry.get<Transform>(e).world.position, light.radius),
-                            vec4(light.color, light.intensity)});
+        const auto& pose = s.registry.get<Transform>(e).world;
+        f.lights.push_back(packLight(light, pose.position, pose.rotation));
     }
     for (auto e : s.registry.view<Renderable>()) {
         const auto& r = s.registry.get<Renderable>(e);

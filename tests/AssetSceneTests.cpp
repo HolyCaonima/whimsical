@@ -209,7 +209,7 @@ static void scene(const fs::path& directory) {
     auto path = assets.project().startupMap();
     auto original = assets.load<SceneAsset>(path);
     check(original->header().storage == PayloadStorage::Inline, "Rain Court Map must have an inline payload");
-    check(original->scene.entities.size() == 56, "Rain Court migration must preserve authored content");
+    check(original->scene.entities.size() == 57, "Rain Court contains 48 authored objects and 9 physical lights");
     auto human = assets.load<animation::ai4animation::ControllerResource>(
         AssetPath("/Game/animations/ai4animation/biped/controller"));
     check(human->data->network == assets.load<animation::ai4animation::OnnxModel>(

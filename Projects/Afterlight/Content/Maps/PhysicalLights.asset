@@ -1,0 +1,414 @@
+ALAS1
+{"id": "4bc789063fa75b0098d737284a1c7a53", "name": "PhysicalLights", "version": 1, "type": "Map", "storage": "embedded", "metadata": {}}
+{
+  "version": 7,
+  "entities": [
+    {
+      "id": "839c3ebbc2c95f49a01b0fa8c0bc027c",
+      "name": "Ground",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            0,
+            -0.15,
+            0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            22,
+            0.3,
+            9
+          ],
+          "material": 0
+        }
+      }
+    },
+    {
+      "id": "60cb52f385b75a73ac82ba21c24d7d3b",
+      "name": "Back wall",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            0,
+            1.5,
+            -4.5
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            22,
+            3,
+            0.2
+          ],
+          "material": 0
+        }
+      }
+    },
+    {
+      "id": "b47d3d2836d354fc8eb0b6dbad549b2b",
+      "name": "Shadow pillar 0",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -7.5,
+            1,
+            0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            0.4,
+            2,
+            0.4
+          ],
+          "material": 2
+        }
+      }
+    },
+    {
+      "id": "42cd3b7ab9f25feb90182a3f6c529bfe",
+      "name": "Metal capsule 0",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -6.5,
+            0.65,
+            1.5
+          ]
+        },
+        "render": {
+          "shape": "capsule",
+          "scale": [
+            0.6,
+            1.3,
+            0.6
+          ],
+          "material": 1
+        }
+      }
+    },
+    {
+      "id": "0e13dadab97952a89e54135eede7210e",
+      "name": "Diffuse block 0",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -8.5,
+            0.4,
+            1.5
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "material": 2
+        }
+      }
+    },
+    {
+      "id": "ccf3c6b1ce855407906e10109279d9c9",
+      "name": "Shadow pillar 1",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -2.5,
+            1,
+            0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            0.4,
+            2,
+            0.4
+          ],
+          "material": 2
+        }
+      }
+    },
+    {
+      "id": "410f3df7de875033853ca903172b083a",
+      "name": "Metal capsule 1",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -1.5,
+            0.65,
+            1.5
+          ]
+        },
+        "render": {
+          "shape": "capsule",
+          "scale": [
+            0.6,
+            1.3,
+            0.6
+          ],
+          "material": 1
+        }
+      }
+    },
+    {
+      "id": "788de1084e2e506584a4fb6f88a8c9c2",
+      "name": "Diffuse block 1",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -3.5,
+            0.4,
+            1.5
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "material": 2
+        }
+      }
+    },
+    {
+      "id": "f809a09d597b5b07987fc4874c27e029",
+      "name": "Shadow pillar 2",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            2.5,
+            1,
+            0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            0.4,
+            2,
+            0.4
+          ],
+          "material": 2
+        }
+      }
+    },
+    {
+      "id": "9ebd2e86d4ea54c7b81004ee1119b4bb",
+      "name": "Metal capsule 2",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            3.5,
+            0.65,
+            1.5
+          ]
+        },
+        "render": {
+          "shape": "capsule",
+          "scale": [
+            0.6,
+            1.3,
+            0.6
+          ],
+          "material": 1
+        }
+      }
+    },
+    {
+      "id": "7cbc5cfd5e8e5c309e9ddee0bd5c8ad1",
+      "name": "Diffuse block 2",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            1.5,
+            0.4,
+            1.5
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "material": 2
+        }
+      }
+    },
+    {
+      "id": "c449aa1c23975d47994baa4e95af63bb",
+      "name": "Shadow pillar 3",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            7.5,
+            1,
+            0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            0.4,
+            2,
+            0.4
+          ],
+          "material": 2
+        }
+      }
+    },
+    {
+      "id": "f81947066ffd5b548661c1de568597c5",
+      "name": "Metal capsule 3",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            8.5,
+            0.65,
+            1.5
+          ]
+        },
+        "render": {
+          "shape": "capsule",
+          "scale": [
+            0.6,
+            1.3,
+            0.6
+          ],
+          "material": 1
+        }
+      }
+    },
+    {
+      "id": "b6d1c9db7647500eabd5f3b2911c0e8e",
+      "name": "Diffuse block 3",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            6.5,
+            0.4,
+            1.5
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "material": 2
+        }
+      }
+    }
+  ],
+  "materials": [
+    {
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "roughness": 0.8,
+        "metallic": 0
+      },
+      "textures": {}
+    },
+    {
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.3,
+          0.32,
+          0.35
+        ],
+        "roughness": 0.25,
+        "metallic": 1
+      },
+      "textures": {}
+    },
+    {
+      "shader": {
+        "id": "c6152da2cdb35ce49c81a5f9157b4179",
+        "path": "/Game/shaders/Standard"
+      },
+      "properties": {
+        "baseColor": [
+          0.6,
+          0.6,
+          0.6
+        ],
+        "roughness": 0.6,
+        "metallic": 0
+      },
+      "textures": {}
+    }
+  ],
+  "materialAssets": [],
+  "scripts": [
+    {
+      "id": "c1c8f0d55b734aaca5480038526b8a38",
+      "path": "/Game/scripts/levels/physical_lights"
+    }
+  ],
+  "camera": {
+    "target": [
+      0,
+      0.5,
+      0
+    ],
+    "yaw": 0.15,
+    "pitch": 0.78,
+    "distance": 25,
+    "fov": 0.62
+  },
+  "navigation": {
+    "min": [
+      -15,
+      0,
+      -10
+    ],
+    "max": [
+      15,
+      6,
+      10
+    ],
+    "cellSize": 0.5,
+    "planeTolerance": 0.03
+  },
+  "player": "",
+  "references": {},
+  "data": {}
+}

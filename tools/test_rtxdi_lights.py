@@ -10,7 +10,7 @@ import uuid
 import numpy as np
 
 from test_nrd_shadows import ROOT, create_project
-from test_shader_surfaces import read_asset, write_asset
+from test_shader_surfaces import read_asset, write_asset, set_point_lights
 
 
 def reference(camera, lights, w, h):
@@ -56,7 +56,7 @@ def run():
                    colorIntensity=[.2 + (i % 3 == 0), .2 + (i % 3 == 1), .2 + (i % 3 == 2),
                                    .05 if i < 248 else 8 + (i - 248) * 2]) for i in range(256)]
     for case, active in (("many", lights), ("zero", [])):
-        scene["lights"] = active
+        set_point_lights(scene, active)
         write_asset(project / "Content/Test.asset", "Map", scene)
         name = tag + "-" + case
         args = [str(ROOT / "build/bin/Release/Afterlight.exe"), "--project", str(project),

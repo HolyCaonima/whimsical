@@ -1,10 +1,11 @@
 """Upgrade ALAS1 Map payloads to optional ECS components, preserving asset/entity IDs.
 
 Usage: python tools/migrate_ecs_scenes.py <Map.asset> [...]
-The runtime imports v3/v4; new output uses v6. This tool also removes inert recipe colliders from
+The runtime imports v3-v6; new output uses v7. This tool also removes inert recipe colliders from
 authored maps; geometry and collider dimensions remain independent.
 """
 import json
+import math
 import sys
 import uuid
 from pathlib import Path
@@ -55,7 +56,7 @@ def upgrade_v4(scene):
     return scene
 
 
-def upgrade(scene):
+def upgrade_v6(scene):
     if scene['version'] == 6:
         return scene
     scene = upgrade_v4(scene)
@@ -69,6 +70,19 @@ def upgrade(scene):
         scene['references']['cyanLight'] = lights[scene['data'].pop('cyanLight')]['id']
     scene['entities'].extend(lights)
     scene['version'] = 6
+    return scene
+
+
+def upgrade(scene):
+    if scene['version'] == 7:
+        return scene
+    scene = upgrade_v6(scene)
+    for entity in scene['entities']:
+        light = entity['components'].get('light')
+        if light is not None:
+            light['type'] = 'point'
+            light['intensity'] = light.get('intensity', 1)*4*math.pi*sum(light.get('color', [1,1,1]))
+    scene['version'] = 7
     return scene
 
 

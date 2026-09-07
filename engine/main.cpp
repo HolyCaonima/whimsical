@@ -75,6 +75,8 @@ int main(int argc, char** argv) {
                 options.auditMotion = true;
             else if (arg == "--audit-occluder")
                 options.auditOccluder = number();
+            else if (arg == "--audit-light")
+                options.auditLight = number();
             else if (arg == "--no-validation") {
                 options.validation = false;
                 startupCommands.push_back("r.Validation false");
@@ -122,7 +124,7 @@ int main(int argc, char** argv) {
                              "0..7] [--no-hud] [--validation] [--no-validation] [--present "
                              "fifo|mailbox|immediate] [--demo] [--smoke] [--ecs-smoke] [--stress N] "
                              "[--full-upload] "
-                             "[--audit NAME] [--audit-motion] [--audit-occluder SLOT] [--physics-debug] "
+                             "[--audit NAME] [--audit-motion] [--audit-occluder SLOT] [--audit-light INDEX] [--physics-debug] "
                              "[--project DIR] [--map "
                              "/Game/Maps/Name] [--console] [--exec \"command\"] [--cvar \"name=value\"] "
                              "[--console-smoke] [--profile-gpu] [--profile-cpu]\n";
@@ -134,6 +136,8 @@ int main(int argc, char** argv) {
             throw std::runtime_error("--audit-motion requires --audit NAME");
         if (options.auditOccluder >= 0 && options.audit.empty())
             throw std::runtime_error("--audit-occluder requires --audit NAME");
+        if (options.auditLight >= 0 && options.audit.empty())
+            throw std::runtime_error("--audit-light requires --audit NAME");
         if (!options.audit.empty()) {
             if (!options.maxFrames)
                 options.maxFrames = 192;

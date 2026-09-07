@@ -14,7 +14,9 @@ var RainCourt = {
         Interactions.register(beacon, 'Power console', {x : -6, y : 0, z : -1.7}, function() {
             var state = Engine.sceneData();
             state.power = !state.power;
-            Engine.lightIntensity(Engine.sceneObject('cyanLight'), state.power ? 22 : 0);
+            var light = Engine.component(Engine.sceneObject('cyanLight'), 'light');
+            light.intensity = state.power ? state.cyanLightPower : 0;
+            Engine.setComponent(Engine.sceneObject('cyanLight'), 'light', light);
             Engine.setMaterial(beacon, state.power ? m.brass : m.dark);
             var p = Engine.position(door);
             Engine.transform(door, {position:{x:p.x, y:state.power ? 1.3 : 4.3, z:p.z}, rotation:{w:1}});
