@@ -27,6 +27,7 @@ struct Image {
     uint32_t mipLevels = 1;
     VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
 };
+enum class BufferMemory { Device, Upload, Readback };
 class VulkanContext {
   public:
     VkInstance instance = VK_NULL_HANDLE;
@@ -46,7 +47,7 @@ class VulkanContext {
     bool debugLabels = false;
     void initialize(HWND, bool validation);
     ~VulkanContext();
-    Buffer buffer(VkDeviceSize, VkBufferUsageFlags, bool host = false);
+    Buffer buffer(VkDeviceSize, VkBufferUsageFlags, BufferMemory memory = BufferMemory::Device);
     void destroy(Buffer&);
     Image image(uint32_t, uint32_t, VkFormat, VkImageUsageFlags, uint32_t mipLevels = 1);
     void destroy(Image&);
@@ -56,6 +57,6 @@ class VulkanContext {
                     VkPipelineStageFlags2 dstStage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
                     VkAccessFlags2 dstAccess = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
     static void barrier(VkCommandBuffer);
-    uint32_t memoryType(uint32_t, VkMemoryPropertyFlags) const;
+    uint32_t memoryType(uint32_t, VkMemoryPropertyFlags required, VkMemoryPropertyFlags preferred = 0) const;
 };
 } // namespace afterlight

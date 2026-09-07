@@ -199,13 +199,24 @@ VulkanContext::~VulkanContext() {
     if (instance)
         vkDestroyInstance(instance, nullptr);
 }
-uint32_t VulkanContext::memoryType(uint32_t mask, VkMemoryPropertyFlags flags) const {
-    for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++)
-        if ((mask & (1u << i)) && (memoryProperties.memoryTypes[i].propertyFlags & flags) == flags)
-            return i;
+uint32_t VulkanContext::memoryType(uint32_t mask, VkMemoryPropertyFlags required,
+                                 VkMemoryPropertyFlags preferred) const {
+    uint32_t fallback = UINT32_MAX;
+    for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
+        const auto flags = memoryProperties.memoryTypes[i].propertyFlags;
+        if ((mask & (1u << i)) && (flags & required) == required) {
+            if ((flags & preferred) == preferred)
+                return i;
+            if (fallback == UINT32_MAX)
+                fallback = i;
+        }
+    }
+    if (fallback != UINT32_MAX)
+        return fallback;
     throw std::runtime_error("No suitable Vulkan memory type");
 }
-Buffer VulkanContext::buffer(VkDeviceSize size, VkBufferUsageFlags usage, bool host) {
+Buffer VulkanContext::buffer(VkDeviceSize size, VkBufferUsageFlags usage, BufferMemory memory) {
+    const bool host = memory != BufferMemory::Device;
     Buffer b;
     b.size = size;
     VkBufferCreateInfo bc{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -220,9 +231,10 @@ Buffer VulkanContext::buffer(VkDeviceSize size, VkBufferUsageFlags usage, bool h
         (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) ? VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT : 0;
     VkMemoryAllocateInfo ma{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
     ma.allocationSize = req.size;
-    ma.memoryTypeIndex = memoryType(req.memoryTypeBits, host ? (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                                                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
-                                                             : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    const auto required = host ? (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+                               : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    ma.memoryTypeIndex = memoryType(req.memoryTypeBits, required,
+                                   memory == BufferMemory::Readback ? VK_MEMORY_PROPERTY_HOST_CACHED_BIT : 0);
     ma.pNext = &flags;
     VK_CHECK(vkAllocateMemory(device, &ma, nullptr, &b.memory));
     VK_CHECK(vkBindBufferMemory(device, b.handle, b.memory, 0));

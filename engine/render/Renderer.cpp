@@ -8,7 +8,7 @@
 #include "assets/StaticMesh.h"
 #include <map>
 #include "UiRenderer.h"
-#include "RenderAudit.h"
+#include "RenderAuditWorker.h"
 #include <fstream>
 #include <iostream>
 #include <filesystem>
@@ -99,7 +99,9 @@ struct Renderer::Impl {
     std::array<VkPipeline, PassCount> compute{};
     Buffer globals, instanceData, materialData, lightData, vertexData, indexData, tlasInstances, tlasScratch,
         readback, auditReadback;
-    RenderAudit audit;
+    std::unique_ptr<RenderAuditWorker> audit;
+    bool auditReadbackPending = false;
+    uint32_t auditSamples = 0;
     std::array<Buffer, 6> reservoirs;
     std::vector<AccelerationStructure> blas;
     std::vector<Buffer> blasScratch;
@@ -222,15 +224,14 @@ struct Renderer::Impl {
     }
     void initialize() {
         vk.initialize(window, options.validation);
-        globals = vk.buffer(sizeof(Globals), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
+        globals = vk.buffer(sizeof(Globals), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, BufferMemory::Upload);
         instanceData =
-            vk.buffer(sizeof(GpuInstance) * MaxInstances, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
-        materialData = vk.buffer(sizeof(GpuMaterial) * MaxMaterials, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
-        lightData = vk.buffer(sizeof(Light) * MaxLights, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+            vk.buffer(sizeof(GpuInstance) * MaxInstances, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, BufferMemory::Upload);
+        materialData = vk.buffer(sizeof(GpuMaterial) * MaxMaterials, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, BufferMemory::Upload);
+        lightData = vk.buffer(sizeof(Light) * MaxLights, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, BufferMemory::Upload);
         tlasInstances = vk.buffer(sizeof(VkAccelerationStructureInstanceKHR) * MaxInstances,
                                   VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
-                                      VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                                  true);
+                                      VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, BufferMemory::Upload);
         createGeometry({}, {});
         updateTextures({});
         createPipelines();
@@ -348,9 +349,9 @@ struct Renderer::Impl {
         auto usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                      VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
         vertexData = vk.buffer(geometryVertices.size() * sizeof(GpuVertex),
-                               usage | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
+                               usage | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, BufferMemory::Upload);
         indexData =
-            vk.buffer(indices.size() * sizeof(uint32_t), usage | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true);
+            vk.buffer(indices.size() * sizeof(uint32_t), usage | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, BufferMemory::Upload);
         std::memcpy(vertexData.mapped, geometryVertices.data(), size_t(vertexData.size));
         std::memcpy(indexData.mapped, indices.data(), size_t(indexData.size));
         blas.resize(meshes.size());
@@ -428,7 +429,7 @@ struct Renderer::Impl {
                                      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                          VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                                      levels);
-            auto staging = vk.buffer(VkDeviceSize(w) * h * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true);
+            auto staging = vk.buffer(VkDeviceSize(w) * h * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, BufferMemory::Upload);
             std::memcpy(staging.mapped, pixels, size_t(staging.size));
             auto c = vk.beginOneTime();
             vk.transition(c, texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
@@ -739,7 +740,10 @@ struct Renderer::Impl {
             vk.destroy(b);
         vk.destroy(readback);
         vk.destroy(auditReadback);
-        audit = {};
+        // A resize starts a new image-sized audit, as with the temporal histories.
+        if (audit)
+            audit->finish();
+        audit.reset();
         for (uint32_t b = 7; b <= 38; b++)
             if (!(b >= 13 && b <= 18) && b != 29) {
                 VkFormat imageFormat = b == 9 || b == 25 ? VK_FORMAT_R32G32B32A32_SFLOAT
@@ -764,8 +768,8 @@ struct Renderer::Impl {
         const VkDeviceSize diLayerBytes = VkDeviceSize((width + block - 1) / block) * ((height + block - 1) / block) *
                                          block * block * sizeof(RTXDI_PackedDIReservoir);
         reservoirs[0] = vk.buffer(diLayerBytes * 4, usage);
-        reservoirs[1] = vk.buffer(1024 * sizeof(vec2), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
-        reservoirs[2] = vk.buffer(MaxLights * (sizeof(vec4) + sizeof(Light)), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+        reservoirs[1] = vk.buffer(1024 * sizeof(vec2), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, BufferMemory::Upload);
+        reservoirs[2] = vk.buffer(MaxLights * (sizeof(vec4) + sizeof(Light)), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, BufferMemory::Upload);
         auto* offsets = static_cast<vec2*>(reservoirs[1].mapped);
         for (uint32_t i = 0; i < 1024; ++i) {
             float radius = std::sqrt((i + .5f) / 1024.f), angle = i * 2.39996323f;
@@ -773,9 +777,12 @@ struct Renderer::Impl {
         }
         for (uint32_t i = 3; i < 6; ++i)
             reservoirs[i] = vk.buffer(pixels * 64, usage);
-        readback = vk.buffer(pixels * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
-        if (!options.audit.empty())
-            auditReadback = vk.buffer(pixels * 8 * RenderAudit::signalCount, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
+        readback = vk.buffer(pixels * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, BufferMemory::Readback);
+        if (!options.audit.empty()) {
+            auditReadback = vk.buffer(pixels * 8 * RenderAudit::signalCount, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                      BufferMemory::Readback);
+            audit = std::make_unique<RenderAuditWorker>(width, height);
+        }
         denoiser->resize(width, height);
         historyValid = false;
         resizePending = false;
@@ -1160,6 +1167,9 @@ struct Renderer::Impl {
                << ",\n  \"simulationHz\": 60,\n  \"presentMode\": \"" << presentName(presentMode) << "\""
                << ",\n  \"validationActive\": " << (vk.validationActive ? "true" : "false")
                << ",\n  \"validationErrors\": " << vk.validationErrors.load()
+               << ",\n  \"auditEnabled\": " << (audit ? "true" : "false")
+               << ",\n  \"auditSamples\": " << auditSamples
+               << ",\n  \"auditCpuAverageMs\": " << (auditSamples ? audit->cpuMilliseconds() / auditSamples : 0)
                << ",\n  \"exposure\": " << previous->exposure << ", \"debugView\": " << previous->debugView
                << ", \"hudEnabled\": " << (previous->hudEnabled ? "true" : "false")
                << ", \"consoleOpen\": " << (previous->console.open ? "true" : "false")
@@ -1201,6 +1211,14 @@ struct Renderer::Impl {
             statisticsCpuSum = 0;
         }
     }
+    // Called only after the existing frame fence has completed, before this readback
+    // buffer can be reused or resized. The worker never retains a GPU mapped pointer.
+    void collectAuditReadback() {
+        if (auditReadbackPending) {
+            audit->submit(static_cast<const uint16_t*>(auditReadback.mapped));
+            auditReadbackPending = false;
+        }
+    }
     bool render(const FrameRef& sourceFrame) {
         const bool captureCpu =
             sourceFrame->cpuProfile && sourceFrame->cpuProfile->request > lastCpuProfileRequest;
@@ -1226,6 +1244,7 @@ struct Renderer::Impl {
             CpuScope scope("Wait / Previous GPU Fence");
             VK_CHECK(vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX));
         }
+        collectAuditReadback();
         {
             CpuScope scope("Resolve GPU Timestamps");
             profiler->resolve();
@@ -1469,18 +1488,17 @@ struct Renderer::Impl {
         previous = frameRef;
         historyValid = true;
         frameNumber++;
-        if (auditFrame) {
-            CpuScope scope("Audit / Wait and Save");
-            VK_CHECK(vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX));
-            audit.add(static_cast<const uint16_t*>(auditReadback.mapped), size_t(width) * height);
-            if (last)
-                audit.save(std::filesystem::path(AFTERLIGHT_ROOT) / "captures" / options.audit, width,
-                           height);
-        }
+        auditReadbackPending = auditFrame;
         updateStatistics(cpuMs);
         if (last) {
             CpuScope scope("Final Frame / Wait and Capture");
             VK_CHECK(vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX));
+            collectAuditReadback();
+            if (audit) {
+                CpuScope auditScope("Audit / Drain Worker and Save");
+                const auto output = std::filesystem::path(AFTERLIGHT_ROOT) / "captures" / options.audit;
+                auditSamples = audit->finish(output).samples;
+            }
             profiler->resolve();
             gpuMs = profiler->frameMs();
             if (options.capture)

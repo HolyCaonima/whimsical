@@ -63,7 +63,7 @@ GPU timestamp 是一次命令缓冲范围的实际 GPU 时间；报告中的 `gp
 .\build\bin\Release\Afterlight.exe --audit fighting-static --frames 90 --width 640 --height 400 --view 1 --capture
 ```
 
-结果存放在 `captures/<audit-name>/`。`audit.json` 为汇总；每份 `.f32` 文件按从上到下的像素顺序保存五个 little-endian float32：mean R/G/B、亮度样本方差、平均相邻帧亮度差平方。`frame.bmp` 是最后一帧。诊断读回会等待 GPU 并增加开销，不用于性能测量。
+结果存放在 `captures/<audit-name>/`。`audit.json` 为汇总；每份 `.f32` 文件按从上到下的像素顺序保存五个 little-endian float32：mean R/G/B、亮度样本方差、平均相邻帧亮度差平方。`frame.bmp` 是最后一帧。诊断读回复用已有帧 fence，并由有界工作队列在后台统计，仍有额外开销，不用于普通渲染性能测量。线程边界和实测见 [Render audit](render-audit.md)。
 
 最终布局的静止基础色视图在 26 个统计帧中，亮度时域方差与相邻帧亮度差均为 0。Release 构建、现有 `core_gameplay` 和 160 帧 smoke 操作场景通过；本轮 GPU 测试启用 Vulkan 与同步校验，均为 0 errors。F1 的直接光与间接光视图现明确标注 `(RAW)`，表示显示降噪前的信号。
 

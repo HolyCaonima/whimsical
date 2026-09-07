@@ -139,7 +139,7 @@ NrdDenoiser::NrdDenoiser(VulkanContext& v) : vk_(v) {
     pc.poolSizeCount = 4;
     pc.pPoolSizes = sizes;
     VK_CHECK(vkCreateDescriptorPool(vk_.device, &pc, nullptr, &pool_));
-    constants_ = vk_.buffer(1024 * 1024, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
+    constants_ = vk_.buffer(1024 * 1024, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, BufferMemory::Upload);
     nrd::RelaxSettings settings{};
     settings.diffuseMaxAccumulatedFrameNum = 24;
     settings.specularMaxAccumulatedFrameNum = 24;

@@ -129,7 +129,7 @@ struct UiRenderer::Impl {
     void upload(Texture& texture, int width, int height, const uint8_t* pixels) {
         texture.image = vk.image(width, height, VK_FORMAT_R8G8B8A8_UNORM,
                                  VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-        auto buffer = vk.buffer(size_t(width) * height * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true);
+        auto buffer = vk.buffer(size_t(width) * height * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, BufferMemory::Upload);
         std::memcpy(buffer.mapped, pixels, size_t(width) * height * 4);
         auto cmd = vk.beginOneTime();
         vk.transition(cmd, texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
@@ -203,9 +203,9 @@ struct UiRenderer::Impl {
                 auto& mesh = meshes[g.id];
                 mesh.source = draw.geometry;
                 mesh.vertices = vk.buffer(g.vertices.size() * sizeof(ui::Vertex),
-                                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
+                                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, BufferMemory::Upload);
                 mesh.indices =
-                    vk.buffer(g.indices.size() * sizeof(int), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true);
+                    vk.buffer(g.indices.size() * sizeof(int), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, BufferMemory::Upload);
                 std::memcpy(mesh.vertices.mapped, g.vertices.data(), g.vertices.size() * sizeof(ui::Vertex));
                 std::memcpy(mesh.indices.mapped, g.indices.data(), g.indices.size() * sizeof(int));
             }

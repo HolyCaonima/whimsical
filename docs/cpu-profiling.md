@@ -24,6 +24,8 @@ Game 与 Render 是异步线程，不能把两棵树相加当成帧时间。Game
 
 ## 扩展
 
+`--audit` 的统计在独立 CPU 工作线程执行。Render 树单独列出等待 CPU 槽位、复制已完成读回和最终排空/写文件；工作线程平均统计时间另存为 `render-report.json` 的 `auditCpuAverageMs`，不能将它加到并行的 Render/GPU 时间上。见 [Render audit](render-audit.md)。
+
 在需要分析的引擎模块中使用线程局部的 RAII scope：
 
 ```cpp
