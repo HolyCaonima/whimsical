@@ -122,13 +122,13 @@ def strip(mesh,left,right,y,color,start=0,end=384):
 
 objects=[]; references={}; meshes={}; material=[]
 def obj(name,p=(0,0,0),scale=(1,1,1),mesh=None,mat=0,yaw=0,half=None,layer=1,enabled=True,ref=False):
-    o=dict(id=uid('object/'+name),name=name,position=list(p),rotation=[0,math.sin(yaw/2),0,math.cos(yaw/2)],
-           enabled=enabled,interactable=False,
-           render=dict(shape='box',scale=list(scale),offset=[0,0,0],animationScale=[1,1,1],material=mat,visible=bool(mesh)),
-           physics=dict(shape=dict(type='box',halfExtents=list(half or (.01,.01,.01))),
-                        motion='kinematic' if ref else 'static',layer=layer,blocking=half is not None,
-                        pickable=False,walkable=False),animation=None,joints=[],jointColliders=[])
-    if mesh: o['render']['mesh']=mesh
+    components=dict(transform=dict(position=list(p),rotation=[0,math.sin(yaw/2),0,math.cos(yaw/2)]))
+    if mesh:
+        components['render']=dict(shape='box',scale=list(scale),offset=[0,0,0],animationScale=[1,1,1],material=mat,visible=True,mesh=mesh)
+    if half:
+        components['collider']=dict(shape=dict(type='box',halfExtents=list(half)),motion='kinematic' if ref else 'static',
+                                   layer=layer,blocking=True,pickable=False,walkable=False)
+    o=dict(id=uid('object/'+name),name=name,enabled=enabled,components=components)
     objects.append(o)
     if ref: references[name]=o['id']
     return o
@@ -154,9 +154,9 @@ for i in range(12):
     strip(road,-6.6+i*1.1,-5.5+i*1.1,.05,'26323B' if i%2 else 'EDC963',1,2)
 obj('Circuit',mesh=road.save('circuit'))
 lawn=Mesh();lawn.box((0,-.15,0),(250,.3,250),'79A356')
-o=obj('Lawn',mesh=lawn.save('lawn'),half=(125,.15,125),p=(0,0,0));o['physics']['walkable']=True
+o=obj('Lawn',mesh=lawn.save('lawn'),half=(125,.15,125),p=(0,0,0));o['components']['collider']['walkable']=True
 # Physics ground top sits below car bottoms; flat racing is governed by the project vehicle controller.
-o['physics']['shape']['halfExtents']=[125,.1,125];o['position'][1]=-.1
+o['components']['collider']['shape']['halfExtents']=[125,.1,125];o['position'][1]=-.1
 
 tree=Mesh();tree.ring((0,0,0),[(0,.52),(.35,.36),(3.8,.22)],7,'B98263')
 tree.ring((0,0,0),[(2.8,1.0),(3.6,1.65),(5.5,1.48),(7.7,.7),(8.4,.05)],9,'279D73',smooth=True)
@@ -264,7 +264,9 @@ wheelref=wheel.save('wheel')
 for i in range(4):
     x,z,yaw=sample(382-(i//2)*4,(-2.2 if i%2==0 else 2.2))
     obj('car'+str(i),(x,.72,z),mesh=carref,mat=1,yaw=yaw,half=(.98,.4,2.06),layer=2,ref=True)
-    for w in range(4): obj('car%d_wheel%d'%(i,w),(x,.44,z),mesh=wheelref,mat=1,ref=True)
+    for w in range(4):
+        wheel_entity=obj('car%d_wheel%d'%(i,w),(1.03 if w%2 else -1.03,-.26,1.27 if w<2 else -1.3),mesh=wheelref,mat=1,ref=True)
+        wheel_entity['components']['transform']['parent']=references['car'+str(i)]
 
 smoke=Mesh();smoke.ring((0,0,0),[(-.4,.12),(-.2,.42),(.2,.43),(.46,.1)],7,'899697');smokeref=smoke.save('smoke_opaque')
 for i in range(48): obj('smoke'+str(i),mesh=smokeref,mat=2,enabled=False,ref=True)
@@ -286,7 +288,7 @@ for name in ('track','vehicle','race','hud','main'):
     scripts.append('/Game/scripts/'+name)
 PROJECT.joinpath('.project').write_text(json.dumps(dict(version=1,id=uid('project'),name='Maple Circuit',
     startupMap='/Game/Maps/MapleCircuit',scripts=scripts),indent=2)+'\n',encoding='utf-8')
-scene=dict(version=3,objects=objects,materials=material,materialAssets=[],
+scene=dict(version=4,entities=objects,materials=material,materialAssets=[],
     lights=[dict(positionRadius=[0,78,0,1.0],colorIntensity=[1,.94,.8,42000])],
     camera=dict(target=[-60,1,-30],yaw=math.pi,pitch=.27,distance=10,fov=.95),
     navigation=dict(min=[-120,0,-120],max=[120,12,120],cellSize=1,planeTolerance=.03),

@@ -8,6 +8,7 @@
 #include "ui/Console.h"
 #include "core/EngineSettings.h"
 #include "debug/ConsoleSmoke.h"
+#include "debug/EcsSmoke.h"
 #include <fstream>
 #include <thread>
 #include <atomic>
@@ -25,7 +26,7 @@ int main(int argc, char** argv) {
         RenderOptions options;
         uint32_t width = 1280, height = 800;
         int debugView = 0;
-        bool demo = false, smoke = false;
+        bool demo = false, smoke = false, ecsSmoke = false;
         bool consoleOpen = false, consoleSmoke = false;
         std::vector<std::string> startupCommands;
         uint32_t stress = 0;
@@ -97,6 +98,8 @@ int main(int argc, char** argv) {
                 demo = true;
             else if (arg == "--smoke")
                 smoke = true;
+            else if (arg == "--ecs-smoke")
+                ecsSmoke = true;
             else if (arg == "--stress")
                 stress = uint32_t(std::clamp(number(), 0, 900));
             else if (arg == "--full-upload") {
@@ -117,8 +120,10 @@ int main(int argc, char** argv) {
             } else if (arg == "--help") {
                 std::cout << "Afterlight [--frames N] [--capture] [--width 1280] [--height 800] [--view "
                              "0..7] [--no-hud] [--validation] [--no-validation] [--present "
-                             "fifo|mailbox|immediate] [--demo] [--smoke] [--stress N] [--full-upload] "
-                             "[--audit NAME] [--audit-motion] [--audit-occluder SLOT] [--physics-debug] [--project DIR] [--map "
+                             "fifo|mailbox|immediate] [--demo] [--smoke] [--ecs-smoke] [--stress N] "
+                             "[--full-upload] "
+                             "[--audit NAME] [--audit-motion] [--audit-occluder SLOT] [--physics-debug] "
+                             "[--project DIR] [--map "
                              "/Game/Maps/Name] [--console] [--exec \"command\"] [--cvar \"name=value\"] "
                              "[--console-smoke] [--profile-gpu] [--profile-cpu]\n";
                 return 0;
@@ -140,7 +145,7 @@ int main(int argc, char** argv) {
         }
         if (options.capture && !options.maxFrames)
             options.maxFrames = 90;
-        if (smoke || consoleSmoke) {
+        if (smoke || consoleSmoke || ecsSmoke) {
             options.maxFrames = 160;
             options.capture = true;
             // The smoke scenario is the project's correctness gate, so it always pays for
@@ -149,6 +154,8 @@ int main(int argc, char** argv) {
         }
         if (consoleSmoke && (smoke || demo || !options.audit.empty()))
             throw std::runtime_error("--console-smoke requires its own run");
+        if (ecsSmoke && (smoke || demo || consoleSmoke || !options.audit.empty()))
+            throw std::runtime_error("--ecs-smoke requires its own run");
         std::cout << "AFTERLIGHT | C++ engine / JavaScript gameplay / Vulkan RT\n";
         Window window(width, height);
         AssetManager assets{Project(projectPath)};
@@ -208,8 +215,11 @@ int main(int argc, char** argv) {
             for (uint32_t i = 0; i < stress; i++) {
                 const float x = -11.f + float(i % side) * 22.f / float(side);
                 const float z = -8.f + float(i / side) * 16.f / float(side);
-                const auto id =
-                    world.spawn("Stress prop", Shape::Box, {x, .3f, z}, {.25f, .6f, .25f}, 0, false, false);
+                const auto id = world.create("Stress prop");
+                world.transforms.add(id, {{x, .3f, z}});
+                RenderComponent appearance;
+                appearance.scale = {.25f, .6f, .25f};
+                world.render.add(id, appearance);
                 if (stressMoving.size() < 8)
                     stressMoving.push_back(id);
             }
@@ -358,9 +368,7 @@ int main(int argc, char** argv) {
                                   out << "FPS " << renderFps.load() << " | Frame " << renderFrameMs.load()
                                       << " ms | CPU (Render) " << renderCpuMs.load() << " ms | GPU "
                                       << renderGpuMs.load() << " ms";
-                              out << " | Scene objects "
-                                  << std::count_if(world.objects().begin(), world.objects().end(),
-                                                   [](const auto& object) { return object.alive; });
+                              out << " | Scene objects " << world.registry().size();
                               return out.str();
                           });
         for (const auto& command : startupCommands) {
@@ -368,7 +376,7 @@ int main(int argc, char** argv) {
             if (!result.ok)
                 throw std::runtime_error("Startup console command: " + result.text);
         }
-        if (smoke || consoleSmoke)
+        if (smoke || consoleSmoke || ecsSmoke)
             variables.set("r.Validation", "true", CVarSource::CommandLine);
         if (!options.audit.empty())
             variables.set("r.Hud", "false", CVarSource::CommandLine);
@@ -427,6 +435,7 @@ int main(int argc, char** argv) {
         constexpr double step = 1.0 / 60.0;
         std::string mainError;
         uint32_t smokeStage = 0;
+        EcsSmoke ecsCheck;
         ConsoleSmoke consoleCheck;
         auto restoreAt = Clock::time_point::max();
         auto publish = [&] {
@@ -486,8 +495,8 @@ int main(int argc, char** argv) {
                     if (smoke) {
                         auto f = rendered.load();
                         if (smokeStage == 0 && f >= 12) {
-                            auto clip = world.camera.projection(float(input.width) / input.height) *
-                                        world.camera.view() * vec4(-8, 0, 4, 1);
+                            auto clip = world.resources.camera.projection(float(input.width) / input.height) *
+                                        world.resources.camera.view() * vec4(-8, 0, 4, 1);
                             input.mouseX = (clip.x / clip.w * .5f + .5f) * input.width;
                             input.mouseY = (clip.y / clip.w * .5f + .5f) * input.height;
                             input.leftPressed = true;
@@ -524,6 +533,8 @@ int main(int argc, char** argv) {
                             std::cout << "[Smoke] Reload Map / rebuild gameplay bindings\n";
                         }
                     }
+                    if (ecsSmoke)
+                        ecsCheck.advance(world, uint32_t(rendered.load()));
                     const bool wasOpen = console.isOpen();
                     {
                         CpuScope scope("Console Input / Commands");
@@ -546,11 +557,11 @@ int main(int argc, char** argv) {
                     } else
                         scripts.updateUi(float(step));
                     for (size_t i = 0; i < stressMoving.size(); i++) {
-                        const auto& prop = world.entity(stressMoving[i]);
-                        world.setPose(stressMoving[i],
-                                      {prop.position.x, .3f + .2f * float(std::sin(time * 2 + double(i))),
-                                       prop.position.z},
-                                      0, .6f);
+                        const auto& prop = world.get<Transform>(stressMoving[i]).world;
+                        world.transforms.setTransform(
+                            stressMoving[i],
+                            {{prop.position.x, .3f + .2f * float(std::sin(time * 2 + double(i))),
+                              prop.position.z}});
                     }
                     window.consumeEdges();
                     accumulator -= step;
@@ -563,7 +574,7 @@ int main(int argc, char** argv) {
                     publish();
                 if (now - lastTitle > std::chrono::milliseconds(500)) {
                     std::ostringstream title;
-                    title << "AFTERLIGHT | The Rain Court | " << world.state << " | ";
+                    title << "AFTERLIGHT | The Rain Court | " << world.gameplay.state << " | ";
                     const double fps = renderFps.load();
                     if (!window.input().width || !window.input().height)
                         title << "Paused (minimized)";
@@ -605,6 +616,8 @@ int main(int argc, char** argv) {
             throw std::runtime_error(renderError);
         if (smoke && smokeStage != 7)
             throw std::runtime_error("Smoke scenario did not complete");
+        if (ecsSmoke && !ecsCheck.complete())
+            throw std::runtime_error("ECS smoke scenario did not complete");
         if (consoleSmoke && !consoleCheck.complete())
             throw std::runtime_error("Console smoke scenario did not complete");
         std::cout << "Shutdown clean. Simulation ticks=" << tick << ", rendered frames=" << rendered.load()

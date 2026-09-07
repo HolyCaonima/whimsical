@@ -1,3 +1,4 @@
+#include "TestEntities.h"
 #include "TestProject.h"
 #include "animation/Animation.h"
 #include "animation/ai4animation/Controller.h"
@@ -88,33 +89,33 @@ static void framework() {
     close(instance.evaluate(.1f, {}, {}).rootMotion.position.x, .2f,
           "Solver swap must preserve generic interface");
     World world;
-    world.materials.emplace_back();
-    world.spawn("ground", Shape::Box, {0, -.25f, 0}, {20, .5f, 20}, 0, true, false);
-    world.configureCollider(1, CollisionLayer::World, true, true, false);
-    auto owner = world.spawn("actor", Shape::Capsule, {0, 1, 0}, {1, 1, 1}, 0, false, false);
-    world.attachAnimation(owner, skeleton, std::make_unique<ConstantSolver>(1.f));
-    world.updateAnimations(.1f);
-    close(world.entity(owner).position.x, .1f, "Animation root motion reaches physics");
-    auto collider = world.addAnimationCollider(owner, 2, ColliderShape::box(vec3(.1f)), {}, false);
-    world.updateAnimations(.1f);
+    world.resources.materials.emplace_back();
+    spawnTest(world, "ground", Shape::Box, {0, -.25f, 0}, {20, .5f, 20}, 0, true, false);
+    world.motion.configureCollider(1, CollisionLayer::World, true, true, false);
+    auto owner = spawnTest(world, "actor", Shape::Capsule, {0, 1, 0}, {1, 1, 1}, 0, false, false);
+    world.animation.attachAnimation(owner, skeleton, std::make_unique<ConstantSolver>(1.f));
+    world.update(.1f);
+    close(world.get<Transform>(owner).world.position.x, .1f, "Animation root motion reaches physics");
+    auto collider = world.animation.addAnimationCollider(owner, 2, ColliderShape::box(vec3(.1f)), {}, false);
+    world.update(.1f);
     close(world.physics().body(collider).pose.position.x, .2f, "Animated colliders follow root");
     close(world.physics().body(collider).pose.position.y, 3, "Animated colliders consume model-space FK");
     world.setEnabled(owner, false);
-    world.updateAnimations(.1f);
-    close(world.entity(owner).position.x, .2f, "Disabled animation must not advance");
+    world.update(.1f);
+    close(world.get<Transform>(owner).world.position.x, .2f, "Disabled animation must not advance");
     world.setEnabled(owner, true);
-    world.setAnimationSolver(owner, std::make_unique<ConstantSolver>(2.f));
-    world.updateAnimations(.1f);
-    close(world.entity(owner).position.x, .4f, "World supports peer solver replacement");
+    world.animation.setAnimationSolver(owner, std::make_unique<ConstantSolver>(2.f));
+    world.update(.1f);
+    close(world.get<Transform>(owner).world.position.x, .4f, "World supports peer solver replacement");
     world.destroy(owner);
-    world.updateAnimations(.1f);
+    world.update(.1f);
     check(!world.physics().contains(collider), "Destroy releases animation colliders");
 }
 static void scriptIntegration() {
     World world;
     ScriptRuntime script(world, testAssets());
     script.initialize();
-    auto id = world.playerId;
+    auto id = world.gameplay.playerId;
     script.execute(
         "Engine.animation(" + std::to_string(id) +
         ", '/Game/animations/ai4animation/biped/controller', {rootMotion:false,rootOffset:{y:-1}});"
@@ -122,12 +123,12 @@ static void scriptIntegration() {
         std::to_string(id) + ", {action:'Idle'});");
     Input input;
     script.tick(1.f / 60, input);
-    check(world.entity(id).joints.size() == 23, "JS tick must evaluate attached animation");
+    check(world.get<JointPose>(id).model.size() == 23, "JS tick must evaluate attached animation");
     auto frame = world.snapshot(input, 1, 0, 0, true);
     check(frame.skeletons.size() == 2 && frame.skeletons[0].jointWorld.size() == 23,
           "Snapshot publishes immutable skeletal transforms");
     auto saved = frame.skeletons[0].jointWorld[0];
-    auto collider = world.addAnimationCollider(id, 3, ColliderShape::box(vec3(.1f)), {}, false);
+    auto collider = world.animation.addAnimationCollider(id, 3, ColliderShape::box(vec3(.1f)), {}, false);
     script.execute("Engine.animationInput(" + std::to_string(id) +
                    ", {action:'Locomotion',velocity:{z:1},"
                    "trajectory:[{time:0,position:{z:0}},{time:0.5,position:{z:0.5},velocity:{z:1}}]});");
@@ -139,7 +140,7 @@ static void scriptIntegration() {
                    std::to_string(id) + ");");
     check(world.snapshot(input, 2, 0, 0).skeletons.size() == 1,
           "Detach removes player pose but keeps companion");
-    check(world.entity(id).joints.empty() && !world.physics().contains(collider),
+    check(!world.has<JointPose>(id) && !world.physics().contains(collider),
           "Detach releases skeleton-dependent colliders so another rig can be attached");
 }
 static void sequence() {

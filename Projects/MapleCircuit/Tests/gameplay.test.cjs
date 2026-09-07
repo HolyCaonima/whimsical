@@ -9,8 +9,11 @@ const map = JSON.parse(fs.readFileSync(path.join(project, 'Content/Maps/MapleCir
 function game() {
     const objects = new Map(), nodes = new Map(), logs = [];
     const clone = x => JSON.parse(JSON.stringify(x));
-    for (const o of map.objects) objects.set(o.name, {position: {x:o.position[0],y:o.position[1],z:o.position[2]},
-        rotation:{x:o.rotation[0],y:o.rotation[1],z:o.rotation[2],w:o.rotation[3]}, enabled:o.enabled});
+    for (const o of map.entities) {
+        const t=o.components.transform;
+        objects.set(o.name, {position:{x:t.position[0],y:t.position[1],z:t.position[2]},
+            rotation:{x:t.rotation[0],y:t.rotation[1],z:t.rotation[2],w:t.rotation[3]},enabled:o.enabled});
+    }
     function node(id) {
         if (!nodes.has(id)) nodes.set(id, {text:'',properties:{},setText(v){this.text=v;},setProperty(k,v){this.properties[k]=v;},
             setClass(){},blur(){this.blurred=true;},setInnerRML(v){this.rml=v;},on(event,fn){this[event]=fn;}});
@@ -19,6 +22,7 @@ function game() {
     const context = vm.createContext({console, Engine: {
         sceneData:()=>clone(map.data), sceneObject:name=>name,
         transform(id, pose){Object.assign(objects.get(id), clone(pose));},
+        localTransform(id, pose){objects.get(id).local=clone(pose);},
         enabled(id, enabled){objects.get(id).enabled=enabled;},
         visualPose(id, offset, scale){objects.get(id).scale=clone(scale);},
         moveBody(id, delta, rotation){const o=objects.get(id);o.position.x+=delta.x;o.position.y+=delta.y;o.position.z+=delta.z;

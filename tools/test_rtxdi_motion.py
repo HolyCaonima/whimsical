@@ -21,7 +21,7 @@ def run():
     _, scene = read_asset(project / "Content/Test.asset")
     for case, motion, confidence in (("before", False, True), ("after", False, True),
                                      ("off", True, False), ("on", True, True)):
-        scene["objects"][1]["position"][0] = 2 if case == "after" else 0
+        scene["entities"][1]["components"]["transform"]["position"][0] = 2 if case == "after" else 0
         write_asset(project / "Content/Test.asset", "Map", scene)
         name = tag + "-" + case
         args = [str(ROOT / "build/bin/Release/Afterlight.exe"), "--project", str(project),

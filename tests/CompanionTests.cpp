@@ -16,11 +16,11 @@ int main(int argc, char** argv) {
         scripts.initialize();
         Input input;
         uint32_t dog = 0;
-        for (const auto& o : world.objects())
-            if (o.name == "Ash")
-                dog = o.id;
+        for (const auto& o : world.registry().entities())
+            if (world.get<Identity>(o).name == "Ash")
+                dog = o;
         check(dog != 0, "Scene must spawn a companion dog");
-        auto initial = world.entity(dog).position;
+        auto initial = world.get<Transform>(dog).world.position;
         scripts.execute("Locomotion.command({x:-8,y:0,z:4});");
         float closest = 100;
         std::ofstream trace;
@@ -31,18 +31,18 @@ int main(int argc, char** argv) {
         float previousTurn = 0, maxTurnChange = 0, previousBodyTurn = 0, maxBodyTurnChange = 0;
         vec3 previousBodyForward(0);
         auto tick = [&](int frame) {
-            float beforeYaw = world.entity(dog).yaw();
+            float beforeYaw = world.get<Transform>(dog).yaw();
             scripts.tick(1.f / 60, input);
-            const auto& object = world.entity(dog);
+            const auto& object = world.get<Transform>(dog);
             float turn = std::remainder(object.yaw() - beforeYaw, 2 * Pi);
             maxTurnChange = std::max(maxTurnChange, std::abs(turn - previousTurn));
             previousTurn = turn;
-            auto forward = world.animationOutput(dog).rootMotion.rotation * vec3(0, 0, 1);
+            auto forward = world.animation.animationOutput(dog).rootMotion.rotation * vec3(0, 0, 1);
             float rootTurn = std::atan2(forward.x, forward.z);
             check(std::abs(turn - rootTurn) < 1e-5f,
                   "Following must apply the solver's root turn, without a separate scripted yaw");
             auto bodyForward =
-                object.rotation * object.joints[0].rotation * vec3(0, 0, 1);
+                object.world.rotation * world.get<JointPose>(dog).model[0].rotation * vec3(0, 0, 1);
             if (frame > 0) {
                 float bodyTurn =
                     std::atan2(glm::cross(previousBodyForward, bodyForward).y,
@@ -53,21 +53,21 @@ int main(int argc, char** argv) {
             }
             previousBodyForward = bodyForward;
             if (trace)
-                trace << frame << ',' << object.position.x << ',' << object.position.z << ',' << object.yaw()
+                trace << frame << ',' << object.world.position.x << ',' << object.world.position.z << ',' << object.yaw()
                       << ',' << rootTurn << ',' << std::atan2(bodyForward.x, bodyForward.z) << '\n';
         };
         for (int i = 0; i < 540; ++i) {
             tick(i);
-            auto p = world.entity(dog).position;
-            check(Navigation::canStand(world.physics(), world.feet(dog), world.agent(dog), world.navigation),
+            auto p = world.get<Transform>(dog).world.position;
+            check(Navigation::canStand(world.physics(), world.motion.feet(dog), world.motion.agent(dog), world.resources.navigation),
                   "Dog must remain outside obstacles");
-            float distance = glm::length(vec2(p.x - world.entity(world.playerId).position.x,
-                                              p.z - world.entity(world.playerId).position.z));
+            float distance = glm::length(vec2(p.x - world.get<Transform>(world.gameplay.playerId).world.position.x,
+                                              p.z - world.get<Transform>(world.gameplay.playerId).world.position.z));
             if (i > 420)
                 closest = std::min(closest, distance);
             check(distance > .6f, "Dog must not overlap the player capsule");
         }
-        check(glm::distance(initial, world.entity(dog).position) > 3, "Dog must follow moving player");
+        check(glm::distance(initial, world.get<Transform>(dog).world.position) > 3, "Dog must follow moving player");
         check(closest < 2.5f, "Dog must catch up and stop near player");
         auto frame = world.snapshot(input, 540, 9, 0);
         check(frame.skins.size() == 2, "Player and dog must use actual skinned meshes");

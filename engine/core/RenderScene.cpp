@@ -92,6 +92,12 @@ void RenderScene::setVisible(uint32_t slot, bool visible) {
     attributes.visible = visible;
     setAttributes(slot, attributes);
 }
+void RenderScene::geometryChanged(uint32_t slot) {
+    if (!proxy(slot).live) return;
+    ++revision_;
+    ++topology_;
+    mark(slot, MarkStructural);
+}
 SceneDelta RenderScene::publish() {
     SceneDelta delta = std::move(pending_);
     pending_ = {};

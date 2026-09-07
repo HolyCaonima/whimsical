@@ -1,3 +1,4 @@
+#include "TestEntities.h"
 #include "physics/PhysicsScene.h"
 #include "navigation/Navigation.h"
 #include "core/World.h"
@@ -127,39 +128,39 @@ int main() {
               "Navigation must derive missing ground from PhysicsScene, not an infinite Y=0 plane");
 
         World world;
-        world.materials.push_back({});
-        auto floor = world.spawn("ground", Shape::Box, {0, -.2f, 0}, {24, .4f, 20}, 0, true, false);
-        world.configureCollider(floor, CollisionLayer::World, true, true, false);
+        world.resources.materials.push_back({});
+        auto floor = spawnTest(world, "ground", Shape::Box, {0, -.2f, 0}, {24, .4f, 20}, 0, true, false);
+        world.motion.configureCollider(floor, CollisionLayer::World, true, true, false);
         auto obstacle =
-            world.spawn("independent collider", Shape::Box, {0, 1, 0}, {.1f, .1f, .1f}, 0, true, false);
-        world.setColliderShape(obstacle, ColliderShape::box({.02f, 1, 3}));
-        auto actor = world.spawn("actor", Shape::Capsule, {-3, 1, 0}, {1, 1, 1}, 0, true, false);
-        world.playerId = actor;
+            spawnTest(world, "independent collider", Shape::Box, {0, 1, 0}, {.1f, .1f, .1f}, 0, true, false);
+        world.motion.setColliderShape(obstacle, ColliderShape::box({.02f, 1, 3}));
+        auto actor = spawnTest(world, "actor", Shape::Capsule, {-3, 1, 0}, {1, 1, 1}, 0, true, false);
+        world.gameplay.playerId = actor;
         auto physicsRevision = world.physics().revision();
-        world.setVisible(obstacle, false);
-        world.setVisualPose(obstacle, {9, 9, 9}, {.01f, 5, 8});
+        world.render.setVisible(obstacle, false);
+        world.render.setVisualPose(obstacle, {9, 9, 9}, {.01f, 5, 8});
         auto frame = world.snapshot({}, 1, 0, 0);
-        auto slot = world.entity(obstacle).proxy;
+        auto slot = world.get<Renderable>(obstacle).slot;
         frame.proxies[slot].transform.position = {100, 100, 100};
         check(world.physics().revision() == physicsRevision && !frame.proxies[slot].attributes.visible,
               "Render presentation must not mutate physical scene data");
-        auto stopped = world.rootMotion(actor, {8, 0, 0}, .2f);
+        auto stopped = world.motion.rootMotion(actor, {8, 0, 0}, .2f);
         check(stopped.x < -.4f, "Root motion must collide with an invisible independently authored collider");
-        world.setSolid(obstacle, false);
-        check(world.moveCharacter(actor, {3, 0, 0}).x > 2,
+        world.motion.setSolid(obstacle, false);
+        check(world.motion.moveCharacter(actor, {3, 0, 0}).x > 2,
               "Changing physical collision flags must immediately affect locomotion");
-        world.setAnimationJoints(actor, {{{0, .2f, 0}, quat(1, 0, 0, 0)}});
-        auto animated = world.addAnimationCollider(actor, 0, ColliderShape::capsule(.15f, .8f),
+        world.animation.setAnimationJoints(actor, {{{0, .2f, 0}, quat(1, 0, 0, 0)}});
+        auto animated = world.animation.addAnimationCollider(actor, 0, ColliderShape::capsule(.15f, .8f),
                                                    {{0, 0, 0}, quat(1, 0, 0, 0)}, false);
         auto bodyCount = world.physics().size();
-        world.setAnimationJoints(actor, {{{0, 0, 1}, glm::angleAxis(Pi * .5f, vec3(0, 0, 1))}});
+        world.animation.setAnimationJoints(actor, {{{0, 0, 1}, glm::angleAxis(Pi * .5f, vec3(0, 0, 1))}});
         const auto animatedBody = world.physics().body(animated);
         QueryFilter sensors;
         sensors.mask = CollisionLayer::Trigger;
         check(!world.physics().overlapCapsule({animatedBody.pose.position, .1f, .2f}, sensors).empty(),
               "Animation joint poses must feed actual queryable bodies");
         auto beforeRoot = animatedBody.pose.position;
-        world.rootMotion(actor, {0, 0, 1}, 0);
+        world.motion.rootMotion(actor, {0, 0, 1}, 0);
         check(glm::distance(world.physics().body(animated).pose.position, beforeRoot) > .9f,
               "Animated attachments must follow collision-resolved root motion");
         world.setEnabled(actor, false);

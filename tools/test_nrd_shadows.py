@@ -29,8 +29,8 @@ def create_project(tag):
     header = json.loads((content / "shaders/Standard.asset").read_text().split("\n", 2)[1])
     shader = dict(id=header["id"], path="/Game/shaders/Standard")
     _, scene = read_asset(ROOT / "Projects/Afterlight/Content/Maps/RainCourt.asset")
-    template = copy.deepcopy(scene["objects"][0])
-    scene.update(scripts=[], objects=[], materials=[], materialAssets=[], player="", references={}, data={})
+    template = copy.deepcopy(scene["entities"][0])
+    scene.update(scripts=[], entities=[], materials=[], materialAssets=[], player="", references={}, data={})
     scene["camera"].update(target=[0, 0, 0], yaw=.6, pitch=.9, distance=13, fov=.62)
     scene["lights"] = [dict(positionRadius=[-3, 6, -1, 0], colorIntensity=[1, 1, 1, 75])]
     for color in ([.5, .5, .5], [.2, .1, .05]):
@@ -39,9 +39,10 @@ def create_project(tag):
     for name, position, scale, material in (("Ground", [0, -.25, 0], [8, .5, 8], 0),
                                            ("Occluder", [0, 1, 0], [1, 2, 1], 1)):
         obj = copy.deepcopy(template)
-        obj.update(id=uuid.uuid4().hex, name=name, position=position, rotation=[0, 0, 0, 1])
-        obj["render"].update(scale=scale, material=material)
-        scene["objects"].append(obj)
+        obj.update(id=uuid.uuid4().hex, name=name)
+        obj["components"]["transform"].update(position=position, rotation=[0, 0, 0, 1])
+        obj["components"]["render"].update(scale=scale, material=material)
+        scene["entities"].append(obj)
     write_asset(content / "Test.asset", "Map", scene)
     return project
 

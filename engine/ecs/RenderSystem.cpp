@@ -1,0 +1,117 @@
+#include "Systems.h"
+#include "core/CpuProfile.h"
+namespace afterlight {
+static ProxyTransform proxyTransform(const Transform& t, const Renderable& r) {
+    return {t.world.position + t.world.rotation * r.appearance.offset,
+            r.appearance.scale * r.appearance.animationScale, t.world.rotation};
+}
+void RenderSystem::add(Entity e, RenderComponent appearance, std::shared_ptr<const StaticMesh> mesh) {
+    if (appearance.material >= materials.size())
+        throw std::out_of_range("Invalid material");
+    for (int i = 0; i < 3; ++i)
+        if (!std::isfinite(appearance.scale[i]) || appearance.scale[i] <= 0 ||
+            !std::isfinite(appearance.animationScale[i]) || appearance.animationScale[i] <= 0 ||
+            !std::isfinite(appearance.offset[i]))
+            throw std::invalid_argument("Invalid render dimensions");
+    auto& t = s.registry.get<Transform>(e);
+    auto& r = s.registry.emplace<Renderable>(e, Renderable{appearance, std::move(mesh)});
+    r.slot = s.renderScene.create(proxyTransform(t, r),
+                                  {e, appearance.material, appearance.shape,
+                                   s.enabled(e) && appearance.visible, s.registry.has<Interactable>(e)});
+    if (r.mesh)
+        s.renderScene.geometryChanged(r.slot);
+}
+void RenderSystem::remove(Entity e) {
+    s.registry.require(e);
+    if (auto r = s.registry.tryGet<Renderable>(e)) {
+        if (r->mesh || s.registry.has<Skin>(e))
+            s.renderScene.geometryChanged(r->slot);
+        s.renderScene.destroy(r->slot);
+    }
+    s.registry.remove<Skin>(e);
+    s.registry.remove<Renderable>(e);
+}
+void RenderSystem::publishTransform(Entity e) {
+    if (auto r = s.registry.tryGet<Renderable>(e))
+        s.renderScene.setTransform(r->slot, proxyTransform(s.registry.get<Transform>(e), *r));
+}
+void RenderSystem::publishAttributes(Entity e) {
+    if (auto r = s.registry.tryGet<Renderable>(e))
+        s.renderScene.setAttributes(r->slot,
+                                    {e, r->appearance.material, r->appearance.shape,
+                                     s.enabled(e) && r->appearance.visible, s.registry.has<Interactable>(e)});
+}
+void RenderSystem::setStaticMesh(Entity e, std::shared_ptr<const StaticMesh> mesh) {
+    if (mesh && s.registry.has<Skin>(e))
+        throw std::invalid_argument("Remove skin before binding static geometry");
+    auto& r = s.registry.get<Renderable>(e);
+    if (r.mesh == mesh)
+        return;
+    r.mesh = std::move(mesh);
+    s.renderScene.geometryChanged(r.slot);
+}
+void RenderSystem::setVisualPose(Entity e, vec3 offset, vec3 scale) {
+    for (int i = 0; i < 3; ++i)
+        if (!std::isfinite(offset[i]) || !std::isfinite(scale[i]) || scale[i] <= 0)
+            throw std::invalid_argument("Invalid visual pose");
+    auto& r = s.registry.get<Renderable>(e).appearance;
+    r.offset = offset;
+    r.animationScale = scale;
+    publishTransform(e);
+}
+void RenderSystem::setMaterial(Entity e, uint32_t material) {
+    if (material >= materials.size())
+        throw std::out_of_range("Invalid material");
+    s.registry.get<Renderable>(e).appearance.material = material;
+    publishAttributes(e);
+}
+void RenderSystem::setScale(Entity e, vec3 scale) {
+    for (int i = 0; i < 3; ++i)
+        if (!std::isfinite(scale[i]) || scale[i] <= 0)
+            throw std::invalid_argument("Invalid render scale");
+    s.registry.get<Renderable>(e).appearance.scale = scale;
+    publishTransform(e);
+}
+void RenderSystem::setVisible(Entity e, bool visible) {
+    s.registry.get<Renderable>(e).appearance.visible = visible;
+    publishAttributes(e);
+}
+void RenderSystem::extract(Frame& f, bool debug) {
+    for (auto e : s.registry.view<Renderable>()) {
+        const auto& r = s.registry.get<Renderable>(e);
+        if (r.mesh)
+            f.staticMeshes.push_back({r.slot, r.mesh});
+    }
+    for (auto e : s.registry.view<Animator, Transform, JointPose>()) {
+        const auto& a = s.registry.get<Animator>(e);
+        const auto& t = s.registry.get<Transform>(e).world;
+        const auto& joints = s.registry.get<JointPose>(e).model;
+        Frame::SkeletonPose pose;
+        pose.owner = e;
+        for (const auto& p : joints) {
+            auto position = t.position + t.rotation * p.position;
+            pose.jointWorld.push_back(glm::translate(mat4(1), position) *
+                                      glm::mat4_cast(t.rotation * p.rotation));
+        }
+        // Disabled animation retains its final pose and geometry binding. Visibility
+        // is an instance flag, never a mesh resource lifetime event.
+        if (auto skin = s.registry.tryGet<Skin>(e)) {
+            Frame::Skin draw;
+            draw.slot = s.registry.get<Renderable>(e).slot;
+            draw.mesh = skin->mesh;
+            for (size_t j = 0; j < skin->joints.size(); ++j)
+                draw.palette.push_back(pose.jointWorld[skin->joints[j]] *
+                                       skin->mesh->bindings[j].inverseBind);
+            f.skins.push_back(std::move(draw));
+        }
+        if (debug && s.enabled(e))
+            for (size_t j = 0; j < joints.size(); ++j) {
+                int parent = a.instance->skeleton().joints()[j].parent;
+                if (parent >= 0)
+                    f.physicsLines.push_back(
+                        {vec3(pose.jointWorld[parent][3]), vec3(pose.jointWorld[j][3]), {.3f, 1, .5f}});
+            }
+        f.skeletons.push_back(std::move(pose));
+    }
+}
+} // namespace afterlight

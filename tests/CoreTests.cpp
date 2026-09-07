@@ -1,3 +1,4 @@
+#include "TestEntities.h"
 #include "TestProject.h"
 #include "core/World.h"
 #include "core/FrameMailbox.h"
@@ -13,10 +14,10 @@ static void check(bool condition, const char* reason) {
         throw std::runtime_error(reason);
 }
 static void tickAnimated(ScriptRuntime& scripts, World& world, const Input& input) {
-    float yaw = world.entity(world.playerId).yaw();
+    float yaw = world.get<Transform>(world.gameplay.playerId).yaw();
     scripts.tick(1.f / 60, input);
-    auto direction = world.animationOutput(world.playerId).rootMotion.rotation * vec3(0, 0, 1);
-    check(std::abs(std::remainder(world.entity(world.playerId).yaw() - yaw - std::atan2(direction.x, direction.z), 2 * Pi)) < 1e-5f,
+    auto direction = world.animation.animationOutput(world.gameplay.playerId).rootMotion.rotation * vec3(0, 0, 1);
+    check(std::abs(std::remainder(world.get<Transform>(world.gameplay.playerId).yaw() - yaw - std::atan2(direction.x, direction.z), 2 * Pi)) < 1e-5f,
           "Player movement and interaction must consume animated root rotation without scripted yaw");
 }
 int main() {
@@ -24,67 +25,67 @@ int main() {
         World w;
         ScriptRuntime js(w, testAssets());
         js.initialize();
-        check(w.playerId != 0, "JS must spawn player");
-        check(w.objects().size() > 20 && w.physics().size() == w.objects().size(),
+        check(w.gameplay.playerId != 0, "JS must spawn player");
+        check(w.registry().entities().size() > 20 && w.physics().size() == w.registry().view<Collider>().size(),
               "Physical scene not populated");
-        check(w.lights.size() >= 6, "RT lights not populated");
-        auto route = Navigation::findPath(w.physics(), vec3(-8, 0, 4), vec3(-2, 0, 4), w.agent(w.playerId));
+        check(w.resources.lights.size() >= 6, "RT lights not populated");
+        auto route = Navigation::findPath(w.physics(), vec3(-8, 0, 4), vec3(-2, 0, 4), w.motion.agent(w.gameplay.playerId));
         check(!route.empty(), "A* must route around cargo");
         vec3 last(-8, 0, 4);
         for (auto p : route) {
-            check(Navigation::lineClear(w.physics(), last, p, w.agent(w.playerId)),
+            check(Navigation::lineClear(w.physics(), last, p, w.motion.agent(w.gameplay.playerId)),
                   "Smoothed segment clips obstacle");
             last = p;
         }
-        check(Navigation::findPath(w.physics(), vec3(0), vec3(-4, 0, 4), w.agent(w.playerId)).empty(),
+        check(Navigation::findPath(w.physics(), vec3(0), vec3(-4, 0, 4), w.motion.agent(w.gameplay.playerId)).empty(),
               "Blocked targets must fail");
         QueryFilter filter;
         filter.blockingOnly = true;
-        filter.ignoreOwner = w.playerId;
+        filter.ignoreOwner = w.gameplay.playerId;
         auto moved = w.physics().moveAndSlide({vec3(-8, 1, 4), .4f, 2}, vec3(9, 0, 0), filter);
         check(moved.position.x < -5, "Sweep must prevent tunneling");
         Input input;
         input.keys['W'] = true;
-        auto initial = w.entity(w.playerId).position;
+        auto initial = w.get<Transform>(w.gameplay.playerId).world.position;
         for (int i = 0; i < 120; i++)
             tickAnimated(js, w, input);
-        check(glm::distance(initial, w.entity(w.playerId).position) > 2, "JS manual locomotion failed");
+        check(glm::distance(initial, w.get<Transform>(w.gameplay.playerId).world.position) > 2, "JS manual locomotion failed");
         input.keys.fill(false);
         input.keys['D'] = true;
-        float turnStart = w.entity(w.playerId).yaw(), previousTurn = 0, maxTurnChange = 0;
+        float turnStart = w.get<Transform>(w.gameplay.playerId).yaw(), previousTurn = 0, maxTurnChange = 0;
         for (int i = 0; i < 90; ++i) {
-            float yaw = w.entity(w.playerId).yaw();
+            float yaw = w.get<Transform>(w.gameplay.playerId).yaw();
             tickAnimated(js, w, input);
-            float turn = std::remainder(w.entity(w.playerId).yaw() - yaw, 2 * Pi);
+            float turn = std::remainder(w.get<Transform>(w.gameplay.playerId).yaw() - yaw, 2 * Pi);
             maxTurnChange = std::max(maxTurnChange, std::abs(turn - previousTurn));
             previousTurn = turn;
         }
-        check(std::abs(w.entity(w.playerId).yaw() - turnStart) > .5f,
+        check(std::abs(w.get<Transform>(w.gameplay.playerId).yaw() - turnStart) > .5f,
               "A manual direction change must turn the animated player");
         check(maxTurnChange < glm::radians(4.f), "Player turn rate must not snap to the scripted turn limit");
         input.keys.fill(false);
         for (int i = 0; i < 120; i++)
             tickAnimated(js, w, input);
-        check(w.state == "Idle", "Locomotion must settle at idle");
+        check(w.gameplay.state == "Idle", "Locomotion must settle at idle");
         input.keys[17] = true;
         tickAnimated(js, w, input);
-        check(std::abs(w.agent(w.playerId).height - 1.3f) < .001f && std::abs(w.feet(w.playerId).y) < .001f,
+        check(std::abs(w.motion.agent(w.gameplay.playerId).height - 1.3f) < .001f && std::abs(w.motion.feet(w.gameplay.playerId).y) < .001f,
               "JS crouch must resize physical capsule and keep feet grounded");
-        auto player = w.entity(w.playerId).position;
-        auto ceiling = w.spawn("Stance test ceiling", Shape::Box, {player.x, 1.7f, player.z}, {2, .4f, 2}, 0,
+        auto player = w.get<Transform>(w.gameplay.playerId).world.position;
+        auto ceiling = spawnTest(w, "Stance test ceiling", Shape::Box, {player.x, 1.7f, player.z}, {2, .4f, 2}, 0,
                                true, false);
         input.keys[17] = false;
         tickAnimated(js, w, input);
-        check(w.agent(w.playerId).height < 1.4f && w.state == "Crouching",
+        check(w.motion.agent(w.gameplay.playerId).height < 1.4f && w.gameplay.state == "Crouching",
               "JS must respect blocked standing clearance");
         w.destroy(ceiling);
         tickAnimated(js, w, input);
-        check(w.agent(w.playerId).height > 1.9f, "JS must stand once ceiling is removed");
+        check(w.motion.agent(w.gameplay.playerId).height > 1.9f, "JS must stand once ceiling is removed");
         js.execute(R"JS(
             (function() {
                 function check(ok, message) { if (!ok) throw new Error(message); }
                 var revision = Engine.physicsRevision();
-                var id = Engine.spawn('Binding test', false, 30, 1, 0, 1, 2, 1, 0, true, false);
+                var id = Engine.create({name:'Binding test',components:{transform:{position:[30,1,0]},render:{scale:[1,2,1],material:0},collider:{shape:{type:'box',halfExtents:[0.5,1.0,0.5]},blocking:true,pickable:true}}});
                 Engine.collider(id, {shape:'box', halfExtents:{x:.2,y:1,z:.2}, blocking:true, layer:1});
                 Engine.visible(id, false);
                 var hit = Engine.physicsRaycast({x:28,y:1,z:0}, {x:1,y:0,z:0}, 6, 1);
@@ -118,20 +119,20 @@ int main() {
         Input click;
         tickAnimated(gameplay, interactionWorld, click);
         auto screenPoint = [&](vec3 point) {
-            auto clip = interactionWorld.camera.projection(float(click.width) / click.height) *
-                        interactionWorld.camera.view() * vec4(point, 1);
+            auto clip = interactionWorld.resources.camera.projection(float(click.width) / click.height) *
+                        interactionWorld.resources.camera.view() * vec4(point, 1);
             click.mouseX = (clip.x / clip.w * .5f + .5f) * click.width;
             click.mouseY = (clip.y / clip.w * .5f + .5f) * click.height;
         };
         // Exercise the same mouse-pick -> JS command -> A* -> facing -> interaction path as the window.
         uint32_t console = 0, door = 0;
-        for (const auto& e : interactionWorld.objects()) {
-            if (e.name == "Power console")
-                console = e.id;
-            if (e.name == "Service door")
-                door = e.id;
+        for (const auto& e : interactionWorld.registry().entities()) {
+            if (interactionWorld.get<Identity>(e).name == "Power console")
+                console = e;
+            if (interactionWorld.get<Identity>(e).name == "Service door")
+                door = e;
         }
-        screenPoint(interactionWorld.entity(console).position);
+        screenPoint(interactionWorld.get<Transform>(console).world.position);
         check(interactionWorld.pick(click.mouseX, click.mouseY, click) == console,
               "Interactive object picking failed");
         click.leftPressed = true;
@@ -140,43 +141,43 @@ int main() {
         for (int i = 0; i < 1500; i++) {
             tickAnimated(gameplay, interactionWorld, click);
             check(Navigation::canStand(interactionWorld.physics(),
-                                       interactionWorld.feet(interactionWorld.playerId),
-                                       interactionWorld.agent(interactionWorld.playerId)),
+                                       interactionWorld.motion.feet(interactionWorld.gameplay.playerId),
+                                       interactionWorld.motion.agent(interactionWorld.gameplay.playerId)),
                   "Click locomotion penetrated obstacle");
         }
-        check(!interactionWorld.physics().body(interactionWorld.entity(door).physical).blocking &&
-                  interactionWorld.entity(door).position.y > 4,
+        check(!interactionWorld.physics().body(interactionWorld.get<Collider>(door).body).blocking &&
+                  interactionWorld.get<Transform>(door).world.position.y > 4,
               "Approach-and-use must open door and update collision");
-        check(glm::distance(vec2(interactionWorld.entity(interactionWorld.playerId).position.x,
-                                 interactionWorld.entity(interactionWorld.playerId).position.z),
+        check(glm::distance(vec2(interactionWorld.get<Transform>(interactionWorld.gameplay.playerId).world.position.x,
+                                 interactionWorld.get<Transform>(interactionWorld.gameplay.playerId).world.position.z),
                             vec2(-6, -1.7f)) < .25f,
               "Navigation must arrive precisely");
         click.pressed[9] = true;
         tickAnimated(gameplay, interactionWorld, click);
         click.pressed.fill(false);
-        auto stopped = interactionWorld.entity(interactionWorld.playerId).position;
+        auto stopped = interactionWorld.get<Transform>(interactionWorld.gameplay.playerId).world.position;
         screenPoint(vec3(6, 0, 4));
         click.leftPressed = true;
         tickAnimated(gameplay, interactionWorld, click);
         click.leftPressed = false;
         for (int i = 0; i < 60; i++)
             tickAnimated(gameplay, interactionWorld, click);
-        check(glm::distance(stopped, interactionWorld.entity(interactionWorld.playerId).position) < .1f,
+        check(glm::distance(stopped, interactionWorld.get<Transform>(interactionWorld.gameplay.playerId).world.position) < .1f,
               "Deselected character must ignore commands");
         // Block an already accepted route. Replanning must use physical feedback from
         // root motion, rather than mistaking the requested velocity for actual travel.
         gameplay.execute("Locomotion.command({x:-8,y:0,z:-1.7});");
-        check(!interactionWorld.path.empty(), "Dynamic obstacle test requires an initially valid route");
-        auto blocker = interactionWorld.spawn("New route obstruction", Shape::Box, {-8, 1, -1.7f}, {1, 2, 1},
+        check(!interactionWorld.gameplay.path.empty(), "Dynamic obstacle test requires an initially valid route");
+        auto blocker = spawnTest(interactionWorld, "New route obstruction", Shape::Box, {-8, 1, -1.7f}, {1, 2, 1},
                                               0, true, false);
         for (int i = 0; i < 600; ++i) {
             tickAnimated(gameplay, interactionWorld, click);
             check(Navigation::canStand(interactionWorld.physics(),
-                                       interactionWorld.feet(interactionWorld.playerId),
-                                       interactionWorld.agent(interactionWorld.playerId)),
+                                       interactionWorld.motion.feet(interactionWorld.gameplay.playerId),
+                                       interactionWorld.motion.agent(interactionWorld.gameplay.playerId)),
                   "Animated root motion must not cross a new route obstruction");
         }
-        check(interactionWorld.path.empty() && interactionWorld.message == "Route is no longer reachable",
+        check(interactionWorld.gameplay.path.empty() && interactionWorld.gameplay.message == "Route is no longer reachable",
               "Blocked animated travel must replan and cancel an unreachable route");
         interactionWorld.destroy(blocker);
         // The render scene is persistent: slots outlive the objects that move through
@@ -255,20 +256,21 @@ int main() {
         ScriptRuntime trackedJs(tracked, testAssets());
         trackedJs.initialize();
         auto opened = tracked.snapshot({}, 1, 0, 0);
-        check(opened.proxies.size() == tracked.objects().size() &&
+        check(opened.proxies.size() == tracked.registry().entities().size() &&
                   opened.delta.structural.size() == opened.proxies.size(),
               "The first snapshot must present every proxy as newly created");
         check(tracked.snapshot({}, 2, 0, 0).delta.empty(),
               "Snapshotting a world nobody touched must carry no events");
-        auto slot = tracked.entity(tracked.playerId).proxy;
-        tracked.setPose(tracked.playerId, {5, 1, 5}, .5f, 2);
+        auto slot = tracked.get<Renderable>(tracked.gameplay.playerId).slot;
+        tracked.transforms.setTransform(tracked.gameplay.playerId, {{5, 1, 5}, glm::angleAxis(.5f, vec3(0, 1, 0))});
+        tracked.render.setScale(tracked.gameplay.playerId, {1, 2, 1});
         auto walked = tracked.snapshot({}, 3, 0, 0);
         check(walked.delta.moved.size() == 1 && walked.delta.moved[0] == slot &&
                   walked.delta.attributes.empty() && walked.delta.structural.empty(),
               "Moving one object must dirty exactly one slot, and only its transform");
         check(walked.proxies[slot].transform.position.x == 5.f,
               "Events name slots; the values must come from the proxy array");
-        tracked.setVisible(tracked.playerId, false);
+        tracked.render.setVisible(tracked.gameplay.playerId, false);
         auto hidden = tracked.snapshot({}, 4, 0, 0);
         check(hidden.delta.attributes.size() == 1 && hidden.delta.moved.empty() &&
                   !hidden.proxies[slot].attributes.visible,

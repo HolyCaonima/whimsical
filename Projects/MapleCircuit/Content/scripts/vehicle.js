@@ -68,12 +68,10 @@ var Vehicle = {
     visuals: function (car) {
         for (var w = 0; w < 4; w++) {
             var x = w % 2 ? 1.03 : -1.03, z = w < 2 ? 1.27 : -1.3;
-            var a = car.yaw + (w < 2 ? car.steer * .32 : 0), half = a / 2, spin = car.spin / 2;
+            var a = w < 2 ? car.steer * .32 : 0, half = a / 2, spin = car.spin / 2;
             var rotation = {x: Math.cos(half) * Math.sin(spin), y: Math.sin(half) * Math.cos(spin),
                             z: -Math.sin(half) * Math.sin(spin), w: Math.cos(half) * Math.cos(spin)};
-            Engine.transform(car.wheels[w], {position: {
-                x: car.x + Math.cos(car.yaw) * x + Math.sin(car.yaw) * z, y: .46,
-                z: car.z - Math.sin(car.yaw) * x + Math.cos(car.yaw) * z}, rotation: rotation});
+            Engine.localTransform(car.wheels[w], {position: {x:x, y:-.26, z:z}, rotation: rotation});
         }
     },
     ai: function (car, cars) {

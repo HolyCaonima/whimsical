@@ -100,7 +100,7 @@ clearCache、重扫、保存不销毁 World、Solver 或 Frame 持有的旧资�
 | BodyHandle slot/generation | PhysicsScene 临时句柄 | 否 |
 | 材质／灯表下标 | Map 自身的表内索引 | 是，与 GPU/Entity 句柄无关 |
 
-切图保留 Entity 墓碑和 RenderScene/PhysicsScene 分配器：Entity 继续递增，物理槽 generation 递增，旧句柄不会指向新对象。渲染槽可复用，但通过 structural delta 发布；revision/topology 不归零，mailbox 增量链保持连续。切图重置时域历史，首个加载快照被覆盖时该标记仍会保留。
+切图保留 Entity ID 序列和 RenderScene/PhysicsScene 分配器，Registry 只存活实体：Entity 继续递增，物理槽 generation 递增，旧句柄不会指向新对象。渲染槽可复用，但通过 structural delta 发布；revision/topology 不归零，mailbox 增量链保持连续。切图重置时域历史，首个加载快照被覆盖时该标记仍会保留。
 
 当前是单 World、单已加载 Map。尚未引入 streaming、同一 Map 多实例或跨 Map 活实体解析。持久 ID 查询使用映射表，热点继续使用整数 Entity。
 
@@ -108,13 +108,13 @@ clearCache、重扫、保存不销毁 World、Solver 或 Frame 持有的旧资�
 
 SceneDocument 保存：对象 ID/显示名/位置/旋转/启用/交互；RenderComponent 的 primitive、scale/offset/animationScale、材质索引和可见性；主碰撞体 shape/motion/layer/查询属性；关节碰撞体 joint/local/shape/blocking；动画与 mesh 引用、root-motion 选项、rootOffset 和实例属性；材质值表、灯表、相机、导航（含 planeTolerance）；player Object ID、命名 Object 引用、Map 脚本引用和显式 gameplay JSON data。
 
-Map 的 SceneDocument 载荷现写入 `version: 3`：内嵌材质与 Material 资产统一使用 Shader 引用、命名属性和纹理引用；对象朝向为 `rotation: [x,y,z,w]` 单位四元数。已迁移仓库内的 v1/v2 地图，旧载荷明确拒绝；外层 ALAS1 资产信封版本仍为 1。迁移方式见 [Shader / Material](shader-materials.md)。
+Map 现写入 `version: 4`，以 `entities[].components` 保存实际存在的能力与父级持久 ID，变换保存 local。版本 3 在读取边界转换，1/2 仍被拒绝；ALAS1 资产信封版本仍为 1。六张现有地图、生成器及验证脚本已同步迁移，详细字段、组件依赖和脚本入口见 [ECS 架构](ecs.md)。
 
 材质可作为 Map 内嵌值；复用的材质是注册的 Material 资产。Shader 与 Texture 按持久 ID 解析。CPU 材质不保存 descriptor index，World 和 Frame 仅持有参数值与不可变资产引用，纹理绑定由 renderer 分配。
 
 capture 跳过已删除对象，删除对象也移除其命名引用。未注册的自定义 Solver/mesh 无法重建，保存明确报错。save 始终把 SceneDocument 写成 inline payload；对同一 Map 保留 ID，Save As 创建新 Map ID，保留 Object ID。无 Solver 的手动关节姿态可保存；有 Solver 的姿态重新求解。选择、悬停、路径命令、计时器、推理序列、IK 历史、RenderDelta、GPU 句柄、物理缓存与 JS 闭包不序列化。
 
-load 先在临时 World 检查全部依赖、骨架绑定、动画属性、关节碰撞体和物理形状；成功后经 World 原有创建／属性发布入口重建场景，恢复 player 与命名引用。内容预检失败保留原场景。加载建立两次轻量运行时组件，共享昂贵资产缓存，不执行两次 ONNX 推理；内存耗尽等分配失败不承诺事务回滚。
+load 先在临时 World 检查全部依赖、骨架绑定、动画属性、关节碰撞体和物理形状；成功后建立身份和层级，再经各系统挂接实际组件，恢复 player 与命名引用。内容预检失败保留原场景。加载建立两次轻量运行时组件，共享昂贵资产缓存，不执行两次 ONNX 推理；内存耗尽等分配失败不承诺事务回滚。
 
 ScriptRuntime 在 C++ 重建后创建新 heap，依次载入 Project 公共脚本、Map 脚本，调用可选 initialize。Rain Court 的 initialize 只绑定控制、同伴、相机与交互。供电状态由 setSceneData 显式更新，门位置／碰撞和缓存材质随组件保存，因此加载后能继续交互。脚本初始化错误向调用方报告，此时 Map 已加载，不回滚整个 VM。
 

@@ -41,11 +41,187 @@ static ColliderShape shape(const Json& j) {
         return ColliderShape::capsule(float(j.at("radius").number()), float(j.at("height").number()));
     throw std::invalid_argument("Unknown collider type");
 }
+
+Json SceneEntity::json() const {
+    Json c = Json::object();
+    if (transform) {
+        c["transform"] = pose(transform->local);
+        c["transform"]["parent"] = transform->parent;
+    }
+    if (render) {
+        const auto& r = render->appearance;
+        c["render"] = {{"shape", r.shape == Shape::Box ? "box" : "capsule"},
+                       {"scale", vector(r.scale)},
+                       {"offset", vector(r.offset)},
+                       {"animationScale", vector(r.animationScale)},
+                       {"material", r.material},
+                       {"visible", r.visible}};
+        if (render->mesh)
+            c["render"]["mesh"] = render->mesh->json();
+    }
+    if (collider) {
+        const auto& p = *collider;
+        c["collider"] = {
+            {"shape", shape(p.shape)}, {"motion", p.motion == BodyMotion::Static ? "static" : "kinematic"},
+            {"layer", p.layer},        {"blocking", p.blocking},
+            {"walkable", p.walkable},  {"pickable", p.pickable}};
+    }
+    if (interactable)
+        c["interactable"] = Json::object();
+    if (animation) {
+        const auto& a = *animation;
+        Json attributes = Json::object();
+        for (const auto& v : a.attributes)
+            attributes[v.first] = v.second;
+        c["animator"] = {{"asset", a.asset.json()},
+                         {"rootMotion", a.rootMotion},
+                         {"rootOffset", vector(a.rootOffset)},
+                         {"attributes", attributes}};
+    }
+    if (skin)
+        c["skin"] = skin->json();
+    if (data)
+        c["data"] = *data;
+    if (joints) {
+        c["joints"] = Json::array();
+        for (const auto& p : *joints)
+            c["joints"].push(pose(p));
+    }
+    if (!jointColliders.empty()) {
+        c["jointColliders"] = Json::array();
+        for (const auto& p : jointColliders)
+            c["jointColliders"].push({{"joint", p.joint},
+                                      {"shape", shape(p.shape)},
+                                      {"local", pose(p.local)},
+                                      {"blocking", p.blocking}});
+    }
+    return {{"id", id}, {"name", name}, {"enabled", enabled}, {"components", c}};
+}
+SceneEntity SceneEntity::fromJson(const Json& item) {
+    SceneEntity o;
+    if (item.contains("id"))
+        o.id = item.at("id").string();
+    if (item.contains("name"))
+        o.name = item.at("name").string();
+    if (item.contains("enabled"))
+        o.enabled = item.at("enabled").boolean();
+    const auto& c = item.at("components");
+    const std::set<std::string> known{"transform", "render", "collider",       "interactable", "animator",
+                                      "skin",      "joints", "jointColliders", "data"};
+    for (const auto& entry : c.members())
+        if (!known.count(entry.first))
+            throw std::invalid_argument("Unknown component: " + entry.first);
+    if (c.contains("transform")) {
+        const auto& t = c.at("transform");
+        PhysicsPose p;
+        if (t.contains("position"))
+            p.position = vector3(t.at("position"));
+        if (t.contains("rotation")) {
+            auto q = vector4(t.at("rotation"));
+            p.rotation = quat(q.w, q.x, q.y, q.z);
+        }
+        o.transform = SceneTransform{p, t.contains("parent") ? t.at("parent").string() : ""};
+    }
+    if (c.contains("render")) {
+        const auto& r = c.at("render");
+        SceneRender render;
+        if (r.contains("mesh"))
+            render.mesh = AssetRef::fromJson(r.at("mesh"));
+        auto& a = render.appearance;
+        if (r.contains("shape")) {
+            auto kind = r.at("shape").string();
+            if (kind != "box" && kind != "capsule")
+                throw std::invalid_argument("Unknown render shape");
+            a.shape = kind == "box" ? Shape::Box : Shape::Capsule;
+        }
+        if (r.contains("scale"))
+            a.scale = vector3(r.at("scale"));
+        if (r.contains("offset"))
+            a.offset = vector3(r.at("offset"));
+        if (r.contains("animationScale"))
+            a.animationScale = vector3(r.at("animationScale"));
+        if (r.contains("material"))
+            a.material = r.at("material").uint();
+        if (r.contains("visible"))
+            a.visible = r.at("visible").boolean();
+        o.render = std::move(render);
+    }
+    if (c.contains("collider")) {
+        const auto& p = c.at("collider");
+        SceneCollider collider;
+        collider.shape = shape(p.at("shape"));
+        if (p.contains("motion")) {
+            auto motion = p.at("motion").string();
+            if (motion != "static" && motion != "kinematic")
+                throw std::invalid_argument("Unknown body motion");
+            collider.motion = motion == "static" ? BodyMotion::Static : BodyMotion::Kinematic;
+        }
+        if (p.contains("layer"))
+            collider.layer = p.at("layer").uint();
+        if (p.contains("blocking"))
+            collider.blocking = p.at("blocking").boolean();
+        if (p.contains("walkable"))
+            collider.walkable = p.at("walkable").boolean();
+        if (p.contains("pickable"))
+            collider.pickable = p.at("pickable").boolean();
+        o.collider = collider;
+    }
+    o.interactable = c.contains("interactable");
+    if (c.contains("animator")) {
+        const auto& a = c.at("animator");
+        SceneAnimation animation;
+        animation.asset = AssetRef::fromJson(a.at("asset"));
+        if (a.contains("rootMotion"))
+            animation.rootMotion = a.at("rootMotion").boolean();
+        if (a.contains("rootOffset"))
+            animation.rootOffset = vector3(a.at("rootOffset"));
+        if (a.contains("attributes"))
+            for (const auto& v : a.at("attributes").members())
+                animation.attributes[v.first] = v.second.string();
+        o.animation = std::move(animation);
+    }
+    if (c.contains("skin"))
+        o.skin = AssetRef::fromJson(c.at("skin"));
+    if (c.contains("data")) {
+        (void)c.at("data").members();
+        o.data = c.at("data");
+    }
+    if (c.contains("joints")) {
+        o.joints.emplace();
+        for (const auto& p : c.at("joints").elements())
+            o.joints->push_back(pose(p));
+    }
+    if (c.contains("jointColliders"))
+        for (const auto& p : c.at("jointColliders").elements())
+            o.jointColliders.push_back({p.at("joint").uint(), shape(p.at("shape")), pose(p.at("local")),
+                                        p.at("blocking").boolean()});
+    return o;
+}
+// Version 3 is an import format only. Translate its mandatory recipe once at the
+// serialization boundary; the runtime and every new save use optional components.
+static Json migrateEntity(const Json& item) {
+    Json c{{"transform", {{"position", item.at("position")}, {"rotation", item.at("rotation")}}},
+           {"render", item.at("render")},
+           {"collider", item.at("physics")}};
+    if (item.at("interactable").boolean())
+        c["interactable"] = Json::object();
+    if (!item.at("animation").null()) {
+        auto a = item.at("animation");
+        c["animator"] = a;
+        if (!a.at("mesh").null())
+            c["skin"] = a.at("mesh");
+    }
+    if (!item.at("joints").elements().empty())
+        c["joints"] = item.at("joints");
+    c["jointColliders"] = item.at("jointColliders");
+    return {
+        {"id", item.at("id")}, {"name", item.at("name")}, {"enabled", item.at("enabled")}, {"components", c}};
+}
 Json SceneDocument::json() const {
     validate();
-    Json j{{"version", 3},
+    Json j{{"version", 4},
            {"scripts", Json::array()},
-           {"objects", Json::array()},
+           {"entities", Json::array()},
            {"materials", Json::array()},
            {"lights", Json::array()},
            {"camera",
@@ -74,57 +250,13 @@ Json SceneDocument::json() const {
             {{"positionRadius", vector(l.positionRadius)}, {"colorIntensity", vector(l.colorIntensity)}});
     for (const auto& r : references)
         j["references"][r.first] = r.second;
-    for (const auto& o : objects) {
-        Json item{{"id", o.id},
-                  {"name", o.name},
-                  {"position", vector(o.position)},
-                  {"rotation", vector(vec4(o.rotation.x, o.rotation.y, o.rotation.z, o.rotation.w))},
-                  {"enabled", o.enabled},
-                  {"interactable", o.interactable},
-                  {"render",
-                   {{"shape", o.render.shape == Shape::Box ? "box" : "capsule"},
-                    {"scale", vector(o.render.scale)},
-                    {"offset", vector(o.render.offset)},
-                    {"animationScale", vector(o.render.animationScale)},
-                    {"material", o.render.material},
-                    {"visible", o.render.visible}}},
-                  {"physics",
-                   {{"shape", shape(o.collider)},
-                    {"motion", o.motion == BodyMotion::Static ? "static" : "kinematic"},
-                    {"layer", o.layer},
-                    {"blocking", o.blocking},
-                    {"walkable", o.walkable},
-                    {"pickable", o.pickable}}},
-                  {"animation", Json()},
-                  {"joints", Json::array()},
-                  {"jointColliders", Json::array()}};
-        if (o.staticMesh)
-            item["render"]["mesh"] = o.staticMesh->json();
-        if (o.animation) {
-            const auto& a = *o.animation;
-            Json attributes = Json::object();
-            for (const auto& v : a.attributes)
-                attributes[v.first] = v.second;
-            item["animation"] = {{"asset", a.asset.json()},
-                                 {"mesh", a.mesh ? a.mesh->json() : Json()},
-                                 {"rootMotion", a.rootMotion},
-                                 {"rootOffset", vector(a.rootOffset)},
-                                 {"attributes", attributes}};
-        }
-        for (const auto& p : o.joints)
-            item["joints"].push(pose(p));
-        for (const auto& c : o.jointColliders)
-            item["jointColliders"].push({{"joint", c.joint},
-                                         {"shape", shape(c.shape)},
-                                         {"local", pose(c.local)},
-                                         {"blocking", c.blocking}});
-        j["objects"].push(std::move(item));
-    }
+    for (const auto& e : entities)
+        j["entities"].push(e.json());
     return j;
 }
 SceneDocument SceneDocument::fromJson(const Json& j) {
     auto version = j.at("version").uint();
-    if (version != 3)
+    if (version != 3 && version != 4)
         throw std::invalid_argument("Unsupported Map version");
     SceneDocument s;
     for (const auto& script : j.at("scripts").elements())
@@ -151,56 +283,8 @@ SceneDocument SceneDocument::fromJson(const Json& j) {
     s.data = j.at("data");
     for (const auto& r : j.at("references").members())
         s.references[r.first] = r.second.string();
-    for (const auto& item : j.at("objects").elements()) {
-        SceneObject o;
-        o.id = item.at("id").string();
-        o.name = item.at("name").string();
-        o.position = vector3(item.at("position"));
-        auto q = vector4(item.at("rotation"));
-        o.rotation = quat(q.w, q.x, q.y, q.z);
-        o.enabled = item.at("enabled").boolean();
-        o.interactable = item.at("interactable").boolean();
-        const auto& r = item.at("render");
-        if (r.contains("mesh"))
-            o.staticMesh = AssetRef::fromJson(r.at("mesh"));
-        auto kind = r.at("shape").string();
-        if (kind != "box" && kind != "capsule")
-            throw std::invalid_argument("Unknown render shape");
-        o.render.shape = kind == "box" ? Shape::Box : Shape::Capsule;
-        o.render.scale = vector3(r.at("scale"));
-        o.render.offset = vector3(r.at("offset"));
-        o.render.animationScale = vector3(r.at("animationScale"));
-        o.render.material = r.at("material").uint();
-        o.render.visible = r.at("visible").boolean();
-        const auto& p = item.at("physics");
-        o.collider = shape(p.at("shape"));
-        auto motion = p.at("motion").string();
-        if (motion != "static" && motion != "kinematic")
-            throw std::invalid_argument("Unknown body motion");
-        o.motion = motion == "static" ? BodyMotion::Static : BodyMotion::Kinematic;
-        o.layer = p.at("layer").uint();
-        o.blocking = p.at("blocking").boolean();
-        o.walkable = p.at("walkable").boolean();
-        o.pickable = p.at("pickable").boolean();
-        const auto& a = item.at("animation");
-        if (!a.null()) {
-            SceneAnimation animation;
-            animation.asset = AssetRef::fromJson(a.at("asset"));
-            if (!a.at("mesh").null())
-                animation.mesh = AssetRef::fromJson(a.at("mesh"));
-            animation.rootMotion = a.at("rootMotion").boolean();
-            animation.rootOffset = vector3(a.at("rootOffset"));
-            for (const auto& v : a.at("attributes").members())
-                animation.attributes[v.first] = v.second.string();
-            o.animation = std::move(animation);
-        }
-        for (const auto& jointPose : item.at("joints").elements())
-            o.joints.push_back(pose(jointPose));
-        for (const auto& c : item.at("jointColliders").elements())
-            o.jointColliders.push_back({c.at("joint").uint(), shape(c.at("shape")), pose(c.at("local")),
-                                        c.at("blocking").boolean()});
-        s.objects.push_back(std::move(o));
-    }
+    for (const auto& item : j.at(version == 3 ? "objects" : "entities").elements())
+        s.entities.push_back(SceneEntity::fromJson(version == 3 ? migrateEntity(item) : item));
     s.validate();
     return s;
 }
@@ -211,22 +295,50 @@ void SceneDocument::validate() const {
     for (const auto& m : materialAssets)
         if (m.first >= materials.size())
             throw std::invalid_argument("Material asset index outside Map material table");
-    std::set<std::string> ids;
-    for (const auto& o : objects) {
+
+    std::map<std::string, const SceneEntity*> ids;
+    for (const auto& o : entities) {
         validatePersistentId(o.id);
-        if (!ids.insert(o.id).second)
-            throw std::invalid_argument("Duplicate Map Object ID");
-        float rotationLength = glm::length(o.rotation);
-        if (o.render.material >= materials.size() || !finite(o.position) ||
-            !std::isfinite(rotationLength) || std::abs(rotationLength - 1) > .001f ||
-            !finite(o.render.scale) || !finite(o.render.offset) || !finite(o.render.animationScale) ||
-            glm::any(glm::lessThanEqual(o.render.scale, vec3(0))) ||
-            glm::any(glm::lessThanEqual(o.render.animationScale, vec3(0))))
-            throw std::invalid_argument("Invalid Map render component");
-        if (o.animation && !o.joints.empty())
-            throw std::invalid_argument("Solved joint poses are runtime state");
-        if (o.staticMesh && o.animation)
-            throw std::invalid_argument("An object cannot bind both static and animated geometry");
+        if (!ids.emplace(o.id, &o).second)
+            throw std::invalid_argument("Duplicate entity ID");
+        if ((o.render || o.collider || o.animation || o.joints) && !o.transform)
+            throw std::invalid_argument("Spatial components require Transform");
+        if (o.transform) {
+            const auto& t = o.transform->local;
+            auto length = glm::length(t.rotation);
+            if (!finite(t.position) || !std::isfinite(length) || std::abs(length - 1) > .001f)
+                throw std::invalid_argument("Invalid entity transform");
+        }
+        if (o.render) {
+            const auto& r = o.render->appearance;
+            if (r.material >= materials.size() || !finite(r.scale) || !finite(r.offset) ||
+                !finite(r.animationScale) || glm::any(glm::lessThanEqual(r.scale, vec3(0))) ||
+                glm::any(glm::lessThanEqual(r.animationScale, vec3(0))))
+                throw std::invalid_argument("Invalid render component");
+        }
+        if (o.animation && o.joints)
+            throw std::invalid_argument("Solved poses are runtime state");
+        if (o.data)
+            (void)o.data->members();
+        if (o.animation && o.animation->rootMotion &&
+            (!o.collider || o.collider->shape.type != ColliderType::Capsule))
+            throw std::invalid_argument("Root motion requires capsule collider");
+        if (o.skin && (!o.animation || !o.render || o.render->mesh))
+            throw std::invalid_argument("Skin requires Animator and Renderable without static geometry");
+        if (!o.jointColliders.empty() && !o.animation && (!o.joints || o.joints->empty()))
+            throw std::invalid_argument("Joint colliders require joint poses");
+    }
+    for (const auto& o : entities) {
+        std::set<std::string> chain{o.id};
+        auto t = o.transform ? &*o.transform : nullptr;
+        while (t && !t->parent.empty()) {
+            if (!chain.insert(t->parent).second)
+                throw std::invalid_argument("Transform hierarchy cycle");
+            auto p = ids.find(t->parent);
+            if (p == ids.end() || !p->second->transform)
+                throw std::invalid_argument("Missing parent Transform");
+            t = &*p->second->transform;
+        }
     }
     if (!player.empty() && !ids.count(player))
         throw std::invalid_argument("Map player references missing Object");

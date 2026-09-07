@@ -6,6 +6,8 @@
 
 UI 由独立 **uiCore / RmlUi** 驱动：项目 JS 通过 `Engine.ui` 操作文档、DOM 和事件，控制台与项目角色面板共用 RmlUi 布局和 Vulkan UI 后端。接口、线程边界、示例及当前后端能力见 [UI Core](docs/ui-core.md)。
 
+对象与场景已迁移为 ECS：能力按需组合，父子变换、组件生命周期、脚本、Map v4 和增量几何资源管理见 [ECS 架构](docs/ecs.md)。
+
 ## 直接运行
 
 新增 **蜜芽庭院 / Honeybud Court**：双击 `RunHoneybud.cmd` 体验通过 Blender MCP 制作的暖色庭院。包含可复用静态模型、布艺/木纹/PBR 纹理、陶瓷喷泉与原有角色导航；源文件、重建流程和资产管线见 [美术资产说明](docs/honeybud-art-pipeline.md)。
@@ -82,7 +84,8 @@ Release 构建默认**关闭** validation（每帧约 1 ms CPU，足以把贴着
 engine/
   assets/                 Project、虚拟路径、资产注册表、统一 .asset 和类型加载
   scene/                  Map 描述、Scene Save/Load 与持久 Object 身份
-  core/                   世界、实体、材质、相机、常驻 RenderScene、不可变帧快照和 mailbox
+  ecs/                    Registry、可组合组件、层级/运动/动画/渲染系统
+  core/                   组合入口、常驻 RenderScene、不可变帧快照和 mailbox
   platform/               Win32 窗口、输入、焦点／尺寸事件
   navigation/             膨胀障碍栅格 A*、路径平滑、连续碰撞移动
   animation/              统一骨架/姿态/求解器框架、AI4Animation 原生运行时和 ONNX 推理
@@ -137,7 +140,7 @@ NRD 4.17.3 实际参与 GPU 计算，使用 RELAX 的原生 SPIR-V、资源池�
 
 灯光是具有球形位置扰动的解析灯，用于柔和光追阴影；发光材质支持二次光线命中，但还没有 emissive mesh light importance sampling。基础 mesh 共享静态 BLAS，蒙皮角色各自持有动态 BLAS 并随姿态 refit；TLAS 在只有变换变化时走 `UPDATE`，在拓扑变化（槽位增长或改绑几何体）时重建。当前采用一帧 GPU in flight 和保守 pass barrier，还没有 async compute、自动资源别名、流式场景或 GPU-driven indirect draw。
 
-渲染场景是常驻的：`RenderScene` 给每个物体一个稳定槽位，`World` 的改动以增删改事件发布，渲染器只上传脏槽位，变换变化还有一条只写实例前 128 字节的快速路径。因此每帧代价随**变化量**而不是场景规模增长——场景放大 19.75 倍时帧时间增加 2.6%，实测见[验证记录](docs/verification.md)。注意这在当前 48 个物体的关卡上不会让帧变快，收益体现在规模上。
+渲染场景是常驻的：`RenderScene` 给每个物体一个稳定槽位，ECS 系统的改动以增删改事件发布，渲染器只上传脏槽位，变换变化还有一条只写实例前 128 字节的快速路径。因此每帧代价随**变化量**而不是场景规模增长——场景放大 19.75 倍时帧时间增加 2.6%，实测见[验证记录](docs/verification.md)。注意这在当前 48 个物体的关卡上不会让帧变快，收益体现在规模上。
 
 一帧在飞是**实测后的选择**而非遗留：在 `--present immediate` 下，整帧时间中的非 GPU 部分为 0.42–0.52 ms（1280×800 至 2560×1440），即 CPU 录制与 GPU 执行重叠最多只能省下这个量。而多帧在飞需要把 TLAS、descriptor set 和全部 host-visible 上传缓冲按帧复制——在带时域历史与 reservoir 复用的 ReSTIR 管线里，这个同步风险显著大于 0.5 ms 的收益。等 CPU 侧成本重新变得显著时再做。
 

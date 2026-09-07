@@ -1,3 +1,4 @@
+#include "TestEntities.h"
 #include "TestProject.h"
 #include "scene/ScenePersistence.h"
 #include "scripting/ScriptRuntime.h"
@@ -211,7 +212,7 @@ static void scene(const fs::path& directory) {
     auto path = assets.project().startupMap();
     auto original = assets.load<SceneAsset>(path);
     check(original->header().storage == PayloadStorage::Inline, "Rain Court Map must have an inline payload");
-    check(original->scene.objects.size() == 48 && original->scene.lights.size() == 8,
+    check(original->scene.entities.size() == 48 && original->scene.lights.size() == 8,
           "Rain Court migration must preserve authored content");
     auto human = assets.load<animation::ai4animation::ControllerResource>(
         AssetPath("/Game/animations/ai4animation/biped/controller"));
@@ -225,33 +226,33 @@ static void scene(const fs::path& directory) {
     scripts.initialize();
     check(ScenePersistence::capture(world, assets).json() == original->scene.json(),
           "Load/capture must round-trip the authored Map exactly");
-    auto oldPlayer = world.playerId;
-    auto oldBody = world.entity(oldPlayer).physical;
+    auto oldPlayer = world.gameplay.playerId;
+    auto oldBody = world.get<Collider>(oldPlayer).body;
     auto objectPath = world.objectPath(oldPlayer);
-    check(ObjectPath(objectPath.string()).object == world.entity(oldPlayer).persistentId,
+    check(ObjectPath(objectPath.string()).object == world.get<Identity>(oldPlayer).persistentId,
           "Object path must identify Map and Object");
     check(!world.resolveObject(ObjectPath(AssetPath("/Game/OtherMap"), objectPath.object)),
           "Object IDs must be scoped by Map path");
-    auto dead = world.spawn("Temporary", Shape::Box, {0, 10, 0}, {1, 1, 1}, 0, false, false);
-    auto deletedId = world.entity(dead).persistentId;
-    world.sceneReferences["temporary"] = deletedId;
+    auto dead = spawnTest(world, "Temporary", Shape::Box, {0, 10, 0}, {1, 1, 1}, 0, false, false);
+    auto deletedId = world.get<Identity>(dead).persistentId;
+    world.resources.references["temporary"] = deletedId;
     world.destroy(dead);
-    check(!world.sceneReferences.count("temporary"), "Destroy must remove named references to dead Objects");
-    auto prop = world.spawn("Duplicate name", Shape::Box, {1, 10, 0}, {1, 2, 3}, 0, false, false);
-    auto other = world.spawn("Duplicate name", Shape::Box, {2, 10, 0}, {1, 1, 1}, 1, false, false);
-    world.setPose(prop, {3, 10, 1}, .4f, 2);
-    world.setVisualPose(prop, {.1f, .2f, .3f}, {1, 2, 1});
-    world.setVisible(prop, false);
+    check(!world.resources.references.count("temporary"), "Destroy must remove named references to dead Objects");
+    auto prop = spawnTest(world, "Duplicate name", Shape::Box, {1, 10, 0}, {1, 2, 3}, 0, false, false);
+    auto other = spawnTest(world, "Duplicate name", Shape::Box, {2, 10, 0}, {1, 1, 1}, 1, false, false);
+    world.transforms.setTransform(prop, {{3, 10, 1}, glm::angleAxis(.4f, vec3(0, 1, 0))});
+    world.render.setVisualPose(prop, {.1f, .2f, .3f}, {1, 2, 1});
+    world.render.setVisible(prop, false);
     world.setEnabled(other, false);
-    world.setAnimationJoints(prop, {{{0, 1, 0}, quat(1, 0, 0, 0)}});
-    world.addAnimationCollider(prop, 0, ColliderShape::box(vec3(.1f)), {{0, .2f, 0}, quat(1, 0, 0, 0)},
+    world.animation.setAnimationJoints(prop, {{{0, 1, 0}, quat(1, 0, 0, 0)}});
+    world.animation.addAnimationCollider(prop, 0, ColliderShape::box(vec3(.1f)), {{0, .2f, 0}, quat(1, 0, 0, 0)},
                                false);
-    world.addAnimationCollider(oldPlayer, 0, ColliderShape::capsule(.1f, .3f), {}, false);
-    world.setAnimationAttribute(oldPlayer, "locomotion.style", "Zombie");
-    world.navigation.planeTolerance = .03f;
+    world.animation.addAnimationCollider(oldPlayer, 0, ColliderShape::capsule(.1f, .3f), {}, false);
+    world.animation.setAnimationAttribute(oldPlayer, "locomotion.style", "Zombie");
+    world.resources.navigation.planeTolerance = .03f;
     scripts.execute("Interactions.execute(Engine.sceneObject('beacon')); "
                     "Interactions.execute(Engine.sceneObject('cache'));");
-    check(!world.sceneData.at("power").boolean(), "Interaction must update explicit persistent state");
+    check(!world.resources.data.at("power").boolean(), "Interaction must update explicit persistent state");
     auto expected = ScenePersistence::capture(world, assets).json();
     AssetPath saved("/Game/Maps/Saved");
     auto savedRef = scripts.saveScene(saved, "Saved Rain Court");
@@ -269,10 +270,10 @@ static void scene(const fs::path& directory) {
     mailbox.acquire(delivered, cursor);
     auto mesh = delivered->skins[0].mesh;
     scripts.loadScene(saved);
-    check(world.playerId != oldPlayer && !world.physics().contains(oldBody),
+    check(world.gameplay.playerId != oldPlayer && !world.physics().contains(oldBody),
           "Reload must invalidate old Entity and physics identities");
-    rejects([&] { world.entity(oldPlayer); }, "A stale Entity must never target a newly loaded Object");
-    check(world.resolveObject(savedObjectPath) == world.playerId && !world.findObject(deletedId),
+    rejects([&] { world.registry().require(oldPlayer); }, "A stale Entity must never target a newly loaded Object");
+    check(world.resolveObject(savedObjectPath) == world.gameplay.playerId && !world.findObject(deletedId),
           "Object identity must survive while deleted objects stay absent");
     check(ScenePersistence::capture(world, assets).json() == expected,
           "All persistent components and gameplay data must round-trip");
@@ -286,21 +287,21 @@ static void scene(const fs::path& directory) {
           "Dropped scene-load frame must preserve structural changes and history reset");
     check(mesh->vertices.size() > 0, "Published skin resources must outlive cache generations");
     scripts.execute("Interactions.execute(Engine.sceneObject('beacon'));");
-    check(world.sceneData.at("power").boolean(),
+    check(world.resources.data.at("power").boolean(),
           "Fresh gameplay bindings must toggle the restored state, not stale closures");
     scripts.execute("Engine.loadScene('/Game/Maps/Saved');");
-    check(!world.sceneData.at("power").boolean(),
+    check(!world.resources.data.at("power").boolean(),
           "Queued JS load must replace scene after returning from JS");
     scripts.tick(1.f / 60, {});
     check(world.snapshot({}, 4, 0, 0).skins.size() == 2, "Reloaded animation instances must run and render");
     auto bad = original->scene;
-    bad.objects[0].id = bad.objects[1].id;
+    bad.entities[0].id = bad.entities[1].id;
     rejects([&] { bad.json(); }, "Duplicate Object IDs must be rejected");
     bad = original->scene;
     bad.player = newPersistentId();
     rejects([&] { bad.json(); }, "Dangling persistent references must be rejected");
     bad = original->scene;
-    for (auto& o : bad.objects)
+    for (auto& o : bad.entities)
         if (o.animation) {
             o.animation->asset.id = newPersistentId();
             break;
@@ -309,10 +310,10 @@ static void scene(const fs::path& directory) {
     fixture(directory / "Content/Maps/Broken.asset", badHeader, bad.json().dump());
     assets.scan();
     auto stateBefore = ScenePersistence::capture(world, assets).json();
-    auto entityBefore = world.playerId;
+    auto entityBefore = world.gameplay.playerId;
     rejects([&] { scripts.loadScene(AssetPath("/Game/Maps/Broken")); },
             "Missing dependency must reject scene loading");
-    check(world.playerId == entityBefore && ScenePersistence::capture(world, assets).json() == stateBefore,
+    check(world.gameplay.playerId == entityBefore && ScenePersistence::capture(world, assets).json() == stateBefore,
           "Dependency failure must leave live scene untouched");
     // Reopen the copied project and load the saved asset using a different registry/World.
     AssetManager reopened{Project(directory / ".project")};
@@ -322,7 +323,7 @@ static void scene(const fs::path& directory) {
     check(ScenePersistence::capture(second, reopened).json() == expected,
           "Scene must load independently from a relocated project directory");
     world.clearScene();
-    check(world.physics().size() == 0 && world.playerId == 0,
+    check(world.physics().size() == 0 && world.gameplay.playerId == 0,
           "Unload must release all bodies and animation attachments");
     SceneDocument empty;
     auto emptyHeader = header("Map");
@@ -372,13 +373,15 @@ static void staticAssets(const fs::path& directory) {
     scene.materials.resize(2, MaterialDefinition::fromJson(material));
     scene.materialAssets = {{0, matRef}, {1, matRef}};
     for (int i = 0; i < 2; ++i) {
-        SceneObject o;
+        SceneEntity o;
+        o.transform.emplace();
+        o.render.emplace();
         o.id = newPersistentId();
         o.name = "Triangle";
-        o.staticMesh = meshRef;
-        o.position = vec3(float(i) * 2, 0, 0);
-        o.render.material = uint32_t(i);
-        scene.objects.push_back(o);
+        o.render->mesh = meshRef;
+        o.transform->local.position = vec3(float(i) * 2, 0, 0);
+        o.render->appearance.material = uint32_t(i);
+        scene.entities.push_back(o);
     }
     AssetPath map("/Game/Kit");
     assets.save(map, header("Map"), scene.json().dump());
@@ -391,18 +394,18 @@ static void staticAssets(const fs::path& directory) {
               before.materials[0].shader == before.materials[1].shader,
           "Repeated material references must share one texture binding");
     auto saved = ScenePersistence::capture(world, assets).json();
-    check(saved.at("objects").at(0).at("render").at("mesh").at("id").string() == meshRef.id,
+    check(saved.at("entities").at(0).at("components").at("render").at("mesh").at("id").string() == meshRef.id,
           "Map saves mesh asset identity, never a GPU mesh index");
     fs::rename(directory / "Content/Triangle.asset", directory / "Content/MovedTriangle.asset");
     assets.scan();
     ScenePersistence::load(world, assets, map);
-    check(ScenePersistence::capture(world, assets).objects[0].staticMesh->path ==
+    check(ScenePersistence::capture(world, assets).entities[0].render->mesh->path ==
               AssetPath("/Game/MovedTriangle"),
           "Static meshes must survive an asset move by ID");
-    auto id = world.objects()[world.objects().size() - 1].id;
+    auto id = world.registry().entities().back();
     world.setEnabled(id, false);
     auto disabled = world.snapshot({}, 1, 0, 0);
-    check(disabled.staticMeshes.size() == 2 && !disabled.proxies[world.entity(id).proxy].attributes.visible,
+    check(disabled.staticMeshes.size() == 2 && !disabled.proxies[world.get<Renderable>(id).slot].attributes.visible,
           "Visibility toggles must retain static geometry bindings");
     world.clearScene();
     auto empty = world.snapshot({}, 2, 0, 0);
@@ -417,7 +420,7 @@ static void gardenNavigation() {
     auto frame = world.snapshot({}, 0, 0, 0);
     check(frame.staticMeshes.size() > 400 && !frame.materials.empty(),
           "Garden must instantiate the authored kit and texture channels");
-    auto path = world.findPath(world.playerId, vec3(-3.5f, 0, -2));
+    auto path = world.motion.findPath(world.gameplay.playerId, vec3(-3.5f, 0, -2));
     check(path.size() > 1, "Garden player must find a route around the fountain to the pergola");
     auto scene = ScenePersistence::capture(world, assets);
     check(SceneDocument::fromJson(scene.json()).json() == scene.json(),

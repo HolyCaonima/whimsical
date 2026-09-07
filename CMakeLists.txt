@@ -95,6 +95,7 @@ add_library(afterlight_core
   engine/assets/EngineAssets.cpp engine/scene/SceneAsset.cpp engine/scene/ScenePersistence.cpp
   engine/ui/EngineUi.cpp engine/scripting/UiBindings.cpp
   engine/core/World.cpp engine/core/RenderScene.cpp engine/navigation/Navigation.cpp engine/scripting/ScriptRuntime.cpp
+  engine/ecs/TransformSystem.cpp engine/ecs/MotionSystem.cpp engine/ecs/AnimationSystem.cpp engine/ecs/RenderSystem.cpp
   engine/physics/PhysicsScene.cpp engine/physics/DynamicAabbTree.cpp engine/animation/AnimationCollision.cpp
 )
 target_include_directories(afterlight_core PUBLIC engine "${DEPS}/glm")
@@ -130,6 +131,11 @@ add_custom_target(afterlight_shaders DEPENDS ${SPIRV})
 add_dependencies(Afterlight afterlight_shaders)
 target_compile_definitions(Afterlight PRIVATE AFTERLIGHT_SHADERS="${CMAKE_BINARY_DIR}/shaders")
 enable_testing()
+add_executable(ecs_tests tests/EcsTests.cpp)
+target_link_libraries(ecs_tests PRIVATE afterlight_core)
+target_compile_options(ecs_tests PRIVATE /W4 /permissive- /utf-8)
+afterlight_copy_onnx(ecs_tests)
+add_test(NAME ecs_lifecycle COMMAND ecs_tests)
 add_executable(render_audit_tests tests/RenderAuditTests.cpp engine/render/RenderAuditWorker.cpp)
 target_link_libraries(render_audit_tests PRIVATE afterlight_core)
 target_compile_options(render_audit_tests PRIVATE /W4 /permissive- /utf-8)

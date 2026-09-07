@@ -1,10 +1,10 @@
 # Physics Scene
 
-原来的碰撞、拾取和 A* 直接遍历实体几何；现已拆为独立的主线程 `PhysicsScene`。`GameObject` 分别持有 `RenderComponent` 和 `BodyHandle`。物理场景自己存储形状、姿态、查询过滤和生命周期，导航与动画碰撞模块不依赖 World、Renderer、Frame、材质或 Vulkan。
+原来的碰撞、拾取和 A* 直接遍历实体几何；现已拆为独立的主线程 `PhysicsScene`。ECS 的 Renderable 与 Collider 独立组合；Collider 只持有 PhysicsScene 的 BodyHandle。物理场景自己存储形状、姿态、查询过滤和生命周期，导航与动画碰撞模块不依赖 World、Renderer、Frame、材质或 Vulkan。
 
 ```mermaid
 flowchart LR
-    JS[JS 控制 / 关卡 / 动画] --> W[World 对象与组件]
+    JS[JS 控制 / 关卡 / 动画] --> W[ECS Transform / Collider]
     W --> P[Physics Scene]
     A[AnimationCollision 关节姿态] --> P
     N[Navigation 地面与净空查询] --> P
@@ -21,14 +21,16 @@ flowchart LR
 | --- | --- |
 | `engine/physics/PhysicsScene.*` | 碰撞体、句柄、AABB、查询、运动学扫掠／滑移 |
 | `engine/physics/DynamicAabbTree.*` | CPU BVH 构建、叶节点增量维护、空间候选筛选 |
-| `engine/core/World.*` | 对象生命周期；统一提交物理和显示更新 |
+| `engine/core/World.*` | 实体与场景生命周期 |
+| `engine/ecs/TransformSystem.cpp` | 层级传播；同步体姿态及渲染代理 |
+| `engine/ecs/MotionSystem.cpp` | 碰撞体能力、刚体移动与 grounded movement |
 | `engine/animation/AnimationCollision.*` | 多个关节附属碰撞体，跟随动画的刚体姿态 |
 | `engine/navigation/Navigation.*` | 从物理地面和胶囊净空生成可通行数据，A* 和平滑路径 |
 | `Projects/Afterlight/Content/physics/profiles.asset` | ground / obstacle / decoration / character 配置 |
 | `Projects/Afterlight/Content/animations/locomotion.asset` | 站立／蹲行高度和 locomotion 参数 |
 | `engine/debug/PhysicsDebug.h` | 将物理形状转换成值类型线段快照，供 F2 显示 |
 
-物理句柄包含 slot 和 generation，删除后旧句柄失效。World 对外只开放 const 物理查询接口，变更通过对象 API 提交，避免不同场景的数据失配。Physics Scene 拒绝跨线程访问；渲染线程只接收 render proxy、地图标记和调试线段的值拷贝，不持有物理指针或句柄。
+物理句柄包含 slot 和 generation，删除后旧句柄失效。World 对外只开放 const 物理查询接口，变更通过所属系统提交，避免不同场景的数据失配。Physics Scene 拒绝跨线程访问；渲染线程只接收 render proxy、地图标记和调试线段的值拷贝，不持有物理指针或句柄。
 
 隐藏模型、换材质、改变视觉偏移不会改变碰撞。禁用对象同时禁用主碰撞体及所有动画附属体；删除会释放全部关联碰撞体。显示快照保留已删除对象的禁用槽位，以维持稳定的运动向量映射。
 
@@ -38,15 +40,15 @@ Box 和 Capsule 支持任意刚体旋转；角色查询体为竖直胶囊。提�
 
 通用 `ShapeQuery{shape, pose}` 支持任意朝向的 Box / Capsule 重叠，以及同时平移、旋转的连续扫掠。Box–Box 使用 15 个分离轴，Capsule–Box / Capsule–Capsule 复用精确线段距离；旋转扫掠沿最短四元数弧插值，用分离平面上的平移与角运动上界推进，粗筛包围整个旋转轨迹。即使起点、终点都无重叠，中间旋转撞到障碍也会被拦截。
 
-`World::moveBody` 使用物体实际主碰撞体，返回接受的位置、旋转、实际位移、阻挡标记和接触列表；不依赖导航、地面、质量或力积分。首次接触保留已接受的旋转，剩余位移沿接触面滑移，最多处理 5 次接触，保留 2 mm 间隙。扫掠最多推进 128 次，达到迭代上限时按当前安全位置报告保守命中；不负责修复出生穿透，也不施加碰撞冲量。加速、转向、抓地和撞击速度响应由项目 JS 消费接触反馈后决定。
+`MotionSystem::moveBody` 使用物体实际主碰撞体，返回接受的位置、旋转、实际位移、阻挡标记和接触列表；不依赖导航、地面、质量或力积分。首次接触保留已接受的旋转，剩余位移沿接触面滑移，最多处理 5 次接触，保留 2 mm 间隙。扫掠最多推进 128 次，达到迭代上限时按当前安全位置报告保守命中；不负责修复出生穿透，也不施加碰撞冲量。加速、转向、抓地和撞击速度响应由项目 JS 消费接触反馈后决定。
 
-旧的 `Engine.move` / `rootMotion` 仍使用竖直胶囊和 grounded controller；通用物体不会被强制套入角色导航。完整根旋转统一存在 `GameObject.rotation` 中，物理体、显示偏移、渲染矩阵、骨骼和关节附属碰撞体都由此派生。
+旧的 `Engine.move` / `rootMotion` 仍使用竖直胶囊和 grounded controller；通用物体不会被强制套入角色导航。完整根旋转统一存在 `Transform.local.rotation` 与派生的 `Transform.world.rotation` 中，物理体、显示偏移、渲染矩阵、骨骼和关节附属碰撞体都由此派生。
 
 窄相使用线段到 OBB／线段到线段距离。扫掠采用保守推进，最多 64 次迭代，未收敛时保守阻挡；滑移最多处理 5 次接触，并保留 2 mm 间隙。地面相切不阻碍水平位移。没有初始穿透恢复，出生和脚本设置的姿态应保持有效。
 
 粗筛使用主线程拥有的动态 AABB Tree（二叉 BVH）。Raycast 遍历射线相交的树节点，Overlap 遍历查询胶囊包围盒相交的节点，Sweep 使用覆盖整段位移的胶囊包围盒。取得候选后仍检查物理属性和精确 AABB，再进入原有窄相。候选按 body slot 排序，保持射线等距命中、扫掠接触和重叠结果的既有顺序，不随树的旋转或重建改变。
 
-地图实例化结束调用一次 `rebuildBroadphase()`，按包围盒中心最长轴递归中位数划分，构建平衡树。运行中创建物理体直接插入叶节点；移动、旋转或改变形状只更新相关叶节点，删除和禁用移除叶节点，重新启用以最新包围盒插入。插入按包围盒表面积代价选择位置，沿祖先路径更新包围盒并做高度平衡旋转；不会逐帧全量重建。
+地图加载与运行时统一按组件创建/删除增量维护 BVH，不再为场景实例化额外执行全量重建。独立后端仍提供 `rebuildBroadphase()`，按包围盒中心最长轴递归中位数划分。运行中创建物理体直接插入叶节点；移动、旋转或改变形状只更新相关叶节点，删除和禁用移除叶节点，重新启用以最新包围盒插入。插入按包围盒表面积代价选择位置，沿祖先路径更新包围盒并做高度平衡旋转；不会逐帧全量重建。
 
 树叶包围盒每边扩张 10 cm，物体小幅移动且仍被包含时不重新插入，但 PhysicsScene 的精确包围盒立即更新。物体超出余量或大形状明显缩小时，移除并重新插入原叶节点。批量重建保留叶索引和 BodyHandle，且不改变物理场景 revision；它只改变索引布局。`broadphaseStatistics()` 提供当前叶数、树高和累计重插入／重建次数。
 
@@ -64,7 +66,7 @@ Box 和 Capsule 支持任意刚体旋转；角色查询体为竖直胶囊。提�
 
 手动位移和 `Engine.rootMotion` 共用物理扫掠／滑移，返回实际位移；当前 root motion 受 grounded controller 约束，不能直接越过地面／高度检查。行走 bob 和显示缩放走 `visualPose`，不让物理胶囊上下抖动。
 
-附属碰撞体由“对象根姿态 × 关节相对根姿态 × 附属体局部姿态”驱动，更新后立即可查询，生命周期跟随对象。原生和 JS 接口均已测试；当前角色仍是程序胶囊，尚未载入骨骼动画资源。附属体更新不自动生成连续碰撞事件，高速攻击可显式请求 `physicsSweep`。
+附属碰撞体由“对象根姿态 × 关节相对根姿态 × 附属体局部姿态”驱动，更新后立即可查询，生命周期跟随对象。原生和 JS 接口均已测试；双足与四足角色通过 Animator 提交 FK 姿态。附属体更新不自动生成连续碰撞事件，高速攻击可显式请求 `physicsSweep`。
 
 ## JS 接口
 
@@ -78,7 +80,8 @@ Box 和 Capsule 支持任意刚体旋转；角色查询体为竖直胶囊。提�
 | `Engine.rootMotion(id,localDelta,deltaYaw)` | 局部动画位移经过同一物理控制器 |
 | `Engine.characterHeight(id,height)` | 保持脚底并检查净空，返回生效高度 |
 | `Engine.findPath(id,target)` | 使用角色实际脚底和物理尺寸寻路 |
-| `Engine.pose(id,x,y,z,yaw,renderHeight)` | 更新对象和物理位置／朝向；最后一个参数仅为显示模型的 Y 尺寸 |
+| `Engine.transform(id,pose)` / `localTransform(id,pose)` | 写世界／局部刚体姿态，并传播关联空间资源 |
+| `Engine.renderScale(id,scale)` | 单独修改显示尺寸，不改变 Collider |
 | `Engine.transform(id,{position,rotation})` | 瞬移到完整刚体姿态，保持显示尺寸；不做沿途碰撞检测 |
 | `Engine.position(id)` | 返回 `{x,y,z,yaw,rotation}`；yaw 是从四元数计算的水平朝向，范围为 −π 到 π |
 | `Engine.visualPose(id,offset,scale)` | 纯显示偏移和缩放 |

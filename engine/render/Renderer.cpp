@@ -4,6 +4,8 @@
 #include "NrdDenoiser.h"
 #include "RenderGraph.h"
 #include "Geometry.h"
+#include "RangeAllocator.h"
+#include <set>
 #include "animation/SkinnedMesh.h"
 #include "assets/StaticMesh.h"
 #include <map>
@@ -41,7 +43,7 @@ struct AccelerationStructure {
 };
 VkShaderModule createShaderModule(VulkanContext& vk, const std::vector<uint32_t>& data) {
     VkShaderModuleCreateInfo info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-    info.codeSize = data.size()*sizeof(uint32_t);
+    info.codeSize = data.size() * sizeof(uint32_t);
     info.pCode = data.data();
     VkShaderModule shader;
     VK_CHECK(vkCreateShaderModule(vk.device, &info, nullptr, &shader));
@@ -94,8 +96,20 @@ struct Renderer::Impl {
     ShaderCompiler shaderCompiler;
     MaterialBindings materialBindings;
     std::map<std::shared_ptr<const ShaderAsset>, VkPipeline> rasterPrograms;
-    std::map<ShaderCompiler::ShaderSet, std::array<VkPipeline, ShaderCompiler::surfacePasses.size()>> computePrograms;
-    enum Pass { Lighting, GiReuse, DiTemporal, DiSpatial, Resolve, DiGradient, Composite, DiConfidence, DiGradientFilter, PassCount };
+    std::map<ShaderCompiler::ShaderSet, std::array<VkPipeline, ShaderCompiler::surfacePasses.size()>>
+        computePrograms;
+    enum Pass {
+        Lighting,
+        GiReuse,
+        DiTemporal,
+        DiSpatial,
+        Resolve,
+        DiGradient,
+        Composite,
+        DiConfidence,
+        DiGradientFilter,
+        PassCount
+    };
     std::array<VkPipeline, PassCount> compute{};
     Buffer globals, instanceData, materialData, lightData, vertexData, indexData, tlasInstances, tlasScratch,
         readback, auditReadback;
@@ -107,22 +121,30 @@ struct Renderer::Impl {
     std::vector<Buffer> blasScratch;
     AccelerationStructure tlas;
     uint32_t tlasCount = 0;
+    bool tlasBuilt = false;
     std::vector<MeshRange> meshes;
-    struct SkinDraw {
-        uint32_t slot, firstVertex;
-        std::shared_ptr<const SkinnedMesh> mesh;
+    struct MeshAllocation {
+        uint32_t firstVertex = 0, vertexCount = 0;
+        bool dynamic = false;
     };
-    std::vector<SkinDraw> skinDraws;
-    std::map<uint32_t, uint32_t> skinMeshes;
-    std::map<uint32_t, uint32_t> staticSlots;
-    std::vector<Frame::StaticDraw> staticBindings;
-    uint32_t firstSkinMesh = 2;
+    std::vector<MeshAllocation> meshAllocations;
+    std::vector<uint32_t> freeMeshes, geometryIndices, dirtySkinMeshes;
+    RangeAllocator vertexRanges, indexRanges;
+    std::map<std::shared_ptr<const StaticMesh>, uint32_t> staticAssets;
+    struct SkinDraw {
+        uint32_t entity = 0, meshIndex = 0;
+        std::shared_ptr<const SkinnedMesh> mesh;
+        std::vector<mat4> palette;
+        bool settling = false;
+    };
+    std::map<uint32_t, SkinDraw> skinDraws;
+    std::map<uint32_t, uint32_t> skinMeshes, staticSlots;
+    uint64_t geometryTopology = UINT64_MAX;
+    uint64_t geometryBuilds = 0, geometryReleases = 0, geometryBufferGrowths = 0;
     std::vector<Image> materialTextures;
     VkSampler materialSampler = VK_NULL_HANDLE;
     std::vector<std::shared_ptr<const TextureAsset>> textureBindings;
     std::vector<GpuVertex> geometryVertices;
-    uint64_t skinTick = UINT64_MAX;
-    bool skinMotionPending = false, skinGeometryDirty = false;
     uint32_t vertexCount = 0;
     // Binding number -> image; unused bindings intentionally remain empty.
     std::array<Image, 39> images;
@@ -184,7 +206,8 @@ struct Renderer::Impl {
         if (fence)
             vkDestroyFence(vk.device, fence, nullptr);
         for (auto i : {Composite, DiConfidence, DiGradientFilter})
-            if (compute[i]) vkDestroyPipeline(vk.device, compute[i], nullptr);
+            if (compute[i])
+                vkDestroyPipeline(vk.device, compute[i], nullptr);
         for (const auto& programs : computePrograms)
             for (auto p : programs.second)
                 vkDestroyPipeline(vk.device, p, nullptr);
@@ -225,14 +248,17 @@ struct Renderer::Impl {
     void initialize() {
         vk.initialize(window, options.validation);
         globals = vk.buffer(sizeof(Globals), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, BufferMemory::Upload);
-        instanceData =
-            vk.buffer(sizeof(GpuInstance) * MaxInstances, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, BufferMemory::Upload);
-        materialData = vk.buffer(sizeof(GpuMaterial) * MaxMaterials, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, BufferMemory::Upload);
-        lightData = vk.buffer(sizeof(Light) * MaxLights, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, BufferMemory::Upload);
+        instanceData = vk.buffer(sizeof(GpuInstance) * MaxInstances, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                 BufferMemory::Upload);
+        materialData = vk.buffer(sizeof(GpuMaterial) * MaxMaterials, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                 BufferMemory::Upload);
+        lightData =
+            vk.buffer(sizeof(Light) * MaxLights, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, BufferMemory::Upload);
         tlasInstances = vk.buffer(sizeof(VkAccelerationStructureInstanceKHR) * MaxInstances,
                                   VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
-                                      VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, BufferMemory::Upload);
-        createGeometry({}, {});
+                                      VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                  BufferMemory::Upload);
+        initializeGeometry();
         updateTextures({});
         createPipelines();
         denoiser = std::make_unique<NrdDenoiser>(vk);
@@ -264,14 +290,14 @@ struct Renderer::Impl {
         tri.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
         tri.vertexData.deviceAddress = vertexData.address;
         tri.vertexStride = sizeof(GpuVertex);
-        tri.maxVertex = vertexCount - 1;
+        tri.maxVertex = meshAllocations[m].firstVertex + meshAllocations[m].vertexCount - 1;
         tri.indexType = VK_INDEX_TYPE_UINT32;
         tri.indexData.deviceAddress = indexData.address + meshes[m].firstIndex * sizeof(uint32_t);
         VkAccelerationStructureBuildGeometryInfoKHR build{
             VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR};
         build.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
         build.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
-        if (m >= firstSkinMesh)
+        if (meshAllocations[m].dynamic)
             build.flags |= VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
         build.mode = update ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR
                             : VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
@@ -283,6 +309,7 @@ struct Renderer::Impl {
                 VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR};
             vkGetAccelerationStructureBuildSizesKHR(
                 vk.device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &build, &primitives, &sizes);
+            ++geometryBuilds;
             blas[m] = createAS(build.type, sizes.accelerationStructureSize);
             blasScratch[m] =
                 vk.buffer(std::max(sizes.buildScratchSize, sizes.updateScratchSize) +
@@ -296,123 +323,190 @@ struct Renderer::Impl {
         const auto* ptr = &range;
         vkCmdBuildAccelerationStructuresKHR(c, 1, &build, &ptr);
     }
-    void createGeometry(const std::vector<Frame::Skin>& skins,
-                        const std::vector<Frame::StaticDraw>& statics) {
-        // Called only after the render fence, on mesh binding/topology changes.
-        for (auto& b : blas)
-            destroyAS(b);
-        for (auto& b : blasScratch)
-            vk.destroy(b);
-        vk.destroy(vertexData);
-        vk.destroy(indexData);
-        geometryVertices.clear();
-        skinDraws.clear();
-        skinMeshes.clear();
-        staticSlots.clear();
-        staticBindings = statics;
-        std::vector<uint32_t> indices;
-        auto primitives = buildPrimitives(geometryVertices, indices);
-        meshes.assign(primitives.begin(), primitives.end());
-        std::map<const StaticMesh*, uint32_t> unique;
-        for (const auto& draw : statics) {
-            auto existing = unique.find(draw.mesh.get());
-            if (existing != unique.end()) {
-                staticSlots[draw.slot] = existing->second;
-                continue;
-            }
-            uint32_t first = uint32_t(geometryVertices.size()), index = uint32_t(meshes.size());
-            for (const auto& v : draw.mesh->vertices)
-                geometryVertices.push_back({vec4(v.position, 1), vec4(v.normal, 0), vec4(v.color, 1),
-                                            vec4(v.position, 1), vec4(v.uv, 0, 0), v.tangent});
-            meshes.push_back({uint32_t(indices.size()), uint32_t(draw.mesh->indices.size())});
-            for (auto i : draw.mesh->indices)
-                indices.push_back(first + i);
-            unique.emplace(draw.mesh.get(), index);
-            staticSlots[draw.slot] = index;
-        }
-        firstSkinMesh = uint32_t(meshes.size());
-        for (const auto& skin : skins) {
-            uint32_t first = uint32_t(geometryVertices.size());
-            auto vertices = deformSkin(*skin.mesh, skin.palette);
-            for (size_t i = 0; i < vertices.size(); ++i)
-                geometryVertices.push_back({vec4(vertices[i].position, 1), vec4(vertices[i].normal, 0),
-                                            vec4(skin.mesh->vertices[i].color, 1),
-                                            vec4(vertices[i].position, 1)});
-            MeshRange range{uint32_t(indices.size()), uint32_t(skin.mesh->indices.size())};
-            for (auto index : skin.mesh->indices)
-                indices.push_back(first + index);
-            skinMeshes[skin.slot] = uint32_t(meshes.size());
-            meshes.push_back(range);
-            skinDraws.push_back({skin.slot, first, skin.mesh});
-        }
-        vertexCount = uint32_t(geometryVertices.size());
+
+    void uploadGeometry(const std::vector<uint32_t>& added) {
         auto usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                      VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
-        vertexData = vk.buffer(geometryVertices.size() * sizeof(GpuVertex),
-                               usage | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, BufferMemory::Upload);
-        indexData =
-            vk.buffer(indices.size() * sizeof(uint32_t), usage | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, BufferMemory::Upload);
-        std::memcpy(vertexData.mapped, geometryVertices.data(), size_t(vertexData.size));
-        std::memcpy(indexData.mapped, indices.data(), size_t(indexData.size));
-        blas.resize(meshes.size());
-        blasScratch.resize(meshes.size());
-        auto commandBuffer = vk.beginOneTime();
-        for (uint32_t m = 0; m < meshes.size(); ++m)
-            buildMeshAS(commandBuffer, m, false);
-        vk.endOneTime(commandBuffer);
-        descriptorsDirty = true;
-        mirrorValid = false;
-        tlasCount = 0;
-        historyValid = false;
-        skinTick = UINT64_MAX;
-        skinMotionPending = false;
+        auto upload = [&](Buffer& buffer, const void* data, size_t bytes, VkBufferUsageFlags extra) {
+            if (buffer.size >= bytes)
+                return false;
+            auto capacity = std::max<VkDeviceSize>(bytes, std::max<VkDeviceSize>(buffer.size * 2, 4096));
+            vk.destroy(buffer);
+            buffer = vk.buffer(capacity, usage | extra, BufferMemory::Upload);
+            std::memcpy(buffer.mapped, data, bytes);
+            descriptorsDirty = true;
+            ++geometryBufferGrowths;
+            return true;
+        };
+        bool verticesGrew =
+            upload(vertexData, geometryVertices.data(), geometryVertices.size() * sizeof(GpuVertex),
+                   VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+        bool indicesGrew =
+            upload(indexData, geometryIndices.data(), geometryIndices.size() * sizeof(uint32_t),
+                   VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+        for (auto m : added) {
+            const auto& a = meshAllocations[m];
+            const auto& range = meshes[m];
+            if (!verticesGrew)
+                std::memcpy(static_cast<GpuVertex*>(vertexData.mapped) + a.firstVertex,
+                            geometryVertices.data() + a.firstVertex, a.vertexCount * sizeof(GpuVertex));
+            if (!indicesGrew)
+                std::memcpy(static_cast<uint32_t*>(indexData.mapped) + range.firstIndex,
+                            geometryIndices.data() + range.firstIndex, range.indexCount * sizeof(uint32_t));
+        }
+        if (!added.empty()) {
+            auto c = vk.beginOneTime();
+            for (auto m : added)
+                buildMeshAS(c, m, false);
+            vk.endOneTime(c);
+        }
+    }
+    void initializeGeometry() {
+        auto primitives = buildPrimitives(geometryVertices, geometryIndices);
+        meshes.assign(primitives.begin(), primitives.end());
+        uint32_t capsuleFirst = 24;
+        meshAllocations = {{0, capsuleFirst, false},
+                           {capsuleFirst, uint32_t(geometryVertices.size()) - capsuleFirst, false}};
+        vertexRanges.allocate(uint32_t(geometryVertices.size()));
+        indexRanges.allocate(uint32_t(geometryIndices.size()));
+        blas.resize(2);
+        blasScratch.resize(2);
+        vertexCount = uint32_t(geometryVertices.size());
+        uploadGeometry({0, 1});
+    }
+    uint32_t allocateGeometry(const std::vector<GpuVertex>& vertices, const std::vector<uint32_t>& indices,
+                              bool dynamic) {
+        uint32_t m;
+        if (freeMeshes.empty()) {
+            m = uint32_t(meshes.size());
+            meshes.emplace_back();
+            meshAllocations.emplace_back();
+            blas.emplace_back();
+            blasScratch.emplace_back();
+        } else {
+            m = freeMeshes.back();
+            freeMeshes.pop_back();
+        }
+        auto firstVertex = vertexRanges.allocate(uint32_t(vertices.size()));
+        auto firstIndex = indexRanges.allocate(uint32_t(indices.size()));
+        geometryVertices.resize(vertexRanges.size());
+        geometryIndices.resize(indexRanges.size());
+        std::copy(vertices.begin(), vertices.end(), geometryVertices.begin() + firstVertex);
+        for (size_t i = 0; i < indices.size(); ++i)
+            geometryIndices[firstIndex + i] = firstVertex + indices[i];
+        meshes[m] = {firstIndex, uint32_t(indices.size())};
+        meshAllocations[m] = {firstVertex, uint32_t(vertices.size()), dynamic};
+        vertexCount = uint32_t(geometryVertices.size());
+        return m;
+    }
+    void releaseGeometry(uint32_t m) {
+        // Render fence has completed. Old immutable snapshots may still own assets,
+        // but only the current render mirror owns these GPU allocations.
+        destroyAS(blas[m]);
+        vk.destroy(blasScratch[m]);
+        vertexRanges.release(meshAllocations[m].firstVertex, meshAllocations[m].vertexCount);
+        indexRanges.release(meshes[m].firstIndex, meshes[m].indexCount);
+        freeMeshes.push_back(m);
+        ++geometryReleases;
+    }
+    void syncGeometry(const Frame& frame) {
+        std::set<std::shared_ptr<const StaticMesh>> wanted;
+        for (const auto& draw : frame.staticMeshes)
+            wanted.insert(draw.mesh);
+        for (auto it = staticAssets.begin(); it != staticAssets.end();)
+            if (!wanted.count(it->first)) {
+                releaseGeometry(it->second);
+                it = staticAssets.erase(it);
+            } else
+                ++it;
+        std::map<uint32_t, const Frame::Skin*> skins;
+        for (const auto& skin : frame.skins)
+            skins.emplace(skin.slot, &skin);
+        for (auto it = skinDraws.begin(); it != skinDraws.end();) {
+            auto skin = skins.find(it->first);
+            if (skin == skins.end() || skin->second->mesh != it->second.mesh ||
+                frame.proxies[it->first].attributes.entity != it->second.entity) {
+                releaseGeometry(it->second.meshIndex);
+                it = skinDraws.erase(it);
+            } else
+                ++it;
+        }
+        std::vector<uint32_t> added;
+        for (const auto& mesh : wanted)
+            if (!staticAssets.count(mesh)) {
+                std::vector<GpuVertex> vertices;
+                vertices.reserve(mesh->vertices.size());
+                for (const auto& v : mesh->vertices)
+                    vertices.push_back({vec4(v.position, 1), vec4(v.normal, 0), vec4(v.color, 1),
+                                        vec4(v.position, 1), vec4(v.uv, 0, 0), v.tangent});
+                auto m = allocateGeometry(vertices, mesh->indices, false);
+                staticAssets.emplace(mesh, m);
+                added.push_back(m);
+            }
+        staticSlots.clear();
+        for (const auto& draw : frame.staticMeshes)
+            staticSlots.emplace(draw.slot, staticAssets.at(draw.mesh));
+        for (const auto& skin : frame.skins)
+            if (!skinDraws.count(skin.slot)) {
+                auto deformed = deformSkin(*skin.mesh, skin.palette);
+                std::vector<GpuVertex> vertices;
+                vertices.reserve(deformed.size());
+                for (size_t i = 0; i < deformed.size(); ++i)
+                    vertices.push_back({vec4(deformed[i].position, 1), vec4(deformed[i].normal, 0),
+                                        vec4(skin.mesh->vertices[i].color, 1),
+                                        vec4(deformed[i].position, 1)});
+                auto m = allocateGeometry(vertices, skin.mesh->indices, true);
+                skinDraws.emplace(skin.slot, SkinDraw{frame.proxies[skin.slot].attributes.entity, m,
+                                                      skin.mesh, skin.palette});
+                added.push_back(m);
+            }
+        skinMeshes.clear();
+        for (const auto& draw : skinDraws)
+            skinMeshes.emplace(draw.first, draw.second.meshIndex);
+        if (!added.empty())
+            uploadGeometry(added);
+        geometryTopology = frame.delta.topology;
     }
     void updateSkins(const Frame& frame) {
-        bool changed =
-            frame.skins.size() != skinDraws.size() || frame.staticMeshes.size() != staticBindings.size();
-        for (size_t i = 0; !changed && i < staticBindings.size(); ++i)
-            changed = frame.staticMeshes[i].slot != staticBindings[i].slot ||
-                      frame.staticMeshes[i].mesh != staticBindings[i].mesh;
-        for (size_t i = 0; !changed && i < skinDraws.size(); ++i)
-            changed = frame.skins[i].slot != skinDraws[i].slot || frame.skins[i].mesh != skinDraws[i].mesh;
-        if (changed)
-            createGeometry(frame.skins, frame.staticMeshes);
-        bool newPose = frame.tick != skinTick;
-        if (!newPose && !skinMotionPending)
-            return;
-        for (size_t i = 0; i < skinDraws.size(); ++i) {
-            const auto& skin = frame.skins[i];
-            const auto& draw = skinDraws[i];
+        if (geometryTopology != frame.delta.topology)
+            syncGeometry(frame);
+        dirtySkinMeshes.clear();
+        for (const auto& skin : frame.skins) {
+            auto& draw = skinDraws.at(skin.slot);
+            bool changed = draw.palette != skin.palette;
+            if (!changed && !draw.settling && !frame.resetHistory)
+                continue;
+            auto first = meshAllocations[draw.meshIndex].firstVertex;
             std::vector<DeformedVertex> deformed;
-            if (newPose)
+            if (changed)
                 deformed = deformSkin(*skin.mesh, skin.palette);
             for (size_t j = 0; j < skin.mesh->vertices.size(); ++j) {
-                auto& v = geometryVertices[draw.firstVertex + j];
+                auto& v = geometryVertices[first + j];
                 v.previousPosition = v.position;
-                if (newPose) {
+                if (changed) {
                     v.position = vec4(deformed[j].position, 1);
                     v.normal = vec4(deformed[j].normal, 0);
                 }
-                if (frame.resetHistory || changed)
+                if (frame.resetHistory)
                     v.previousPosition = v.position;
             }
-            std::memcpy(static_cast<GpuVertex*>(vertexData.mapped) + draw.firstVertex,
-                        geometryVertices.data() + draw.firstVertex,
+            std::memcpy(static_cast<GpuVertex*>(vertexData.mapped) + first, geometryVertices.data() + first,
                         skin.mesh->vertices.size() * sizeof(GpuVertex));
+            if (changed)
+                dirtySkinMeshes.push_back(draw.meshIndex);
+            draw.settling = changed;
+            draw.palette = skin.palette;
         }
-        skinMotionPending = newPose;
-        skinGeometryDirty = newPose && !skinDraws.empty();
-        skinTick = frame.tick;
     }
     void updateTextures(const std::vector<std::shared_ptr<const TextureAsset>>& textures) {
         if (materialSampler && textures == textureBindings)
             return;
         if (textures.size() > MaxTextures)
             throw std::runtime_error("Map exceeds the material texture descriptor capacity");
+        auto oldBindings = std::move(textureBindings);
+        auto oldImages = std::move(materialTextures);
         textureBindings = textures;
-        for (auto& texture : materialTextures)
-            vk.destroy(texture);
-        materialTextures.clear();
+        materialTextures = {};
         if (!materialSampler) {
             VkSamplerCreateInfo info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
             info.magFilter = info.minFilter = VK_FILTER_LINEAR;
@@ -429,7 +523,8 @@ struct Renderer::Impl {
                                      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                          VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                                      levels);
-            auto staging = vk.buffer(VkDeviceSize(w) * h * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, BufferMemory::Upload);
+            auto staging =
+                vk.buffer(VkDeviceSize(w) * h * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, BufferMemory::Upload);
             std::memcpy(staging.mapped, pixels, size_t(staging.size));
             auto c = vk.beginOneTime();
             vk.transition(c, texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
@@ -477,12 +572,21 @@ struct Renderer::Impl {
             vk.destroy(staging);
             materialTextures.push_back(texture);
         };
-        for (const auto& texture : textures)
-            upload(texture->width, texture->height, texture->pixels.data(), texture->srgb);
+        for (const auto& texture : textures) {
+            auto found = std::find(oldBindings.begin(), oldBindings.end(), texture);
+            if (found != oldBindings.end()) {
+                auto& retained = oldImages[size_t(found - oldBindings.begin())];
+                materialTextures.push_back(retained);
+                retained = {};
+            } else
+                upload(texture->width, texture->height, texture->pixels.data(), texture->srgb);
+        }
         if (textures.empty()) {
             const uint32_t white = 0xffffffffu;
             upload(1, 1, &white, false);
         }
+        for (auto& old : oldImages)
+            vk.destroy(old);
         descriptorsDirty = true;
         historyValid = false;
     }
@@ -556,7 +660,8 @@ struct Renderer::Impl {
                 }
             } catch (...) {
                 for (auto pipeline : pipelines)
-                    if (pipeline) vkDestroyPipeline(vk.device, pipeline, nullptr);
+                    if (pipeline)
+                        vkDestroyPipeline(vk.device, pipeline, nullptr);
                 throw;
             }
             programs = computePrograms.emplace(bindings.shaders, pipelines).first;
@@ -594,8 +699,9 @@ struct Renderer::Impl {
         viewport.viewportCount = viewport.scissorCount = 1;
         VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
         rs.polygonMode = VK_POLYGON_MODE_FILL;
-        rs.cullMode = shader->renderState.cull == SurfaceCull::Back ? VK_CULL_MODE_BACK_BIT :
-                      shader->renderState.cull == SurfaceCull::Front ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_NONE;
+        rs.cullMode = shader->renderState.cull == SurfaceCull::Back    ? VK_CULL_MODE_BACK_BIT
+                      : shader->renderState.cull == SurfaceCull::Front ? VK_CULL_MODE_FRONT_BIT
+                                                                       : VK_CULL_MODE_NONE;
         rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rs.lineWidth = 1;
         VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
@@ -746,14 +852,15 @@ struct Renderer::Impl {
         audit.reset();
         for (uint32_t b = 7; b <= 38; b++)
             if (!(b >= 13 && b <= 18) && b != 29) {
-                VkFormat imageFormat = b == 9 || b == 25 ? VK_FORMAT_R32G32B32A32_SFLOAT
+                VkFormat imageFormat = b == 9 || b == 25    ? VK_FORMAT_R32G32B32A32_SFLOAT
                                        : b == 11 || b == 31 ? VK_FORMAT_R32_SFLOAT
                                        : b == 33 || b == 34 ? VK_FORMAT_R16_SFLOAT
-                                       : b == 37 ? VK_FORMAT_R16G16_SFLOAT
-                                       : b == 28         ? VK_FORMAT_R8G8B8A8_UNORM
-                                                         : VK_FORMAT_R16G16B16A16_SFLOAT;
+                                       : b == 37            ? VK_FORMAT_R16G16_SFLOAT
+                                       : b == 28            ? VK_FORMAT_R8G8B8A8_UNORM
+                                                            : VK_FORMAT_R16G16B16A16_SFLOAT;
                 images[b] =
-                    vk.image(b == 32 || b == 38 ? (width + 2) / 3 : width, b == 32 || b == 38 ? (height + 2) / 3 : height, imageFormat,
+                    vk.image(b == 32 || b == 38 ? (width + 2) / 3 : width,
+                             b == 32 || b == 38 ? (height + 2) / 3 : height, imageFormat,
                              ColorUsage | (b <= 12 || b == 28 ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : 0));
             }
         depth = vk.image(width, height, VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
@@ -765,11 +872,14 @@ struct Renderer::Impl {
         const auto usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
                            VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         constexpr uint32_t block = RTXDI_RESERVOIR_BLOCK_SIZE;
-        const VkDeviceSize diLayerBytes = VkDeviceSize((width + block - 1) / block) * ((height + block - 1) / block) *
-                                         block * block * sizeof(RTXDI_PackedDIReservoir);
+        const VkDeviceSize diLayerBytes = VkDeviceSize((width + block - 1) / block) *
+                                          ((height + block - 1) / block) * block * block *
+                                          sizeof(RTXDI_PackedDIReservoir);
         reservoirs[0] = vk.buffer(diLayerBytes * 4, usage);
-        reservoirs[1] = vk.buffer(1024 * sizeof(vec2), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, BufferMemory::Upload);
-        reservoirs[2] = vk.buffer(MaxLights * (sizeof(vec4) + sizeof(Light)), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, BufferMemory::Upload);
+        reservoirs[1] =
+            vk.buffer(1024 * sizeof(vec2), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, BufferMemory::Upload);
+        reservoirs[2] = vk.buffer(MaxLights * (sizeof(vec4) + sizeof(Light)),
+                                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, BufferMemory::Upload);
         auto* offsets = static_cast<vec2*>(reservoirs[1].mapped);
         for (uint32_t i = 0; i < 1024; ++i) {
             float radius = std::sqrt((i + .5f) / 1024.f), angle = i * 2.39996323f;
@@ -1003,13 +1113,15 @@ struct Renderer::Impl {
                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
             tlasCapacity = capacity;
             tlasCount = 0;
+            tlasBuilt = false;
             descriptorsDirty = true; // The descriptor set still points at the old handle.
         }
         // Refitting cannot absorb a slot appearing or rebinding to different geometry.
         // That arrives as a running count rather than a flag, so it is still detected when
         // the snapshot carrying it was skipped, and no instance reference ever changes
         // underneath an incremental update.
-        bool update = tlasCount == count && frame.delta.topology == mirrorTopology;
+        bool update = tlasBuilt && tlasCount == count && frame.delta.topology == mirrorTopology;
+        tlasBuilt = true;
         tlasCount = count;
         mirrorTopology = frame.delta.topology;
         sceneStatistics.tlasRebuilt = !update;
@@ -1168,13 +1280,15 @@ struct Renderer::Impl {
                << ",\n  \"validationActive\": " << (vk.validationActive ? "true" : "false")
                << ",\n  \"validationErrors\": " << vk.validationErrors.load()
                << ",\n  \"auditEnabled\": " << (audit ? "true" : "false")
-               << ",\n  \"auditSamples\": " << auditSamples
-               << ",\n  \"auditCpuAverageMs\": " << (auditSamples ? audit->cpuMilliseconds() / auditSamples : 0)
+               << ",\n  \"auditSamples\": " << auditSamples << ",\n  \"auditCpuAverageMs\": "
+               << (auditSamples ? audit->cpuMilliseconds() / auditSamples : 0)
                << ",\n  \"exposure\": " << previous->exposure << ", \"debugView\": " << previous->debugView
                << ", \"hudEnabled\": " << (previous->hudEnabled ? "true" : "false")
                << ", \"consoleOpen\": " << (previous->console.open ? "true" : "false")
-               << ",\n  \"staticMeshInstances\": " << staticBindings.size()
-               << ", \"staticMeshAssets\": " << firstSkinMesh - 2
+               << ",\n  \"staticMeshInstances\": " << staticSlots.size()
+               << ", \"geometryBuilds\": " << geometryBuilds << ", \"geometryReleases\": " << geometryReleases
+               << ", \"geometryBufferGrowths\": " << geometryBufferGrowths
+               << ", \"staticMeshAssets\": " << staticAssets.size()
                << ", \"textureAssets\": " << textureBindings.size()
                << ", \"shaderAssets\": " << materialBindings.shaders.size()
                << ", \"shaderCompilations\": " << shaderCompiler.compilationCount()
@@ -1229,7 +1343,8 @@ struct Renderer::Impl {
             if (options.auditMotion)
                 diagnostic.camera.yaw += .04f * std::sin(float(frameNumber) * .017f);
             if (options.auditOccluder >= 0) {
-                diagnostic.proxies.at(size_t(options.auditOccluder)).transform.position.x += frameNumber >= 64 ? 2.f : 0.f;
+                diagnostic.proxies.at(size_t(options.auditOccluder)).transform.position.x +=
+                    frameNumber >= 64 ? 2.f : 0.f;
                 diagnostic.forceFullUpload = true;
             }
             frameRef = std::make_shared<const Frame>(std::move(diagnostic));
@@ -1237,9 +1352,9 @@ struct Renderer::Impl {
         const Frame& frame = *frameRef;
         if (!frame.input.width || !frame.input.height)
             return true;
-        if (frame.proxies.empty() || frame.proxies.size() > MaxInstances ||
-            frame.materials.size() > MaxMaterials || frame.lights.size() > MaxLights)
-            throw std::runtime_error("Scene capacity exceeded or scene has no instances");
+        if (frame.proxies.size() > MaxInstances || frame.materials.size() > MaxMaterials ||
+            frame.lights.size() > MaxLights)
+            throw std::runtime_error("Scene capacity exceeded");
         {
             CpuScope scope("Wait / Previous GPU Fence");
             VK_CHECK(vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX));
@@ -1305,7 +1420,8 @@ struct Renderer::Impl {
         data.resolution = {float(width), float(height), float(frame.debugView), float(frame.hovered)};
         data.player = vec4(frame.player, float(frame.selected));
         data.destination = vec4(frame.destination, frame.hasDestination ? 1.f : 0.f);
-        data.renderSettings = {frame.exposure, frame.diHistoryConfidence ? 1.f : 0.f, lightsChanged ? 1.f : 0.f, 0};
+        data.renderSettings = {frame.exposure, frame.diHistoryConfidence ? 1.f : 0.f,
+                               lightsChanged ? 1.f : 0.f, 0};
         data.counts = {uint32_t(frame.proxies.size()), uint32_t(frame.lights.size()), uint32_t(frameNumber),
                        reset ? 0u : 1u};
         std::memcpy(globals.mapped, &data, sizeof(data));
@@ -1319,12 +1435,15 @@ struct Renderer::Impl {
         auto* distribution = static_cast<vec4*>(reservoirs[2].mapped);
         float totalPower = 0;
         for (const auto& light : frame.lights)
-            totalPower += glm::dot(vec3(light.colorIntensity), vec3(.2126f, .7152f, .0722f)) * light.colorIntensity.w;
+            totalPower +=
+                glm::dot(vec3(light.colorIntensity), vec3(.2126f, .7152f, .0722f)) * light.colorIntensity.w;
         float cdf = 0;
         for (size_t i = 0; i < frame.lights.size(); ++i) {
             const auto& light = frame.lights[i];
-            float power = glm::dot(vec3(light.colorIntensity), vec3(.2126f, .7152f, .0722f)) * light.colorIntensity.w;
-            float pdf = totalPower > 0 ? .9f * power / totalPower + .1f / frame.lights.size() : 1.f / frame.lights.size();
+            float power =
+                glm::dot(vec3(light.colorIntensity), vec3(.2126f, .7152f, .0722f)) * light.colorIntensity.w;
+            float pdf = totalPower > 0 ? .9f * power / totalPower + .1f / frame.lights.size()
+                                       : 1.f / frame.lights.size();
             cdf += pdf;
             distribution[i] = vec4(i + 1 == frame.lights.size() ? 1.f : cdf, pdf, 0, 0);
         }
@@ -1366,13 +1485,13 @@ struct Renderer::Impl {
             uiRenderer->draw(command, images[28], frame.ui.get());
         }
         // TLAS allocation precedes descriptor writes; actual construction is recorded before raster/compute.
-        if (skinGeometryDirty) {
+        if (!dirtySkinMeshes.empty()) {
             CpuScope cpuScope("Skinned BLAS Refit");
             GpuScope scope(*profiler, command, "Skinned BLAS Refit");
-            for (uint32_t m = firstSkinMesh; m < meshes.size(); ++m)
+            for (auto m : dirtySkinMeshes)
                 buildMeshAS(command, m, true);
             VulkanContext::barrier(command);
-            skinGeometryDirty = false;
+            dirtySkinMeshes.clear();
         }
         {
             CpuScope cpuScope("Acceleration Structures / TLAS");

@@ -25,20 +25,20 @@ for name,ref in manifest['materials'].items():
 def uid(name):return uuid.uuid5(uuid.NAMESPACE_URL,'afterlight/honeybud/'+name).hex
 objects=[]
 def object_at(name,p,scale=(1,1,1),material=0,visible=True):
-    return {'id':uid(name),'name':name,'position':list(p),'rotation':[0,0,0,1],'enabled':True,'interactable':False,
+    return {'id':uid(name),'name':name,'enabled':True,'components':{'transform':{'position':list(p),'rotation':[0,0,0,1]},
             'render':{'shape':'box','scale':list(scale),'offset':[0,0,0],'animationScale':[1,1,1],'material':material,'visible':visible},
-            'physics':{'shape':{'type':'box','halfExtents':[.01,.01,.01]},'motion':'static','layer':1,'blocking':False,'pickable':False,'walkable':False},
-            'animation':None,'joints':[],'jointColliders':[]}
+            }}
 
 for i,instance in enumerate(manifest['placements']):
     x,y,z=instance['position'];scale=instance['scale']
     for part in manifest['kits'][instance['kit']]:
         o=object_at(f"{instance['kit']}_{i:03d}_{part['material']}",(x,z,-y),(scale,)*3,mat_index[part['material']])
-        o['rotation']=[0,math.sin(instance['angle']/2),0,math.cos(instance['angle']/2)];o['render']['mesh']=part['mesh'];objects.append(o)
+        o['components']['transform']['rotation']=[0,math.sin(instance['angle']/2),0,math.cos(instance['angle']/2)];o['components']['render']['mesh']=part['mesh'];objects.append(o)
 
 def collider(name,p,half,yaw=0,walkable=False):
-    o=object_at(name,p,visible=False);o['rotation']=[0,math.sin(yaw/2),0,math.cos(yaw/2)]
-    o['physics'].update(shape={'type':'box','halfExtents':list(half)},blocking=True,walkable=walkable)
+    o=object_at(name,p,visible=False);o['components']['transform']['rotation']=[0,math.sin(yaw/2),0,math.cos(yaw/2)]
+    o['components'].pop('render')
+    o['components']['collider']={'shape':{'type':'box','halfExtents':list(half)},'blocking':True,'walkable':walkable}
     objects.append(o)
 
 collider('Navigation lawn',(0,-.15,0),(10.5,.15,8.6),walkable=True)
@@ -56,10 +56,10 @@ for x in [-7.8,-4.6]:
 
 references={}
 for role,p in [('player',(2,1,4.7)),('companion',(3.4,.55,5.4))]:
-    source=next(o for o in original['objects'] if o['id']==original['references'][role])
-    o=copy.deepcopy(source);o['id']=uid(role);o['position']=[p[0],source['position'][1],p[2]]
-    o['render']['material']=len(materials)
-    character_mat=copy.deepcopy(original['materials'][source['render']['material']]);character_mat['shader']=asset_reference(CONTENT/'shaders/Standard.asset')
+    source=next(o for o in original['entities'] if o['id']==original['references'][role])
+    o=copy.deepcopy(source);o['id']=uid(role);o['components']['transform']['position']=[p[0],source['components']['transform']['position'][1],p[2]]
+    o['components']['render']['material']=len(materials)
+    character_mat=copy.deepcopy(original['materials'][source['components']['render']['material']]);character_mat['shader']=asset_reference(CONTENT/'shaders/Standard.asset')
     materials.append(character_mat);objects.append(o);references[role]=o['id']
 
 script='''function initialize() {
@@ -80,7 +80,7 @@ lights=[{'positionRadius':[-7,10,3,1.15],'colorIntensity':[1,.73,.44,620]},
         {'positionRadius':[2,8,-8,1.5],'colorIntensity':[1,.75,.46,470]}]
 for p in [(-3.1,2.2,3),(3,2.2,3.2),(-8.1,2.2,-5.1),(8.5,2.2,-5.2)]:
     lights.append({'positionRadius':[*p,.18],'colorIntensity':[1,.65,.27,5]})
-scene={'version':3,'objects':objects,'materials':materials,'materialAssets':material_assets,'lights':lights,
+scene={'version':4,'entities':objects,'materials':materials,'materialAssets':material_assets,'lights':lights,
        'camera':{'target':[0,.5,-.8],'yaw':.32,'pitch':.57,'distance':27.5,'fov':.72},
        'navigation':{'min':[-10.6,0,-8.7],'max':[10.6,8,8.7],'cellSize':.25,'planeTolerance':.03},
        'player':references['player'],'references':references,'data':{'theme':'Honeybud Court'},

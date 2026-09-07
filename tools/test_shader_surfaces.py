@@ -56,8 +56,8 @@ def run():
     mesh = b"STM1" + struct.pack("<II", 4, 6) + struct.pack("<60f", *vertices) + struct.pack("<6I", 0, 1, 2, 0, 2, 3)
     quad = write_asset(content / "Quad.asset", "StaticMesh", mesh)
     _, scene = read_asset(ROOT / "Projects/Afterlight/Content/Maps/RainCourt.asset")
-    template = copy.deepcopy(scene["objects"][0])
-    scene.update(scripts=[], objects=[], materials=[], materialAssets=[], player="", references={}, data={})
+    template = copy.deepcopy(scene["entities"][0])
+    scene.update(scripts=[], entities=[], materials=[], materialAssets=[], player="", references={}, data={})
     scene["camera"].update(target=[0, 0, 0], yaw=.6, pitch=.9, distance=13, fov=.62)
     scene["lights"] = [dict(positionRadius=[0, 6, 0, .1], colorIntensity=[1, 1, 1, 75])]
     for name, color in (("Paving", [.65, .65, .65]), ("Standard", [.8, .2, .1]), ("Foliage", [.1, .8, .2])):
@@ -66,14 +66,15 @@ def run():
                                            ("Box", [2, .5, 1], [1, 1, 1], 1),
                                            ("Leaf", [0, 1.5, 0], [2, 1, 2], 2)):
         obj = copy.deepcopy(template)
-        obj.update(id=uuid.uuid4().hex, name=name, position=position, rotation=[0, 0, 0, 1])
-        obj["render"].update(scale=scale, material=material)
+        obj.update(id=uuid.uuid4().hex, name=name)
+        obj["components"]["transform"].update(position=position, rotation=[0, 0, 0, 1])
+        obj["components"]["render"].update(scale=scale, material=material)
         if name == "Leaf":
-            obj["render"]["mesh"] = quad
-        scene["objects"].append(obj)
+            obj["components"]["render"]["mesh"] = quad
+        scene["entities"].append(obj)
     captures = {}
     for case, visible, coverage in (("absent", False, 0), ("discarded", True, 0), ("foliage", True, 1)):
-        scene["objects"][-1]["render"]["visible"] = visible
+        scene["entities"][-1]["components"]["render"]["visible"] = visible
         scene["materials"][-1]["properties"]["coverage"] = coverage
         write_asset(content / "Test.asset", "Map", scene)
         audit = tag + "-" + case

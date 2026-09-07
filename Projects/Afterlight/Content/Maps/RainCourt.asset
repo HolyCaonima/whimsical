@@ -1,2437 +1,7 @@
 ALAS1
 {"id": "ac82d4e0213b364b2f00aa883568db0b", "name": "RainCourt", "version": 1, "type": "Map", "storage": "embedded", "metadata": {"description": "The Rain Court: authored scene and persistent gameplay state"}}
 {
-  "version": 3,
-  "objects": [
-    {
-      "id": "1702166d462dcfe7ac1b174ec8298b5a",
-      "name": "Foundation",
-      "position": [
-        0,
-        -0.37,
-        0
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          27,
-          0.6,
-          23
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            13.5,
-            0.3,
-            11.5
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": false,
-        "walkable": true
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "798c31792f0e2ed80d2df85c3f668ea7",
-      "name": "Court paving",
-      "position": [
-        0,
-        -0.035,
-        0
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          22,
-          0.07,
-          18
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 1,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            11,
-            0.035,
-            9
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": false,
-        "walkable": true
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "6d8d2641c52447dbca8d2b3a36fa379f",
-      "name": "North foundation rim",
-      "position": [
-        0,
-        -0.035,
-        -10.25
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          27,
-          0.07,
-          2.5
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            13.5,
-            0.035,
-            1.25
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": false,
-        "walkable": true
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "c957b1771083961df2b66c6b2f7c2284",
-      "name": "South foundation rim",
-      "position": [
-        0,
-        -0.035,
-        10.25
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          27,
-          0.07,
-          2.5
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            13.5,
-            0.035,
-            1.25
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": false,
-        "walkable": true
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "3177d00a26a961ccdfe6210d91fbb2db",
-      "name": "West foundation rim",
-      "position": [
-        -12.25,
-        -0.035,
-        0
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          2.5,
-          0.07,
-          18
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            1.25,
-            0.035,
-            9
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": false,
-        "walkable": true
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "617ff0fecfcd9cd21b8212b333d7fc41",
-      "name": "East foundation rim",
-      "position": [
-        12.25,
-        -0.035,
-        0
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          2.5,
-          0.07,
-          18
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            1.25,
-            0.035,
-            9
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": false,
-        "walkable": true
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "292c92f1af7aa67c5689874b62c071a7",
-      "name": "West parapet",
-      "position": [
-        -12,
-        1.8,
-        0.55
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          1.2,
-          3.6,
-          19.9
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 2,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.6,
-            1.8,
-            9.95
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": true,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "8cf19dad988f6c3e96e1e1844d4be022",
-      "name": "North parapet",
-      "position": [
-        0,
-        1.8,
-        -10
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          25.2,
-          3.6,
-          1.2
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 2,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            12.6,
-            1.8,
-            0.6
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": true,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "6a1c489ecb0dfd16d798c3c0199527a5",
-      "name": "East low wall",
-      "position": [
-        12,
-        0.7,
-        0.55
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          1.2,
-          1.4,
-          19.9
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 2,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.6,
-            0.7,
-            9.95
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": true,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "9346a27a57071a3ad7b3aacf8b4c166e",
-      "name": "Coping",
-      "position": [
-        -12,
-        3.7,
-        -9
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          1.5,
-          0.25,
-          1.8
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.75,
-            0.125,
-            0.9
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "6d774a2fc02f179253bf9c745416ae3f",
-      "name": "Coping",
-      "position": [
-        -10,
-        3.7,
-        -10
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          2.25,
-          0.25,
-          1.5
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            1.125,
-            0.125,
-            0.75
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "60eb1c14399c750ece625e4c07f09bce",
-      "name": "Coping",
-      "position": [
-        -12,
-        3.7,
-        -6.8
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          1.5,
-          0.25,
-          1.8
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.75,
-            0.125,
-            0.9
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "a49515633e1b2dcfc618219568bc0840",
-      "name": "Coping",
-      "position": [
-        -7.3,
-        3.7,
-        -10
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          2.25,
-          0.25,
-          1.5
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            1.125,
-            0.125,
-            0.75
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "04ef78b0d4a05411eb22e4244a33a01d",
-      "name": "Coping",
-      "position": [
-        -12,
-        3.7,
-        -4.6
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          1.5,
-          0.25,
-          1.8
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.75,
-            0.125,
-            0.9
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "8653335ede7f4574dd252dc3eb79e968",
-      "name": "Coping",
-      "position": [
-        -4.6,
-        3.7,
-        -10
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          2.25,
-          0.25,
-          1.5
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            1.125,
-            0.125,
-            0.75
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "270328feb16034af672729fad6c5a808",
-      "name": "Coping",
-      "position": [
-        -12,
-        3.7,
-        -2.3999999999999995
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          1.5,
-          0.25,
-          1.8
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.75,
-            0.125,
-            0.9
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "c496d1db3649defadac4e3d05a4ebbf9",
-      "name": "Coping",
-      "position": [
-        -1.8999999999999986,
-        3.7,
-        -10
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          2.25,
-          0.25,
-          1.5
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            1.125,
-            0.125,
-            0.75
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "0ebf5121d468a08a364355f9d6fb399f",
-      "name": "Coping",
-      "position": [
-        -12,
-        3.7,
-        -0.1999999999999993
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          1.5,
-          0.25,
-          1.8
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.75,
-            0.125,
-            0.9
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "12dc9b91291f8309483af142cf65123e",
-      "name": "Coping",
-      "position": [
-        0.8000000000000007,
-        3.7,
-        -10
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          2.25,
-          0.25,
-          1.5
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            1.125,
-            0.125,
-            0.75
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "30deef5aaac7ab2a64ab721945afada3",
-      "name": "Coping",
-      "position": [
-        -12,
-        3.7,
-        2
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          1.5,
-          0.25,
-          1.8
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.75,
-            0.125,
-            0.9
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "98991f7664857e0132b4801faf5251d2",
-      "name": "Coping",
-      "position": [
-        3.5,
-        3.7,
-        -10
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          2.25,
-          0.25,
-          1.5
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            1.125,
-            0.125,
-            0.75
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "fa6db2916fbaed8bcb1f491e68eb2e5d",
-      "name": "Coping",
-      "position": [
-        -12,
-        3.7,
-        4.200000000000001
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          1.5,
-          0.25,
-          1.8
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.75,
-            0.125,
-            0.9
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "bcd637a66154ed9b110ba02e0ed4c1ce",
-      "name": "Coping",
-      "position": [
-        6.200000000000003,
-        3.7,
-        -10
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          2.25,
-          0.25,
-          1.5
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            1.125,
-            0.125,
-            0.75
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "c018402cfc5013a5ca228408040b24ed",
-      "name": "Coping",
-      "position": [
-        -12,
-        3.7,
-        6.400000000000002
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          1.5,
-          0.25,
-          1.8
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.75,
-            0.125,
-            0.9
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "eab1308f5de379766c5f37b33ded8632",
-      "name": "Coping",
-      "position": [
-        8.900000000000002,
-        3.7,
-        -10
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          2.25,
-          0.25,
-          1.5
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            1.125,
-            0.125,
-            0.75
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "2da179eec6299990841f1c165f09789d",
-      "name": "Coping",
-      "position": [
-        -12,
-        3.7,
-        8.600000000000001
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          1.5,
-          0.25,
-          1.8
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.75,
-            0.125,
-            0.9
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "7e13c0d36700b463303bac4c560eadeb",
-      "name": "Coping",
-      "position": [
-        11.600000000000001,
-        3.7,
-        -10
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          2.25,
-          0.25,
-          1.5
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            1.125,
-            0.125,
-            0.75
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "500de8cb1214824bce920794022d2524",
-      "name": "Service building",
-      "position": [
-        7,
-        2.5,
-        -7
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          7,
-          5,
-          5
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            3.5,
-            2.5,
-            2.5
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": true,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "aa589356af332224235ec95e7afde1d8",
-      "name": "Roof",
-      "position": [
-        7,
-        5.15,
-        -7
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          7.5,
-          0.3,
-          5.5
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 2,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            3.75,
-            0.15,
-            2.75
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": true,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "32e453cf9571f3a9ca3d551496b96f1a",
-      "name": "Door frame",
-      "position": [
-        5.2,
-        1.45,
-        -4.42
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          2.8,
-          2.9,
-          0.18
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 3,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            1.4,
-            1.45,
-            0.09
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": true,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "1771544a7e100ff35750c4d05f6a1abc",
-      "name": "Service door",
-      "position": [
-        5.2,
-        1.3,
-        -4.2
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          2.2,
-          2.6,
-          0.18
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 2,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            1.1,
-            1.3,
-            0.09
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": true,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "912c5deb6bfa19df6fa8ee0c6d127b44",
-      "name": "Door light",
-      "position": [
-        5.2,
-        3,
-        -4.02
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          2.4,
-          0.16,
-          0.14
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 5,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            1.2,
-            0.08,
-            0.07
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "c0c81ffeeaa42a130a59b036a4748284",
-      "name": "Power console",
-      "position": [
-        -6,
-        0.7,
-        -3
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": true,
-      "render": {
-        "shape": "box",
-        "scale": [
-          1.4,
-          1.4,
-          1.1
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 3,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.7,
-            0.7,
-            0.55
-          ]
-        },
-        "motion": "kinematic",
-        "layer": 1,
-        "blocking": true,
-        "pickable": true,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "15821f0d60bdf4eff7611e7659fcb77a",
-      "name": "Console display",
-      "position": [
-        -6,
-        1.45,
-        -3
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          1.1,
-          0.1,
-          0.75
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 6,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.55,
-            0.05,
-            0.375
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "a6d9aa236d4fddf94609e573e99dce7a",
-      "name": "Cargo A",
-      "position": [
-        -4,
-        0.65,
-        4
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          2.2,
-          1.3,
-          1.5
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 7,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            1.1,
-            0.65,
-            0.75
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": true,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "7ddd0ae6ffb2146b0b1649bcd2331e95",
-      "name": "Cargo B",
-      "position": [
-        -5,
-        1.65,
-        4.2
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          1,
-          0.7,
-          1.2
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 2,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.5,
-            0.35,
-            0.6
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": true,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "60ffdf922affd9d41a808733a6218b01",
-      "name": "Cargo C",
-      "position": [
-        7,
-        0.65,
-        3
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          2,
-          1.3,
-          2
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 7,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            1,
-            0.65,
-            1
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": true,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "3f9c6c467a4dd179bb6325bbc7a17083",
-      "name": "Supply cache",
-      "position": [
-        3,
-        0.45,
-        6.5
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": true,
-      "render": {
-        "shape": "box",
-        "scale": [
-          1.3,
-          0.9,
-          1
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 3,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.65,
-            0.45,
-            0.5
-          ]
-        },
-        "motion": "kinematic",
-        "layer": 1,
-        "blocking": true,
-        "pickable": true,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "0eed87bc80230968d2e5140642a91bdc",
-      "name": "Pier",
-      "position": [
-        -9,
-        2,
-        -9
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          1.2,
-          4,
-          1.2
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.6,
-            2,
-            0.6
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": true,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "5f3b072b1ae876aad27ea0a0ca34e75a",
-      "name": "Lamp",
-      "position": [
-        -9,
-        3.4,
-        -8.3
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          0.3,
-          0.7,
-          0.18
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 5,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.15,
-            0.35,
-            0.09
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "d820f6b9dcfce4841f8a8157a75788b1",
-      "name": "Pier",
-      "position": [
-        -3.5,
-        2,
-        -9
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          1.2,
-          4,
-          1.2
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.6,
-            2,
-            0.6
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": true,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "09a4c65f54de555db2c377174f9c5998",
-      "name": "Lamp",
-      "position": [
-        -3.5,
-        3.4,
-        -8.3
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          0.3,
-          0.7,
-          0.18
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 5,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.15,
-            0.35,
-            0.09
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "c6817d63ae75a98f2bfb3e9e1fa53979",
-      "name": "Pier",
-      "position": [
-        2,
-        2,
-        -9
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          1.2,
-          4,
-          1.2
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.6,
-            2,
-            0.6
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": true,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "8f4a60a8961a21059318ce0f62da6cc3",
-      "name": "Lamp",
-      "position": [
-        2,
-        3.4,
-        -8.3
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          0.3,
-          0.7,
-          0.18
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 5,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.15,
-            0.35,
-            0.09
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "42bcf70db5e0a45dd81702dafecd062f",
-      "name": "Pier",
-      "position": [
-        7.5,
-        2,
-        -9
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          1.2,
-          4,
-          1.2
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 0,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.6,
-            2,
-            0.6
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": true,
-        "pickable": true,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "7a262631171b4d4e2ad6ef6741681165",
-      "name": "Lamp",
-      "position": [
-        7.5,
-        3.4,
-        -8.3
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "box",
-        "scale": [
-          0.3,
-          0.7,
-          0.18
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 5,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "box",
-          "halfExtents": [
-            0.15,
-            0.35,
-            0.09
-          ]
-        },
-        "motion": "static",
-        "layer": 1,
-        "blocking": false,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": null,
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "635b43bea5482afc69df449ee24bde1a",
-      "name": "Kiln",
-      "position": [
-        0,
-        1,
-        3.2
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "capsule",
-        "scale": [
-          1,
-          1,
-          1
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 8,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "capsule",
-          "radius": 0.4,
-          "height": 2
-        },
-        "motion": "kinematic",
-        "layer": 2,
-        "blocking": true,
-        "pickable": true,
-        "walkable": false
-      },
-      "animation": {
-        "asset": {
-          "id": "2bba3c43df0465a492c7f61d22925992",
-          "path": "/Game/animations/ai4animation/biped/controller"
-        },
-        "mesh": {
-          "id": "60d964cdd9c23c78ff55830a80c4d552",
-          "path": "/Game/models/biped"
-        },
-        "rootMotion": true,
-        "rootOffset": [
-          0,
-          -1,
-          0
-        ],
-        "attributes": {
-          "locomotion.style": "BigSteps"
-        }
-      },
-      "joints": [],
-      "jointColliders": []
-    },
-    {
-      "id": "f76d8d277d1c6efa6e68d95c1e5ff040",
-      "name": "Ash",
-      "position": [
-        1.4,
-        0.35,
-        1.7000000000000002
-      ],
-      "rotation": [0, 0.0, 0, 1.0],
-      "enabled": true,
-      "interactable": false,
-      "render": {
-        "shape": "capsule",
-        "scale": [
-          1,
-          1,
-          1
-        ],
-        "offset": [
-          0,
-          0,
-          0
-        ],
-        "animationScale": [
-          1,
-          1,
-          1
-        ],
-        "material": 9,
-        "visible": true
-      },
-      "physics": {
-        "shape": {
-          "type": "capsule",
-          "radius": 0.32,
-          "height": 0.7
-        },
-        "motion": "kinematic",
-        "layer": 2,
-        "blocking": true,
-        "pickable": false,
-        "walkable": false
-      },
-      "animation": {
-        "asset": {
-          "id": "901c6c7656b1191e461e33dc134f56e9",
-          "path": "/Game/animations/ai4animation/quadruped/controller"
-        },
-        "mesh": {
-          "id": "919b358044ecf70cfa51fe26ef161dfa",
-          "path": "/Game/models/dog"
-        },
-        "rootMotion": true,
-        "rootOffset": [
-          0,
-          -0.35,
-          0
-        ],
-        "attributes": {}
-      },
-      "joints": [],
-      "jointColliders": []
-    }
-  ],
+  "version": 4,
   "materials": [
     {
       "shader": {
@@ -2859,6 +429,2320 @@ ALAS1
     {
       "id": "89785caf09f9f50b3c27d3b1a9084c7c",
       "path": "/Game/scripts/levels/rain_court"
+    }
+  ],
+  "entities": [
+    {
+      "id": "1702166d462dcfe7ac1b174ec8298b5a",
+      "name": "Foundation",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            0,
+            -0.37,
+            0
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            27,
+            0.6,
+            23
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              13.5,
+              0.3,
+              11.5
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": false,
+          "walkable": true
+        }
+      }
+    },
+    {
+      "id": "798c31792f0e2ed80d2df85c3f668ea7",
+      "name": "Court paving",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            0,
+            -0.035,
+            0
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            22,
+            0.07,
+            18
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 1,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              11,
+              0.035,
+              9
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": false,
+          "walkable": true
+        }
+      }
+    },
+    {
+      "id": "6d8d2641c52447dbca8d2b3a36fa379f",
+      "name": "North foundation rim",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            0,
+            -0.035,
+            -10.25
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            27,
+            0.07,
+            2.5
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              13.5,
+              0.035,
+              1.25
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": false,
+          "walkable": true
+        }
+      }
+    },
+    {
+      "id": "c957b1771083961df2b66c6b2f7c2284",
+      "name": "South foundation rim",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            0,
+            -0.035,
+            10.25
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            27,
+            0.07,
+            2.5
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              13.5,
+              0.035,
+              1.25
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": false,
+          "walkable": true
+        }
+      }
+    },
+    {
+      "id": "3177d00a26a961ccdfe6210d91fbb2db",
+      "name": "West foundation rim",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -12.25,
+            -0.035,
+            0
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            2.5,
+            0.07,
+            18
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              1.25,
+              0.035,
+              9
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": false,
+          "walkable": true
+        }
+      }
+    },
+    {
+      "id": "617ff0fecfcd9cd21b8212b333d7fc41",
+      "name": "East foundation rim",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            12.25,
+            -0.035,
+            0
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            2.5,
+            0.07,
+            18
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              1.25,
+              0.035,
+              9
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": false,
+          "walkable": true
+        }
+      }
+    },
+    {
+      "id": "292c92f1af7aa67c5689874b62c071a7",
+      "name": "West parapet",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -12,
+            1.8,
+            0.55
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            1.2,
+            3.6,
+            19.9
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 2,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              0.6,
+              1.8,
+              9.95
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": true,
+          "walkable": false
+        }
+      }
+    },
+    {
+      "id": "8cf19dad988f6c3e96e1e1844d4be022",
+      "name": "North parapet",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            0,
+            1.8,
+            -10
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            25.2,
+            3.6,
+            1.2
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 2,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              12.6,
+              1.8,
+              0.6
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": true,
+          "walkable": false
+        }
+      }
+    },
+    {
+      "id": "6a1c489ecb0dfd16d798c3c0199527a5",
+      "name": "East low wall",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            12,
+            0.7,
+            0.55
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            1.2,
+            1.4,
+            19.9
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 2,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              0.6,
+              0.7,
+              9.95
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": true,
+          "walkable": false
+        }
+      }
+    },
+    {
+      "id": "9346a27a57071a3ad7b3aacf8b4c166e",
+      "name": "Coping",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -12,
+            3.7,
+            -9
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            1.5,
+            0.25,
+            1.8
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "6d774a2fc02f179253bf9c745416ae3f",
+      "name": "Coping",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -10,
+            3.7,
+            -10
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            2.25,
+            0.25,
+            1.5
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "60eb1c14399c750ece625e4c07f09bce",
+      "name": "Coping",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -12,
+            3.7,
+            -6.8
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            1.5,
+            0.25,
+            1.8
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "a49515633e1b2dcfc618219568bc0840",
+      "name": "Coping",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -7.3,
+            3.7,
+            -10
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            2.25,
+            0.25,
+            1.5
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "04ef78b0d4a05411eb22e4244a33a01d",
+      "name": "Coping",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -12,
+            3.7,
+            -4.6
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            1.5,
+            0.25,
+            1.8
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "8653335ede7f4574dd252dc3eb79e968",
+      "name": "Coping",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -4.6,
+            3.7,
+            -10
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            2.25,
+            0.25,
+            1.5
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "270328feb16034af672729fad6c5a808",
+      "name": "Coping",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -12,
+            3.7,
+            -2.3999999999999995
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            1.5,
+            0.25,
+            1.8
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "c496d1db3649defadac4e3d05a4ebbf9",
+      "name": "Coping",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -1.8999999999999986,
+            3.7,
+            -10
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            2.25,
+            0.25,
+            1.5
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "0ebf5121d468a08a364355f9d6fb399f",
+      "name": "Coping",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -12,
+            3.7,
+            -0.1999999999999993
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            1.5,
+            0.25,
+            1.8
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "12dc9b91291f8309483af142cf65123e",
+      "name": "Coping",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            0.8000000000000007,
+            3.7,
+            -10
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            2.25,
+            0.25,
+            1.5
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "30deef5aaac7ab2a64ab721945afada3",
+      "name": "Coping",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -12,
+            3.7,
+            2
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            1.5,
+            0.25,
+            1.8
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "98991f7664857e0132b4801faf5251d2",
+      "name": "Coping",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            3.5,
+            3.7,
+            -10
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            2.25,
+            0.25,
+            1.5
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "fa6db2916fbaed8bcb1f491e68eb2e5d",
+      "name": "Coping",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -12,
+            3.7,
+            4.200000000000001
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            1.5,
+            0.25,
+            1.8
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "bcd637a66154ed9b110ba02e0ed4c1ce",
+      "name": "Coping",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            6.200000000000003,
+            3.7,
+            -10
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            2.25,
+            0.25,
+            1.5
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "c018402cfc5013a5ca228408040b24ed",
+      "name": "Coping",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -12,
+            3.7,
+            6.400000000000002
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            1.5,
+            0.25,
+            1.8
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "eab1308f5de379766c5f37b33ded8632",
+      "name": "Coping",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            8.900000000000002,
+            3.7,
+            -10
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            2.25,
+            0.25,
+            1.5
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "2da179eec6299990841f1c165f09789d",
+      "name": "Coping",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -12,
+            3.7,
+            8.600000000000001
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            1.5,
+            0.25,
+            1.8
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "7e13c0d36700b463303bac4c560eadeb",
+      "name": "Coping",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            11.600000000000001,
+            3.7,
+            -10
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            2.25,
+            0.25,
+            1.5
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "500de8cb1214824bce920794022d2524",
+      "name": "Service building",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            7,
+            2.5,
+            -7
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            7,
+            5,
+            5
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              3.5,
+              2.5,
+              2.5
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": true,
+          "walkable": false
+        }
+      }
+    },
+    {
+      "id": "aa589356af332224235ec95e7afde1d8",
+      "name": "Roof",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            7,
+            5.15,
+            -7
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            7.5,
+            0.3,
+            5.5
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 2,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              3.75,
+              0.15,
+              2.75
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": true,
+          "walkable": false
+        }
+      }
+    },
+    {
+      "id": "32e453cf9571f3a9ca3d551496b96f1a",
+      "name": "Door frame",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            5.2,
+            1.45,
+            -4.42
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            2.8,
+            2.9,
+            0.18
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 3,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              1.4,
+              1.45,
+              0.09
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": true,
+          "walkable": false
+        }
+      }
+    },
+    {
+      "id": "1771544a7e100ff35750c4d05f6a1abc",
+      "name": "Service door",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            5.2,
+            1.3,
+            -4.2
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            2.2,
+            2.6,
+            0.18
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 2,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              1.1,
+              1.3,
+              0.09
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": true,
+          "walkable": false
+        }
+      }
+    },
+    {
+      "id": "912c5deb6bfa19df6fa8ee0c6d127b44",
+      "name": "Door light",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            5.2,
+            3,
+            -4.02
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            2.4,
+            0.16,
+            0.14
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 5,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "c0c81ffeeaa42a130a59b036a4748284",
+      "name": "Power console",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -6,
+            0.7,
+            -3
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            1.4,
+            1.4,
+            1.1
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 3,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              0.7,
+              0.7,
+              0.55
+            ]
+          },
+          "motion": "kinematic",
+          "layer": 1,
+          "blocking": true,
+          "pickable": true,
+          "walkable": false
+        },
+        "interactable": {}
+      }
+    },
+    {
+      "id": "15821f0d60bdf4eff7611e7659fcb77a",
+      "name": "Console display",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -6,
+            1.45,
+            -3
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            1.1,
+            0.1,
+            0.75
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 6,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "a6d9aa236d4fddf94609e573e99dce7a",
+      "name": "Cargo A",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -4,
+            0.65,
+            4
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            2.2,
+            1.3,
+            1.5
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 7,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              1.1,
+              0.65,
+              0.75
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": true,
+          "walkable": false
+        }
+      }
+    },
+    {
+      "id": "7ddd0ae6ffb2146b0b1649bcd2331e95",
+      "name": "Cargo B",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -5,
+            1.65,
+            4.2
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            1,
+            0.7,
+            1.2
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 2,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              0.5,
+              0.35,
+              0.6
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": true,
+          "walkable": false
+        }
+      }
+    },
+    {
+      "id": "60ffdf922affd9d41a808733a6218b01",
+      "name": "Cargo C",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            7,
+            0.65,
+            3
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            2,
+            1.3,
+            2
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 7,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              1,
+              0.65,
+              1
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": true,
+          "walkable": false
+        }
+      }
+    },
+    {
+      "id": "3f9c6c467a4dd179bb6325bbc7a17083",
+      "name": "Supply cache",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            3,
+            0.45,
+            6.5
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            1.3,
+            0.9,
+            1
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 3,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              0.65,
+              0.45,
+              0.5
+            ]
+          },
+          "motion": "kinematic",
+          "layer": 1,
+          "blocking": true,
+          "pickable": true,
+          "walkable": false
+        },
+        "interactable": {}
+      }
+    },
+    {
+      "id": "0eed87bc80230968d2e5140642a91bdc",
+      "name": "Pier",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -9,
+            2,
+            -9
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            1.2,
+            4,
+            1.2
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              0.6,
+              2,
+              0.6
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": true,
+          "walkable": false
+        }
+      }
+    },
+    {
+      "id": "5f3b072b1ae876aad27ea0a0ca34e75a",
+      "name": "Lamp",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -9,
+            3.4,
+            -8.3
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            0.3,
+            0.7,
+            0.18
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 5,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "d820f6b9dcfce4841f8a8157a75788b1",
+      "name": "Pier",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -3.5,
+            2,
+            -9
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            1.2,
+            4,
+            1.2
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              0.6,
+              2,
+              0.6
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": true,
+          "walkable": false
+        }
+      }
+    },
+    {
+      "id": "09a4c65f54de555db2c377174f9c5998",
+      "name": "Lamp",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            -3.5,
+            3.4,
+            -8.3
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            0.3,
+            0.7,
+            0.18
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 5,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "c6817d63ae75a98f2bfb3e9e1fa53979",
+      "name": "Pier",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            2,
+            2,
+            -9
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            1.2,
+            4,
+            1.2
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              0.6,
+              2,
+              0.6
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": true,
+          "walkable": false
+        }
+      }
+    },
+    {
+      "id": "8f4a60a8961a21059318ce0f62da6cc3",
+      "name": "Lamp",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            2,
+            3.4,
+            -8.3
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            0.3,
+            0.7,
+            0.18
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 5,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "42bcf70db5e0a45dd81702dafecd062f",
+      "name": "Pier",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            7.5,
+            2,
+            -9
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            1.2,
+            4,
+            1.2
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 0,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "box",
+            "halfExtents": [
+              0.6,
+              2,
+              0.6
+            ]
+          },
+          "motion": "static",
+          "layer": 1,
+          "blocking": true,
+          "pickable": true,
+          "walkable": false
+        }
+      }
+    },
+    {
+      "id": "7a262631171b4d4e2ad6ef6741681165",
+      "name": "Lamp",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            7.5,
+            3.4,
+            -8.3
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "box",
+          "scale": [
+            0.3,
+            0.7,
+            0.18
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 5,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "635b43bea5482afc69df449ee24bde1a",
+      "name": "Kiln",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            0,
+            1,
+            3.2
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "capsule",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 8,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "capsule",
+            "radius": 0.4,
+            "height": 2
+          },
+          "motion": "kinematic",
+          "layer": 2,
+          "blocking": true,
+          "pickable": true,
+          "walkable": false
+        },
+        "animator": {
+          "asset": {
+            "id": "2bba3c43df0465a492c7f61d22925992",
+            "path": "/Game/animations/ai4animation/biped/controller"
+          },
+          "rootMotion": true,
+          "rootOffset": [
+            0,
+            -1,
+            0
+          ],
+          "attributes": {
+            "locomotion.style": "BigSteps"
+          }
+        },
+        "skin": {
+          "id": "60d964cdd9c23c78ff55830a80c4d552",
+          "path": "/Game/models/biped"
+        }
+      }
+    },
+    {
+      "id": "f76d8d277d1c6efa6e68d95c1e5ff040",
+      "name": "Ash",
+      "enabled": true,
+      "components": {
+        "transform": {
+          "position": [
+            1.4,
+            0.35,
+            1.7000000000000002
+          ],
+          "rotation": [
+            0,
+            0.0,
+            0,
+            1.0
+          ]
+        },
+        "render": {
+          "shape": "capsule",
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "animationScale": [
+            1,
+            1,
+            1
+          ],
+          "material": 9,
+          "visible": true
+        },
+        "collider": {
+          "shape": {
+            "type": "capsule",
+            "radius": 0.32,
+            "height": 0.7
+          },
+          "motion": "kinematic",
+          "layer": 2,
+          "blocking": true,
+          "pickable": false,
+          "walkable": false
+        },
+        "animator": {
+          "asset": {
+            "id": "901c6c7656b1191e461e33dc134f56e9",
+            "path": "/Game/animations/ai4animation/quadruped/controller"
+          },
+          "rootMotion": true,
+          "rootOffset": [
+            0,
+            -0.35,
+            0
+          ],
+          "attributes": {}
+        },
+        "skin": {
+          "id": "919b358044ecf70cfa51fe26ef161dfa",
+          "path": "/Game/models/dog"
+        }
+      }
     }
   ]
 }

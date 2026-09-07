@@ -153,6 +153,27 @@ static void pushPose(duk_context* c, const PhysicsPose& p) {
     pushRotation(c, p.rotation);
     duk_put_prop_string(c, -2, "rotation");
 }
+static bool hasComponent(const World& w, Entity e, const std::string& type) {
+    if (type == "transform")
+        return w.has<Transform>(e);
+    if (type == "render")
+        return w.has<Renderable>(e);
+    if (type == "collider")
+        return w.has<Collider>(e);
+    if (type == "animator")
+        return w.has<Animator>(e);
+    if (type == "skin")
+        return w.has<Skin>(e);
+    if (type == "joints")
+        return w.has<JointPose>(e);
+    if (type == "jointColliders")
+        return w.has<JointColliders>(e);
+    if (type == "interactable")
+        return w.has<Interactable>(e);
+    if (type == "data")
+        return w.has<ScriptData>(e);
+    throw std::invalid_argument("Unknown component: " + type);
+}
 enum Op {
     SceneLoad,
     SceneSave,
@@ -164,10 +185,19 @@ enum Op {
     CameraState,
     Log,
     MaterialAdd,
-    Spawn,
+    Create,
+    AddComponent,
+    RemoveComponent,
+    HasComponent,
+    Entities,
+    Alive,
+    SetParent,
+    LocalTransform,
+    EntityData,
+    SetEntityData,
     AddLight,
     GetPose,
-    SetPose,
+    RenderScale,
     SetTransform,
     MoveBody,
     ShapeSweep,
@@ -220,46 +250,130 @@ static duk_ret_t callNative(duk_context* c) {
                                      {"roughness", num(c, 3)},
                                      {"emission", Json::array({num(c, 4), num(c, 5), num(c, 6)})},
                                      {"metallic", num(c, 7)}};
-            w.materials.push_back(definition.resolve(assets(c)));
-            duk_push_uint(c, uint32_t(w.materials.size() - 1));
+            w.resources.materials.push_back(definition.resolve(assets(c)));
+            duk_push_uint(c, uint32_t(w.resources.materials.size() - 1));
             return 1;
         }
-        case Spawn: {
-            auto id =
-                w.spawn(duk_require_string(c, 0), duk_get_boolean(c, 1) ? Shape::Capsule : Shape::Box,
-                        {num(c, 2), num(c, 3), num(c, 4)}, {num(c, 5), num(c, 6), num(c, 7)},
-                        duk_require_uint(c, 8), duk_get_boolean(c, 9) != 0, duk_get_boolean(c, 10) != 0);
-            duk_push_uint(c, id);
+        case Create: {
+            duk_dup(c, 0);
+            duk_json_encode(c, -1);
+            auto description = SceneEntity::fromJson(Json::parse(duk_require_string(c, -1)));
+            duk_pop(c);
+            duk_push_uint(c, ScenePersistence::createEntity(w, description, assets(c)));
             return 1;
+        }
+        case AddComponent: {
+            Entity e = duk_require_uint(c, 0);
+            std::string type = duk_require_string(c, 1);
+            duk_dup(c, 2);
+            duk_json_encode(c, -1);
+            auto data = Json::parse(duk_require_string(c, -1));
+            duk_pop(c);
+            auto description = SceneEntity::fromJson({{"components", {{type, data}}}});
+            ScenePersistence::addComponents(w, e, description, assets(c));
+            return 0;
+        }
+        case RemoveComponent: {
+            Entity e = duk_require_uint(c, 0);
+            std::string type = duk_require_string(c, 1);
+            if (type == "transform")
+                w.remove<Transform>(e);
+            else if (type == "render")
+                w.remove<Renderable>(e);
+            else if (type == "collider")
+                w.remove<Collider>(e);
+            else if (type == "animator")
+                w.remove<Animator>(e);
+            else if (type == "skin")
+                w.remove<Skin>(e);
+            else if (type == "joints")
+                w.remove<JointPose>(e);
+            else if (type == "jointColliders")
+                w.remove<JointColliders>(e);
+            else if (type == "interactable")
+                w.remove<Interactable>(e);
+            else if (type == "data")
+                w.remove<ScriptData>(e);
+            else
+                throw std::invalid_argument("Unknown removable component: " + type);
+            return 0;
+        }
+        case HasComponent: {
+            auto e = duk_require_uint(c, 0);
+            w.registry().require(e);
+            duk_push_boolean(c, hasComponent(w, e, duk_require_string(c, 1)));
+            return 1;
+        }
+        case Alive:
+            duk_push_boolean(c, w.registry().contains(duk_require_uint(c, 0)));
+            return 1;
+        case Entities: {
+            std::vector<std::string> types;
+            for (duk_uarridx_t i = 0; i < duk_get_length(c, 0); ++i) {
+                duk_get_prop_index(c, 0, i);
+                types.push_back(duk_require_string(c, -1));
+                duk_pop(c);
+            }
+            duk_push_array(c);
+            duk_uarridx_t index = 0;
+            for (auto e : w.registry().entities()) {
+                bool matches = true;
+                for (const auto& type : types)
+                    matches = hasComponent(w, e, type) && matches;
+                if (matches) {
+                    duk_push_uint(c, e);
+                    duk_put_prop_index(c, -2, index++);
+                }
+            }
+            return 1;
+        }
+        case SetParent:
+            w.transforms.setParent(duk_require_uint(c, 0), duk_require_uint(c, 1),
+                                   duk_get_boolean_default(c, 2, true) != 0);
+            return 0;
+        case LocalTransform:
+            w.transforms.setLocal(duk_require_uint(c, 0), readPhysicsPose(c, 1));
+            return 0;
+        case EntityData:
+            pushJson(c, w.get<ScriptData>(duk_require_uint(c, 0)).value);
+            return 1;
+        case SetEntityData: {
+            Entity e = duk_require_uint(c, 0);
+            duk_dup(c, 1);
+            duk_json_encode(c, -1);
+            auto data = Json::parse(duk_require_string(c, -1));
+            (void)data.members();
+            duk_pop(c);
+            w.edit<ScriptData>(e, [&](ScriptData& component) { component.value = std::move(data); });
+            return 0;
         }
         case AddLight: {
             Light l;
             l.positionRadius = {num(c, 0), num(c, 1), num(c, 2), num(c, 3)};
             l.colorIntensity = {num(c, 4), num(c, 5), num(c, 6), num(c, 7)};
-            w.lights.push_back(l);
-            duk_push_uint(c, uint32_t(w.lights.size() - 1));
+            w.resources.lights.push_back(l);
+            duk_push_uint(c, uint32_t(w.resources.lights.size() - 1));
             return 1;
         }
         case GetPose: {
-            const auto& e = w.entity(duk_require_uint(c, 0));
-            pushVec(c, e.position);
+            const auto& e = w.get<Transform>(duk_require_uint(c, 0));
+            pushVec(c, e.world.position);
             value(c, "yaw", e.yaw());
-            pushRotation(c, e.rotation);
+            pushRotation(c, e.world.rotation);
             duk_put_prop_string(c, -2, "rotation");
             return 1;
         }
-        case SetPose: {
-            w.setPose(duk_require_uint(c, 0), {num(c, 1), num(c, 2), num(c, 3)}, num(c, 4), num(c, 5));
+        case RenderScale:
+            w.render.setScale(duk_require_uint(c, 0), readVec(c, 1));
             return 0;
-        }
         case SetTransform:
-            w.setTransform(duk_require_uint(c, 0), readPhysicsPose(c, 1));
+            w.transforms.setTransform(duk_require_uint(c, 0), readPhysicsPose(c, 1));
             return 0;
         case MoveBody: {
             uint32_t id = duk_require_uint(c, 0);
-            quat target = duk_is_undefined(c, 2) ? w.entity(id).rotation : readRotation(c, 2);
-            auto result = w.moveBody(id, readVec(c, 1), target,
-                                     duk_get_uint_default(c, 3, CollisionLayer::All));
+            quat target = duk_is_undefined(c, 2) ? w.get<Transform>(id).world.rotation : readRotation(c, 2);
+            auto result =
+                w.motion.moveBody(id, readVec(c, 1), target, duk_get_uint_default(c, 3, CollisionLayer::All));
             pushPose(c, result.pose);
             pushVec(c, result.applied);
             duk_put_prop_string(c, -2, "applied");
@@ -293,11 +407,11 @@ static duk_ret_t callNative(duk_context* c) {
             return 1;
         }
         case Move: {
-            pushVec(c, w.moveCharacter(duk_require_uint(c, 0), vec3(num(c, 1), 0, num(c, 2))));
+            pushVec(c, w.motion.moveCharacter(duk_require_uint(c, 0), vec3(num(c, 1), 0, num(c, 2))));
             return 1;
         }
         case FindPath: {
-            auto p = w.findPath(duk_require_uint(c, 0), readVec(c, 1));
+            auto p = w.motion.findPath(duk_require_uint(c, 0), readVec(c, 1));
             duk_push_array(c);
             for (uint32_t i = 0; i < p.size(); i++) {
                 pushVec(c, p[i]);
@@ -305,47 +419,50 @@ static duk_ret_t callNative(duk_context* c) {
             }
             return 1;
         }
-        case SetPlayer:
-            w.playerId = duk_require_uint(c, 0);
-            w.entity(w.playerId);
-            w.selected = w.playerId;
+        case SetPlayer: {
+            auto e = duk_require_uint(c, 0);
+            w.registry().require(e);
+            w.gameplay.playerId = w.gameplay.selected = e;
             return 0;
+        }
         case SetCamera:
-            w.camera.target = {num(c, 0), num(c, 1), num(c, 2)};
-            w.camera.yaw = num(c, 3);
-            w.camera.pitch = num(c, 4);
-            w.camera.distance = num(c, 5);
+            w.resources.camera.target = {num(c, 0), num(c, 1), num(c, 2)};
+            w.resources.camera.yaw = num(c, 3);
+            w.resources.camera.pitch = num(c, 4);
+            w.resources.camera.distance = num(c, 5);
             return 0;
         case Status:
-            w.state = duk_require_string(c, 0);
-            w.message = duk_require_string(c, 1);
+            w.gameplay.state = duk_require_string(c, 0);
+            w.gameplay.message = duk_require_string(c, 1);
             return 0;
-        case Select:
-            w.selected = duk_require_uint(c, 0);
-            if (w.selected)
-                w.entity(w.selected);
+        case Select: {
+            auto e = duk_require_uint(c, 0);
+            if (e)
+                w.registry().require(e);
+            w.gameplay.selected = e;
             return 0;
+        }
         case SetPath: {
-            w.path.clear();
+            w.gameplay.path.clear();
             auto n = duk_get_length(c, 0);
             for (duk_uarridx_t i = 0; i < n; i++) {
                 duk_get_prop_index(c, 0, i);
-                w.path.push_back(readVec(c, -1));
+                w.gameplay.path.push_back(readVec(c, -1));
                 duk_pop(c);
             }
-            w.hasDestination = !w.path.empty();
-            if (w.hasDestination)
-                w.destination = w.path.back();
+            w.gameplay.hasDestination = !w.gameplay.path.empty();
+            if (w.gameplay.hasDestination)
+                w.gameplay.destination = w.gameplay.path.back();
             return 0;
         }
         case SetSolid:
-            w.setSolid(duk_require_uint(c, 0), duk_get_boolean(c, 1) != 0);
+            w.motion.setSolid(duk_require_uint(c, 0), duk_get_boolean(c, 1) != 0);
             return 0;
         case SetMaterial: {
             auto i = duk_require_uint(c, 1);
-            if (i >= w.materials.size())
+            if (i >= w.resources.materials.size())
                 throw std::runtime_error("Invalid material");
-            w.setMaterial(duk_require_uint(c, 0), i);
+            w.render.setMaterial(duk_require_uint(c, 0), i);
             return 0;
         }
         case ReadJson: {
@@ -362,19 +479,19 @@ static duk_ret_t callNative(duk_context* c) {
             return 1;
         }
         case SceneData:
-            pushJson(c, w.sceneData);
+            pushJson(c, w.resources.data);
             return 1;
         case SetSceneData: {
             duk_dup(c, 0);
             duk_json_encode(c, -1);
             auto data = Json::parse(duk_require_string(c, -1));
             (void)data.members();
-            w.sceneData = std::move(data);
+            w.resources.data = std::move(data);
             duk_pop(c);
             return 0;
         }
         case SceneObject:
-            duk_push_uint(c, w.findObject(w.sceneReferences.at(duk_require_string(c, 0))));
+            duk_push_uint(c, w.findObject(w.resources.references.at(duk_require_string(c, 0))));
             return 1;
         case GetObjectPath: {
             auto path = w.objectPath(duk_require_uint(c, 0)).string();
@@ -385,35 +502,35 @@ static duk_ret_t callNative(duk_context* c) {
             duk_push_uint(c, w.resolveObject(ObjectPath(duk_require_string(c, 0))));
             return 1;
         case CameraState:
-            pushJson(c, {{"yaw", w.camera.yaw},
-                         {"pitch", w.camera.pitch},
-                         {"distance", w.camera.distance},
-                         {"x", w.camera.target.x},
-                         {"z", w.camera.target.z}});
+            pushJson(c, {{"yaw", w.resources.camera.yaw},
+                         {"pitch", w.resources.camera.pitch},
+                         {"distance", w.resources.camera.distance},
+                         {"x", w.resources.camera.target.x},
+                         {"z", w.resources.camera.target.z}});
             return 1;
         case LightIntensity:
-            w.lights.at(duk_require_uint(c, 0)).colorIntensity.w = num(c, 1);
+            w.resources.lights.at(duk_require_uint(c, 0)).colorIntensity.w = num(c, 1);
             return 0;
         case ConfigureCollider: {
             uint32_t id = duk_require_uint(c, 0);
-            const auto b = w.physics().body(w.entity(id).physical);
-            w.setColliderShape(id, readShape(c, 1, b.shape));
-            w.configureCollider(
+            const auto b = w.physics().body(w.get<Collider>(id).body);
+            w.motion.setColliderShape(id, readShape(c, 1, b.shape));
+            w.motion.configureCollider(
                 id, uint32_t(numberProp(c, 1, "layer", b.layer)), boolProp(c, 1, "blocking", b.blocking),
                 boolProp(c, 1, "walkable", b.walkable), boolProp(c, 1, "pickable", b.pickable));
             return 0;
         }
         case VisualPose:
-            w.setVisualPose(duk_require_uint(c, 0), readVec(c, 1), readVec(c, 2));
+            w.render.setVisualPose(duk_require_uint(c, 0), readVec(c, 1), readVec(c, 2));
             return 0;
         case CharacterHeight:
-            duk_push_number(c, w.setCharacterHeight(duk_require_uint(c, 0), num(c, 1)));
+            duk_push_number(c, w.motion.setCharacterHeight(duk_require_uint(c, 0), num(c, 1)));
             return 1;
         case RootMotion:
-            pushVec(c, w.rootMotion(duk_require_uint(c, 0), readVec(c, 1), num(c, 2)));
+            pushVec(c, w.motion.rootMotion(duk_require_uint(c, 0), readVec(c, 1), num(c, 2)));
             return 1;
         case SetVisible:
-            w.setVisible(duk_require_uint(c, 0), duk_get_boolean(c, 1) != 0);
+            w.render.setVisible(duk_require_uint(c, 0), duk_get_boolean(c, 1) != 0);
             return 0;
         case SetEnabled:
             w.setEnabled(duk_require_uint(c, 0), duk_get_boolean(c, 1) != 0);
@@ -438,7 +555,8 @@ static duk_ret_t callNative(duk_context* c) {
                 pushVec(c, bounds.max);
                 duk_put_prop_string(c, -2, "max");
                 for (auto property : {std::pair<const char*, bool>{"blocking", body.blocking},
-                                      {"walkable", body.walkable}, {"pickable", body.pickable}}) {
+                                      {"walkable", body.walkable},
+                                      {"pickable", body.pickable}}) {
                     duk_push_boolean(c, property.second);
                     duk_put_prop_string(c, -2, property.first);
                 }
@@ -490,12 +608,13 @@ static duk_ret_t callNative(duk_context* c) {
                 joints.push_back(readPhysicsPose(c, -1));
                 duk_pop(c);
             }
-            w.setAnimationJoints(duk_require_uint(c, 0), std::move(joints));
+            w.animation.setAnimationJoints(duk_require_uint(c, 0), std::move(joints));
             return 0;
         }
         case AnimationCollider: {
-            auto h = w.addAnimationCollider(duk_require_uint(c, 0), duk_require_uint(c, 1), readShape(c, 2),
-                                            readPhysicsPose(c, 2), boolProp(c, 2, "blocking", false));
+            auto h = w.animation.addAnimationCollider(duk_require_uint(c, 0), duk_require_uint(c, 1),
+                                                      readShape(c, 2), readPhysicsPose(c, 2),
+                                                      boolProp(c, 2, "blocking", false));
             duk_push_object(c);
             value(c, "slot", h.slot);
             value(c, "generation", h.generation);
@@ -512,15 +631,15 @@ static duk_ret_t callNative(duk_context* c) {
                     offset = readVec(c, -1);
                 duk_pop(c);
             }
-            w.attachAnimation(duk_require_uint(c, 0), *asset, applyRoot, offset);
+            w.animation.attachAnimation(duk_require_uint(c, 0), *asset, applyRoot, offset);
             return 0;
         }
         case AnimationAttribute:
-            w.setAnimationAttribute(duk_require_uint(c, 0), duk_require_string(c, 1),
-                                    duk_require_string(c, 2));
+            w.animation.setAnimationAttribute(duk_require_uint(c, 0), duk_require_string(c, 1),
+                                              duk_require_string(c, 2));
             return 0;
         case AnimationAttributes: {
-            auto inspection = w.inspectAnimation(duk_require_uint(c, 0));
+            auto inspection = w.animation.inspectAnimation(duk_require_uint(c, 0));
             duk_push_object(c);
             value(c, "solver", inspection.solver);
             value(c, "name", inspection.name);
@@ -576,18 +695,18 @@ static duk_ret_t callNative(duk_context* c) {
                 duk_pop(c);
             }
             duk_pop(c);
-            w.setAnimationInput(duk_require_uint(c, 0), std::move(input));
+            w.animation.setAnimationInput(duk_require_uint(c, 0), std::move(input));
             return 0;
         }
         case AnimationReset:
-            w.resetAnimation(duk_require_uint(c, 0));
+            w.animation.resetAnimation(duk_require_uint(c, 0));
             return 0;
         case AnimationDetach:
-            w.detachAnimation(duk_require_uint(c, 0));
+            w.animation.detachAnimation(duk_require_uint(c, 0));
             return 0;
         case SkinMesh: {
-            w.setSkinnedMesh(duk_require_uint(c, 0),
-                             assets(c).load<SkinnedMesh>(AssetPath(duk_require_string(c, 1))));
+            w.animation.setSkinnedMesh(duk_require_uint(c, 0),
+                                       assets(c).load<SkinnedMesh>(AssetPath(duk_require_string(c, 1))));
             return 0;
         }
         case NavigationConfig: {
@@ -600,9 +719,9 @@ static duk_ret_t callNative(duk_context* c) {
             float cell = float(numberProp(c, 0, "cellSize", .25));
             if (!std::isfinite(cell) || cell < .05f || glm::any(glm::lessThanEqual(max, min)))
                 throw std::invalid_argument("Invalid navigation configuration");
-            w.navigation.min = min;
-            w.navigation.max = max;
-            w.navigation.cellSize = cell;
+            w.resources.navigation.min = min;
+            w.resources.navigation.max = max;
+            w.resources.navigation.cellSize = cell;
             return 0;
         }
         }
@@ -644,10 +763,19 @@ void ScriptRuntime::createContext() {
                                 {"cameraState", CameraState, 0},
                                 {"log", Log, 1},
                                 {"material", MaterialAdd, 8},
-                                {"spawn", Spawn, 11},
+                                {"create", Create, 1},
+                                {"addComponent", AddComponent, 3},
+                                {"removeComponent", RemoveComponent, 2},
+                                {"hasComponent", HasComponent, 2},
+                                {"entities", Entities, 1},
+                                {"alive", Alive, 1},
+                                {"parent", SetParent, 3},
+                                {"localTransform", LocalTransform, 2},
+                                {"data", EntityData, 1},
+                                {"setData", SetEntityData, 2},
                                 {"light", AddLight, 8},
                                 {"position", GetPose, 1},
-                                {"pose", SetPose, 6},
+                                {"renderScale", RenderScale, 2},
                                 {"transform", SetTransform, 2},
                                 {"moveBody", MoveBody, 4},
                                 {"physicsShapeSweep", ShapeSweep, 4},
@@ -737,7 +865,7 @@ void ScriptRuntime::initialize() {
 void ScriptRuntime::startScripts() {
     for (const auto& path : assets_.project().scripts())
         evaluateFile(path.string());
-    for (const auto& script : world_.sceneScripts)
+    for (const auto& script : world_.resources.scripts)
         evaluateFile(assets_.resolve(script).path.string());
     duk_get_global_string(context_, "initialize");
     if (duk_is_function(context_, -1))
@@ -795,13 +923,13 @@ void ScriptRuntime::tick(float dt, const Input& rawInput) {
         throw std::runtime_error("JS accessed outside engine thread");
     Input input = rawInput;
     bool captured = input.pointerCaptured;
-    world_.hovered = captured ? 0 : world_.pick(input.mouseX, input.mouseY, input);
+    world_.gameplay.hovered = captured ? 0 : world_.pick(input.mouseX, input.mouseY, input);
     auto ground = world_.groundAt(input.mouseX, input.mouseY, input);
     duk_get_global_string(context_, "fixedUpdate");
     if (duk_is_undefined(context_, -1)) {
         duk_pop(context_);
         inputScope.finish();
-        world_.updateAnimations(dt);
+        world_.update(dt);
         processSceneRequest();
         updateUi(dt);
         return;
@@ -833,7 +961,7 @@ void ScriptRuntime::tick(float dt, const Input& rawInput) {
     value(context_, "groundZ", ground ? ground->z : 0);
     duk_push_boolean(context_, ground.has_value());
     duk_put_prop_string(context_, -2, "groundValid");
-    value(context_, "picked", world_.hovered);
+    value(context_, "picked", world_.gameplay.hovered);
     for (auto b : {std::pair<const char*, bool>{"leftPressed", input.leftPressed},
                    {"rightPressed", input.rightPressed},
                    {"middle", input.middle},
@@ -846,7 +974,7 @@ void ScriptRuntime::tick(float dt, const Input& rawInput) {
         CpuScope scope("JS fixedUpdate");
         checkedCall(2);
     }
-    world_.updateAnimations(dt);
+    world_.update(dt);
     processSceneRequest();
     updateUi(dt);
 }

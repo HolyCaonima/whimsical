@@ -1,3 +1,4 @@
+#include "TestEntities.h"
 #include "TestProject.h"
 #include "scripting/ScriptRuntime.h"
 #include "uiCore/UiCore.h"
@@ -104,7 +105,7 @@ var stale=false;try{child.setText('gone');}catch(e){stale=true;}if(!stale)throw 
         scripts.processUiInput(click);
         check(click.pointerCaptured && !click.leftPressed && click.wheel == 0,
               "UI click/wheel must not reach gameplay");
-        check(world.state == "UI" && world.message == "clicked",
+        check(world.gameplay.state == "UI" && world.gameplay.message == "clicked",
               "JS UI callback must mutate actual gameplay");
         scripts.execute("if(clicks!==1)throw Error('click count'); button.off(token);");
         Input again;
@@ -184,7 +185,7 @@ var self=button.on('click',function(){button.off(self);button.remove();});
         }
         scripts.initialize();
         scripts.execute(R"JS(
-var probe = Engine.spawn('Spatial query', false, 30, 1, 30, 2, 2, 4, 0, true, false);
+var probe = Engine.create({name:'Spatial query',components:{transform:{position:[30,1,30]},render:{scale:[2,2,4],material:0},collider:{shape:{type:'box',halfExtents:[1.0,1.0,2.0]},blocking:true,pickable:true}}});
 Engine.collider(probe, {shape:'box',halfExtents:{x:1,y:1,z:2},layer:8,blocking:true});
 var frozen = Engine.physicsBodies({mask:8,blockingOnly:true});
 if (frozen.length !== 1 || frozen[0].owner !== probe || frozen[0].min.x !== 29 || frozen[0].max.z !== 32)
@@ -200,7 +201,7 @@ Engine.enabled(probe,true);
 Engine.destroy(probe);
 if (Engine.physicsBodies({mask:8}).length !== 0 || frozen[0].owner !== probe) throw Error('destroyed body');
 var oldMap = GameplayHud.document.getElementById('map-obstacles').getInnerRML();
-var wall = Engine.spawn('Map wall',false,5,1,2,2,2,2,0,true,false);
+var wall = Engine.create({name:'Map wall',components:{transform:{position:[5,1,2]},render:{scale:[2,2,2],material:0},collider:{shape:{type:'box',halfExtents:[1.0,1.0,1.0]},blocking:true,pickable:true}}});
 updateUI(.11);
 if (GameplayHud.document.getElementById('map-obstacles').getInnerRML() === oldMap)
     throw Error('project map must track new obstacles without a simulation tick');

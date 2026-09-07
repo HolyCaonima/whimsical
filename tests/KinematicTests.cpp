@@ -1,3 +1,4 @@
+#include "TestEntities.h"
 #include "TestProject.h"
 #include "scene/ScenePersistence.h"
 #include "scripting/ScriptRuntime.h"
@@ -111,12 +112,12 @@ static void transformsAndScript() {
     World world;
     MaterialDefinition material;
     material.shader = testAssets().reference(AssetPath("/Game/shaders/Standard"));
-    world.materials.push_back(material.resolve(testAssets()));
+    world.resources.materials.push_back(material.resolve(testAssets()));
     ScriptRuntime js(world, testAssets());
     js.execute(R"JS(
         function assert(value, message) { if (!value) throw new Error(message); }
-        var wall = Engine.spawn('wall', false, 0, 3, 0, .01, 6, 20, 0, true, false);
-        var body = Engine.spawn('body', false, -5, 3, 0, 2, 1, 4, 0, true, false);
+        var wall = Engine.create({name:'wall',components:{transform:{position:[0,3,0]},render:{scale:[.01,6,20],material:0},collider:{shape:{type:'box',halfExtents:[0.005,3.0,10.0]},blocking:true,pickable:true}}});
+        var body = Engine.create({name:'body',components:{transform:{position:[-5,3,0]},render:{scale:[2,1,4],material:0},collider:{shape:{type:'box',halfExtents:[1.0,0.5,2.0]},blocking:true,pickable:true}}});
         var q = {x:0, y:Math.sin(.2), z:0, w:Math.cos(.2)};
         Engine.transform(body, {position:{x:-5,y:3,z:0}, rotation:q});
         var query = {shape:'box', halfExtents:{x:1,y:.5,z:2}, position:{x:-5,y:3,z:0}, rotation:q};
@@ -139,41 +140,41 @@ static void transformsAndScript() {
         catch (e) { rejected = true; }
         assert(rejected && Engine.position(body).x < 0, 'Invalid transform corrupted object');
     )JS");
-    uint32_t body = world.objects().back().id;
+    uint32_t body = world.registry().entities().back();
     auto full = glm::normalize(glm::angleAxis(.7f, vec3(1, 0, 0)) * glm::angleAxis(.5f, vec3(0, 0, 1)));
-    world.setAnimationJoints(body, {{{0, 1, 0}, quat(1, 0, 0, 0)}});
-    auto attachment = world.addAnimationCollider(body, 0, ColliderShape::box(vec3(.1f)),
+    world.animation.setAnimationJoints(body, {{{0, 1, 0}, quat(1, 0, 0, 0)}});
+    auto attachment = world.animation.addAnimationCollider(body, 0, ColliderShape::box(vec3(.1f)),
                                                   {{0, .2f, 0}, quat(1, 0, 0, 0)}, false);
-    world.setVisualPose(body, {.3f, .4f, .5f}, {1, 2, 1});
+    world.render.setVisualPose(body, {.3f, .4f, .5f}, {1, 2, 1});
     auto before = world.snapshot({}, 0, 0, 0);
-    world.setTransform(body, {{2, 3, 4}, full});
+    world.transforms.setTransform(body, {{2, 3, 4}, full});
     auto after = world.snapshot({}, 1, 0, 0);
-    const auto& object = world.entity(body);
-    const auto& physical = world.physics().body(object.physical);
+    const auto& object = world.get<Transform>(body).world;
+    const auto& physical = world.physics().body(world.get<Collider>(body).body);
     check(sameRotation(physical.pose.rotation, full), "World transform must reach the physical body");
-    const auto& proxy = after.proxies[object.proxy].transform;
+    const auto& proxy = after.proxies[world.get<Renderable>(body).slot].transform;
     check(sameRotation(proxy.rotation, full) && near(proxy.position, object.position + full * vec3(.3f, .4f, .5f)),
           "Render offset must follow all three axes of rotation");
-    vec3 expected = object.position + full * (vec3(.3f, .4f, .5f) + object.render.scale * object.render.animationScale * vec3(0, 1, 0));
+    vec3 expected = object.position + full * (vec3(.3f, .4f, .5f) + world.get<Renderable>(body).appearance.scale * world.get<Renderable>(body).appearance.animationScale * vec3(0, 1, 0));
     check(near(vec3(transform(proxy) * vec4(0, 1, 0, 1)), expected),
           "GPU model matrix must include pitch and roll");
-    check(before.proxies[object.proxy].transform != proxy && !after.delta.moved.empty(),
+    check(before.proxies[world.get<Renderable>(body).slot].transform != proxy && !after.delta.moved.empty(),
           "Full rotation must publish a dirty transform and leave old snapshots immutable");
     auto attached = world.physics().body(attachment);
     check(near(attached.pose.position, object.position + full * vec3(0, 1.2f, 0)) &&
               sameRotation(attached.pose.rotation, full), "Joint colliders must follow full root rotation");
     auto document = ScenePersistence::capture(world, testAssets());
     auto encoded = document.json();
-    check(encoded.at("version").uint() == 3, "Quaternion maps must declare their updated schema");
+    check(encoded.at("version").uint() == 4, "Quaternion maps must declare their updated schema");
     auto decoded = SceneDocument::fromJson(Json::parse(encoded.dump()));
-    check(sameRotation(decoded.objects.back().rotation, full), "Quaternion scene data did not round-trip");
+    check(sameRotation(decoded.entities.back().transform->local.rotation, full), "Quaternion scene data did not round-trip");
     // The migrated project and a saved Shader-backed map exercise disk IO.
     auto legacy = testAssets().load<SceneAsset>(AssetPath("/Game/Maps/RainCourt"));
-    check(!legacy->scene.objects.empty(), "Migrated project map must remain loadable");
+    check(!legacy->scene.entities.empty(), "Migrated project map must remain loadable");
     auto directory = std::filesystem::path(AFTERLIGHT_ROOT) / "build" / ("kinematic-" + newPersistentId());
     AssetManager local{Project::create(directory, "Kinematic test")};
     registerEngineAssets(local);
-    auto shader = world.materials[0].shader;
+    auto shader = world.resources.materials[0].shader;
     auto shaderHeader = shader->header();
     shaderHeader.storage = PayloadStorage::Inline;
     shaderHeader.source.clear();
@@ -182,9 +183,9 @@ static void transformsAndScript() {
     local.scan();
     World fromDisk;
     ScenePersistence::load(fromDisk, local, saved.path);
-    const auto& restoredObject = fromDisk.objects().back();
-    check(sameRotation(restoredObject.rotation, full) &&
-              sameRotation(fromDisk.physics().body(restoredObject.physical).pose.rotation, full),
+    const auto& restoredObject = fromDisk.registry().entities().back();
+    check(sameRotation(fromDisk.get<Transform>(restoredObject).world.rotation, full) &&
+              sameRotation(fromDisk.physics().body(fromDisk.get<Collider>(restoredObject).body).pose.rotation, full),
           "Saved map must restore visual and physical rotation");
 }
 int main() {

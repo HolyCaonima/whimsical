@@ -65,8 +65,8 @@ static void scene() {
     ui::UiCore uiCore(testAssets().project().content());
     ScriptRuntime scripts(world, testAssets(), &uiCore);
     scripts.initialize();
-    auto player = world.playerId;
-    auto view = world.inspectAnimation(player);
+    auto player = world.gameplay.playerId;
+    auto view = world.animation.inspectAnimation(player);
     check(view.schema.size() == 1 && view.schema[0].options.size() == 11,
           "Biped asset must declare eleven styles without Idle");
     check(view.values.at("locomotion.style") == "BigSteps", "Asset must supply the initial style");
@@ -82,15 +82,15 @@ static void scene() {
     click.mouseY = position.y + 5;
     click.leftPressed = true;
     click.wheel = 2;
-    auto before = world.inspectAnimation(player);
+    auto before = world.animation.inspectAnimation(player);
     scripts.processUiInput(click);
     scripts.tick(1.f / 60, click);
-    check(world.inspectAnimation(player).values.at("locomotion.style") == "Chicken",
+    check(world.animation.inspectAnimation(player).values.at("locomotion.style") == "Chicken",
           "UI next must change style");
     check(before.values.at("locomotion.style") == "BigSteps",
           "Published UI values must be immutable");
-    check(world.path.empty(), "Style click must not issue a ground movement command");
-    check(std::abs(world.camera.distance - 30) < .001f, "Wheel over animation UI must not zoom camera");
+    check(world.gameplay.path.empty(), "Style click must not issue a ground movement command");
+    check(std::abs(world.resources.camera.distance - 30) < .001f, "Wheel over animation UI must not zoom camera");
     scripts.execute(
         "var a=Engine.animationAttributes(Locomotion.id);"
         "if(a.attributes[0].type!=='enum'||a.attributes[0].value!=='Chicken')throw Error('schema API');"
@@ -99,14 +99,14 @@ static void scene() {
     Input neutral;
     for (int i = 0; i < 60; ++i)
         scripts.tick(1.f / 60, neutral);
-    check(world.inspectAnimation(player).values.at("locomotion.style") == "Zombie",
+    check(world.animation.inspectAnimation(player).values.at("locomotion.style") == "Zombie",
           "Idle input must retain style");
     scripts.execute("Locomotion.command({x:-8,y:0,z:4});");
     for (const auto& option : view.schema[0].options) {
-        world.setAnimationAttribute(player, "locomotion.style", option.value);
+        world.animation.setAnimationAttribute(player, "locomotion.style", option.value);
         for (int i = 0; i < 30; ++i)
             scripts.tick(1.f / 60, neutral);
-        check(world.inspectAnimation(player).values.at("locomotion.style") == option.value,
+        check(world.animation.inspectAnimation(player).values.at("locomotion.style") == option.value,
               "Gameplay movement input must not overwrite selected style");
     }
     // Prove the property changes the actual pose, not just the inspector label.
@@ -134,12 +134,12 @@ static void scene() {
     check(!hud->GetElementById("animation")->IsVisible(),
           "Compact windows must not leave invisible hit regions");
     scripts.setHudEnabled(false);
-    auto selectedStyle = world.inspectAnimation(player).values.at("locomotion.style");
+    auto selectedStyle = world.animation.inspectAnimation(player).values.at("locomotion.style");
     scripts.processUiInput(click);
     scripts.tick(1.f / 60, click);
-    check(world.inspectAnimation(player).values.at("locomotion.style") == selectedStyle,
+    check(world.animation.inspectAnimation(player).values.at("locomotion.style") == selectedStyle,
           "Hidden project HUD must not intercept scene clicks");
-    world.detachAnimation(player);
+    world.animation.detachAnimation(player);
     scripts.execute("AnimationPanel.tick(GameplayHud.document, Locomotion.id);");
     check(hud->GetElementById("attributes")->GetNumChildren() == 0,
           "Detach must remove stale project controls and their listeners");

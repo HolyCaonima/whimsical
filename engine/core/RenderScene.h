@@ -47,6 +47,7 @@ class RenderScene {
     void setAttributes(uint32_t slot, const ProxyAttributes&);
     void setMaterial(uint32_t slot, uint32_t material);
     void setVisible(uint32_t slot, bool visible);
+    void geometryChanged(uint32_t slot);
     // Hands the accumulated events to a snapshot and opens a new accumulation window.
     SceneDelta publish();
 };

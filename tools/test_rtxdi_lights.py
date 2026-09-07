@@ -51,7 +51,7 @@ def run():
     tag = "rtxdi-lights-" + uuid.uuid4().hex[:8]
     project = create_project(tag)
     _, scene = read_asset(project / "Content/Test.asset")
-    scene["objects"] = scene["objects"][:1]
+    scene["entities"] = scene["entities"][:1]
     lights = [dict(positionRadius=[(i % 16 - 7.5) * .4, 5 + i % 3, (i // 16 - 7.5) * .4, 0],
                    colorIntensity=[.2 + (i % 3 == 0), .2 + (i % 3 == 1), .2 + (i % 3 == 2),
                                    .05 if i < 248 else 8 + (i - 248) * 2]) for i in range(256)]

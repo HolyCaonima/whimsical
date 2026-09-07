@@ -1,149 +1,180 @@
 #include "ScenePersistence.h"
 #include "core/World.h"
-
 namespace afterlight {
 SceneDocument ScenePersistence::capture(const World& world, const AssetManager& assets) {
     SceneDocument s;
-    for (const auto& material : world.materials)
+    const auto& r = world.resources;
+    for (const auto& material : r.materials)
         s.materials.push_back(MaterialDefinition::capture(material, assets));
-    for (const auto& material : world.materialAssets)
+    for (const auto& material : r.materialAssets)
         s.materialAssets.emplace(material.first, assets.resolve(material.second->reference()));
-    s.lights = world.lights;
-    s.camera = world.camera;
-    s.navigation = world.navigation;
-    for (const auto& script : world.sceneScripts)
+    s.lights = r.lights;
+    s.camera = r.camera;
+    s.navigation = r.navigation;
+    for (const auto& script : r.scripts)
         s.scripts.push_back(assets.resolve(script));
-    s.data = world.sceneData;
-    s.references = world.sceneReferences;
-    if (world.playerId)
-        s.player = world.entity(world.playerId).persistentId;
-    for (const auto& object : world.objects_) {
-        if (!object.alive)
-            continue;
-        SceneObject o;
-        o.id = object.persistentId;
-        o.name = object.name;
-        o.position = object.position;
-        o.rotation = object.rotation;
-        o.render = object.render;
-        if (object.staticMesh)
-            o.staticMesh = assets.resolve(object.staticMesh->reference());
-        o.enabled = object.enabled;
-        o.interactable = object.interactable;
-        const auto& body = world.physics_.body(object.physical);
-        o.collider = body.shape;
-        o.motion = body.motion;
-        o.layer = body.layer;
-        o.blocking = body.blocking;
-        o.walkable = body.walkable;
-        o.pickable = body.pickable;
-        auto animation = world.animations_.find(object.id);
-        if (animation != world.animations_.end()) {
-            const auto& a = animation->second;
-            if (!a.asset)
-                throw std::invalid_argument("Cannot save an unregistered animation solver: " + object.name);
-            SceneAnimation sa;
-            sa.asset = assets.resolve(*a.asset);
-            sa.rootMotion = a.applyRootMotion;
-            sa.rootOffset = a.rootOffset;
-            sa.attributes = a.instance->attributes();
-            if (a.mesh) {
-                if (a.mesh->header().id.empty())
-                    throw std::invalid_argument("Cannot save an unregistered mesh");
-                sa.mesh = assets.resolve(a.mesh->reference());
-            }
-            o.animation = std::move(sa);
-        } else
-            o.joints = object.joints;
-        o.jointColliders = world.animationCollision_.describe(object.id);
-        s.objects.push_back(std::move(o));
+    s.data = r.data;
+    s.references = r.references;
+    if (world.gameplay.playerId)
+        s.player = world.get<Identity>(world.gameplay.playerId).persistentId;
+    for (auto e : world.registry().entities()) {
+        SceneEntity o;
+        const auto& identity = world.get<Identity>(e);
+        o.id = identity.persistentId;
+        o.name = identity.name;
+        o.enabled = !world.has<Disabled>(e);
+        o.interactable = world.has<Interactable>(e);
+        if (auto t = world.registry().tryGet<Transform>(e))
+            o.transform =
+                SceneTransform{t->local, t->parent ? world.get<Identity>(t->parent).persistentId : ""};
+        if (auto render = world.registry().tryGet<Renderable>(e)) {
+            o.render = SceneRender{render->appearance};
+            if (render->mesh)
+                o.render->mesh = assets.resolve(render->mesh->reference());
+        }
+        if (auto c = world.registry().tryGet<Collider>(e)) {
+            const auto& b = world.physics().body(c->body);
+            o.collider = SceneCollider{b.shape, b.motion, b.layer, b.blocking, b.walkable, b.pickable};
+        }
+        if (auto a = world.registry().tryGet<Animator>(e)) {
+            if (!a->asset)
+                throw std::invalid_argument("Cannot save an unregistered animation solver: " + identity.name);
+            o.animation = SceneAnimation{assets.resolve(*a->asset), a->applyRootMotion, a->rootOffset,
+                                         a->instance->attributes()};
+        } else if (auto j = world.registry().tryGet<JointPose>(e))
+            o.joints = j->model;
+        if (auto skin = world.registry().tryGet<Skin>(e))
+            o.skin = assets.resolve(skin->mesh->reference());
+        if (auto data = world.registry().tryGet<ScriptData>(e))
+            o.data = data->value;
+        o.jointColliders = world.storage_.jointColliders.describe(e);
+        s.entities.push_back(std::move(o));
     }
     s.validate();
     return s;
 }
+void ScenePersistence::addComponents(World& world, uint32_t e, const SceneEntity& o, AssetManager& assets) {
+    if (o.data)
+        world.add<ScriptData>(e, ScriptData{*o.data});
+    if (o.transform) {
+        Entity parent = 0;
+        if (!o.transform->parent.empty()) {
+            parent = world.findObject(o.transform->parent);
+            if (!parent)
+                throw std::invalid_argument("Missing parent entity");
+            world.get<Transform>(parent);
+        }
+        world.transforms.add(e, o.transform->local);
+        if (parent)
+            world.transforms.setParent(e, parent, false);
+    }
+    if (o.interactable)
+        world.add<Interactable>(e);
+    if (o.render) {
+        if (o.render->appearance.material >= world.resources.materials.size())
+            throw std::invalid_argument("Invalid material");
+        auto mesh = o.render->mesh ? assets.load<StaticMesh>(*o.render->mesh) : nullptr;
+        world.render.add(e, o.render->appearance, std::move(mesh));
+    }
+    if (o.collider) {
+        const auto& c = *o.collider;
+        PhysicsBody b;
+        b.shape = c.shape;
+        b.motion = c.motion;
+        b.layer = c.layer;
+        b.blocking = c.blocking;
+        b.walkable = c.walkable;
+        b.pickable = c.pickable;
+        world.motion.add(e, b);
+    }
+    if (o.animation) {
+        const auto& a = *o.animation;
+        auto asset = assets.load<animation::Asset>(a.asset);
+        if (world.has<Animator>(e))
+            throw std::logic_error("Animator already present");
+        world.animation.attachAnimation(e, *asset, a.rootMotion, a.rootOffset, a.attributes);
+    } else if (o.joints)
+        world.animation.setAnimationJoints(e, *o.joints);
+    if (o.skin)
+        world.animation.setSkinnedMesh(e, assets.load<SkinnedMesh>(*o.skin));
+    for (const auto& c : o.jointColliders)
+        world.animation.addAnimationCollider(e, c.joint, c.shape, c.local, c.blocking);
+}
+uint32_t ScenePersistence::createEntity(World& world, const SceneEntity& o, AssetManager& assets) {
+    auto e = world.create(o.name, o.id);
+    try {
+        addComponents(world, e, o, assets);
+        world.setEnabled(e, o.enabled);
+    } catch (...) {
+        world.destroy(e);
+        throw;
+    }
+    return e;
+}
 void ScenePersistence::instantiate(World& world, const SceneDocument& s, AssetManager& assets) {
+    auto& r = world.resources;
     for (uint32_t i = 0; i < s.materials.size(); ++i) {
         auto binding = s.materialAssets.find(i);
         if (binding == s.materialAssets.end())
-            world.materials.push_back(s.materials[i].resolve(assets));
+            r.materials.push_back(s.materials[i].resolve(assets));
         else {
             auto material = assets.load<MaterialAsset>(binding->second);
-            world.materialAssets.emplace(i, material);
-            world.materials.push_back(material->parameters);
+            r.materialAssets.emplace(i, material);
+            r.materials.push_back(material->parameters);
         }
     }
-    world.lights = s.lights;
-    world.camera = s.camera;
-    world.navigation = s.navigation;
+    r.lights = s.lights;
+    r.camera = s.camera;
+    r.navigation = s.navigation;
     for (const auto& script : s.scripts) {
         (void)assets.load<ScriptAsset>(script);
-        world.sceneScripts.push_back(assets.resolve(script));
+        r.scripts.push_back(assets.resolve(script));
     }
-    world.sceneData = s.data;
-    world.sceneReferences = s.references;
-    for (const auto& o : s.objects) {
-        auto id = world.spawn(o.name, o.render.shape, o.position, o.render.scale, o.render.material,
-                              o.blocking, o.interactable, o.id);
-        auto& object = world.mutableObject(id);
-        object.rotation = o.rotation;
-        object.render = o.render;
-        if (o.staticMesh)
-            world.setStaticMesh(id, assets.load<StaticMesh>(*o.staticMesh));
-        world.setColliderShape(id, o.collider);
-        world.configureCollider(id, o.layer, o.blocking, o.walkable, o.pickable);
-        world.physics_.setMotion(object.physical, o.motion);
-        if (o.animation) {
-            const auto& a = *o.animation;
-            auto asset = assets.load<animation::Asset>(a.asset);
-            world.attachAnimation(id, *asset, a.rootMotion, a.rootOffset);
-            for (const auto& v : a.attributes)
-                world.setAnimationAttribute(id, v.first, v.second);
-            if (a.mesh)
-                world.setSkinnedMesh(id, assets.load<SkinnedMesh>(*a.mesh));
-            // Initialize joint bindings from the rest pose without advancing inference.
-            auto model = asset->skeleton()->toModel(asset->skeleton()->restPose());
-            for (const auto& p : model)
-                object.joints.push_back({p.position + a.rootOffset, p.rotation});
-        } else
-            object.joints = o.joints;
-        for (const auto& c : o.jointColliders)
-            world.addAnimationCollider(id, c.joint, c.shape, c.local, c.blocking);
-        world.syncPose(object);
-        world.setEnabled(id, o.enabled);
-        world.publishAttributes(object);
+    r.data = s.data;
+    r.references = s.references;
+    // Identity and hierarchy are resolved before any spatial backend or solver binds.
+    for (const auto& o : s.entities) {
+        auto e = world.create(o.name, o.id);
+        if (o.transform)
+            world.transforms.add(e, o.transform->local);
     }
-    world.physics_.rebuildBroadphase();
-    world.playerId = s.player.empty() ? 0 : world.findObject(s.player);
-    world.selected = world.playerId;
+    for (const auto& o : s.entities)
+        if (o.transform && !o.transform->parent.empty())
+            world.transforms.setParent(world.findObject(o.id), world.findObject(o.transform->parent), false);
+    for (auto o : s.entities) {
+        o.transform.reset();
+        auto e = world.findObject(o.id);
+        addComponents(world, e, o, assets);
+        world.setEnabled(e, o.enabled);
+    }
+    world.gameplay.playerId = s.player.empty() ? 0 : world.findObject(s.player);
+    world.gameplay.selected = world.gameplay.playerId;
     world.resetHistory = true;
 }
 void ScenePersistence::load(World& world, AssetManager& assets, const AssetPath& path) {
     const auto map = assets.load<SceneAsset>(path);
-    // Preflight every dependency, enum, skeleton binding and physical shape before
-    // touching the live World. Runtime playback never enters the saved document.
     World staged;
     instantiate(staged, map->scene, assets);
     world.clearScene();
     instantiate(world, map->scene, assets);
-    world.mapAsset_ = map->reference();
-    world.message = map->header().name;
+    world.resources.mapAsset = map->reference();
+    world.gameplay.message = map->header().name;
 }
 AssetRef ScenePersistence::save(World& world, AssetManager& assets, const AssetPath& path,
                                 const std::string& name) {
     auto document = capture(world, assets);
     AssetHeader header;
-    if (!world.mapAsset_.id.empty() && assets.resolve(world.mapAsset_).path == path)
+    if (!world.resources.mapAsset.id.empty() && assets.resolve(world.resources.mapAsset).path == path)
         header = assets.descriptor(path);
     else {
         header.id = newPersistentId();
         header.type = "Map";
     }
     header.name = name;
-    // Scene authoring always writes the document inline, even if an imported Map used external storage.
     header.storage = PayloadStorage::Inline;
     header.source.clear();
     auto ref = assets.save(path, header, document.json().dump());
-    world.mapAsset_ = ref;
+    world.resources.mapAsset = ref;
     return ref;
 }
 } // namespace afterlight
