@@ -1,7 +1,7 @@
 ALAS1
 {"id":"c5e7e5dfae9d7ce5df60c9c0f61feead","type":"Map","name":"Workbench","version":1,"storage":"embedded","metadata":{}}
 {
-  "version": 9,
+  "version": 10,
   "entities": [
     {
       "id": "a1a9d015d50c94e31328aa30268ba5b5",
@@ -16,7 +16,6 @@ ALAS1
           ]
         },
         "render": {
-          "shape": "box",
           "scale": [
             12,
             0.3,
@@ -25,6 +24,10 @@ ALAS1
           "material": {
             "id": "16fe63cacf5050968fe022f38413bd82",
             "path": "/Game/Materials/Workbench/Ground"
+          },
+          "mesh": {
+            "id": "e6200869191f5c6598e77505b5a0681f",
+            "path": "/Engine/Meshes/Box"
           }
         }
       }
@@ -42,7 +45,6 @@ ALAS1
           ]
         },
         "render": {
-          "shape": "box",
           "scale": [
             1.3,
             1.3,
@@ -51,6 +53,10 @@ ALAS1
           "material": {
             "id": "4b2b3a55b71f5546badaef763f235b7f",
             "path": "/Game/Materials/Workbench/Cube"
+          },
+          "mesh": {
+            "id": "e6200869191f5c6598e77505b5a0681f",
+            "path": "/Engine/Meshes/Box"
           }
         }
       }
@@ -68,7 +74,6 @@ ALAS1
           ]
         },
         "render": {
-          "shape": "capsule",
           "scale": [
             0.7,
             1.2,
@@ -77,6 +82,10 @@ ALAS1
           "material": {
             "id": "efd67ab5704256889e43ef0da77662cf",
             "path": "/Game/Materials/Workbench/Capsule"
+          },
+          "mesh": {
+            "id": "1c72ab38c08e5b51919d224c934807d0",
+            "path": "/Engine/Meshes/Capsule"
           }
         }
       }

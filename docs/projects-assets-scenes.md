@@ -39,7 +39,7 @@ Projects/Afterlight/
 
 文件选择是独立的宿主能力：`Engine.files.openDialog({title, initialDirectory, filters:[{name, pattern}]})` 返回所选文件的 UTF-8 路径，取消返回 `null`。三个选项均可省略，`pattern` 使用分号分隔的文件通配符（如 `*.png;*.jpg`）。无文件选择服务的宿主会报错。`RuntimeHost::setOpenFileDialog` 注入宿主实现，桌面程序连接 `Window::openFileDialog`；项目类型、筛选规则、选择后的处理均由调用方决定。
 
-`Engine.content.mount` 和 `Engine.content.mounts()` 返回的挂载描述包含 `mount/source/root/writable`，其中 `root` 是规范化的绝对 Content 路径。调用方可查询已有根路径并复用挂载身份，而不是为同一目录重复挂载。
+`Engine.content.mount` 和 `Engine.content.mounts()` 返回的挂载描述包含 `mount/source/root/writable/shared`，其中 `root` 是规范化的绝对 Content 路径。调用方可查询已有根路径并复用挂载身份，而不是为同一目录重复挂载。
 
 挂载 `/Game` 后，`/Game/models/biped` 映射为该来源的 `models/biped.asset`；同样可以把另一个目录挂到 `/Library`。路径不带扩展名、区分大小写；段内使用 ASCII 字母、数字、下划线、连字符。不接受 `.`、`..`、重复斜线、反斜线、盘符、空段。注册与保存拒绝 Windows 大小写别名。目录层次就是虚拟路径层次，不另建手写 manifest。
 
@@ -60,13 +60,13 @@ assets.unmount("/Library");
 
 挂载名是一个虚拟根，如 `/Game`、`/Library`；物理根必须存在且互不重叠。挂载时只扫描信封描述符，不解码 payload、不启动 Map、不执行 Script。挂载失败会撤销本次注册。`mount(alias, root, false)` 创建只读来源。
 
-调用方可以显式访问所有挂载根。资产加载、类型解码、场景实例化和保存则进入所属来源的闭合作用域：其中的 `/Game/...` 总是指向该来源，外部别名和外部来源的 AssetRef 都被拒绝。ID 查找从不搜索其他挂载源。自定义解码器调用同一个 manager 时自动遵守此规则，不能在解码期间改变挂载表或退出依赖作用域。
+调用方可以显式访问所有挂载根。资产加载、类型解码、场景实例化和保存则进入所属来源的闭合作用域：其中的 `/Game/...` 总是指向该来源，仅允许同源或宿主显式声明为 shared 的依赖，其他来源的 AssetRef 被拒绝。宿主通过 `assets.mount(alias, directory, writable, shared)` 声明共享库；`/Engine` 是只读共享库。ID 查找从不搜索其他挂载源。自定义解码器调用同一个 manager 时自动遵守此规则，不能在解码期间改变挂载表或退出依赖作用域。
 
 运行时 AssetRef 增加 `source`（本次挂载的身份），并提供当前挂载名下的可读 path。延迟使用的 Map、Data 和 metadata 引用也保留这个身份。卸载清除该来源的索引和缓存；重用别名、甚至重新挂载同一个目录，都会生成新身份。旧 AssetRef 不能解析或保存到新来源；旧 shared_ptr 和已经录制的 Frame 可以继续使用。字符串路径是软定位器，访问当前挂载；需要跨操作保留身份时使用 AssetRef。
 
-JSON 中带 `id` 和 `path` 的对象是保留的资产引用形态，可附带运行时 `source`。AssetManager 统一遍历 metadata 和声明为 `Encoding::Json` 的 payload，在解码前绑定来源，保存前验证来源并输出 `/Game/...`，移除运行时 `source`。二进制和文本解码器把结构化依赖放在 metadata 中；任意字符串不自动视为引用或改写。`registerLoader(type, decoder, encoding)` 的 encoding 为 Raw、Text 或 Json，与 embedded/external 存储方式独立。
+JSON 中带 `id` 和 `path` 的对象是保留的资产引用形态，可附带运行时 `source`。AssetManager 统一遍历 metadata 和声明为 `Encoding::Json` 的 payload，在解码前绑定来源，保存前验证来源：同源输出 `/Game/...`，共享库引用保留其挂载别名；两者均移除运行时 `source`。二进制和文本解码器把结构化依赖放在 metadata 中；任意字符串不自动视为引用或改写。`registerLoader(type, decoder, encoding)` 的 encoding 为 Raw、Text 或 Json，与 embedded/external 存储方式独立。
 
-`ScenePersistence::save` 在 capture 之前进入目标来源，混合了其他 Content 资产的 World 不能直接保存，即使目标来源存在同 ID 资产。内容迁移需要显式导入并重新绑定本地资产。普通加载和保存不会隐式复制依赖。
+`ScenePersistence::save` 在 capture 之前进入目标来源，混合了非共享外部 Content 资产的 World 不能直接保存，即使目标来源存在同 ID 资产。内容迁移需要显式导入并重新绑定本地资产。普通加载和保存不会隐式复制依赖。
 
 `read(path/ref)` 返回绑定来源的 `{ref, header, payload, encoding}`；`write(path/ref, header, payload)` 校验后写入完整内容，external 模式回写声明的 payload 文件。`save` 保留信封接口：external 模式传空 payload，读取并验证已有外置内容。每个文件原子替换；外置 payload 与信封的两次文件提交不是跨文件事务。
 
@@ -167,9 +167,9 @@ clearCache、重扫、保存不销毁 World、Solver 或 Frame 持有的旧资�
 
 ## Scene Save/Load
 
-SceneDocument 保存：对象 ID/显示名/位置/旋转/启用/交互；RenderComponent 的 primitive、scale/offset/animationScale、Material 资产引用和可见性；主碰撞体 shape/motion/layer/查询属性；关节碰撞体 joint/local/shape/blocking；动画与 mesh 引用、root-motion 选项、rootOffset 和实例属性；灯光组件、相机、导航（含 planeTolerance）；命名 Object 引用、Map 脚本引用和显式 gameplay JSON data。
+SceneDocument 保存：对象 ID/显示名/位置/旋转/启用/交互；RenderComponent 的 mesh 资产引用、scale/offset/animationScale、Material 资产引用和可见性；主碰撞体 shape/motion/layer/查询属性；关节碰撞体 joint/local/shape/blocking；动画与 mesh 引用、root-motion 选项、rootOffset 和实例属性；灯光组件、相机、导航（含 planeTolerance）；命名 Object 引用、Map 脚本引用和显式 gameplay JSON data。
 
-Map 写入 `version: 9`，以 `entities[].components` 保存实际存在的能力、父级持久 ID 和 Material / mesh 等资产引用。变换保存 local，ALAS1 资产信封仍为 version 1。v7/v8 地图先运行 `python tools/migrate_material_assets.py <Map.asset>` 提取内嵌材质；更早版本先使用对应的 ECS / 灯光迁移工具。加载旧地图会明确报错，不在读取时写入资产。
+Map 写入 `version: 10`，以 `entities[].components` 保存实际存在的能力、父级持久 ID 和 Material / mesh 等资产引用。变换保存 local，ALAS1 资产信封仍为 version 1。v7/v8 地图先运行 `python tools/migrate_material_assets.py <Map.asset>` 提取内嵌材质到 v9，再运行 `python tools/migrate_mesh_assets.py <Map.asset>` 转换图元为网格资产引用到 v10；更早版本先使用对应的 ECS / 灯光迁移工具。加载旧地图会明确报错，不在读取时写入资产。
 
 `render.material` 必须是 `{id,path}`，与 mesh 一样按资产 ID 加载。材质参数只保存在 Material 资产；地图不再保存 `materials`、`materialAssets` 表。运行时组件持有不可变 MaterialAsset，RenderScene 根据实际引用共享槽位，最后一个使用者释放后回收槽位并更新渲染代理。组件和持久化均不知道这些数字。Shader 与 Texture 继续使用相同的 AssetRef 机制。
 

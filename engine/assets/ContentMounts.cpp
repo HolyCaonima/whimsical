@@ -53,7 +53,7 @@ void ContentMounts::validateAlias(const std::string& alias) {
         throw std::invalid_argument("Mount must be one virtual root, e.g. /Game or /Library");
 }
 ContentSourceRef ContentMounts::mount(const std::string& alias, const std::filesystem::path& directory,
-                                      bool writable) {
+                                      bool writable, bool shared) {
     validateAlias(alias);
     auto root = std::filesystem::canonical(directory);
     if (!std::filesystem::is_directory(root))
@@ -65,7 +65,7 @@ ContentSourceRef ContentMounts::mount(const std::string& alias, const std::files
         if (inside(s.root, root) || inside(root, s.root))
             throw std::invalid_argument("Content roots must be distinct and must not overlap");
     }
-    auto source = std::make_shared<ContentSource>(newPersistentId(), alias, root, writable);
+    auto source = std::make_shared<ContentSource>(newPersistentId(), alias, root, writable, shared);
     sources_.emplace(alias, source);
     return source;
 }

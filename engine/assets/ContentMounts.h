@@ -17,8 +17,10 @@ class ContentSource {
     const std::string id, mount;
     const std::filesystem::path root;
     const bool writable;
-    ContentSource(std::string identity, std::string name, std::filesystem::path directory, bool writes)
-        : id(std::move(identity)), mount(std::move(name)), root(std::move(directory)), writable(writes) {}
+    const bool shared; // Other Content packages may persist dependencies on this mount.
+    ContentSource(std::string identity, std::string name, std::filesystem::path directory, bool writes,
+                  bool shares = false)
+        : id(std::move(identity)), mount(std::move(name)), root(std::move(directory)), writable(writes), shared(shares) {}
     bool active() const {
         return active_.load();
     }
@@ -41,7 +43,8 @@ class ContentMounts {
     ContentMounts(const ContentMounts&) = delete;
     ContentMounts& operator=(const ContentMounts&) = delete;
     ~ContentMounts();
-    ContentSourceRef mount(const std::string& alias, const std::filesystem::path&, bool writable = true);
+    ContentSourceRef mount(const std::string& alias, const std::filesystem::path&, bool writable = true,
+                           bool shared = false);
     void unmount(const std::string& alias);
     bool contains(const std::string& alias) const;
     ContentSourceRef source(const std::string& alias) const;

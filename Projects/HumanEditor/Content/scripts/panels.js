@@ -138,9 +138,9 @@ HE.addComponentDialog=function(e){
     var types=Engine.componentTypes(e),html='<p>Dependencies are validated by the engine component catalog.</p><select id="component-type">';
     types.forEach(function(t){if(!Engine.hasComponent(e,t.name))html+='<option value="'+t.name+'">'+t.name+(t.dependencies.length?' (requires '+t.dependencies.map(function(d){return d.name;}).join(', ')+')':'')+'</option>';});
     html+='</select><textarea id="component-value"/>';
-    var defaults={transform:{position:[0,0,0]},render:{shape:'box',scale:[1,1,1]},collider:{shape:{type:'box',halfExtents:[0.5,0.5,0.5]}},light:{type:'point',color:[1,1,1],intensity:500},data:{},interactable:{},rootMotion:{mode:'transform'},joints:[],jointColliders:[]};
+    var defaults={transform:{position:[0,0,0]},render:{scale:[1,1,1]},collider:{shape:{type:'box',halfExtents:[0.5,0.5,0.5]}},light:{type:'point',color:[1,1,1],intensity:500},data:{},interactable:{},rootMotion:{mode:'transform'},joints:[],jointColliders:[]};
     HE.modal('Add component',html,[{label:'Add',run:function(d){var name=d.getElementById('component-type').getValue(),value=JSON.parse(d.getElementById('component-value').getValue());HE.command('Add '+name,function(){Engine.addComponent(e,name,value);});}},{label:'Cancel'}],function(d){
-        function fill(){var name=d.getElementById('component-type').getValue(),value=HE.copy(defaults[name]||{});if(name==='render')value.material=HE.defaultMaterial();d.getElementById('component-value').setValue(JSON.stringify(value,null,2));}
+        function fill(){var name=d.getElementById('component-type').getValue(),value=HE.copy(defaults[name]||{});if(name==='render'){value.material=HE.defaultMaterial();value.mesh=Engine.asset('/Engine/Meshes/Box');}d.getElementById('component-value').setValue(JSON.stringify(value,null,2));}
         d.getElementById('component-type').on('change',fill);fill();
     });
 };

@@ -25,7 +25,7 @@ void RenderSystem::add(Entity e, RenderComponent appearance, std::shared_ptr<con
     auto batch = Changes::Batch(s.changes);
     auto& r = s.registry.emplace<Renderable>(e, Renderable{appearance, std::move(mesh)});
     r.slot = s.renderScene.create(proxyTransform(t, r),
-                                  {e, 0, appearance.shape,
+                                  {e, 0,
                                    s.enabled(e) && appearance.visible,
                                    appearance.castShadow, appearance.overlay, appearance.overlayColor}, appearance.material);
     if (r.mesh)
@@ -57,7 +57,7 @@ void RenderSystem::publishTransform(Entity e) {
 void RenderSystem::publishAttributes(Entity e) {
     if (auto r = s.registry.tryGet<Renderable>(e))
         s.renderScene.setAttributes(r->slot,
-                                    {e, 0, r->appearance.shape,
+                                    {e, 0,
                                      s.enabled(e) && r->appearance.visible,
                                      r->appearance.castShadow, r->appearance.overlay, r->appearance.overlayColor}, r->appearance.material);
 }

@@ -176,7 +176,7 @@ HE.add = function (kind, asset) {
     HE.command('Add ' + kind, function () {
         var c = {transform:{position:HE.copy(HE.camera.target)}};
         if (kind === 'Box' || kind === 'Capsule' || kind === 'StaticMesh') {
-            c.render = {shape:kind === 'Capsule' ? 'capsule' : 'box', scale:[1,1,1], material:HE.defaultMaterial()};
+            c.render = {mesh:Engine.asset('/Engine/Meshes/'+(kind === 'Capsule' ? 'Capsule' : 'Box')), scale:[1,1,1], material:HE.defaultMaterial()};
             if (asset) c.render.mesh = asset;
         } else if (kind !== 'Entity') {
             c.light = {type:kind.toLowerCase(), color:[1,0.88,0.72], intensity:kind === 'Directional' ? 2 : 500};

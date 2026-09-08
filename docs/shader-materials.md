@@ -126,7 +126,7 @@ invalidate history. Ordinary values/textures invalidate history without Shader c
 
 ## Persistence and migration
 
-Map payloads use version 9; the outer ALAS1 envelope stays version 1. Each
+Map payloads use version 10; the outer ALAS1 envelope stays version 1. Each
 `render.material` is an AssetRef, just like `mesh`. Runtime components retain immutable
 Material assets, while RenderScene owns the dense GPU material table and remaps only
 render proxies when an unused slot is reclaimed. Map material tables and the parallel

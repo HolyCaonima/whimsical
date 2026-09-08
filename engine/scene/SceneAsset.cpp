@@ -51,7 +51,7 @@ Json SceneResourceDescription::json() const {
 Json SceneDocument::json() const {
     validate();
     auto j = SceneResourceDescription::json();
-    j["version"] = 9;
+    j["version"] = 10;
     j["entities"] = Json::array();
     for (const auto& e : entities)
         j["entities"].push(e.json());
@@ -79,8 +79,8 @@ SceneResourceDescription SceneResourceDescription::fromJson(const Json& j) {
     return s;
 }
 SceneDocument SceneDocument::fromJson(const Json& j) {
-    if (j.at("version").uint() != 9)
-        throw std::invalid_argument("Map requires asset material references (v9); migrate with tools/migrate_material_assets.py");
+    if (j.at("version").uint() != 10)
+        throw std::invalid_argument("Map requires explicit mesh references (v10); migrate with tools/migrate_mesh_assets.py");
     SceneDocument s;
     static_cast<SceneResourceDescription&>(s) = SceneResourceDescription::fromJson(j);
     for (const auto& item : j.at("entities").elements())

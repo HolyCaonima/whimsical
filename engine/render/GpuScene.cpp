@@ -29,7 +29,7 @@ GpuScene::GpuScene(VulkanContext& context, const RenderOptions& opts) : vk(conte
                               VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
                                   VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                               BufferMemory::Upload);
-    initializeGeometry();
+    uploadGeometry({});
     updateTextures({});
 }
 
@@ -105,12 +105,14 @@ VkDeviceAddress GpuScene::alignedScratch(const Buffer& buffer) const {
     return (buffer.address + alignment - 1) / alignment * alignment;
 }
 
-uint32_t GpuScene::meshFor(uint32_t slot, const RenderProxy& p) const {
+std::optional<uint32_t> GpuScene::meshFor(uint32_t slot) const {
     auto mesh = staticSlots.find(slot);
     if (mesh != staticSlots.end())
         return mesh->second;
     auto found = skinMeshes.find(slot);
-    return found == skinMeshes.end() ? uint32_t(p.attributes.shape) : found->second;
+    if (found != skinMeshes.end())
+        return found->second;
+    return std::nullopt;
 }
 
 void GpuScene::buildMeshAS(VkCommandBuffer c, uint32_t m, bool update) {
@@ -160,12 +162,13 @@ void GpuScene::uploadGeometry(const std::vector<uint32_t>& added) {
     auto usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                  VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
     auto upload = [&](Buffer& buffer, const void* data, size_t bytes, VkBufferUsageFlags extra) {
-        if (buffer.size >= bytes)
+        if (buffer.handle && buffer.size >= bytes)
             return false;
         auto capacity = std::max<VkDeviceSize>(bytes, std::max<VkDeviceSize>(buffer.size * 2, 4096));
         vk.destroy(buffer);
         buffer = vk.buffer(capacity, usage | extra, BufferMemory::Upload);
-        std::memcpy(buffer.mapped, data, bytes);
+        if (bytes)
+            std::memcpy(buffer.mapped, data, bytes);
         ++geometryBufferGrowths;
         return true;
     };
@@ -192,19 +195,6 @@ void GpuScene::uploadGeometry(const std::vector<uint32_t>& added) {
             buildMeshAS(c, m, false);
         vk.endOneTime(c);
     }
-}
-
-void GpuScene::initializeGeometry() {
-    auto primitives = buildPrimitives(geometryVertices, geometryIndices);
-    meshes.assign(primitives.begin(), primitives.end());
-    uint32_t capsuleFirst = 24;
-    meshAllocations = {{0, capsuleFirst, false},
-                       {capsuleFirst, uint32_t(geometryVertices.size()) - capsuleFirst, false}};
-    vertexRanges.allocate(uint32_t(geometryVertices.size()));
-    indexRanges.allocate(uint32_t(geometryIndices.size()));
-    blas.resize(2);
-    blasScratch.resize(2);
-    uploadGeometry({0, 1});
 }
 
 uint32_t GpuScene::allocateGeometry(const std::vector<GpuVertex>& vertices,
@@ -514,15 +504,16 @@ void GpuScene::settleMotion(uint32_t slot) {
 // Attribute path: the instance's trailing uvec4 plus the whole acceleration structure
 // instance, which is where the visibility mask and geometry binding live.
 void GpuScene::writeAttributes(uint32_t slot, const RenderProxy& p) {
+    auto mesh = p.live ? meshFor(slot) : std::nullopt;
     auto color = glm::uvec3(glm::clamp(p.attributes.overlayColor, vec3(0), vec3(1)) * 255.f + .5f);
     static_cast<GpuInstance*>(instanceData.mapped)[slot].info = {
-        p.attributes.material, meshes[meshFor(slot, p)].firstIndex, p.attributes.entity,
+        p.attributes.material, mesh ? meshes[*mesh].firstIndex : 0, p.attributes.entity,
         (color.r << 8) | (color.g << 16) | (color.b << 24)};
     VkAccelerationStructureInstanceKHR a{};
     a.transform = rowMajor(shadowModel[slot]);
     a.instanceCustomIndex = slot;
     // Bit 0 is shadow visibility; the other bits retain material/reflective rays.
-    a.mask = p.live && p.attributes.visible && !p.attributes.overlay
+    a.mask = mesh && p.attributes.visible && !p.attributes.overlay
                  ? (p.attributes.castShadow ? 0xffu : 0xfeu) : 0u;
     a.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
     if (p.live) {
@@ -531,7 +522,7 @@ void GpuScene::writeAttributes(uint32_t slot, const RenderProxy& p) {
         if (state.mode == SurfaceMode::Opaque && state.cull == SurfaceCull::None)
             a.flags |= VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
     }
-    a.accelerationStructureReference = blas[meshFor(slot, p)].address;
+    a.accelerationStructureReference = mesh ? blas[*mesh].address : 0;
     static_cast<VkAccelerationStructureInstanceKHR*>(tlasInstances.mapped)[slot] = a;
     statistics.attributes++;
 }
@@ -633,8 +624,8 @@ void GpuScene::reserveTlas(const Frame& frame) {
     tlasBuild.pGeometries = &tlasGeometry;
     tlasBuild.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
     // The instance array is slot-addressed and covers dead slots too, so the primitive
-    // count only moves when the scene gains slots: hiding, showing, moving or
-    // destroying an object leaves it alone and takes the incremental path.
+    // count only moves when the scene gains slots. Visibility and transforms can
+    // refit; destroying geometry changes active instances and requires a rebuild.
     uint32_t count = uint32_t(frame.proxies.size());
     // Storage and scratch depend only on how many instances the structure can hold, so
     // reallocating is reserved for actually outgrowing it. Rebuilding reuses what is
@@ -696,12 +687,15 @@ void GpuScene::recordDraws(VkCommandBuffer c, const Frame& frame,
         const auto& p = frame.proxies[slot];
         if (!p.live || !p.attributes.visible || p.attributes.overlay != overlay)
             continue;
+        auto geometry = meshFor(slot);
+        if (!geometry)
+            continue;
         auto pipeline = overrideProgram ? overrideProgram : programs.at(frame.materials[p.attributes.material].shader);
         if (pipeline != bound) {
             vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             bound = pipeline;
         }
-        auto& mesh = meshes[meshFor(slot, p)];
+        auto& mesh = meshes[*geometry];
         vkCmdDrawIndexed(c, mesh.indexCount, 1, mesh.firstIndex, 0, slot);
     }
 }

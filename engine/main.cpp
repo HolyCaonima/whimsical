@@ -165,7 +165,7 @@ int main(int argc, char** argv) {
         Window window(width, height);
         Project project(projectPath);
         AssetManager assets(project.content());
-        assets.mount("/Engine", std::filesystem::path(AFTERLIGHT_ROOT) / "engine/Content", false);
+        assets.mount("/Engine", std::filesystem::path(AFTERLIGHT_ROOT) / "engine/Content", false, true);
         wchar_t windows[MAX_PATH];
         GetWindowsDirectoryW(windows, MAX_PATH);
         assets.mount("/SystemFonts", std::filesystem::path(windows) / "Fonts", false);
@@ -224,6 +224,7 @@ int main(int argc, char** argv) {
             if (visuals.empty())
                 throw std::invalid_argument("Stress props require a scene with a Material asset");
             auto material = world.get<Renderable>(visuals.front()).appearance.material;
+            auto mesh = assets.load<StaticMesh>(AssetPath("/Engine/Meshes/Box"));
             const auto side = uint32_t(std::ceil(std::sqrt(double(stress))));
             for (uint32_t i = 0; i < stress; i++) {
                 const float x = -11.f + float(i % side) * 22.f / float(side);
@@ -233,7 +234,7 @@ int main(int argc, char** argv) {
                 RenderComponent appearance;
                 appearance.scale = {.25f, .6f, .25f};
                 appearance.material = material;
-                world.render.add(id, appearance);
+                world.render.add(id, appearance, mesh);
                 if (stressMoving.size() < 8)
                     stressMoving.push_back(id);
             }

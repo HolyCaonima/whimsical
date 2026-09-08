@@ -24,7 +24,7 @@ def encode(header, payload):
 def migrate(path):
     original = path.read_text(encoding='utf-8').split('\n', 2)
     header, scene = read_asset(path)
-    if header['type'] != 'Map' or scene['version'] == 9:
+    if header['type'] != 'Map' or scene['version'] >= 9:
         return
     if scene['version'] not in (7, 8):
         raise ValueError(f'{path}: migrate older ECS/light formats before material extraction')

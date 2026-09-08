@@ -23,9 +23,7 @@ struct MaterialAsset;
 struct TextureAsset;
 struct CpuProfile;
 
-enum class Shape : uint32_t { Box, Capsule };
 struct RenderComponent {
-    Shape shape = Shape::Box;
     vec3 scale{1}, offset{0}, animationScale{1};
     std::shared_ptr<const MaterialAsset> material;
     bool visible = true;
@@ -50,13 +48,12 @@ struct ProxyTransform {
 struct ProxyAttributes {
     uint32_t entity = 0;
     uint32_t material = 0;
-    Shape shape = Shape::Box;
     bool visible = true;
     bool castShadow = true;
     bool overlay = false;
     vec3 overlayColor{1};
     bool operator==(const ProxyAttributes& o) const {
-        return entity == o.entity && material == o.material && shape == o.shape && visible == o.visible &&
+        return entity == o.entity && material == o.material && visible == o.visible &&
                castShadow == o.castShadow && overlay == o.overlay &&
                overlayColor == o.overlayColor;
     }

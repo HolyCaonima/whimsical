@@ -44,7 +44,7 @@ static Json argumentJson(duk_context* c, int index) {
 }
 static Json contentSourceJson(const ContentSourceRef& source) {
     return {{"mount", source->mount}, {"source", source->id},
-            {"root", source->root.u8string()}, {"writable", source->writable}};
+            {"root", source->root.u8string()}, {"writable", source->writable}, {"shared", source->shared}};
 }
 // Keep RAII owners out of the callback frame that returns errors through Duktape longjmp.
 __declspec(noinline) static duk_ret_t contentDispatch(duk_context* c) {

@@ -174,12 +174,8 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
             [](const Json& j) {
                 SceneRender v;
                 auto& a = v.appearance;
-                if (j.contains("shape")) {
-                    auto kind = j.at("shape").string();
-                    if (kind != "box" && kind != "capsule")
-                        throw std::invalid_argument("Unknown render shape");
-                    a.shape = kind == "box" ? Shape::Box : Shape::Capsule;
-                }
+                if (j.contains("shape"))
+                    throw std::invalid_argument("Render.shape was removed; bind a Mesh asset instead");
                 if (j.contains("scale"))
                     a.scale = vector3(j.at("scale"));
                 if (j.contains("offset"))
@@ -202,8 +198,7 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
             },
             [](const SceneRender& v) {
                 const auto& a = v.appearance;
-                Json j{{"shape", a.shape == Shape::Box ? "box" : "capsule"},
-                       {"scale", vector(a.scale)},
+                Json j{{"scale", vector(a.scale)},
                        {"offset", vector(a.offset)},
                        {"animationScale", vector(a.animationScale)},
                        {"material", v.material.json()},

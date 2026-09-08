@@ -78,8 +78,7 @@ uint32_t RenderScene::create(const ProxyTransform& transform, ProxyAttributes at
         slot = free_.back();
         free_.pop_back();
         // A reused slot can reference different geometry than it did before.
-        if (proxies_[slot].attributes.shape != attributes.shape)
-            ++topology_;
+        ++topology_;
     }
     proxies_[slot] = {transform, attributes, true};
     ++revision_;
@@ -95,6 +94,7 @@ void RenderScene::destroy(uint32_t slot) {
     p.attributes.visible = false;
     free_.push_back(slot);
     ++revision_;
+    ++topology_; // Removing geometry turns its TLAS instance inactive.
     mark(slot, MarkStructural);
 }
 void RenderScene::setTransform(uint32_t slot, const ProxyTransform& transform) {
@@ -115,9 +115,6 @@ void RenderScene::setAttributes(uint32_t slot, ProxyAttributes attributes,
         attributes.material = retainMaterial(material);
     if (proxies_[slot].attributes == attributes && !materialChanged)
         return;
-    // Geometry is the one attribute a consumer cannot fold into an incremental update.
-    if (proxies_[slot].attributes.shape != attributes.shape)
-        ++topology_;
     proxies_[slot].attributes = attributes;
     if (materialChanged)
         releaseMaterial(previous);

@@ -21,7 +21,7 @@ def uid(name):return uuid.uuid5(uuid.NAMESPACE_URL,'afterlight/honeybud/'+name).
 objects=[]
 def object_at(name,p,scale=(1,1,1),material=0,visible=True):
     return {'id':uid(name),'name':name,'enabled':True,'components':{'transform':{'position':list(p),'rotation':[0,0,0,1]},
-            'render':{'shape':'box','scale':list(scale),'offset':[0,0,0],'animationScale':[1,1,1],'material':material,'visible':visible},
+            'render':{'scale':list(scale),'offset':[0,0,0],'animationScale':[1,1,1],'material':material,'visible':visible},
             }}
 
 for i,instance in enumerate(manifest['placements']):
@@ -70,7 +70,7 @@ script_path=CONTENT/'scripts/levels/honeybud_court.asset'
 write_asset(script_path,'Script',script.encode())
 lighting=json.loads((ROOT/'Projects/Afterlight/SourceArt/lighting.json').read_text())['HoneybudCourt']
 objects.extend(copy.deepcopy(lighting['lights']))
-scene={'version':9,'entities':objects,
+scene={'version':10,'entities':objects,
        'camera':{'target':[0,.5,-.8],'yaw':.32,'pitch':.57,'distance':27.5,'fov':.72},
        'navigation':{'min':[-10.6,0,-8.7],'max':[10.6,8,8.7],'cellSize':.25,'planeTolerance':.03},
        'references':references,'data':{'theme':'Honeybud Court'},

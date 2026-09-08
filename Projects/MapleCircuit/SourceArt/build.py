@@ -124,7 +124,7 @@ objects=[]; references={}; meshes={}; material=[]
 def obj(name,p=(0,0,0),scale=(1,1,1),mesh=None,mat=0,yaw=0,half=None,layer=1,enabled=True,ref=False):
     components=dict(transform=dict(position=list(p),rotation=[0,math.sin(yaw/2),0,math.cos(yaw/2)]))
     if mesh:
-        components['render']=dict(shape='box',scale=list(scale),offset=[0,0,0],animationScale=[1,1,1],material=material[mat],visible=True,mesh=mesh)
+        components['render']=dict(scale=list(scale),offset=[0,0,0],animationScale=[1,1,1],material=material[mat],visible=True,mesh=mesh)
     if half:
         components['collider']=dict(shape=dict(type='box',halfExtents=list(half)),motion='kinematic' if ref else 'static',
                                    layer=layer,blocking=True,pickable=False,walkable=False)
@@ -294,7 +294,7 @@ objects.extend(lighting['lights'])
 for entity in objects:
     if entity['name'] in lighting['renderOverrides']:
         entity['components']['render'].update(lighting['renderOverrides'][entity['name']])
-scene=dict(version=9,entities=objects,
+scene=dict(version=10,entities=objects,
     camera=dict(target=[-60,1,-30],yaw=math.pi,pitch=.27,distance=10,fov=.95),
     navigation=dict(min=[-120,0,-120],max=[120,12,120],cellSize=1,planeTolerance=.03),
     references=references,data=data,scripts=[])

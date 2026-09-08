@@ -34,7 +34,7 @@ Details 展示数字只是这个所有权错误的表现，换成名称不会修
 ```js
 var surface = Engine.asset('/Game/materials/RainCourt/Foundation');
 Engine.setComponent(entity, 'render', {
-    shape: 'box', scale: [1, 1, 1], material: surface
+    mesh: Engine.asset('/Engine/Meshes/Box'), scale: [1, 1, 1], material: surface
 });
 Engine.setMaterial(entity, surface); // 也接受资产路径
 var description = Engine.content.describe(surface); // {ref, header}，不加载 payload

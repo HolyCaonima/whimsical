@@ -11,7 +11,7 @@ class AssetManager {
     using Loader =
         std::function<std::shared_ptr<Asset>(AssetManager&, const AssetHeader&, const std::string&)>;
     enum class Encoding { Raw, Text, Json };
-    // Owner scopes close dependency resolution; caller scopes only supply a default /Game origin.
+    // Owner scopes allow local and explicitly shared dependencies; caller scopes supply /Game origin.
     class Scope {
         AssetManager& manager_;
         ContentSourceRef previous_;
@@ -36,7 +36,8 @@ class AssetManager {
     std::shared_ptr<const ContentMounts> mounts() const {
         return mounts_;
     }
-    ContentSourceRef mount(const std::string& alias, const std::filesystem::path&, bool writable = true);
+    ContentSourceRef mount(const std::string& alias, const std::filesystem::path&, bool writable = true,
+                           bool shared = false);
     void unmount(const std::string& alias);
     ContentSourceRef origin(const AssetPath&) const;
     ContentSourceRef origin(const AssetRef&) const;

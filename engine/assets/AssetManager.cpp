@@ -26,7 +26,7 @@ std::string readBytes(std::istream& file) {
 AssetManager::Scope::Scope(AssetManager& manager, ContentSourceRef source, bool closed)
     : manager_(manager), previous_(manager.context_), closed_(manager.closed_) {
     manager.checkThread();
-    if (manager.closed_ && (!closed || source != manager.context_))
+    if (manager.closed_ && (!closed || (source != manager.context_ && !source->shared)))
         throw std::invalid_argument("Cannot escape a Content dependency scope");
     manager.context_ = std::move(source);
     manager.closed_ = closed;
@@ -71,9 +71,9 @@ void AssetManager::checkMutation() const {
         throw std::logic_error("Cannot mutate mounts or indices during dependency resolution");
 }
 ContentSourceRef AssetManager::mount(const std::string& alias, const std::filesystem::path& root,
-                                     bool writable) {
+                                     bool writable, bool shared) {
     checkMutation();
-    auto source = mounts_->mount(alias, root, writable);
+    auto source = mounts_->mount(alias, root, writable, shared);
     try {
         stores_.emplace(source->id, scanned(source));
     } catch (...) {
@@ -99,14 +99,14 @@ ContentSourceRef AssetManager::origin(const AssetPath& path) const {
     auto source = alias == "/Game" && context_ ? context_ : mounts_->source(alias);
     if (!source->active())
         throw std::invalid_argument("Content mount is no longer active");
-    if (closed_ && source != context_)
+    if (closed_ && source != context_ && !source->shared)
         throw std::invalid_argument("Cross-Content asset dependency");
     return source;
 }
 ContentSourceRef AssetManager::origin(const AssetRef& ref) const {
     checkThread();
     auto source = ref.source.empty() ? origin(ref.path) : mounts_->byId(ref.source);
-    if (closed_ && source != context_)
+    if (closed_ && source != context_ && !source->shared)
         throw std::invalid_argument("Cross-Content asset reference");
     return source;
 }
@@ -114,7 +114,7 @@ ContentFile AssetManager::file(const std::string& path) const {
     checkThread();
     if (ContentMounts::isUri(path)) {
         auto result = mounts_->fromUri(path);
-        if (closed_ && result.source != context_)
+        if (closed_ && result.source != context_ && !result.source->shared)
             throw std::invalid_argument("Cross-Content file reference");
         return result;
     }
@@ -220,7 +220,8 @@ Json AssetManager::references(const Json& value, bool persistent) const {
         if (value.contains("id") && value.contains("path")) {
             auto ref = resolve(AssetRef::fromJson(value));
             if (persistent) {
-                ref.path = local(ref.path);
+                if (origin(ref) == context_)
+                    ref.path = local(ref.path);
                 ref.source.clear();
             }
             return ref.json();

@@ -6,7 +6,7 @@ function expect(ok, message) {
 function box(name, z, size, material) {
     return Engine.create({name: name, components: {
         transform: {position: [0, 0, z]},
-        render: {shape: "box", scale: size, material: material}
+        render: {mesh: Engine.asset('/Engine/Meshes/Box'), scale: size, material: material}
     }});
 }
 function initialize() {

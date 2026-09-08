@@ -124,7 +124,6 @@ class GpuScene {
     void destroyAS(AccelerationStructure&);
     AccelerationStructure createAS(VkAccelerationStructureTypeKHR, VkDeviceSize);
     VkDeviceAddress alignedScratch(const Buffer&) const;
-    void initializeGeometry();
     uint32_t allocateGeometry(const std::vector<GpuVertex>&, const std::vector<uint32_t>&, bool dynamic);
     void releaseGeometry(uint32_t);
     void syncGeometry(const Frame&);
@@ -133,7 +132,7 @@ class GpuScene {
     void buildMeshAS(VkCommandBuffer, uint32_t mesh, bool update);
     void updateTextures(const std::vector<std::shared_ptr<const TextureAsset>>&);
     void rebind();
-    uint32_t meshFor(uint32_t slot, const RenderProxy&) const;
+    std::optional<uint32_t> meshFor(uint32_t slot) const;
     void writeTransform(uint32_t slot, const RenderProxy&, bool zeroMotion);
     void settleMotion(uint32_t slot);
     void writeAttributes(uint32_t slot, const RenderProxy&);
