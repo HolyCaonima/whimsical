@@ -13,6 +13,7 @@ struct SystemComponent {};
 struct Identity {
     using Ownership = SystemComponent;
     std::string name, persistentId;
+    bool persistent = true; // Local authoring membership; children inherit exclusion.
 };
 struct Disabled {
     using Ownership = SystemComponent;

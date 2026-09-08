@@ -3,7 +3,7 @@
 #include "core/World.h"
 #include "core/FrameMailbox.h"
 #include "navigation/Navigation.h"
-#include "scripting/ScriptRuntime.h"
+#include "scripting/RuntimeHost.h"
 #include <algorithm>
 #include <iostream>
 #include <stdexcept>
@@ -13,7 +13,7 @@ static void check(bool condition, const char* reason) {
     if (!condition)
         throw std::runtime_error(reason);
 }
-static void tickAnimated(ScriptRuntime& scripts, World& world, const Input& input) {
+static void tickAnimated(RuntimeHost& scripts, World& world, const Input& input) {
     float yaw = world.get<Transform>(world.gameplay.playerId).yaw();
     scripts.tick(1.f / 60, input);
     auto direction = world.animation.animationOutput(world.gameplay.playerId).rootMotion.rotation * vec3(0, 0, 1);
@@ -23,7 +23,7 @@ static void tickAnimated(ScriptRuntime& scripts, World& world, const Input& inpu
 int main() {
     try {
         World w;
-        ScriptRuntime js(w, testAssets());
+        RuntimeHost js(w, testAssets());
         js.initialize(testProject());
         check(w.gameplay.playerId != 0, "JS must spawn player");
         check(w.registry().entities().size() > 20 && w.physics().size() == w.registry().view<Collider>().size(),
@@ -114,7 +114,7 @@ int main() {
         check(center && std::isfinite(center->x) && std::isfinite(center->z),
               "Physical ground picking failed");
         World interactionWorld;
-        ScriptRuntime gameplay(interactionWorld, testAssets());
+        RuntimeHost gameplay(interactionWorld, testAssets());
         gameplay.initialize(testProject());
         Input click;
         tickAnimated(gameplay, interactionWorld, click);
@@ -253,7 +253,7 @@ int main() {
         // The world has to publish those events on the caller's behalf; forgetting to
         // would leave the renderer showing stale geometry with no way to notice.
         World tracked;
-        ScriptRuntime trackedJs(tracked, testAssets());
+        RuntimeHost trackedJs(tracked, testAssets());
         trackedJs.initialize(testProject());
         auto opened = tracked.snapshot({}, 1, 0, 0);
         check(opened.proxies.size() == tracked.registry().view<Renderable>().size() &&

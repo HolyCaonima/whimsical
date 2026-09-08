@@ -1,7 +1,7 @@
 #include "TestEntities.h"
 #include "TestProject.h"
 #include "scene/ScenePersistence.h"
-#include "scripting/ScriptRuntime.h"
+#include "scripting/RuntimeHost.h"
 #include "core/FrameMailbox.h"
 #include <fstream>
 #include <iostream>
@@ -115,7 +115,7 @@ static void registry(const fs::path& directory) {
     check(assets.size() == 0 && project.startupMap().empty(),
           "Empty project must open without a startup Map");
     World emptyWorld;
-    ScriptRuntime emptyScripts(emptyWorld, assets);
+    RuntimeHost emptyScripts(emptyWorld, assets);
     emptyScripts.initialize();
     emptyScripts.tick(1.f / 60, {});
     for (const char* invalid : {"models/a", "/Game", "/Game/../a", "/Game/a.asset", "/Game/a/", "/Game/a//b",
@@ -218,7 +218,7 @@ static void scene(const fs::path& directory) {
     check(human->data->network->header().storage == PayloadStorage::External,
           "ONNX references must use header-only assets");
     World world;
-    ScriptRuntime scripts(world, assets);
+    RuntimeHost scripts(world, assets);
     scripts.initialize(Project(directory));
     check(ScenePersistence::capture(world, assets).json() == original->scene.json(),
           "Load/capture must round-trip the authored Map exactly");

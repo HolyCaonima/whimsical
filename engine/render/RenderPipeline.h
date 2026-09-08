@@ -27,6 +27,7 @@ struct FrameSetup {
     bool clearHistory = false; // history storage itself is undefined and must be zeroed
     bool audit = false;
     bool capture = false;
+    ViewRect viewport;
     rg::ResourceList auditSignals;
 };
 

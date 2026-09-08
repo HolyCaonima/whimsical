@@ -90,7 +90,7 @@ Transform 层级保持刚体平移与旋转：`world = parent.world * local`。�
 
 `setParent(child,parent,keepWorld=true)` 默认保持世界姿态，false 保持 local，0 解除父级。环路与缺失父级在写入前拒绝。父级修改只传播子树；禁用继承不覆盖子级本地 Disabled。Maple Circuit 的车轮仍通过局部姿态跟随车身。
 
-更新顺序保持明确的单线程阶段：脚本 fixedUpdate → 按层级父先子后求解 Animator → 计算候选根运动和 FK → 一起接受 solver 输出、Transform 和 JointPose → 地图请求及 JS realm/UI → RenderSystem.extract → 不可变 Frame / FrameMailbox → 渲染线程。
+更新顺序保持明确的单线程阶段：宿主 fixedUpdate → 启用模拟时的场景 fixedUpdate → 按层级父先子后求解 Animator → 计算候选根运动和 FK → 一起接受 solver 输出、Transform 和 JointPose → 地图请求及 JS realm/UI → RenderSystem.extract → 不可变 Frame / FrameMailbox → 渲染线程。
 
 求解失败、非法输出或根运动规划失败时，保留上次接受的输出、根变换和关节；下次求解从已接受姿态重置 solver 历史。提交后的派生同步失败走上述向前恢复流程，不假装回滚求解器内部状态。
 

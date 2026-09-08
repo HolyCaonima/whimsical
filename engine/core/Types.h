@@ -11,6 +11,8 @@
 #include <memory>
 #include <string>
 #include <cstdint>
+#include <optional>
+#include <algorithm>
 namespace afterlight {
 namespace ui {
 struct UiFrame;
@@ -104,6 +106,27 @@ struct Camera {
         return p;
     }
 };
+// Presentation coordinates are window pixels. Zero size selects the whole window.
+struct ViewRect {
+    uint32_t x = 0, y = 0, width = 0, height = 0;
+    ViewRect fit(uint32_t surfaceWidth, uint32_t surfaceHeight) const {
+        if (!surfaceWidth || !surfaceHeight)
+            return {};
+        if (!width && !height && !x && !y)
+            return {0, 0, surfaceWidth, surfaceHeight};
+        auto left = std::min(x, surfaceWidth), top = std::min(y, surfaceHeight);
+        return {left, top, std::min(width, surfaceWidth - left), std::min(height, surfaceHeight - top)};
+    }
+    bool contains(float px, float py) const {
+        return px >= x && py >= y && px < double(x) + width && py < double(y) + height;
+    }
+};
+// A host-owned observation of a scene. Neither the rectangle nor an override camera is
+// authored scene data. The initial single-view host follows the map camera by default.
+struct RenderView {
+    ViewRect rectangle;
+    std::optional<Camera> camera;
+};
 struct AnimationInspection {
     uint32_t entity = 0;
     std::string name, solver;
@@ -152,6 +175,7 @@ struct Frame {
     std::vector<Light> lights;
     std::vector<uint32_t> lightEntities; // Packed light identity for temporal history.
     Camera camera;
+    ViewRect viewport;
     Input input;
     vec3 player{0}, destination{0};
     uint32_t selected = 0, hovered = 0;

@@ -200,12 +200,6 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
             });
     }
 
-    auto* ui = setup.ui;
-    const auto* uiFrame = frame.ui.get();
-    graph.add("RmlUi Overlay")
-        .color(shade.hud, black())
-        .record([ui, uiFrame](const PassContext& c) { ui->draw(c.command, c.width, c.height, uiFrame); });
-
     auto* gpuScene = setup.scene;
     if (gpuScene->skinsDirty())
         // A refit rewrites the bottom-level structures of the meshes that moved and leaves
@@ -319,8 +313,8 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
         .overwrite(shade.denoisedDiffuse, Access::Compute)
         .overwrite(shade.denoisedSpecular, Access::Compute)
         .sideEffect()
-        .record([this, denoiser, &camera, profiler, index = uint32_t(setup.frameNumber),
-                 reset = setup.reset, ms = setup.frameMs](const PassContext& c) {
+        .record([this, denoiser, &camera, profiler, index = uint32_t(setup.frameNumber), reset = setup.reset,
+                 ms = setup.frameMs](const PassContext& c) {
             std::array<Image*, size_t(nrd::ResourceType::MAX_NUM)> resources{};
             auto bind = [&](nrd::ResourceType type, ResourceRef ref) {
                 resources[size_t(type)] = &c.image(ref);
@@ -337,7 +331,7 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
             denoiser->dispatch(c.command, resources, camera, index, reset, ms, *profiler);
         });
 
-    graph.add("Composition + Tone Map + HUD")
+    graph.add("Scene Composition + Tone Map")
         .dispatch(*compute_[Composite])
         .overwrite(shade.display, Access::Compute);
 
@@ -351,39 +345,58 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
         addImageReadback(graph, "Audit Readback", r_.output.audit, std::move(copies));
     }
 
-    // The display image is half float; the screenshot buffer is not. The blit is what
-    // converts, so it needs a target of its own before the copy.
-    if (setup.capture) {
-        auto display = shade.display, image = r_.output.capture, buffer = r_.output.screenshot;
-        graph.add("Screenshot Resolve")
-            .read(display, Access::Transfer)
-            .overwrite(image, Access::Transfer)
-            .record([display, image](const PassContext& c) {
-                VkImageBlit region{};
-                region.srcSubresource = region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-                region.srcOffsets[1] = {int32_t(c.width), int32_t(c.height), 1};
-                region.dstOffsets[1] = {int32_t(c.width), int32_t(c.height), 1};
-                vkCmdBlitImage(c.command, c.image(display).handle, c.image(display).layout,
-                               c.image(image).handle, c.image(image).layout, 1, &region, VK_FILTER_NEAREST);
-            });
-        addImageReadback(graph, "Screenshot Readback", buffer, {{image}});
-    }
+    // The scene's temporal images are view-sized. Presentation and UI are window-sized.
+    // Keeping this boundary at composition means EntityID and colour use exactly the
+    // same projection, independent of where the view is placed in the application.
+    auto display = shade.display, presented = r_.output.presentation;
+    graph.add("Clear Presentation")
+        .overwrite(presented, Access::Transfer)
+        .record([presented](const PassContext& c) {
+            VkClearColorValue background{{.025f, .025f, .025f, 1.f}};
+            VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            auto& image = c.image(presented);
+            vkCmdClearColorImage(c.command, image.handle, image.layout, &background, 1, &range);
+        });
+    graph.add("Present Scene View")
+        .read(display, Access::Transfer)
+        .modify(presented, Access::Transfer)
+        .record([display, presented, rect = setup.viewport](const PassContext& c) {
+            if (!rect.width || !rect.height)
+                return;
+            auto& source = c.image(display);
+            auto& target = c.image(presented);
+            VkImageBlit region{};
+            region.srcSubresource = region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            region.srcOffsets[1] = {int32_t(source.width), int32_t(source.height), 1};
+            region.dstOffsets[0] = {int32_t(rect.x), int32_t(rect.y), 0};
+            region.dstOffsets[1] = {int32_t(rect.x + rect.width), int32_t(rect.y + rect.height), 1};
+            vkCmdBlitImage(c.command, source.handle, source.layout, target.handle, target.layout, 1, &region,
+                           VK_FILTER_NEAREST);
+        });
+    graph.add("RmlUi Overlay")
+        .color(presented)
+        .record([ui = setup.ui, uiFrame = frame.ui.get()](const PassContext& c) {
+            ui->draw(c.command, c.width, c.height, uiFrame);
+        });
+    if (setup.capture)
+        addImageReadback(graph, "Screenshot Readback", r_.output.screenshot, {{presented}});
 
     // The swapchain declares a Present handover, so the frame ends in PRESENT_SRC without a
     // pass whose whole job was the transition, and this blit survives because it produced
     // contents the presentation engine consumes.
-    auto display = shade.display, swapchain = r_.output.swapchain;
+    auto swapchain = r_.output.swapchain;
     graph.add("Swapchain Blit")
-        .read(display, Access::Transfer)
+        .read(presented, Access::Transfer)
         .overwrite(swapchain, Access::Transfer)
-        .record([display, swapchain](const PassContext& c) {
+        .record([presented, swapchain](const PassContext& c) {
             auto& target = c.image(swapchain);
+            auto& source = c.image(presented);
             VkImageBlit region{};
             region.srcSubresource = region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-            region.srcOffsets[1] = {int32_t(c.width), int32_t(c.height), 1};
+            region.srcOffsets[1] = {int32_t(source.width), int32_t(source.height), 1};
             region.dstOffsets[1] = {int32_t(target.width), int32_t(target.height), 1};
-            vkCmdBlitImage(c.command, c.image(display).handle, c.image(display).layout, target.handle,
-                           target.layout, 1, &region, VK_FILTER_NEAREST);
+            vkCmdBlitImage(c.command, source.handle, source.layout, target.handle, target.layout, 1, &region,
+                           VK_FILTER_NEAREST);
         });
 }
 } // namespace afterlight

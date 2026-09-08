@@ -2,7 +2,7 @@
 #include "core/FrameMailbox.h"
 #include "assets/EngineAssets.h"
 #include "scene/ScenePersistence.h"
-#include "scripting/ScriptRuntime.h"
+#include "scripting/RuntimeHost.h"
 #include <cstring>
 #include <iostream>
 #include <thread>
@@ -23,7 +23,7 @@ int main() {
         h.name = "Test RT";
         auto ref = assets.save(AssetPath("/Game/Target"), h, R"({"width":2,"height":1,"format":"R32Uint"})");
         World world;
-        ScriptRuntime js(world, assets);
+        RuntimeHost js(world, assets);
         js.execute(R"(
             function expect(v, why) { if (!v) throw new Error(why); }
             var asset = Engine.asset('/Game/Target');

@@ -3,7 +3,7 @@
 #include "animation/Animation.h"
 #include "animation/ai4animation/Controller.h"
 #include "core/World.h"
-#include "scripting/ScriptRuntime.h"
+#include "scripting/RuntimeHost.h"
 #include <fstream>
 #include <sstream>
 #include <iostream>
@@ -114,7 +114,7 @@ static void framework() {
 }
 static void scriptIntegration() {
     World world;
-    ScriptRuntime script(world, testAssets());
+    RuntimeHost script(world, testAssets());
     script.initialize(testProject());
     auto id = world.gameplay.playerId;
     script.execute("Engine.animationDetach(" + std::to_string(id) + ");Engine.animation(" +

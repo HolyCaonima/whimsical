@@ -23,12 +23,23 @@ Project::Project(const std::filesystem::path& path) {
         startupMap_ = AssetPath(j.at("startupMap").string());
     for (const auto& script : j.at("scripts").elements())
         scripts_.emplace_back(script.string());
+    if (j.contains("hostScripts"))
+        for (const auto& script : j.at("hostScripts").elements())
+            hostScripts_.emplace_back(script.string());
+    if (j.contains("startupMode")) {
+        const auto& mode = j.at("startupMode").string();
+        if (mode != "run" && mode != "load")
+            throw std::invalid_argument("Project startupMode must be run or load");
+        runOnStartup_ = mode == "run";
+    }
     auto requireLocal = [](const AssetPath& path) {
         if (!path.empty() && path.string().rfind("/Game/", 0) != 0)
             throw std::invalid_argument("Project startup paths must be local /Game references");
     };
     requireLocal(startupMap_);
     for (const auto& script : scripts_)
+        requireLocal(script);
+    for (const auto& script : hostScripts_)
         requireLocal(script);
     root_ = std::filesystem::canonical(file).parent_path();
     if (!std::filesystem::is_directory(content()))

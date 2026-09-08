@@ -152,6 +152,8 @@ captures/                 实际 GPU 截图和运行报告
 
 **UI。** UI 由独立 **uiCore / RmlUi** 驱动：项目 JS 通过 `Engine.ui` 操作文档、DOM 和事件，控制台与项目面板共用 RmlUi 布局和 Vulkan UI 后端，绘制列表作为不可变快照跨线程传递。见 [UI Core](docs/ui-core.md)。
 
+**应用宿主与场景。** `RuntimeHost` 分开管理常驻应用脚本、场景程序、模拟推进和独立视图。项目 JS 可跨 Content 装载场景数据而保留自己的 UI，查询/编辑 ECS 和场景资源，显式 Play/Pause/Stop，并通过临时对象标记隔离工具与地图的保存范围。视图颜色和 DrawEntityID 共用相机投影，UI 在窗口尺寸下合成。配置、API 与验证入口见 [运行宿主与视图](docs/runtime-host.md)。
+
 线程所有权、帧快照 mailbox、常驻 RenderScene 的槽位契约和 JS 绑定表见 [架构](docs/architecture.md)。
 
 ## 已实现的渲染路径

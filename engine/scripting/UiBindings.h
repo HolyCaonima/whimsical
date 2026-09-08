@@ -14,7 +14,7 @@ class UiBindings {
 
   public:
     UiBindings(duk_context*, ui::UiCore&, std::function<void(const std::string&)> log,
-               std::function<std::string(const std::string&)> resolve);
+               std::function<std::string(const std::string&)> resolve, std::function<int(int)> invoke);
     ~UiBindings();
     void setVisible(bool);
 };

@@ -8,6 +8,8 @@ class Project {
     std::string id_, name_;
     AssetPath startupMap_;
     std::vector<AssetPath> scripts_;
+    std::vector<AssetPath> hostScripts_;
+    bool runOnStartup_ = true;
 
   public:
     // Opens either the project directory or its .project file.
@@ -30,6 +32,12 @@ class Project {
     }
     const std::vector<AssetPath>& scripts() const {
         return scripts_;
+    }
+    const std::vector<AssetPath>& hostScripts() const {
+        return hostScripts_;
+    }
+    bool runOnStartup() const {
+        return runOnStartup_;
     }
 };
 } // namespace afterlight

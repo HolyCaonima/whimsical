@@ -1,7 +1,7 @@
 #include "TestProject.h"
 #include "animation/Animation.h"
 #include "animation/ai4animation/Controller.h"
-#include "scripting/ScriptRuntime.h"
+#include "scripting/RuntimeHost.h"
 #include "uiCore/UiCore.h"
 #include <RmlUi/Core.h>
 #include <iostream>
@@ -63,7 +63,7 @@ static void framework() {
 static void scene() {
     World world;
     ui::UiCore uiCore(testAssets().mounts());
-    ScriptRuntime scripts(world, testAssets(), &uiCore);
+    RuntimeHost scripts(world, testAssets(), &uiCore);
     scripts.initialize(testProject());
     auto player = world.gameplay.playerId;
     auto view = world.animation.inspectAnimation(player);

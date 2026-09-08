@@ -52,11 +52,9 @@ static Json migrateEntity(const Json& item) {
     return {
         {"id", item.at("id")}, {"name", item.at("name")}, {"enabled", item.at("enabled")}, {"components", c}};
 }
-Json SceneDocument::json() const {
+Json SceneResourceDescription::json() const {
     validate();
-    Json j{{"version", 7},
-           {"scripts", Json::array()},
-           {"entities", Json::array()},
+    Json j{{"scripts", Json::array()},
            {"materials", Json::array()},
            {"camera",
             {{"target", vector(camera.target)},
@@ -81,15 +79,19 @@ Json SceneDocument::json() const {
         j["materialAssets"].push({{"index", m.first}, {"asset", m.second.json()}});
     for (const auto& r : references)
         j["references"][r.first] = r.second;
+    return j;
+}
+Json SceneDocument::json() const {
+    validate();
+    auto j = SceneResourceDescription::json();
+    j["version"] = 7;
+    j["entities"] = Json::array();
     for (const auto& e : entities)
         j["entities"].push(e.json());
     return j;
 }
-SceneDocument SceneDocument::fromJson(const Json& j) {
-    auto version = j.at("version").uint();
-    if (version < 3 || version > 7)
-        throw std::invalid_argument("Unsupported Map version");
-    SceneDocument s;
+SceneResourceDescription SceneResourceDescription::fromJson(const Json& j) {
+    SceneResourceDescription s;
     for (const auto& script : j.at("scripts").elements())
         s.scripts.push_back(AssetRef::fromJson(script));
     for (const auto& m : j.at("materials").elements())
@@ -97,17 +99,6 @@ SceneDocument SceneDocument::fromJson(const Json& j) {
     if (j.contains("materialAssets"))
         for (const auto& m : j.at("materialAssets").elements())
             s.materialAssets.emplace(m.at("index").uint(), AssetRef::fromJson(m.at("asset")));
-    // Older maps import global lights as ordinary entities. New saves only use components.
-    if (version < 6)
-        for (const auto& l : j.at("lights").elements()) {
-            auto p = vector4(l.at("positionRadius")), c = vector4(l.at("colorIntensity"));
-            SceneEntity light;
-            light.id = newPersistentId();
-            light.name = "Light";
-            light.components.set(SceneTransform{{vec3(p)}});
-            light.components.set(LightComponent{vec3(c), c.w * (4*Pi)*(c.x+c.y+c.z), p.w});
-            s.entities.push_back(std::move(light));
-        }
     const auto& camera = j.at("camera");
     s.camera.target = vector3(camera.at("target"));
     s.camera.yaw = float(camera.at("yaw").number());
@@ -123,6 +114,26 @@ SceneDocument SceneDocument::fromJson(const Json& j) {
     s.data = j.at("data");
     for (const auto& r : j.at("references").members())
         s.references[r.first] = r.second.string();
+    s.validate();
+    return s;
+}
+SceneDocument SceneDocument::fromJson(const Json& j) {
+    auto version = j.at("version").uint();
+    if (version < 3 || version > 7)
+        throw std::invalid_argument("Unsupported Map version");
+    SceneDocument s;
+    static_cast<SceneResourceDescription&>(s) = SceneResourceDescription::fromJson(j);
+    // Older maps import global lights as ordinary entities. New saves only use components.
+    if (version < 6)
+        for (const auto& l : j.at("lights").elements()) {
+            auto p = vector4(l.at("positionRadius")), c = vector4(l.at("colorIntensity"));
+            SceneEntity light;
+            light.id = newPersistentId();
+            light.name = "Light";
+            light.components.set(SceneTransform{{vec3(p)}});
+            light.components.set(LightComponent{vec3(c), c.w * (4 * Pi) * (c.x + c.y + c.z), p.w});
+            s.entities.push_back(std::move(light));
+        }
     for (const auto& item : j.at(version == 3 ? "objects" : "entities").elements()) {
         auto value = version == 3 ? migrateEntity(item) : item;
         // Legacy intensity was an inverse-square coefficient (W/sr). Convert at
@@ -131,7 +142,7 @@ SceneDocument SceneDocument::fromJson(const Json& j) {
             auto& light = value["components"]["light"];
             float oldIntensity = light.contains("intensity") ? float(light.at("intensity").number()) : 1.f;
             auto color = light.contains("color") ? vector3(light.at("color")) : vec3(1);
-            light["intensity"] = oldIntensity * (4*Pi)*(color.x+color.y+color.z);
+            light["intensity"] = oldIntensity * (4 * Pi) * (color.x + color.y + color.z);
             light["type"] = "point";
         }
         if (version < 5) {
@@ -157,10 +168,7 @@ static bool finite(vec3 v) {
     return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
 }
 void SceneDocument::validate() const {
-    for (const auto& m : materialAssets)
-        if (m.first >= materials.size())
-            throw std::invalid_argument("Material asset index outside Map material table");
-
+    SceneResourceDescription::validate();
     std::map<std::string, const SceneEntity*> ids;
     for (const auto& o : entities) {
         validatePersistentId(o.id);
@@ -187,6 +195,11 @@ void SceneDocument::validate() const {
     for (const auto& r : references)
         if (!ids.count(r.second))
             throw std::invalid_argument("Map reference targets missing Object: " + r.first);
+}
+void SceneResourceDescription::validate() const {
+    for (const auto& m : materialAssets)
+        if (m.first >= materials.size())
+            throw std::invalid_argument("Material asset index outside Map material table");
     if (!finite(navigation.min) || !finite(navigation.max) || !std::isfinite(navigation.cellSize) ||
         navigation.cellSize < .05f || !std::isfinite(navigation.planeTolerance) ||
         navigation.planeTolerance < 0 || glm::any(glm::lessThanEqual(navigation.max, navigation.min)))

@@ -1,6 +1,6 @@
 #include "TestEntities.h"
 #include "TestProject.h"
-#include "scripting/ScriptRuntime.h"
+#include "scripting/RuntimeHost.h"
 #include "uiCore/UiCore.h"
 #include "ui/EngineUi.h"
 #include "core/EngineSettings.h"
@@ -23,7 +23,7 @@ static void ownership() {
     ui::UiCore ui(assets.mounts());
     World world;
     ui::EngineUi diagnostics(ui);
-    ScriptRuntime scripts(world, assets, &ui);
+    RuntimeHost scripts(world, assets, &ui);
     scripts.initialize();
     ConsoleRegistry variables;
     EngineSettings settings(variables, false);
@@ -67,7 +67,7 @@ int main() {
         ownership();
         ui::UiCore ui(testAssets().mounts());
         World world;
-        ScriptRuntime scripts(world, testAssets(), &ui);
+        RuntimeHost scripts(world, testAssets(), &ui);
         std::string error;
         scripts.setLogSink([&](const auto& text) { error = text; });
         scripts.execute(R"JS(

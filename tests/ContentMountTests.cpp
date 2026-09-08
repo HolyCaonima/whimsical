@@ -1,6 +1,6 @@
 #include "assets/EngineAssets.h"
 #include "scene/ScenePersistence.h"
-#include "scripting/ScriptRuntime.h"
+#include "scripting/RuntimeHost.h"
 #include "uiCore/UiCore.h"
 #include <RmlUi/Core.h>
 #include <fstream>
@@ -65,7 +65,7 @@ int main() {
         AssetManager assets;
         registerEngineAssets(assets);
         World world;
-        ScriptRuntime scripts(world, assets);
+        RuntimeHost scripts(world, assets);
         scripts.execute(
             "var roots = " +
             Json{{"a", (root / "a").generic_u8string()}, {"b", (root / "b").generic_u8string()}}.dump() +

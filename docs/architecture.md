@@ -2,9 +2,11 @@
 
 对象、组件、状态所有权、层级及迁移契约见 [ECS 架构](ecs.md)。World 作为组合入口持有 Registry 与四个独立系统；ComponentCatalog 统一组件接入、依赖、派生所有权、脚本和持久化，Changes 在提交边界驱动后端同步。
 
+应用与场景的组合由 `RuntimeHost` 管理：常驻应用 realm 与场景 realm 独立，`ScenePersistence` 只装载数据，`ScriptRuntime` 只执行代码，模拟调度和视图由宿主控制。完整接口与保存边界见 [运行宿主与视图](runtime-host.md)。
+
 ## 线程所有权
 
-引擎主线程拥有 Win32 窗口消息、Input、World、PhysicsScene、Navigation 查询和唯一 JS heap。simulation 使用 60 Hz 固定步长，长帧最多补进 100 ms。输入按下边沿、滚轮和鼠标 delta 仅由第一个 simulation tick 消费，补帧不会重复点击。
+引擎主线程拥有 Win32 窗口消息、Input、World、PhysicsScene、Navigation 查询及宿主/场景 JS heap。simulation 使用 60 Hz 固定步长，长帧最多补进 100 ms。输入按下边沿、滚轮和鼠标 delta 仅由第一个 simulation tick 消费，补帧不会重复点击。
 
 主线程按固定步长睡到下一次 tick 到期，不做轮询；`Window` 在构造时申请 1 ms 定时器精度，避免节拍被系统默认的 15.6 ms 粒度量化。渲染线程结束时会唤醒主线程，关闭延迟不依赖超时。
 
@@ -12,7 +14,7 @@
 
 渲染线程创建、使用和销毁 Vulkan 对象，包括 descriptor、swapchain、BLAS/TLAS、NRD pools 和 UI 几何/纹理资源。一个 GPU frame in flight，fence 完成后才能更新 host-visible buffer 或 descriptor pool。present 完成 semaphore 按 swapchain image 分配。呈现模式由 `--present` 选择，默认 FIFO；`mailbox` 与 `immediate` 用于在没有 vblank 量化的情况下测量真实帧成本，设备不支持时回退 FIFO。
 
-uiCore 在主线程拥有 RmlUi Context、文档、DOM 和输入。EngineUi 只拥有控制台与可选性能统计，不依赖 World；项目 Engine.ui 绑定拥有全部玩法文档、布局和事件。两者复用同一布局/事件系统，显示开关独立。每次发布时记录不可变 UiFrame，完整绘制列表持有几何和纹理的共享引用，跨线程无需传递 RmlUi 或 JS 指针。Vulkan UiRenderer 缓存资源，在 frame fence 后回收失效资源，并以预乘 alpha 绘制到 UI 目标后参与合成；不再有 GDI 光栅或整屏 CPU HUD 上传。项目文档及回调跟随 JS realm 重建，引擎工具持续存在。详见 [UI Core](ui-core.md)。
+uiCore 在主线程拥有 RmlUi Context、文档、DOM 和输入。EngineUi 只拥有控制台与可选性能统计，不依赖 World；项目 Engine.ui 绑定拥有全部玩法文档、布局和事件。两者复用同一布局/事件系统，显示开关独立。每次发布时记录不可变 UiFrame，完整绘制列表持有几何和纹理的共享引用，跨线程无需传递 RmlUi 或 JS 指针。Vulkan UiRenderer 缓存资源，在 frame fence 后回收失效资源，并以预乘 alpha 绘制到已放置场景视图的窗口目标；不再有 GDI 光栅或整屏 CPU HUD 上传。场景文档及回调跟随场景 realm 重建，常驻应用文档与引擎工具持续存在。详见 [UI Core](ui-core.md)。
 
 关闭路径：主线程停止发布 → mailbox.close 唤醒渲染线程 → join → GPU idle / 资源析构完成 → 销毁窗口。渲染线程异常也会关闭 mailbox，主线程读到 finished 后 join 并报告错误。零尺寸窗口不执行 GPU 帧，恢复／resize 时等待 GPU 并重新创建屏幕资源和 NRD 历史。
 

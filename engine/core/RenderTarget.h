@@ -72,6 +72,7 @@ class RenderTargetAccess {
     std::string read(const std::string&, PixelRegion, std::string expectedVersion = {});
     std::shared_ptr<PixelReadRequest> request(const std::string&) const;
     void consumed(const std::string&);
+    void discard(const std::string&); // Realm teardown relinquishes any still-owned ticket.
     void release(const std::string&);
     void reset();
     std::vector<std::shared_ptr<PixelReadRequest>> snapshot(uint64_t tick);

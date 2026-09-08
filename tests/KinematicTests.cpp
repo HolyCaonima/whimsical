@@ -1,7 +1,7 @@
 #include "TestEntities.h"
 #include "TestProject.h"
 #include "scene/ScenePersistence.h"
-#include "scripting/ScriptRuntime.h"
+#include "scripting/RuntimeHost.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -113,7 +113,7 @@ static void transformsAndScript() {
     MaterialDefinition material;
     material.shader = testAssets().reference(AssetPath("/Game/shaders/Standard"));
     world.resources.materials.push_back(material.resolve(testAssets()));
-    ScriptRuntime js(world, testAssets());
+    RuntimeHost js(world, testAssets());
     js.execute(R"JS(
         function assert(value, message) { if (!value) throw new Error(message); }
         var wall = Engine.create({name:'wall',components:{transform:{position:[0,3,0]},render:{scale:[.01,6,20],material:0},collider:{shape:{type:'box',halfExtents:[0.005,3.0,10.0]},blocking:true,pickable:true}}});

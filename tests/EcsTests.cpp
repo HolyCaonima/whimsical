@@ -3,7 +3,7 @@
 #include "ecs/DataComponent.h"
 #include "core/FrameMailbox.h"
 #include "scene/ScenePersistence.h"
-#include "scripting/ScriptRuntime.h"
+#include "scripting/RuntimeHost.h"
 #include "render/RangeAllocator.h"
 #include <iostream>
 #include <limits>
@@ -155,7 +155,7 @@ static void animationLifetime() {
     rejects([&] { w.remove<JointPose>(e); }, "Solved joint removal respects dependency");
     w.remove<Animator>(e);
     check(!w.has<JointPose>(e), "Animator removal releases derived pose");
-    ScriptRuntime scripts(w, testAssets());
+    RuntimeHost scripts(w, testAssets());
     scripts.initialize(testProject());
     auto player = w.gameplay.playerId;
     auto before = w.snapshot({}, 1, 0, 0);
@@ -241,7 +241,7 @@ static void persistenceAndScripts() {
     MaterialDefinition material;
     material.shader = local.reference(shader->reference().path);
     w.resources.materials.push_back(material.resolve(local));
-    ScriptRuntime scripts(w, local);
+    RuntimeHost scripts(w, local);
     scripts.execute(R"JS(
 var data=Engine.create({name:'Data',components:{data:{health:10}}});
 var value=Engine.data(data);value.health=20;Engine.setData(data,value);
@@ -327,7 +327,7 @@ static void componentContracts() {
     int notifications = 0;
     World w;
     w.onChange<Energy>([&](Entity) { ++notifications; });
-    ScriptRuntime scripts(w, testAssets());
+    RuntimeHost scripts(w, testAssets());
     scripts.execute(R"JS(
 var actor=Engine.create({name:'Contract',components:{energy:{value:3},transform:{}}});
 if(Engine.component(actor,'energy').value!==3||Engine.entities(['energy']).length!==1)throw Error('registered codec/query');
@@ -517,7 +517,7 @@ static void editsAndLights() {
               near(vec3(frame.lights[0].positionRadius), w.get<Transform>(e).world.position) &&
               w.physics().size() == 0 && w.renderScene().capacity() == 0,
           "Light follows hierarchy without allocating collider or render geometry");
-    ScriptRuntime script(w, testAssets());
+    RuntimeHost script(w, testAssets());
     script.execute(R"JS(
 var light = Engine.entities(['light'])[0];
 Engine.setComponent(light, 'light', {color:[.2,.4,1],intensity:22,radius:.3});

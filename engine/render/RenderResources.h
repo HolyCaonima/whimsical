@@ -29,8 +29,8 @@ struct alignas(16) GpuGlobals {
 // top-level declaration is what reaches it; buildInstances has no descriptor either, and
 // is what a top-level build actually reads.
 struct SceneResources {
-    rg::ResourceId globals, instances, materials, lights, vertices, indices, textures,
-        buildInstances, blas, tlas;
+    rg::ResourceId globals, instances, materials, lights, vertices, indices, textures, buildInstances, blas,
+        tlas;
     explicit SceneResources(rg::Registry&);
     rg::ResourceList geometry() const; // vertex/index buffers, as a structure build reads them
 };
@@ -43,8 +43,8 @@ struct GBufferResources {
 };
 
 struct RestirDiResources {
-    rg::ResourceId reservoirs, neighbours, lightSamples, gradient, filteredGradient,
-        diffuseConfidence, specularConfidence, luminance, confidenceHistory;
+    rg::ResourceId reservoirs, neighbours, lightSamples, gradient, filteredGradient, diffuseConfidence,
+        specularConfidence, luminance, confidenceHistory;
     explicit RestirDiResources(rg::Registry&);
 };
 
@@ -54,15 +54,15 @@ struct RestirGiResources {
 };
 
 struct ShadingResources {
-    rg::ResourceId rawDiffuse, rawSpecular, denoisedDiffuse, denoisedSpecular, directDebug,
-        indirectDebug, hud, display;
+    rg::ResourceId rawDiffuse, rawSpecular, denoisedDiffuse, denoisedSpecular, directDebug, indirectDebug,
+        display;
     explicit ShadingResources(rg::Registry&);
 };
 
 // Frame output. The swapchain image is Imported every frame; the readback buffers only
 // exist when the run actually asks for them, so an ordinary run never pays for them.
 struct OutputResources {
-    rg::ResourceId swapchain, capture, screenshot, audit;
+    rg::ResourceId swapchain, presentation, screenshot, audit;
     OutputResources(rg::Registry&, bool captureEnabled, uint32_t auditSignals);
 };
 

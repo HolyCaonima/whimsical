@@ -77,16 +77,19 @@ std::shared_ptr<const UiFrame> EngineUi::snapshot(const Frame& frame) {
     auto result = std::make_shared<UiFrame>(*ui_.snapshot());
     // Physics wireframes are debug geometry, not widgets. They share the GPU overlay pass.
     if (frame.physicsDebug) {
+        auto rect = frame.viewport.fit(result->width, result->height);
+        if (!rect.width || !rect.height)
+            return result;
         static uint64_t id = uint64_t(1) << 63;
         auto geometry = std::make_shared<Geometry>();
         geometry->id = ++id;
-        auto vp = frame.camera.projection(float(result->width) / result->height) * frame.camera.view();
+        auto vp = frame.camera.projection(float(rect.width) / rect.height) * frame.camera.view();
         for (const auto& line : frame.physicsLines) {
             vec4 a = vp * vec4(line.a, 1), b = vp * vec4(line.b, 1);
             if (a.w <= .1f || b.w <= .1f)
                 continue;
-            vec2 p = (vec2(a) / a.w * .5f + .5f) * vec2(result->width, result->height);
-            vec2 q = (vec2(b) / b.w * .5f + .5f) * vec2(result->width, result->height);
+            vec2 p = vec2(rect.x, rect.y) + (vec2(a) / a.w * .5f + .5f) * vec2(rect.width, rect.height);
+            vec2 q = vec2(rect.x, rect.y) + (vec2(b) / b.w * .5f + .5f) * vec2(rect.width, rect.height);
             if (glm::length(q - p) < .01f)
                 continue;
             vec2 n = glm::normalize(vec2(-(q - p).y, (q - p).x)) * .5f;
@@ -99,12 +102,13 @@ std::shared_ptr<const UiFrame> EngineUi::snapshot(const Frame& frame) {
                 geometry->indices.push_back(first + index);
         }
         if (!geometry->indices.empty())
-            result->draws.insert(result->draws.begin(), {geometry,
-                                                         nullptr,
-                                                         {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
-                                                         0,
-                                                         0,
-                                                         {0, 0, result->width, result->height}});
+            result->draws.insert(result->draws.begin(),
+                                 {geometry,
+                                  nullptr,
+                                  {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
+                                  0,
+                                  0,
+                                  {int(rect.x), int(rect.y), int(rect.width), int(rect.height)}});
     }
     return result;
 }

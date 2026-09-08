@@ -95,6 +95,7 @@ add_library(afterlight_core
   engine/assets/ShaderAsset.cpp engine/assets/Material.cpp
   engine/assets/EngineAssets.cpp engine/scene/SceneAsset.cpp engine/scene/ScenePersistence.cpp
   engine/ui/EngineUi.cpp engine/scripting/UiBindings.cpp
+  engine/scripting/RuntimeHost.cpp engine/scripting/RuntimeBindings.cpp
   engine/core/World.cpp engine/core/RenderScene.cpp engine/navigation/Navigation.cpp engine/scripting/ScriptRuntime.cpp
   engine/ecs/ComponentCatalog.cpp engine/ecs/BuiltinComponents.cpp
   engine/ecs/TransformSystem.cpp engine/ecs/MotionSystem.cpp engine/ecs/AnimationSystem.cpp engine/ecs/RenderSystem.cpp
@@ -154,6 +155,11 @@ add_dependencies(afterlight_shaders afterlight_shader_bindings)
 add_dependencies(Afterlight afterlight_shaders)
 target_compile_definitions(Afterlight PRIVATE AFTERLIGHT_SHADERS="${CMAKE_BINARY_DIR}/shaders")
 enable_testing()
+add_executable(runtime_host_tests tests/RuntimeHostTests.cpp)
+target_link_libraries(runtime_host_tests PRIVATE afterlight_core)
+target_compile_options(runtime_host_tests PRIVATE /W4 /permissive- /utf-8)
+afterlight_copy_onnx(runtime_host_tests)
+add_test(NAME runtime_host_contracts COMMAND runtime_host_tests)
 add_executable(render_target_tests tests/RenderTargetTests.cpp)
 target_link_libraries(render_target_tests PRIVATE afterlight_core)
 target_compile_options(render_target_tests PRIVATE /W4 /permissive- /utf-8)

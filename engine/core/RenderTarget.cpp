@@ -102,6 +102,13 @@ std::shared_ptr<PixelReadRequest> RenderTargetAccess::request(const std::string&
 void RenderTargetAccess::consumed(const std::string& id) {
     requests_.erase(id);
 }
+void RenderTargetAccess::discard(const std::string& id) {
+    auto request = requests_.find(id);
+    if (request != requests_.end()) {
+        request->second->cancel("cancelled");
+        requests_.erase(request);
+    }
+}
 void RenderTargetAccess::release(const std::string& id) {
     auto rt = target(id);
     rt->invalidate();
@@ -116,7 +123,8 @@ void RenderTargetAccess::reset() {
     for (auto& entry : requests_)
         entry.second->cancel("invalidated");
     targets_.clear();
-    requests_.clear();
+    // Persistent application realms still own their tickets after scene replacement.
+    // They can observe invalidated or cancel; retiring scene realms discard their own.
 }
 std::vector<std::shared_ptr<PixelReadRequest>> RenderTargetAccess::snapshot(uint64_t tick) {
     std::vector<std::shared_ptr<PixelReadRequest>> result;

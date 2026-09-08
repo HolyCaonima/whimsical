@@ -1,5 +1,5 @@
 #include "TestProject.h"
-#include "scripting/ScriptRuntime.h"
+#include "scripting/RuntimeHost.h"
 #include "animation/SkinnedMesh.h"
 #include <iostream>
 #include <fstream>
@@ -12,7 +12,7 @@ static void check(bool value, const char* message) {
 int main(int argc, char** argv) {
     try {
         World world;
-        ScriptRuntime scripts(world, testAssets());
+        RuntimeHost scripts(world, testAssets());
         scripts.initialize(testProject());
         Input input;
         uint32_t dog = 0;

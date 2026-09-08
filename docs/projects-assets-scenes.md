@@ -9,7 +9,7 @@
 ```text
 afterlight_assets: ContentMounts → AssetManager → Asset / Json；Project 独立描述启动配置
 afterlight_animation: Skeleton / Asset / Instance / Solver → afterlight_assets
-afterlight_core: World / ScenePersistence / ScriptRuntime → 上述两层
+afterlight_core: World / ScenePersistence / RuntimeHost / ScriptRuntime → 上述两层
 EngineAssets: 在组合入口注册 Map、SkinnedMesh、AnimationController、OnnxModel
 Renderer: Frame → GPU 资源
 ```
@@ -66,7 +66,7 @@ JSON 中带 `id` 和 `path` 的对象是保留的资产引用形态，可附带�
 
 ## JS 内容访问
 
-`Engine.content` 独立于玩法当前场景，路径始终使用显式挂载名；`Engine.readJson` 和 `Engine.ui` 的 `/Game` 默认来源则由显式启动的项目或当前 Map 决定。一个脚本 realm 只属于一个 Content，以保证后续回调中的 `/Game` 也有固定含义；项目公共脚本和 Map 必须同源。启动另一来源的项目需要显式 `configure` / `initialize(project, mount)`，或使用独立 ScriptRuntime。
+`Engine.content` 独立于玩法当前场景，路径始终使用显式挂载名；`Engine.readJson` 和 `Engine.ui` 的 `/Game` 默认来源则由显式启动的项目或当前 Map 决定。一个脚本 realm 只属于一个 Content，以保证后续回调中的 `/Game` 也有固定含义。RuntimeHost 将常驻应用 realm 与场景 realm 分开：`Engine.scene.load` 可只装载另一来源的地图而保留应用脚本/UI，`Engine.simulation.play` 再显式启动目标程序。场景公共脚本与地图脚本在同一 realm 时仍须同源。详见 [运行宿主与视图](runtime-host.md)。
 
 ```js
 var content = Engine.content;
@@ -162,15 +162,15 @@ clearCache、重扫、保存不销毁 World、Solver 或 Frame 持有的旧资�
 
 SceneDocument 保存：对象 ID/显示名/位置/旋转/启用/交互；RenderComponent 的 primitive、scale/offset/animationScale、材质索引和可见性；主碰撞体 shape/motion/layer/查询属性；关节碰撞体 joint/local/shape/blocking；动画与 mesh 引用、root-motion 选项、rootOffset 和实例属性；材质值表、灯表、相机、导航（含 planeTolerance）；player Object ID、命名 Object 引用、Map 脚本引用和显式 gameplay JSON data。
 
-Map 现写入 `version: 5`，以 `entities[].components` 保存实际存在的能力与父级持久 ID，变换保存 local。版本 3/4 在读取边界转换，1/2 仍被拒绝；ALAS1 资产信封版本仍为 1。六张现有地图、生成器及验证脚本已同步迁移，详细字段、组件依赖和脚本入口见 [ECS 架构](ecs.md)。
+Map 现写入 `version: 7`，以 `entities[].components` 保存实际存在的能力与父级持久 ID，变换保存 local。版本 3–6 在读取边界转换，1/2 仍被拒绝；ALAS1 资产信封版本仍为 1。六张现有地图、生成器及验证脚本已同步迁移，详细字段、组件依赖和脚本入口见 [ECS 架构](ecs.md)。
 
 材质可作为 Map 内嵌值；复用的材质是注册的 Material 资产。Shader 与 Texture 按持久 ID 解析。CPU 材质不保存 descriptor index，World 和 Frame 仅持有参数值与不可变资产引用，纹理绑定由 renderer 分配。
 
 capture 跳过已删除对象，删除对象也移除其命名引用。未注册的自定义 Solver/mesh 无法重建，保存明确报错。save 始终把 SceneDocument 写成 inline payload；对同一 Map 保留 ID，Save As 创建新 Map ID，保留 Object ID。无 Solver 的手动关节姿态可保存；有 Solver 的姿态重新求解。选择、悬停、路径命令、计时器、推理序列、IK 历史、RenderDelta、GPU 句柄、物理缓存与 JS 闭包不序列化。
 
-load 先在临时 World 检查全部依赖、骨架绑定、动画属性、关节碰撞体和物理形状；成功后建立身份和层级，再经各系统挂接实际组件，恢复 player 与命名引用。内容预检失败保留原场景。加载建立两次轻量运行时组件，共享昂贵资产缓存，不执行两次 ONNX 推理；内存耗尽等分配失败不承诺事务回滚。
+load 先在临时 World 检查全部依赖、骨架绑定、动画属性、关节碰撞体和物理形状；成功后建立身份和层级，再经各系统挂接实际组件，恢复 player 与命名引用。内容预检失败保留原场景。加载只在隔离 World 中准备一次组件及后端，再交换场景存储；内存耗尽等分配失败不承诺事务回滚。
 
-显式调用 `ScriptRuntime::initialize(project, mount)` 或 `loadScene` 才启动内容。ScriptRuntime 在 C++ 重建后创建新 heap，依次载入 Project 公共脚本、Map 脚本，调用可选 initialize。Rain Court 的 initialize 只绑定控制、同伴、相机与交互。供电状态由 setSceneData 显式更新，门位置／碰撞和缓存材质随组件保存，因此加载后能继续交互。脚本初始化错误向调用方报告，此时 Map 已加载，不回滚整个 VM。
+显式调用 `RuntimeHost::initialize(project, mount)` 或游戏导航 `loadScene` 才启动场景程序。宿主在场景装载后创建场景 realm，依次载入同源 Project 公共脚本、Map 脚本，调用可选 initialize。数据入口 `Engine.scene.load` 不启动程序；常驻 `hostScripts` 和它的 UI 在场景替换时保留。Rain Court 的 initialize 只绑定控制、同伴、相机与交互。供电状态由 setSceneData 显式更新，门位置／碰撞和缓存材质随组件保存，因此加载后能继续交互。脚本初始化错误向调用方报告，此时 Map 已加载，不回滚整个 VM。
 
 这是场景与显式玩法状态持久化，不是整个游戏进程的逐指令快照。新增玩法应定义稳定数据，在 initialize 恢复，不向持久数据写入 Entity。
 
@@ -181,8 +181,8 @@ Project project(projectDirectory);
 AssetManager assets(project.content());
 registerEngineAssets(assets);
 World world;
-ScriptRuntime scripts(world, assets);
-scripts.initialize();
+RuntimeHost scripts(world, assets);
+scripts.initialize(project);
 auto mesh = assets.load<SkinnedMesh>(AssetPath("/Game/models/biped"));
 scripts.saveScene(AssetPath("/Game/Maps/MySave"), "My save");
 scripts.loadScene(AssetPath("/Game/Maps/MySave"));

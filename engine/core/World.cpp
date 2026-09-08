@@ -10,7 +10,7 @@ World::World() {
         componentCatalog().remove(*this, e, c->name);
     };
 }
-Entity World::create(std::string name, std::string persistentId) {
+Entity World::create(std::string name, std::string persistentId, bool persistent) {
     if (persistentId.empty())
         persistentId = newPersistentId();
     validatePersistentId(persistentId);
@@ -18,10 +18,31 @@ Entity World::create(std::string name, std::string persistentId) {
         throw std::invalid_argument("Duplicate entity identity");
     auto batch = changes();
     Entity e = storage_.registry.create();
-    storage_.registry.emplace<Identity>(e, Identity{std::move(name), persistentId});
+    storage_.registry.emplace<Identity>(e, Identity{std::move(name), persistentId, persistent});
     objectIds_.emplace(std::move(persistentId), e);
     batch.commit();
     return e;
+}
+void World::rename(Entity e, std::string name) {
+    auto batch = changes();
+    storage_.registry.get<Identity>(e).name = std::move(name);
+    storage_.changes.mark<Identity>(e);
+    batch.commit();
+}
+void World::setPersistent(Entity e, bool value) {
+    auto batch = changes();
+    storage_.registry.get<Identity>(e).persistent = value;
+    storage_.changes.mark<Identity>(e);
+    batch.commit();
+}
+bool World::persistent(Entity e) const {
+    do {
+        if (!get<Identity>(e).persistent)
+            return false;
+        auto t = registry().tryGet<Transform>(e);
+        e = t ? t->parent : 0;
+    } while (e);
+    return true;
 }
 ObjectPath World::objectPath(Entity e) const {
     return ObjectPath(resources.mapAsset.path, get<Identity>(e).persistentId);
@@ -88,24 +109,26 @@ static vec3 rayDirection(const Camera& camera, float x, float y, const Input& in
     auto v = inv * vec4(2 * x / std::max(input.width, 1u) - 1, 2 * y / std::max(input.height, 1u) - 1, 1, 1);
     return glm::normalize(vec3(v) / v.w - camera.eye());
 }
-std::optional<vec3> World::groundAt(float x, float y, const Input& input) const {
+std::optional<vec3> World::groundAt(float x, float y, const Input& input,
+                                    const Camera* cameraOverride) const {
+    const auto& camera = cameraOverride ? *cameraOverride : resources.camera;
     QueryFilter filter;
     filter.walkableOnly = true;
     filter.mask = CollisionLayer::World;
-    auto hit =
-        physics().raycast(resources.camera.eye(), rayDirection(resources.camera, x, y, input), 160, filter);
+    auto hit = physics().raycast(camera.eye(), rayDirection(camera, x, y, input), 160, filter);
     return hit ? std::optional<vec3>(hit->position) : std::nullopt;
 }
-Entity World::pick(float x, float y, const Input& input) const {
+Entity World::pick(float x, float y, const Input& input, const Camera* cameraOverride) const {
+    const auto& camera = cameraOverride ? *cameraOverride : resources.camera;
     QueryFilter filter;
     filter.pickableOnly = true;
-    auto hit =
-        physics().raycast(resources.camera.eye(), rayDirection(resources.camera, x, y, input), 160, filter);
+    auto hit = physics().raycast(camera.eye(), rayDirection(camera, x, y, input), 160, filter);
     if (!hit || !registry().contains(hit->owner))
         return 0;
     return has<Interactable>(hit->owner) || hit->owner == gameplay.playerId ? hit->owner : 0;
 }
-Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug, bool physicsDebug) {
+Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug, bool physicsDebug,
+                      const RenderView* view) {
     storage_.changes.requireCommitted();
     CpuScope scope("ECS Render Extraction");
     Frame f;
@@ -114,7 +137,8 @@ Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug,
     f.proxies = storage_.renderScene.proxies();
     f.delta = storage_.renderScene.publish();
     f.materials = resources.materials;
-    f.camera = resources.camera;
+    f.camera = view && view->camera ? *view->camera : resources.camera;
+    f.viewport = (view ? view->rectangle : ViewRect{}).fit(input.width, input.height);
     f.input = input;
     if (auto t = registry().tryGet<Transform>(gameplay.playerId))
         f.player = t->world.position;

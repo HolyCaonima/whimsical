@@ -1,7 +1,7 @@
 #include "core/World.h"
 #include "assets/EngineAssets.h"
 #include "core/FrameMailbox.h"
-#include "scripting/ScriptRuntime.h"
+#include "scripting/RuntimeHost.h"
 #include "platform/Window.h"
 #include "render/Renderer.h"
 #include "ui/EngineUi.h"
@@ -124,7 +124,8 @@ int main(int argc, char** argv) {
                              "0..7] [--no-hud] [--validation] [--no-validation] [--present "
                              "fifo|mailbox|immediate] [--demo] [--smoke] [--ecs-smoke] [--stress N] "
                              "[--full-upload] "
-                             "[--audit NAME] [--audit-motion] [--audit-occluder SLOT] [--audit-light INDEX] [--physics-debug] "
+                             "[--audit NAME] [--audit-motion] [--audit-occluder SLOT] [--audit-light INDEX] "
+                             "[--physics-debug] "
                              "[--project DIR] [--map "
                              "/Game/Maps/Name] [--console] [--exec \"command\"] [--cvar \"name=value\"] "
                              "[--console-smoke] [--profile-gpu] [--profile-cpu]\n";
@@ -208,14 +209,10 @@ int main(int argc, char** argv) {
         World world;
         ui::UiCore uiCore(assets.mounts());
         ui::EngineUi engineUi(uiCore);
-        ScriptRuntime scripts(world, assets, &uiCore);
+        RuntimeHost scripts(world, assets, &uiCore);
         scripts.setLogSink([&](const auto& text) { console.log(text); });
-        if (mapPath.empty())
-            scripts.initialize(project);
-        else {
-            scripts.configure(project);
-            scripts.loadScene(AssetPath(mapPath));
-        }
+        scripts.initialize(project, "/Game",
+                           mapPath.empty() ? std::optional<AssetPath>{} : AssetPath(mapPath));
         // A level-sized scene in which the number of objects that change each tick stays
         // fixed no matter how many exist. That is the measurement that separates the two
         // architectures: per-frame work proportional to the scene climbs with --stress,
@@ -441,7 +438,7 @@ int main(int argc, char** argv) {
         });
         using Clock = std::chrono::steady_clock;
         auto previous = Clock::now(), lastTitle = previous;
-        double accumulator = 0, time = 0;
+        double accumulator = 0;
         uint64_t tick = 0;
         constexpr double step = 1.0 / 60.0;
         std::string mainError;
@@ -453,8 +450,8 @@ int main(int argc, char** argv) {
             Frame frame;
             {
                 CpuScope scope("Build Snapshot / Console View");
-                frame =
-                    world.snapshot(window.input(), tick, time, settings.debugView(), settings.physicsDebug());
+                frame = world.snapshot(window.input(), tick, scripts.simulationTime(), settings.debugView(),
+                                       settings.physicsDebug(), &scripts.view);
                 settings.decorate(frame);
                 frame.gpuProfileRequest = gpuProfileRequest;
                 frame.console = console.view();
@@ -562,22 +559,20 @@ int main(int argc, char** argv) {
                         scripts.processUiInput(input);
                     }
                     const double gameStep = step * settings.timeScale();
-                    if (options.audit.empty() && gameStep > 0) {
+                    {
                         CpuScope scope("Script / Gameplay Tick");
-                        scripts.tick(float(gameStep), input);
-                    } else
-                        scripts.updateUi(float(step));
+                        scripts.tick(float(step), input, options.audit.empty() ? float(gameStep) : 0.f);
+                    }
                     for (size_t i = 0; i < stressMoving.size(); i++) {
                         const auto& prop = world.get<Transform>(stressMoving[i]).world;
                         world.transforms.setTransform(
                             stressMoving[i],
-                            {{prop.position.x, .3f + .2f * float(std::sin(time * 2 + double(i))),
+                            {{prop.position.x,
+                              .3f + .2f * float(std::sin(scripts.simulationTime() * 2 + double(i))),
                               prop.position.z}});
                     }
                     window.consumeEdges();
                     accumulator -= step;
-                    if (options.audit.empty())
-                        time += gameStep;
                     tick++;
                     changed = true;
                 }

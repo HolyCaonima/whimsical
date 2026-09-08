@@ -25,6 +25,9 @@ struct Renderer::Impl {
     RenderOptions options;
     HWND window;
     uint32_t width = 0, height = 0;
+    uint32_t viewWidth = 0, viewHeight = 0;
+    Image presentation;
+    Buffer screenshot;
     uint64_t frameNumber = 0;
     double gpuMs = 16.7;
     RenderStatistics statistics;
@@ -80,6 +83,8 @@ struct Renderer::Impl {
         uiRenderer.reset();
         scene.reset();
         pool.reset();
+        vk.destroy(presentation);
+        vk.destroy(screenshot);
         vk.destroy(neighbourOffsets);
         for (auto s : finished)
             vkDestroySemaphore(vk.device, s, nullptr);
@@ -155,10 +160,9 @@ struct Renderer::Impl {
     // FIFO is the only mode Vulkan guarantees, so an unsupported request degrades to it
     // rather than failing to start.
     VkPresentModeKHR selectPresentMode() const {
-        VkPresentModeKHR wanted = options.present == PresentMode::Mailbox ? VK_PRESENT_MODE_MAILBOX_KHR
-                                  : options.present == PresentMode::Immediate
-                                      ? VK_PRESENT_MODE_IMMEDIATE_KHR
-                                      : VK_PRESENT_MODE_FIFO_KHR;
+        VkPresentModeKHR wanted = options.present == PresentMode::Mailbox     ? VK_PRESENT_MODE_MAILBOX_KHR
+                                  : options.present == PresentMode::Immediate ? VK_PRESENT_MODE_IMMEDIATE_KHR
+                                                                              : VK_PRESENT_MODE_FIFO_KHR;
         if (wanted == VK_PRESENT_MODE_FIFO_KHR)
             return wanted;
         uint32_t count = 0;
@@ -242,13 +246,18 @@ struct Renderer::Impl {
             VK_CHECK(vkCreateSemaphore(vk.device, &semaphoreInfo, nullptr, &semaphore));
             finished.push_back(semaphore);
         }
-        // A resize starts a new image-sized audit, as with the temporal histories.
-        if (audit)
-            audit->finish();
-        audit.reset();
-        if (!options.audit.empty())
-            audit = std::make_unique<RenderAuditWorker>(width, height);
-        denoiser->resize(width, height);
+        vk.destroy(presentation);
+        presentation = vk.image(width, height, VK_FORMAT_R8G8B8A8_UNORM,
+                                VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
+        pool->importImage(resources.output.presentation, presentation);
+        if (options.capture) {
+            vk.destroy(screenshot);
+            screenshot = vk.buffer(VkDeviceSize(width) * height * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                   BufferMemory::Readback);
+            pool->importBuffer(resources.output.screenshot, screenshot);
+        }
+        viewWidth = viewHeight = 0;
         historyValid = false;
         resizePending = false;
         statistics = {};
@@ -321,10 +330,10 @@ struct Renderer::Impl {
                << ",\n  \"sceneSlots\": " << scene->statistics.slots
                << ", \"sceneSlotWrites\": " << scene->writes
                << ", \"sceneSlotWritesIfRebuilt\": " << scene->slotFrames
-               << ",\n  \"sceneResyncs\": " << scene->resyncs
-               << ", \"tlasRebuilds\": " << scene->tlasRebuilds
-               << ",\n  \"graphPasses\": " << graph->livePasses() << ", \"graphBarriers\": "
-               << graph->barrierCount() << ", \"graphAliasedResources\": " << graph->aliasedResources()
+               << ",\n  \"sceneResyncs\": " << scene->resyncs << ", \"tlasRebuilds\": " << scene->tlasRebuilds
+               << ",\n  \"graphPasses\": " << graph->livePasses()
+               << ", \"graphBarriers\": " << graph->barrierCount()
+               << ", \"graphAliasedResources\": " << graph->aliasedResources()
                << ",\n  \"graphResourceBytes\": " << pool->ownedBytes()
                << ", \"graphDeclaredBytes\": " << pool->declaredBytes()
                << ", \"graphDescriptorWrites\": " << pool->descriptorWrites()
@@ -432,6 +441,19 @@ struct Renderer::Impl {
             float(std::chrono::duration<double, std::milli>(cpuStart - previousRenderTime).count()), 1.f,
             100.f);
         previousRenderTime = cpuStart;
+        const auto viewport = frame.viewport.fit(width, height);
+        const auto renderWidth = std::max(viewport.width, 1u), renderHeight = std::max(viewport.height, 1u);
+        if (viewWidth != renderWidth || viewHeight != renderHeight) {
+            viewWidth = renderWidth;
+            viewHeight = renderHeight;
+            denoiser->resize(viewWidth, viewHeight);
+            if (audit)
+                audit->finish();
+            audit.reset();
+            if (!options.audit.empty())
+                audit = std::make_unique<RenderAuditWorker>(viewWidth, viewHeight);
+            historyValid = false;
+        }
         {
             CpuScope scope("CPU Skinning / Mesh Bindings");
             scene->updateSkins(frame);
@@ -460,20 +482,20 @@ struct Renderer::Impl {
         reset = reset || clearHistory;
         GpuGlobals data{};
         data.view = frame.camera.view();
-        data.vp = frame.camera.projection(float(width) / height) * data.view;
+        data.vp = frame.camera.projection(float(viewWidth) / viewHeight) * data.view;
         data.previousVp =
-            reset ? data.vp : previous->camera.projection(float(width) / height) * previous->camera.view();
+            reset ? data.vp
+                  : previous->camera.projection(float(viewWidth) / viewHeight) * previous->camera.view();
         data.inverseVp = glm::inverse(data.vp);
         data.eyeTime = vec4(frame.camera.eye(), float(frame.time));
         data.previousEye = vec4(reset ? frame.camera.eye() : previous->camera.eye(), 0);
-        data.resolution = {float(width), float(height), float(frame.debugView), float(frame.hovered)};
+        data.resolution = {float(viewWidth), float(viewHeight), float(frame.debugView), float(frame.hovered)};
         data.player = vec4(frame.player, float(frame.selected));
         data.destination = vec4(frame.destination, frame.hasDestination ? 1.f : 0.f);
         // The last component tells the DI bridge which half of the reservoir arrays is
         // playing which role this frame; it replaces the end-of-frame history copy.
         data.renderSettings = {frame.exposure, frame.diHistoryConfidence ? 1.f : 0.f,
-                               lightsChanged ? 1.f : 0.f,
-                               float((frameNumber & 1) ? DiLayerRotation : 0)};
+                               lightsChanged ? 1.f : 0.f, float((frameNumber & 1) ? DiLayerRotation : 0)};
         data.counts = {uint32_t(frame.proxies.size()), uint32_t(frame.lights.size()), uint32_t(frameNumber),
                        reset ? 0u : 1u};
         scene->writeGlobals(&data, sizeof(data));
@@ -507,14 +529,16 @@ struct Renderer::Impl {
         setup.clearHistory = clearHistory;
         setup.audit = auditFrame;
         setup.capture = captureFrame;
+        setup.viewport = viewport;
         setup.auditSignals = auditSignals;
         setup.targets = renderTargets.get();
-        renderTargets->prepare(frame.entityIDOutputs, frame.pixelReads, width, height, frameNumber + 1, frame.tick);
+        renderTargets->prepare(frame.entityIDOutputs, frame.pixelReads, viewWidth, viewHeight,
+                               frameNumber + 1, frame.tick);
         {
             CpuScope scope("Graph / Declare");
             pipeline->build(*graph, setup);
         }
-        graph->compile(width, height);
+        graph->compile(viewWidth, viewHeight);
 
         CpuScope recordScope("Record GPU Commands");
         VK_CHECK(vkResetCommandBuffer(command, 0));

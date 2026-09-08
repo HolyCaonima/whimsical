@@ -1,4 +1,6 @@
 #include "ScriptRuntime.h"
+#include "RuntimeHost.h"
+#include "RuntimeBindings.h"
 #include "core/CpuProfile.h"
 #include "navigation/Navigation.h"
 #include "scene/ScenePersistence.h"
@@ -354,13 +356,19 @@ static duk_ret_t callNative(duk_context* c) {
                 duk_dup(c, 1);
                 duk_json_encode(c, -1);
                 auto j = Json::parse(duk_require_string(c, -1));
-                if (j.contains("x")) region.x = j.at("x").uint();
-                if (j.contains("y")) region.y = j.at("y").uint();
-                if (j.contains("width")) region.width = j.at("width").uint();
-                if (j.contains("height")) region.height = j.at("height").uint();
-                if (j.contains("rtVersion")) version = j.at("rtVersion").string();
+                if (j.contains("x"))
+                    region.x = j.at("x").uint();
+                if (j.contains("y"))
+                    region.y = j.at("y").uint();
+                if (j.contains("width"))
+                    region.width = j.at("width").uint();
+                if (j.contains("height"))
+                    region.height = j.at("height").uint();
+                if (j.contains("rtVersion"))
+                    version = j.at("rtVersion").string();
             }
             auto request = w.renderTargets.read(duk_require_string(c, 0), region, version);
+            runtime(c).trackPixelRead(request);
             duk_push_string(c, request.c_str());
             return 1;
         }
@@ -379,10 +387,13 @@ static duk_ret_t callNative(duk_context* c) {
             j["assetGeneration"] = std::to_string(request->target->asset->generation);
             j["requestedTick"] = std::to_string(request->requestedTick);
             j["format"] = pixelFormatName(request->target->asset->format);
-            j["region"] = Json{{"x", result->region.x}, {"y", result->region.y},
-                                {"width", result->region.width}, {"height", result->region.height}};
+            j["region"] = Json{{"x", result->region.x},
+                               {"y", result->region.y},
+                               {"width", result->region.width},
+                               {"height", result->region.height}};
             j["rowBytes"] = result->status == "ready"
-                                ? result->region.width * pixelBytes(request->target->asset->format) : 0u;
+                                ? result->region.width * pixelBytes(request->target->asset->format)
+                                : 0u;
             pushJson(c, j);
             if (result->status == "ready") {
                 const auto bytes = result->bytes.size();
@@ -390,19 +401,21 @@ static duk_ret_t callNative(duk_context* c) {
                 std::memcpy(buffer, result->bytes.data(), bytes);
                 const auto format = request->target->asset->format;
                 duk_uint_t type = format == PixelFormat::R32Uint ? DUK_BUFOBJ_UINT32ARRAY
-                                   : format == PixelFormat::RGBA8 ? DUK_BUFOBJ_UINT8ARRAY
+                                  : format == PixelFormat::RGBA8 ? DUK_BUFOBJ_UINT8ARRAY
                                                                  : DUK_BUFOBJ_FLOAT32ARRAY;
                 duk_push_buffer_object(c, -1, 0, bytes, type);
                 duk_put_prop_string(c, -3, "data");
                 duk_pop(c);
             }
             w.renderTargets.consumed(request->handle);
+            runtime(c).forgetPixelRead(request->handle);
             return 1;
         }
         case CancelPixels: {
             std::string id = duk_require_string(c, 0);
             w.renderTargets.request(id)->cancel("cancelled");
             w.renderTargets.consumed(id);
+            runtime(c).forgetPixelRead(id);
             return 0;
         }
         case Log:
@@ -422,9 +435,12 @@ static duk_ret_t callNative(duk_context* c) {
         case Create: {
             duk_dup(c, 0);
             duk_json_encode(c, -1);
-            auto description = SceneEntity::fromJson(Json::parse(duk_require_string(c, -1)));
+            auto json = Json::parse(duk_require_string(c, -1));
+            auto description = SceneEntity::fromJson(json);
             duk_pop(c);
-            duk_push_uint(c, ScenePersistence::createEntity(w, description, assets(c)));
+            duk_push_uint(c, ScenePersistence::createEntity(w, description, assets(c),
+                                                            !json.contains("persistent") ||
+                                                                json.at("persistent").boolean()));
             return 1;
         }
         case SetComponent:
@@ -524,7 +540,8 @@ static duk_ret_t callNative(duk_context* c) {
             SceneEntity description;
             description.name = "Light";
             description.components.set(SceneTransform{{{num(c, 0), num(c, 1), num(c, 2)}}});
-            description.components.set(LightComponent{{num(c, 4), num(c, 5), num(c, 6)}, num(c, 7), num(c, 3)});
+            description.components.set(
+                LightComponent{{num(c, 4), num(c, 5), num(c, 6)}, num(c, 7), num(c, 3)});
             duk_push_uint(c, ScenePersistence::createEntity(w, description, assets(c)));
             return 1;
         }
@@ -644,10 +661,11 @@ static duk_ret_t callNative(duk_context* c) {
             return 1;
         }
         case SceneLoad:
-            runtime(c).requestScene(AssetPath(duk_require_string(c, 0)).string());
+            runtime(c).host().requestScene(assets(c).reference(AssetPath(duk_require_string(c, 0))), true);
             return 0;
         case SceneSave: {
-            auto ref = runtime(c).saveScene(AssetPath(duk_require_string(c, 0)), duk_require_string(c, 1));
+            auto ref = ScenePersistence::save(w, assets(c), AssetPath(duk_require_string(c, 0)),
+                                              duk_require_string(c, 1));
             pushJson(c, ref.json());
             return 1;
         }
@@ -686,7 +704,7 @@ static duk_ret_t callNative(duk_context* c) {
             return 1;
         case LightIntensity:
             w.edit<LightComponent>(duk_require_uint(c, 0),
-                               [&](LightComponent& light) { light.intensity = num(c, 1); });
+                                   [&](LightComponent& light) { light.intensity = num(c, 1); });
             return 0;
         case ConfigureCollider: {
             uint32_t id = duk_require_uint(c, 0);
@@ -910,9 +928,14 @@ static duk_ret_t callNative(duk_context* c) {
     }
     duk_throw_raw(c);
 }
-ScriptRuntime::ScriptRuntime(World& w, AssetManager& a, ui::UiCore* ui)
-    : world_(w), assets_(a), owner_(std::this_thread::get_id()), ui_(ui) {
+ScriptRuntime::ScriptRuntime(World& w, AssetManager& a, ui::UiCore* ui, RuntimeHost* host)
+    : world_(w), assets_(a), host_(host), owner_(std::this_thread::get_id()), ui_(ui) {
     createContext();
+}
+RuntimeHost& ScriptRuntime::host() const {
+    if (!host_)
+        throw std::logic_error("This operation requires a RuntimeHost");
+    return *host_;
 }
 void ScriptRuntime::createContext() {
     context_ = duk_create_heap_default();
@@ -1017,15 +1040,22 @@ void ScriptRuntime::createContext() {
     }
     duk_put_prop_string(context_, -2, "content");
     duk_put_global_string(context_, "Engine");
+    installRuntimeBindings(context_);
     if (ui_) {
         uiBindings_ = std::make_unique<UiBindings>(
             context_, *ui_, [this](const auto& text) { log(text); },
-            [this](const auto& path) { return assets_.file(path).uri(); });
+            [this](const auto& path) { return assets_.file(path).uri(); },
+            [this](int args) {
+                AssetManager::Scope scope(assets_, scriptOrigin_, false);
+                return duk_pcall(context_, args);
+            });
         uiBindings_->setVisible(hudEnabled_);
     }
 }
 ScriptRuntime::~ScriptRuntime() {
     uiBindings_.reset();
+    for (const auto& request : pixelReads_)
+        world_.renderTargets.discard(request);
     if (context_)
         duk_destroy_heap(context_);
 }
@@ -1045,7 +1075,6 @@ void ScriptRuntime::evaluateFile(const AssetRef& ref) {
 void ScriptRuntime::execute(const std::string& source, const std::string& label) {
     AssetManager::Scope content(assets_, scriptOrigin_, false);
     evaluateSource(source, label);
-    processSceneRequest();
 }
 void ScriptRuntime::evaluateSource(const std::string& source, const std::string& label) {
     if (std::this_thread::get_id() != owner_)
@@ -1058,45 +1087,30 @@ void ScriptRuntime::evaluateSource(const std::string& source, const std::string&
     }
     checkedCall(0);
 }
-void ScriptRuntime::configure(const Project& project, const std::string& mount) {
-    scriptOrigin_ = assets_.mounts()->source(mount);
-    AssetManager::Scope content(assets_, scriptOrigin_, false);
-    projectScripts_.clear();
-    for (const auto& path : project.scripts())
-        projectScripts_.push_back(assets_.reference(path));
-}
-void ScriptRuntime::initialize(const Project& project, const std::string& mount) {
-    configure(project, mount);
-    if (!project.startupMap().empty()) {
-        AssetManager::Scope content(assets_, scriptOrigin_, false);
-        loadScene(project.startupMap());
-    } else
-        initialize();
-}
-void ScriptRuntime::initialize() {
-    if (!world_.resources.mapAsset.id.empty())
-        scriptOrigin_ = assets_.origin(world_.resources.mapAsset);
-    startScripts();
-}
-void ScriptRuntime::startScripts() {
-    if (!scriptOrigin_ && !world_.resources.scripts.empty())
-        scriptOrigin_ = assets_.origin(world_.resources.scripts.front());
+void ScriptRuntime::start(ContentSourceRef origin, const std::vector<AssetRef>& scripts) {
+    if (started_)
+        throw std::logic_error("A realm is started once; create a new realm to run a different program");
+    started_ = true;
+    scriptOrigin_ = std::move(origin);
+    if (!scriptOrigin_ && !scripts.empty())
+        scriptOrigin_ = assets_.origin(scripts.front());
     // One realm has one /Game origin, including callbacks invoked after top-level evaluation.
-    for (const auto* scripts : {&projectScripts_, &world_.resources.scripts})
-        for (const auto& script : *scripts)
-            if (assets_.origin(script) != scriptOrigin_)
-                throw std::invalid_argument("Scripts in one realm must belong to the same Content");
+    for (const auto& script : scripts)
+        if (assets_.origin(script) != scriptOrigin_)
+            throw std::invalid_argument("Scripts in one realm must belong to the same Content");
     AssetManager::Scope content(assets_, scriptOrigin_, false);
-    for (const auto& script : projectScripts_)
+    for (const auto& script : scripts)
         evaluateFile(script);
-    for (const auto& script : world_.resources.scripts)
-        evaluateFile(script);
-    duk_get_global_string(context_, "initialize");
+    notify("initialize");
+    updateUi(0);
+}
+void ScriptRuntime::notify(const char* callback) {
+    AssetManager::Scope content(assets_, scriptOrigin_, false);
+    duk_get_global_string(context_, callback);
     if (duk_is_function(context_, -1))
         checkedCall(0);
     else
         duk_pop(context_);
-    updateUi(0);
 }
 void ScriptRuntime::updateUi(float dt) {
     AssetManager::Scope content(assets_, scriptOrigin_, false);
@@ -1110,75 +1124,28 @@ void ScriptRuntime::updateUi(float dt) {
         checkedCall(1);
     } else
         duk_pop(context_);
-    processSceneRequest();
 }
 void ScriptRuntime::setHudEnabled(bool enabled) {
     hudEnabled_ = enabled;
     if (uiBindings_)
         uiBindings_->setVisible(enabled);
 }
-void ScriptRuntime::processUiInput(Input& input) {
-    AssetManager::Scope content(assets_, scriptOrigin_, false);
-    if (ui_)
-        ui_->processInput(input);
-    processSceneRequest();
-}
-void ScriptRuntime::loadScene(const AssetRef& ref) {
-    auto current = assets_.resolve(ref);
-    AssetManager::Scope content(assets_, assets_.origin(current), false);
-    loadScene(current.path);
-}
-void ScriptRuntime::loadScene(const AssetPath& path) {
-    if (std::this_thread::get_id() != owner_)
-        throw std::logic_error("Scene loading requires the owner thread");
-    auto source = assets_.origin(path);
-    for (const auto& script : projectScripts_)
-        if (assets_.origin(script) != source)
-            throw std::invalid_argument("Project startup scripts and Map must belong to the same Content");
-    auto observers = world_.deferObservers();
-    std::exception_ptr publicationFailure;
-    try {
-        ScenePersistence::load(world_, assets_, path);
-    } catch (const ScenePersistence::CommittedError&) {
-        publicationFailure = std::current_exception();
-    }
-    scriptOrigin_ = assets_.origin(world_.resources.mapAsset);
-    uiBindings_.reset();
-    duk_destroy_heap(context_);
-    context_ = nullptr;
-    createContext();
-    world_.commitChanges();
-    startScripts();
-    observers.commit();
-    if (publicationFailure)
-        std::rethrow_exception(publicationFailure);
-}
-AssetRef ScriptRuntime::saveScene(const AssetPath& path, const std::string& name) {
-    return ScenePersistence::save(world_, assets_, path, name);
-}
-void ScriptRuntime::processSceneRequest() {
-    if (pendingScene_.id.empty())
-        return;
-    auto path = std::move(pendingScene_);
-    pendingScene_ = {};
-    loadScene(path);
-}
-void ScriptRuntime::tick(float dt, const Input& rawInput) {
+void ScriptRuntime::tick(float dt, const Input& rawInput, bool gameplayInput) {
     AssetManager::Scope content(assets_, scriptOrigin_, false);
     CpuScope inputScope("Input / Picking / JS Arguments");
     if (std::this_thread::get_id() != owner_)
         throw std::runtime_error("JS accessed outside engine thread");
-    Input input = rawInput;
+    const Input& input = rawInput;
     bool captured = input.pointerCaptured;
-    world_.gameplay.hovered = captured ? 0 : world_.pick(input.mouseX, input.mouseY, input);
-    auto ground = world_.groundAt(input.mouseX, input.mouseY, input);
+    const auto* camera = host_ && host_->view.camera ? &*host_->view.camera : nullptr;
+    if (gameplayInput)
+        world_.gameplay.hovered = captured ? 0 : world_.pick(input.mouseX, input.mouseY, input, camera);
+    auto ground =
+        gameplayInput ? world_.groundAt(input.mouseX, input.mouseY, input, camera) : std::optional<vec3>{};
     duk_get_global_string(context_, "fixedUpdate");
     if (duk_is_undefined(context_, -1)) {
         duk_pop(context_);
         inputScope.finish();
-        world_.update(dt);
-        processSceneRequest();
-        updateUi(dt);
         return;
     }
     duk_push_number(context_, dt);
@@ -1208,7 +1175,7 @@ void ScriptRuntime::tick(float dt, const Input& rawInput) {
     value(context_, "groundZ", ground ? ground->z : 0);
     duk_push_boolean(context_, ground.has_value());
     duk_put_prop_string(context_, -2, "groundValid");
-    value(context_, "picked", world_.gameplay.hovered);
+    value(context_, "picked", gameplayInput ? world_.gameplay.hovered : 0);
     for (auto b : {std::pair<const char*, bool>{"leftPressed", input.leftPressed},
                    {"rightPressed", input.rightPressed},
                    {"middle", input.middle},
@@ -1221,8 +1188,5 @@ void ScriptRuntime::tick(float dt, const Input& rawInput) {
         CpuScope scope("JS fixedUpdate");
         checkedCall(2);
     }
-    world_.update(dt);
-    processSceneRequest();
-    updateUi(dt);
 }
 } // namespace afterlight

@@ -1,7 +1,7 @@
 #include "TestProject.h"
 #include "core/World.h"
 #include "scene/ScenePersistence.h"
-#include "scripting/ScriptRuntime.h"
+#include "scripting/RuntimeHost.h"
 #include <iostream>
 
 using namespace afterlight;
@@ -97,7 +97,7 @@ static void physics() {
 }
 static void components() {
     World w;
-    ScriptRuntime scripts(w,testAssets());
+    RuntimeHost scripts(w,testAssets());
     scripts.execute(R"JS(
 var parent=Engine.create({name:'Rig',components:{transform:{position:[1,2,3],rotation:[0,.70710678,0,.70710678]}}});
 ['directional','spot','point','rect','capsule'].forEach(function(type) {

@@ -10,6 +10,7 @@ struct UiBindings::Impl {
     ui::UiCore& ui;
     std::function<std::string(const std::string&)> resolve;
     std::function<void(const std::string&)> log;
+    std::function<int(int)> invoke;
     uint32_t nextNode = 0, nextListener = 0;
     std::unordered_map<uint32_t, Rml::ObserverPtr<Rml::Element>> nodes;
     struct Document {
@@ -73,7 +74,7 @@ struct UiBindings::Impl {
                 duk_put_prop_string(c, -2, entry.first.c_str());
             }
             duk_put_prop_string(c, -2, "parameters");
-            if (duk_pcall(c, 1) != 0)
+            if (owner.invoke(1) != 0)
                 owner.log(std::string("UI event: ") + duk_safe_to_stacktrace(c, -1));
             else if (duk_get_boolean(c, -1))
                 event.StopPropagation();
@@ -275,8 +276,8 @@ struct UiBindings::Impl {
         return 0;
     }
     Impl(duk_context* c, ui::UiCore& u, std::function<void(const std::string&)> sink,
-         std::function<std::string(const std::string&)> resolver)
-        : js(c), ui(u), resolve(std::move(resolver)), log(std::move(sink)) {
+         std::function<std::string(const std::string&)> resolver, std::function<int(int)> caller)
+        : js(c), ui(u), resolve(std::move(resolver)), log(std::move(sink)), invoke(std::move(caller)) {
         duk_push_heap_stash(c);
         duk_push_pointer(c, this);
         duk_put_prop_string(c, -2, "uiBindings");
@@ -341,8 +342,8 @@ delete this.__uiNative;
     }
 };
 UiBindings::UiBindings(duk_context* c, ui::UiCore& u, std::function<void(const std::string&)> log,
-                       std::function<std::string(const std::string&)> resolve)
-    : impl_(std::make_unique<Impl>(c, u, std::move(log), std::move(resolve))) {}
+                       std::function<std::string(const std::string&)> resolve, std::function<int(int)> invoke)
+    : impl_(std::make_unique<Impl>(c, u, std::move(log), std::move(resolve), std::move(invoke))) {}
 UiBindings::~UiBindings() = default;
 void UiBindings::setVisible(bool value) {
     impl_->setVisible(value);

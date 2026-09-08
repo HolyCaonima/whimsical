@@ -22,7 +22,7 @@ EngineUi (native tools) ──────────────────�
 
 RmlUi 全局初始化由共享服务管理，各 uiCore 有独立 Context 和录制器。`ScriptRuntime` 可选接收 uiCore，因此无窗口的玩法测试仍可运行。窗口应用始终安装 `Engine.ui`。所有文档 API 与 JS 回调在同一主线程执行。
 
-场景重载先释放旧 realm 的事件订阅和项目文档，再销毁 JS heap；引擎工具文档持续存在。元素句柄使用 RmlUi ObserverPtr，节点被移除后再调用会抛 JS Error。DOM 事件中可取消自己的订阅或移除自身元素；回调异常写入现有日志通道。`Engine.loadScene` 仍延迟到事件调用返回后执行，即使游戏时间暂停，UI 输入阶段也处理场景请求。
+场景替换关闭场景 realm 的事件订阅和文档，再销毁该 JS heap；常驻应用 realm 的文档及引擎工具持续存在。每个 UI 回调进入所属 realm 的 Content scope，两个来源中的 `/Game` 不会混淆。详见 [运行宿主与视图](runtime-host.md)。元素句柄使用 RmlUi ObserverPtr，节点被移除后再调用会抛 JS Error。DOM 事件中可取消自己的订阅或移除自身元素；回调异常写入现有日志通道。`Engine.loadScene` 仍延迟到事件调用返回后执行，即使游戏时间暂停，UI 输入阶段也处理场景请求。
 
 UiFrame 每次包含完整绘制列表，并持有几何和纹理的共享引用。mailbox 丢帧不影响资源创建/销毁顺序。Vulkan 后端在帧 fence 之后回收没有快照或 Context 引用的资源，重复呈现不会重传已有几何。字体/图片上传发生在首次使用时。
 

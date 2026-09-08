@@ -70,7 +70,5 @@ void main() {
         }
     }
     color *= 1 - .18 * pow(length((uv - .5) * 1.2), 2);
-    vec4 hud = imageLoad(hudImage, p);
-    color = color * (1 - hud.a) + hud.rgb;
     imageStore(finalImage, p, vec4(color, 1));
 }

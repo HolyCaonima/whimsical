@@ -38,9 +38,10 @@ struct SceneEntity {
     Json json() const;
     static SceneEntity fromJson(const Json&);
 };
-struct SceneDocument {
+// Resource descriptions can be edited without serializing or reinstantiating entities.
+// Maps and live resource access use this same codec and validation contract.
+struct SceneResourceDescription {
     std::vector<AssetRef> scripts;
-    std::vector<SceneEntity> entities;
     std::vector<MaterialDefinition> materials;
     std::map<uint32_t, AssetRef> materialAssets;
     Camera camera;
@@ -48,6 +49,12 @@ struct SceneDocument {
     std::string player;
     std::map<std::string, std::string> references;
     Json data = Json::object();
+    Json json() const;
+    static SceneResourceDescription fromJson(const Json&);
+    void validate() const;
+};
+struct SceneDocument : SceneResourceDescription {
+    std::vector<SceneEntity> entities;
     Json json() const;
     static SceneDocument fromJson(const Json&);
     void validate() const;

@@ -13,6 +13,7 @@ struct SceneResources {
     std::map<std::string, std::string> references;
     std::vector<Material> materials;
     std::map<uint32_t, std::shared_ptr<const MaterialAsset>> materialAssets;
+    std::set<uint32_t> transientMaterials;
     Camera camera;
     NavigationSettings navigation;
 };
@@ -96,7 +97,10 @@ class World {
     template <class T> void set(Entity e, T value, AssetManager& assets) {
         componentCatalog().update(*this, e, componentCatalog().document(typeid(T)).name, value, assets);
     }
-    Entity create(std::string name = {}, std::string persistentId = {});
+    Entity create(std::string name = {}, std::string persistentId = {}, bool persistent = true);
+    void rename(Entity, std::string);
+    void setPersistent(Entity, bool);
+    bool persistent(Entity) const;
     void destroy(Entity); // Hierarchy subtree, children first.
     void setEnabled(Entity, bool);
     bool enabled(Entity e) const {
@@ -123,8 +127,9 @@ class World {
     void update(float dt) {
         animation.update(dt);
     }
-    std::optional<vec3> groundAt(float, float, const Input&) const;
-    Entity pick(float, float, const Input&) const;
-    Frame snapshot(const Input&, uint64_t, double, int, bool physicsDebug = false);
+    std::optional<vec3> groundAt(float, float, const Input&, const Camera* = nullptr) const;
+    Entity pick(float, float, const Input&, const Camera* = nullptr) const;
+    Frame snapshot(const Input&, uint64_t, double, int, bool physicsDebug = false,
+                   const RenderView* view = nullptr);
 };
 } // namespace afterlight
