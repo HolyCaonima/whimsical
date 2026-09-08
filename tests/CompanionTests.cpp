@@ -13,7 +13,7 @@ int main(int argc, char** argv) {
     try {
         World world;
         ScriptRuntime scripts(world, testAssets());
-        scripts.initialize();
+        scripts.initialize(testProject());
         Input input;
         uint32_t dog = 0;
         for (const auto& o : world.registry().entities())

@@ -41,6 +41,7 @@ struct ObjectPath {
 struct AssetRef {
     std::string id;
     AssetPath path;
+    std::string source; // Runtime mount identity; omitted in durable Content references.
     Json json() const;
     static AssetRef fromJson(const Json&);
 };
@@ -58,6 +59,7 @@ struct AssetHeader {
 class Asset {
     AssetHeader header_;
     AssetPath path_;
+    std::string source_;
     friend class AssetManager;
 
   public:
@@ -66,7 +68,7 @@ class Asset {
         return header_;
     }
     AssetRef reference() const {
-        return {header_.id, path_};
+        return {header_.id, path_, source_};
     }
 };
 struct DataAsset final : Asset {

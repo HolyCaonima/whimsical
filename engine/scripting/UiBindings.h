@@ -13,7 +13,8 @@ class UiBindings {
     std::unique_ptr<Impl> impl_;
 
   public:
-    UiBindings(duk_context*, ui::UiCore&, std::function<void(const std::string&)> log);
+    UiBindings(duk_context*, ui::UiCore&, std::function<void(const std::string&)> log,
+               std::function<std::string(const std::string&)> resolve);
     ~UiBindings();
     void setVisible(bool);
 };

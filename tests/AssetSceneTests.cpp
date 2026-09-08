@@ -37,7 +37,7 @@ static void fixture(const fs::path& file, const AssetHeader& h, const std::strin
     out << "ALAS1\n" << h.json().dump() << '\n' << payload;
 }
 static void payloadStorage(const fs::path& directory) {
-    AssetManager assets{Project::create(directory, "Payload storage")};
+    AssetManager assets{Project::create(directory, "Payload storage").content()};
     auto inlineHeader = header("Binary");
     auto inlineRef = assets.save(AssetPath("/Game/Inline"), inlineHeader, "payload bytes");
     fs::create_directories(directory / "Content/blobs");
@@ -110,7 +110,7 @@ static void registry(const fs::path& directory) {
     check(Project(directory / ".project").id() == project.id(), "Project identity must survive reopen");
     rejects([&] { Project::create(directory, "Overwrite"); },
             "Project create must not overwrite a descriptor");
-    AssetManager assets(project);
+    AssetManager assets(project.content());
     registerEngineAssets(assets);
     check(assets.size() == 0 && project.startupMap().empty(),
           "Empty project must open without a startup Map");
@@ -204,9 +204,9 @@ static void registry(const fs::path& directory) {
 static void scene(const fs::path& directory) {
     // Relocation test: no runtime content access may depend on the example project's location.
     fs::copy(fs::path(AFTERLIGHT_ROOT) / "Projects" / "Afterlight", directory, fs::copy_options::recursive);
-    AssetManager assets{Project(directory)};
+    AssetManager assets{Project(directory).content()};
     registerEngineAssets(assets);
-    auto path = assets.project().startupMap();
+    auto path = Project(directory).startupMap();
     auto original = assets.load<SceneAsset>(path);
     check(original->header().storage == PayloadStorage::Inline, "Rain Court Map must have an inline payload");
     check(original->scene.entities.size() == 57, "Rain Court contains 48 authored objects and 9 physical lights");
@@ -219,7 +219,7 @@ static void scene(const fs::path& directory) {
           "ONNX references must use header-only assets");
     World world;
     ScriptRuntime scripts(world, assets);
-    scripts.initialize();
+    scripts.initialize(Project(directory));
     check(ScenePersistence::capture(world, assets).json() == original->scene.json(),
           "Load/capture must round-trip the authored Map exactly");
     auto oldPlayer = world.gameplay.playerId;
@@ -333,11 +333,17 @@ static void scene(const fs::path& directory) {
     check(world.gameplay.playerId != entityBefore,
           "Publication failure cannot mix the old realm with the new World");
     // Reopen the copied project and load the saved asset using a different registry/World.
-    AssetManager reopened{Project(directory / ".project")};
+    AssetManager reopened{Project(directory / ".project").content()};
     registerEngineAssets(reopened);
     World second;
     ScenePersistence::load(second, reopened, saved);
-    check(ScenePersistence::capture(second, reopened).json() == expected,
+    // Runtime references carry the new registry's mount identity; persistence remains identical.
+    auto reopenedDocument = ScenePersistence::capture(second, reopened).json().dump();
+    auto oldSource = assets.origin(saved)->id, newSource = reopened.origin(saved)->id;
+    for (size_t pos = 0; (pos = reopenedDocument.find(newSource, pos)) != std::string::npos;
+         pos += oldSource.size())
+        reopenedDocument.replace(pos, newSource.size(), oldSource);
+    check(Json::parse(reopenedDocument) == expected,
           "Scene must load independently from a relocated project directory");
     world.clearScene();
     check(world.physics().size() == 0 && world.gameplay.playerId == 0,
@@ -351,7 +357,7 @@ static void scene(const fs::path& directory) {
           "Empty Maps must load and publish a clean scene");
 }
 static void staticAssets(const fs::path& directory) {
-    AssetManager assets{Project::create(directory, "Static kit test")};
+    AssetManager assets{Project::create(directory, "Static kit test").content()};
     registerEngineAssets(assets);
     std::string bytes("STM1", 4);
     auto append = [&](const void* data, size_t size) { bytes.append(static_cast<const char*>(data), size); };

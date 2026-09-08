@@ -57,7 +57,7 @@ proxy 拆成两半，因为它们的变化频率相差一到两个数量级：`P
 - 单位米，Y 向上，角色 +Z 朝前；GLM 列主序矩阵，列向量。
 - Box 是中心原点的单位立方体；Capsule 半径 0.4 m，高 2 m，默认中心离地 1 m。
 - 材质 `color` 和 `emission` 使用线性空间；roughness 是线性 perceptual roughness，metallic ∈ [0,1]。
-- Project 根目录包含 `.project` 与 `Content/`，运行时资产统一经 AssetManager 的 `/Game/...` 虚拟路径访问。网格、控制器、脚本、配置和 Map 都使用 `.asset`；仅 ONNX 使用纯头 asset 映射独立模型。详见 [Project / Asset / Scene](projects-assets-scenes.md)。
+- Project 根目录包含 `.project` 与 `Content/`，Project 只负责启动配置，ContentMounts/AssetManager 可独立挂载多个 Content。调用方访问任意挂载名，每个 Content 的 `/Game/...` 依赖只在自身解析，加载和保存禁止跨来源引用。网格、控制器、脚本、配置和 Map 都使用 `.asset`；payload 存储方式与类型独立，资产文件和 UI 共用底层路径映射。详见 [Project / Asset / Scene](projects-assets-scenes.md)。
 - Map 内嵌对象、材质、灯、相机、导航及持久玩法描述；共享配置是 Data 资产。World 从 Map 重建临时 Entity、Render slot、BodyHandle；它们与持久 Asset/Object ID 分离。
 
 ## JS 生命周期和绑定

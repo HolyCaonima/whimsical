@@ -28,9 +28,11 @@ UiFrame 每次包含完整绘制列表，并持有几何和纹理的共享引用
 
 ## 项目资源
 
-JS 入口接受 `/Game/`（当前项目 Content）或 `/Engine/`（引擎 Content）虚拟路径，带真实扩展名。RML 内的 RCSS、图片和模板使用相对引用；`createDocument` 的第二个参数确定相对路径基址。UI 文件是 Content 下的源资源，无需将 RML/RCSS 包进 `.asset`。JS 继续使用现有 Script 资产加载规则。
+`UiCore(assets.mounts())` 共享资产层的 Content 映射。JS 入口接受任意已挂载虚拟根，带真实扩展名；`/Game/` 默认为当前脚本或 Map 所属 Content。RML 内的 RCSS、图片和模板使用相对引用或来源内的 `/Game/...`，不能引用其他 Content；`createDocument` 的第二个参数确定相对路径基址。UI 文件是 Content 下的源资源，无需将 RML/RCSS 包进 `.asset`。JS 继续使用现有 Script 资产加载规则。
 
-每个文档在自己的 RCSS 前合并 `/Engine/UI/base.rcss`，提供 div、p、form、table 等基础 display 默认值。引擎随内容携带 LatoLatin 常规/粗体及 OFL 许可证；Windows 安装了 Microsoft YaHei 时将其作为中文回退字体。项目可使用 `loadFont` 加载自己的字体。
+宿主显式挂载 `/Engine` 后，每个文档在自己的 RCSS 前合并 `/Engine/UI/base.rcss`，提供 div、p、form、table 等基础 display 默认值。引擎随内容携带 LatoLatin 常规/粗体及 OFL 许可证；宿主挂载 `/SystemFonts` 时加载 Microsoft YaHei 作为中文回退字体。项目可使用 `loadFont` 加载自己的字体。
+
+RmlUi 的 FileInterface、JoinPath 和 WIC 纹理解码都经过同一个 Content 文件映射。内部 URI 包含挂载身份；卸载后不能再读取旧 URI，重挂同名目录不会命中旧样式或纹理缓存。已经生成的 DOM 和 UiFrame 保持有效。不同 UiCore 可以共享一张挂载表，也可以各自使用独立挂载表。
 
 ```javascript
 // Put this in a project Script asset included by .project.

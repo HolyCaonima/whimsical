@@ -8,6 +8,7 @@ namespace afterlight {
 struct UiBindings::Impl {
     duk_context* js;
     ui::UiCore& ui;
+    std::function<std::string(const std::string&)> resolve;
     std::function<void(const std::string&)> log;
     uint32_t nextNode = 0, nextListener = 0;
     std::unordered_map<uint32_t, Rml::ObserverPtr<Rml::Element>> nodes;
@@ -132,9 +133,10 @@ struct UiBindings::Impl {
         const std::string op = duk_require_string(c, 0);
         auto string = [&](int i) { return std::string(duk_require_string(c, i)); };
         if (op == "load" || op == "create") {
-            auto* doc = op == "load" ? ui.loadDocument(string(2))
-                                     : ui.createDocument(string(2),
-                                                         duk_get_string_default(c, 3, "/Game/UI/inline.rml"));
+            auto* doc = op == "load"
+                            ? ui.loadDocument(resolve(string(2)))
+                            : ui.createDocument(string(2),
+                                                resolve(duk_get_string_default(c, 3, "/Game/UI/inline.rml")));
             documents.erase(std::remove_if(documents.begin(), documents.end(),
                                            [](const auto& item) { return !item.element; }),
                             documents.end());
@@ -143,7 +145,7 @@ struct UiBindings::Impl {
             return 1;
         }
         if (op == "font") {
-            duk_push_boolean(c, ui.loadFont(string(2), duk_get_boolean(c, 3)));
+            duk_push_boolean(c, ui.loadFont(resolve(string(2)), duk_get_boolean(c, 3)));
             return 1;
         }
         if (op == "off") {
@@ -272,8 +274,9 @@ struct UiBindings::Impl {
             throw std::invalid_argument("Unknown UI operation: " + op);
         return 0;
     }
-    Impl(duk_context* c, ui::UiCore& u, std::function<void(const std::string&)> sink)
-        : js(c), ui(u), log(std::move(sink)) {
+    Impl(duk_context* c, ui::UiCore& u, std::function<void(const std::string&)> sink,
+         std::function<std::string(const std::string&)> resolver)
+        : js(c), ui(u), resolve(std::move(resolver)), log(std::move(sink)) {
         duk_push_heap_stash(c);
         duk_push_pointer(c, this);
         duk_put_prop_string(c, -2, "uiBindings");
@@ -337,8 +340,9 @@ delete this.__uiNative;
         ui.context().Update();
     }
 };
-UiBindings::UiBindings(duk_context* c, ui::UiCore& u, std::function<void(const std::string&)> log)
-    : impl_(std::make_unique<Impl>(c, u, std::move(log))) {}
+UiBindings::UiBindings(duk_context* c, ui::UiCore& u, std::function<void(const std::string&)> log,
+                       std::function<std::string(const std::string&)> resolve)
+    : impl_(std::make_unique<Impl>(c, u, std::move(log), std::move(resolve))) {}
 UiBindings::~UiBindings() = default;
 void UiBindings::setVisible(bool value) {
     impl_->setVisible(value);

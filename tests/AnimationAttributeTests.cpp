@@ -62,9 +62,9 @@ static void framework() {
 }
 static void scene() {
     World world;
-    ui::UiCore uiCore(testAssets().project().content());
+    ui::UiCore uiCore(testAssets().mounts());
     ScriptRuntime scripts(world, testAssets(), &uiCore);
-    scripts.initialize();
+    scripts.initialize(testProject());
     auto player = world.gameplay.playerId;
     auto view = world.animation.inspectAnimation(player);
     check(view.schema.size() == 1 && view.schema[0].options.size() == 11,

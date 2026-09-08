@@ -172,7 +172,7 @@ static void transformsAndScript() {
     auto legacy = testAssets().load<SceneAsset>(AssetPath("/Game/Maps/RainCourt"));
     check(!legacy->scene.entities.empty(), "Migrated project map must remain loadable");
     auto directory = std::filesystem::path(AFTERLIGHT_ROOT) / "build" / ("kinematic-" + newPersistentId());
-    AssetManager local{Project::create(directory, "Kinematic test")};
+    AssetManager local{Project::create(directory, "Kinematic test").content()};
     registerEngineAssets(local);
     auto shader = world.resources.materials[0].shader;
     auto shaderHeader = shader->header();

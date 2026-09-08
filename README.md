@@ -146,7 +146,7 @@ captures/                 实际 GPU 截图和运行报告
 
 **Shader → Material。** `ShaderAsset` 拥有 GLSL 表面函数体、有序属性／纹理 schema、material model 和 render state；`MaterialAsset` 拥有解析后的取值和纹理引用。`engine/render/shaders/surface.glsl` 的 `EvaluateSurface` 是公共 ABI，同一份表面代码同时供 G-buffer 光栅化和六个 ray query pass 使用，通过 source linking 生成 dispatch 表，不需要 SBT 或 callable shader。当前只支持 `opaque` 与 `masked`，透明混合在资产加载时明确拒绝。详见 [Shader / Material](docs/shader-materials.md)。
 
-**Project / Asset / Scene。** `Project` 是独立内容根，`AssetManager` 是唯一注册与加载入口，所有资产使用统一的 `ALAS1` 头 + 载荷格式，载荷可内嵌或外置。资产 ID 是权威身份，移动资产后旧引用仍按 ID 解析。对象路径为 `/Game/Maps/RainCourt:<ObjectID>`；Entity ID、render slot 和物理句柄是运行时句柄，不入盘。支持 `--project <目录或.project>` 与 `--map /Game/Maps/RainCourt`。详见 [Project / Asset / Scene](docs/projects-assets-scenes.md)。
+**Project / Asset / Scene。** `Project` 描述启动配置，`ContentMounts` / `AssetManager` 统一挂载和管理多个独立 Content，加载与保存的依赖必须在各自来源内闭合。JS 可通过 `Engine.content` 挂载、浏览、加载和保存。所有资产使用统一的 `ALAS1` 头 + 载荷格式，载荷可内嵌或外置。资产 ID 在所属 Content 内是权威身份，移动资产后旧引用仍按 ID 解析；卸载后旧引用失效，同名重挂不会重新绑定。对象路径为 `/Game/Maps/RainCourt:<ObjectID>`；Entity ID、render slot 和物理句柄是运行时句柄，不入盘。支持 `--project <目录或.project>` 与 `--map /Game/Maps/RainCourt`。详见 [Project / Asset / Scene](docs/projects-assets-scenes.md)。
 
 **物理与动画。** 独立主线程 `PhysicsScene` 存储 box/capsule 形状、查询层、动态 AABB Tree 与生命周期；角色移动、root motion、蹲起净空和庭院导航共用同一份查询，Maple Circuit 的车辆位移与撞击法线也来自它。动画层提供可替换 Solver、骨骼 FK、root motion／物理反馈、接触和 FABRIK；根运动消费策略是独立组件，可选直接变换、任意形状 kinematic 或直立胶囊 grounded。见 [Physics Scene](docs/physics-scene.md) 与 [Animation](docs/animation.md)。
 

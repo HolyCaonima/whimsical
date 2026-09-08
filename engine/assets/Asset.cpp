@@ -22,8 +22,8 @@ std::string newPersistentId() {
     return result;
 }
 AssetPath::AssetPath(std::string value) : value_(std::move(value)) {
-    if (value_.compare(0, 6, "/Game/") != 0 || value_.size() == 6 || value_.back() == '/' ||
-        value_.find("//") != std::string::npos ||
+    if (value_.empty() || value_[0] != '/' || value_.find('/', 1) == std::string::npos ||
+        value_.back() == '/' || value_.find("//") != std::string::npos ||
         value_.find_first_not_of("/ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-") !=
             std::string::npos)
         throw std::invalid_argument("Invalid virtual asset path: " + value_);
@@ -37,11 +37,16 @@ ObjectPath::ObjectPath(AssetPath p, std::string id) : map(std::move(p)), object(
     validatePersistentId(object);
 }
 Json AssetRef::json() const {
-    return {{"id", id}, {"path", path.string()}};
+    Json j{{"id", id}, {"path", path.string()}};
+    if (!source.empty())
+        j["source"] = source;
+    return j;
 }
 AssetRef AssetRef::fromJson(const Json& j) {
     AssetRef r{j.at("id").string(), AssetPath(j.at("path").string())};
     validatePersistentId(r.id);
+    if (j.contains("source"))
+        r.source = j.at("source").string();
     return r;
 }
 Json AssetHeader::json() const {

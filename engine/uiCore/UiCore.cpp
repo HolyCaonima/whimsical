@@ -14,7 +14,68 @@
 namespace afterlight::ui {
 namespace {
 uint64_t resourceId = 0, contextId = 0;
+// RmlUi owns global interfaces, while each context supplies its own mount table.
+struct Files : Rml::FileInterface {
+    std::vector<std::weak_ptr<const ContentMounts>> providers;
+    void add(std::shared_ptr<const ContentMounts> mounts) {
+        for (auto it = providers.begin(); it != providers.end();) {
+            if (auto existing = it->lock()) {
+                if (existing == mounts)
+                    return;
+                ++it;
+            } else
+                it = providers.erase(it);
+        }
+        providers.push_back(mounts);
+    }
+    std::shared_ptr<const ContentMounts> provider(const std::string& uri) const {
+        for (const auto& weak : providers)
+            if (auto mounts = weak.lock()) {
+                try {
+                    (void)mounts->fromUri(uri);
+                    return mounts;
+                } catch (const std::invalid_argument&) {
+                }
+            }
+        throw std::invalid_argument("Unknown or unmounted UI resource: " + uri);
+    }
+    ContentFile resolve(const std::string& uri) const {
+        return provider(uri)->fromUri(uri);
+    }
+    Rml::FileHandle Open(const Rml::String& uri) override {
+        try {
+            return reinterpret_cast<Rml::FileHandle>(_wfopen(resolve(uri).physical().c_str(), L"rb"));
+        } catch (const std::exception& e) {
+            Rml::Log::Message(Rml::Log::LT_ERROR, "%s", e.what());
+            return 0;
+        }
+    }
+    void Close(Rml::FileHandle file) override {
+        fclose(reinterpret_cast<FILE*>(file));
+    }
+    size_t Read(void* buffer, size_t size, Rml::FileHandle file) override {
+        return fread(buffer, 1, size, reinterpret_cast<FILE*>(file));
+    }
+    bool Seek(Rml::FileHandle file, long offset, int origin) override {
+        return fseek(reinterpret_cast<FILE*>(file), offset, origin) == 0;
+    }
+    size_t Tell(Rml::FileHandle file) override {
+        return ftell(reinterpret_cast<FILE*>(file));
+    }
+};
 struct System : Rml::SystemInterface {
+    Files& files;
+    explicit System(Files& f) : files(f) {}
+    void JoinPath(Rml::String& translated, const Rml::String& document, const Rml::String& path) override {
+        try {
+            auto mounts = files.provider(document);
+            translated = mounts->relative(mounts->fromUri(document), path).uri();
+        } catch (const std::exception& e) {
+            translated = "/__invalid_content_resource";
+            Rml::Log::Message(Rml::Log::LT_ERROR, "%s", e.what());
+        }
+    }
+
     std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
     double GetElapsedTime() override {
         return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
@@ -59,44 +120,36 @@ struct System : Rml::SystemInterface {
     }
 };
 struct Services {
-    System system;
-    Rml::SharedPtr<Rml::StyleSheetContainer> base;
+    Files files;
+    System system{files};
     bool com = false;
-    Services() {
+    explicit Services(std::shared_ptr<const ContentMounts> mounts) {
+        files.add(mounts);
         com = SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED));
         Rml::SetSystemInterface(&system);
+        Rml::SetFileInterface(&files);
         if (!Rml::Initialise())
             throw std::runtime_error("RmlUi initialization failed");
-        base = Rml::Factory::InstanceStyleSheetFile(std::string(AFTERLIGHT_ROOT) +
-                                                    "/engine/Content/UI/base.rcss");
-        if (!base)
-            throw std::runtime_error("RmlUi base stylesheet could not be loaded");
-        const auto fonts = std::filesystem::path(AFTERLIGHT_ROOT) / "engine/Content/Fonts";
-        if (!Rml::LoadFontFace((fonts / "LatoLatin-Regular.ttf").generic_string()) ||
-            !Rml::LoadFontFace((fonts / "LatoLatin-Bold.ttf").generic_string()))
-            throw std::runtime_error("RmlUi default fonts could not be loaded");
-        wchar_t windows[MAX_PATH];
-        GetWindowsDirectoryW(windows, MAX_PATH);
-        const auto chinese = std::filesystem::path(windows) / "Fonts/msyh.ttc";
-        if (std::filesystem::exists(chinese))
-            Rml::LoadFontFace(chinese.generic_string(), true);
     }
     ~Services() {
-        base.reset();
         Rml::Shutdown();
         if (com)
             CoUninitialize();
     }
 };
-std::shared_ptr<Services> services() {
+std::shared_ptr<Services> services(std::shared_ptr<const ContentMounts> mounts) {
     static std::weak_ptr<Services> instance;
     auto result = instance.lock();
     if (!result)
-        instance = result = std::make_shared<Services>();
+        instance = result = std::make_shared<Services>(mounts);
+    else
+        result->files.add(mounts);
     return result;
 }
 const std::array<float, 16> identity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 struct Recorder : Rml::RenderInterface {
+    Files& files;
+    explicit Recorder(Files& f) : files(f) {}
     std::unordered_map<uint64_t, std::shared_ptr<const Geometry>> geometries;
     std::unordered_map<uint64_t, std::shared_ptr<const Texture>> textures;
     UiFrame frame;
@@ -141,7 +194,13 @@ struct Recorder : Rml::RenderInterface {
         ComPtr<IWICBitmapDecoder> decoder;
         ComPtr<IWICBitmapFrameDecode> image;
         ComPtr<IWICFormatConverter> converter;
-        auto path = std::filesystem::u8path(source);
+        std::filesystem::path path;
+        try {
+            path = files.resolve(source).physical();
+        } catch (const std::exception& e) {
+            Rml::Log::Message(Rml::Log::LT_ERROR, "%s", e.what());
+            return 0;
+        }
         if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
                                     IID_PPV_ARGS(&factory))) ||
             FAILED(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ,
@@ -227,13 +286,25 @@ Rml::Input::KeyIdentifier key(int vk) {
 }
 } // namespace
 struct UiCore::Impl {
-    std::shared_ptr<Services> service = services();
+    std::shared_ptr<Services> service;
     Recorder recorder;
+    Rml::SharedPtr<Rml::StyleSheetContainer> base;
     Rml::Context* context;
-    std::filesystem::path content;
+    std::shared_ptr<const ContentMounts> mounts;
     Input previous;
     bool pointerOwned = false;
-    explicit Impl(std::filesystem::path root) : content(std::move(root)) {
+    explicit Impl(std::shared_ptr<const ContentMounts> roots)
+        : service(services(roots)), recorder(service->files), mounts(std::move(roots)) {
+        if (mounts->contains("/Engine")) {
+            base = Rml::Factory::InstanceStyleSheetFile(mounts->locate("/Engine/UI/base.rcss").uri());
+            if (!base)
+                throw std::runtime_error("RmlUi base stylesheet could not be loaded");
+            for (const char* name : {"LatoLatin-Regular.ttf", "LatoLatin-Bold.ttf"})
+                if (!Rml::LoadFontFace(mounts->locate(std::string("/Engine/Fonts/") + name).uri()))
+                    throw std::runtime_error("RmlUi default font could not be loaded");
+        }
+        if (mounts->contains("/SystemFonts"))
+            Rml::LoadFontFace(mounts->locate("/SystemFonts/msyh.ttc").uri(), true);
         context = Rml::CreateContext("ui-" + std::to_string(++contextId), {1280, 800}, &recorder);
         if (!context)
             throw std::runtime_error("RmlUi context creation failed");
@@ -243,31 +314,20 @@ struct UiCore::Impl {
         Rml::ReleaseRenderManagers();
     }
     void style(Rml::ElementDocument* doc) {
+        if (!base)
+            return;
         auto* sheet = doc->GetStyleSheetContainer();
-        doc->SetStyleSheetContainer(sheet ? service->base->CombineStyleSheetContainer(*sheet)
-                                          : service->base);
+        doc->SetStyleSheetContainer(sheet ? base->CombineStyleSheetContainer(*sheet) : base);
     }
 };
-UiCore::UiCore(std::filesystem::path content) : impl_(std::make_unique<Impl>(std::move(content))) {}
+UiCore::UiCore(std::shared_ptr<const ContentMounts> mounts)
+    : impl_(std::make_unique<Impl>(std::move(mounts))) {}
 UiCore::~UiCore() = default;
 Rml::Context& UiCore::context() {
     return *impl_->context;
 }
 std::string UiCore::resolve(const std::string& path) const {
-    std::filesystem::path root;
-    std::string relative;
-    if (path.rfind("/Game/", 0) == 0) {
-        root = impl_->content;
-        relative = path.substr(6);
-    } else if (path.rfind("/Engine/", 0) == 0) {
-        root = std::filesystem::path(AFTERLIGHT_ROOT) / "engine/Content";
-        relative = path.substr(8);
-    } else
-        throw std::invalid_argument("UI resource requires /Game/ or /Engine/: " + path);
-    auto normalized = std::filesystem::path(relative).lexically_normal();
-    if (normalized.empty() || normalized.is_absolute() || *normalized.begin() == "..")
-        throw std::invalid_argument("UI resource escapes its content root: " + path);
-    return (root / normalized).generic_string();
+    return (ContentMounts::isUri(path) ? impl_->mounts->fromUri(path) : impl_->mounts->locate(path)).uri();
 }
 Rml::ElementDocument* UiCore::loadDocument(const std::string& path) {
     auto* doc = context().LoadDocument(resolve(path));
@@ -278,7 +338,6 @@ Rml::ElementDocument* UiCore::loadDocument(const std::string& path) {
 }
 Rml::ElementDocument* UiCore::createDocument(const std::string& rml, const std::string& source) {
     auto url = resolve(source);
-    std::replace(url.begin(), url.end(), ':', '|'); // RmlUi's URL encoding for Windows drive letters.
     auto* doc = context().LoadDocumentFromMemory(rml, url);
     if (!doc)
         throw std::runtime_error("Cannot create RML document: " + source);

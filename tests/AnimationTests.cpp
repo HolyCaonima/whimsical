@@ -115,7 +115,7 @@ static void framework() {
 static void scriptIntegration() {
     World world;
     ScriptRuntime script(world, testAssets());
-    script.initialize();
+    script.initialize(testProject());
     auto id = world.gameplay.playerId;
     script.execute("Engine.animationDetach(" + std::to_string(id) + ");Engine.animation(" +
                    std::to_string(id) +

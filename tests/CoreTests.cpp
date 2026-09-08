@@ -24,7 +24,7 @@ int main() {
     try {
         World w;
         ScriptRuntime js(w, testAssets());
-        js.initialize();
+        js.initialize(testProject());
         check(w.gameplay.playerId != 0, "JS must spawn player");
         check(w.registry().entities().size() > 20 && w.physics().size() == w.registry().view<Collider>().size(),
               "Physical scene not populated");
@@ -115,7 +115,7 @@ int main() {
               "Physical ground picking failed");
         World interactionWorld;
         ScriptRuntime gameplay(interactionWorld, testAssets());
-        gameplay.initialize();
+        gameplay.initialize(testProject());
         Input click;
         tickAnimated(gameplay, interactionWorld, click);
         auto screenPoint = [&](vec3 point) {
@@ -254,7 +254,7 @@ int main() {
         // would leave the renderer showing stale geometry with no way to notice.
         World tracked;
         ScriptRuntime trackedJs(tracked, testAssets());
-        trackedJs.initialize();
+        trackedJs.initialize(testProject());
         auto opened = tracked.snapshot({}, 1, 0, 0);
         check(opened.proxies.size() == tracked.registry().view<Renderable>().size() &&
                   opened.delta.structural.size() == opened.proxies.size(),

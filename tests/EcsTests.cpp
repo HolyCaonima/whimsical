@@ -156,7 +156,7 @@ static void animationLifetime() {
     w.remove<Animator>(e);
     check(!w.has<JointPose>(e), "Animator removal releases derived pose");
     ScriptRuntime scripts(w, testAssets());
-    scripts.initialize();
+    scripts.initialize(testProject());
     auto player = w.gameplay.playerId;
     auto before = w.snapshot({}, 1, 0, 0);
     w.motion.setCharacterHeight(player, 1.2f);
@@ -231,10 +231,17 @@ static void updateDependencies() {
 static void persistenceAndScripts() {
     World w;
     auto shader = testAssets().load<ShaderAsset>(AssetPath("/Game/shaders/Standard"));
+    auto directory = std::filesystem::path(AFTERLIGHT_ROOT) / "build" / ("ecs-" + newPersistentId());
+    AssetManager local{Project::create(directory, "ECS lifecycle").content()};
+    registerEngineAssets(local);
+    auto header = shader->header();
+    header.storage = PayloadStorage::Inline;
+    header.source.clear();
+    local.save(shader->reference().path, header, shader->source);
     MaterialDefinition material;
-    material.shader = shader->reference();
-    w.resources.materials.push_back(material.resolve(testAssets()));
-    ScriptRuntime scripts(w, testAssets());
+    material.shader = local.reference(shader->reference().path);
+    w.resources.materials.push_back(material.resolve(local));
+    ScriptRuntime scripts(w, local);
     scripts.execute(R"JS(
 var data=Engine.create({name:'Data',components:{data:{health:10}}});
 var value=Engine.data(data);value.health=20;Engine.setData(data,value);
@@ -259,7 +266,7 @@ var stale=Engine.create({components:{}});Engine.destroy(stale);
 if(Engine.alive(stale))throw Error('stale');
 Engine.enabled(parent,false);
 )JS");
-    auto document = ScenePersistence::capture(w, testAssets());
+    auto document = ScenePersistence::capture(w, local);
     check(document.entities.size() == 3 && document.json().at("version").uint() == 7,
           "Persist live entities in component schema");
     auto decoded = SceneDocument::fromJson(Json::parse(document.json().dump()));
@@ -267,13 +274,6 @@ Engine.enabled(parent,false);
     check(decoded.entities.back().components.find<SceneJoints>() &&
               decoded.entities.back().components.find<SceneJoints>()->poses.empty(),
           "Empty authored joint component retains presence");
-    auto directory = std::filesystem::path(AFTERLIGHT_ROOT) / "build" / ("ecs-" + newPersistentId());
-    AssetManager local{Project::create(directory, "ECS lifecycle")};
-    registerEngineAssets(local);
-    auto header = shader->header();
-    header.storage = PayloadStorage::Inline;
-    header.source.clear();
-    local.save(shader->reference().path, header, shader->source);
     auto saved = ScenePersistence::save(w, local, AssetPath("/Game/Maps/Ecs"), "ECS");
     auto stale = w.registry().entities().back();
     ScenePersistence::load(w, local, saved.path);
@@ -379,7 +379,7 @@ if(!Engine.data(empty).keep)throw Error('rollback changed preexisting data');
     auto id = w.get<Identity>(e).persistentId;
     auto directory =
         std::filesystem::path(AFTERLIGHT_ROOT) / "build" / ("component-contract-" + newPersistentId());
-    AssetManager local{Project::create(directory, "Component contracts")};
+    AssetManager local{Project::create(directory, "Component contracts").content()};
     registerEngineAssets(local);
     auto saved = ScenePersistence::save(w, local, AssetPath("/Game/Maps/Contracts"), "Contracts");
     preparations = 0;

@@ -1,10 +1,14 @@
 #pragma once
 #include "assets/EngineAssets.h"
+#include "assets/Project.h"
 #include "animation/ai4animation/Controller.h"
+inline afterlight::Project testProject() {
+    return afterlight::Project(std::filesystem::path(AFTERLIGHT_ROOT) / "Projects" / "Afterlight");
+}
 inline afterlight::AssetManager& testAssets() {
     static auto assets = [] {
-        auto a = std::make_unique<afterlight::AssetManager>(
-            afterlight::Project(std::filesystem::path(AFTERLIGHT_ROOT) / "Projects" / "Afterlight"));
+        auto a = std::make_unique<afterlight::AssetManager>(testProject().content());
+        a->mount("/Engine", std::filesystem::path(AFTERLIGHT_ROOT) / "engine/Content", false);
         afterlight::registerEngineAssets(*a);
         return a;
     }();

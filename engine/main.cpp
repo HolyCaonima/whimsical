@@ -162,13 +162,18 @@ int main(int argc, char** argv) {
             throw std::runtime_error("--ecs-smoke requires its own run");
         std::cout << "AFTERLIGHT | C++ engine / JavaScript gameplay / Vulkan RT\n";
         Window window(width, height);
-        AssetManager assets{Project(projectPath)};
+        Project project(projectPath);
+        AssetManager assets(project.content());
+        assets.mount("/Engine", std::filesystem::path(AFTERLIGHT_ROOT) / "engine/Content", false);
+        wchar_t windows[MAX_PATH];
+        GetWindowsDirectoryW(windows, MAX_PATH);
+        assets.mount("/SystemFonts", std::filesystem::path(windows) / "Fonts", false);
         registerEngineAssets(assets);
         ConsoleRegistry variables;
         EngineSettings settings(variables, RenderOptions{}.validation);
         ui::Console console(variables);
         console.open(consoleOpen);
-        const auto savedConfig = assets.project().root() / "Saved" / "ConsoleVariables.cfg";
+        const auto savedConfig = project.root() / "Saved" / "ConsoleVariables.cfg";
         auto loadConfig = [&](const std::filesystem::path& path) {
             if (!std::filesystem::exists(path))
                 return;
@@ -180,7 +185,7 @@ int main(int argc, char** argv) {
                 console.log(result.text, !result.ok);
         };
         auto loadConfigs = [&] {
-            loadConfig(assets.project().root() / "Config" / "ConsoleVariables.cfg");
+            loadConfig(project.root() / "Config" / "ConsoleVariables.cfg");
             loadConfig(savedConfig);
         };
         variables.command("cvar.save", "Save archive CVars to this project's Saved/ConsoleVariables.cfg",
@@ -201,14 +206,16 @@ int main(int argc, char** argv) {
                           });
         loadConfigs();
         World world;
-        ui::UiCore uiCore(assets.project().content());
+        ui::UiCore uiCore(assets.mounts());
         ui::EngineUi engineUi(uiCore);
         ScriptRuntime scripts(world, assets, &uiCore);
         scripts.setLogSink([&](const auto& text) { console.log(text); });
         if (mapPath.empty())
-            scripts.initialize();
-        else
+            scripts.initialize(project);
+        else {
+            scripts.configure(project);
             scripts.loadScene(AssetPath(mapPath));
+        }
         // A level-sized scene in which the number of objects that change each tick stays
         // fixed no matter how many exist. That is the measurement that separates the two
         // architectures: per-frame work proportional to the scene climbs with --stress,

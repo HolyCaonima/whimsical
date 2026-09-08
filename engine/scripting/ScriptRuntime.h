@@ -1,6 +1,7 @@
 #pragma once
 #include "core/World.h"
 #include "assets/AssetManager.h"
+#include "assets/Project.h"
 #include <duktape.h>
 #include <thread>
 #include <functional>
@@ -16,26 +17,31 @@ class ScriptRuntime {
     void createContext();
     void startScripts();
     void processSceneRequest();
-    std::string pendingScene_;
+    AssetRef pendingScene_;
+    ContentSourceRef scriptOrigin_;
+    std::vector<AssetRef> projectScripts_;
     std::thread::id owner_;
     ui::UiCore* ui_ = nullptr;
     bool hudEnabled_ = true;
     std::unique_ptr<UiBindings> uiBindings_;
     std::function<void(const std::string&)> logSink_;
-    void evaluateFile(const std::string&);
+    void evaluateFile(const AssetRef&);
     void evaluateSource(const std::string& source, const std::string& label);
     void checkedCall(int args);
 
   public:
     ScriptRuntime(World&, AssetManager&, ui::UiCore* ui = nullptr);
     void loadScene(const AssetPath&);
+    void loadScene(const AssetRef&);
     AssetRef saveScene(const AssetPath&, const std::string& name);
     void requestScene(std::string path) {
-        pendingScene_ = std::move(path);
+        pendingScene_ = assets_.reference(AssetPath(std::move(path)));
     }
     ~ScriptRuntime();
     ScriptRuntime(const ScriptRuntime&) = delete;
-    void initialize();
+    void initialize(); // Execute only explicitly configured scripts/current scene.
+    void configure(const Project&, const std::string& mount = "/Game");
+    void initialize(const Project&, const std::string& mount = "/Game");
     void setHudEnabled(bool);
     void processUiInput(Input&);
     void updateUi(float dt);

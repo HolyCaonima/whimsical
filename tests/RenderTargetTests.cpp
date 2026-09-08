@@ -15,7 +15,7 @@ static void check(bool value, const char* message) {
 int main() {
     try {
         auto directory = std::filesystem::path(AFTERLIGHT_ROOT) / "build" / ("rt-" + newPersistentId());
-        AssetManager assets{Project::create(directory, "RenderTarget contracts")};
+        AssetManager assets{Project::create(directory, "RenderTarget contracts").content()};
         registerEngineAssets(assets);
         AssetHeader h;
         h.id = newPersistentId();

@@ -7,23 +7,32 @@
 #include <sstream>
 namespace afterlight {
 void registerEngineAssets(AssetManager& manager) {
-    manager.registerLoader("RenderTarget", [](AssetManager&, const AssetHeader&, const std::string& bytes) {
-        return RenderTargetAsset::decode(bytes);
-    });
+    manager.registerLoader(
+        "RenderTarget",
+        [](AssetManager&, const AssetHeader&, const std::string& bytes) {
+            return RenderTargetAsset::decode(bytes);
+        },
+        AssetManager::Encoding::Json);
     manager.registerLoader("StaticMesh", [](AssetManager&, const AssetHeader&, const std::string& bytes) {
         return StaticMesh::decode(bytes);
     });
     manager.registerLoader("Texture", [](AssetManager&, const AssetHeader& h, const std::string& bytes) {
         return TextureAsset::decode(bytes, h.metadata);
     });
-    manager.registerLoader("Shader", [](AssetManager&, const AssetHeader& h, const std::string& bytes) {
-        return ShaderAsset::decode(h.metadata, bytes);
-    });
-    manager.registerLoader("Material", [](AssetManager& manager, const AssetHeader&, const std::string& bytes) {
-        auto asset = std::make_shared<MaterialAsset>();
-        asset->parameters = MaterialDefinition::fromJson(Json::parse(bytes)).resolve(manager);
-        return asset;
-    });
+    manager.registerLoader(
+        "Shader",
+        [](AssetManager&, const AssetHeader& h, const std::string& bytes) {
+            return ShaderAsset::decode(h.metadata, bytes);
+        },
+        AssetManager::Encoding::Text);
+    manager.registerLoader(
+        "Material",
+        [](AssetManager& manager, const AssetHeader&, const std::string& bytes) {
+            auto asset = std::make_shared<MaterialAsset>();
+            asset->parameters = MaterialDefinition::fromJson(Json::parse(bytes)).resolve(manager);
+            return asset;
+        },
+        AssetManager::Encoding::Json);
     namespace ai = animation::ai4animation;
     manager.registerLoader("OnnxModel", [](AssetManager&, const AssetHeader&, const std::string& bytes) {
         return std::make_shared<ai::OnnxModel>(bytes);
@@ -39,10 +48,13 @@ void registerEngineAssets(AssetManager& manager) {
         std::istringstream stream(bytes, std::ios::binary);
         return std::make_shared<ai::ControllerResource>(ai::ControllerAsset::decode(stream, network, post));
     });
-    manager.registerLoader("Map", [](AssetManager&, const AssetHeader&, const std::string& bytes) {
-        auto asset = std::make_shared<SceneAsset>();
-        asset->scene = SceneDocument::fromJson(Json::parse(bytes));
-        return asset;
-    });
+    manager.registerLoader(
+        "Map",
+        [](AssetManager&, const AssetHeader&, const std::string& bytes) {
+            auto asset = std::make_shared<SceneAsset>();
+            asset->scene = SceneDocument::fromJson(Json::parse(bytes));
+            return asset;
+        },
+        AssetManager::Encoding::Json);
 }
 } // namespace afterlight

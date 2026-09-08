@@ -119,7 +119,7 @@ var parent=Engine.create({name:'Rig',components:{transform:{position:[1,2,3],rot
     check(restored.json() == doc.json(),"All light parameters and hierarchy round trip");
     World loaded;
     auto directory = std::filesystem::path(AFTERLIGHT_ROOT)/"build"/("lights-"+newPersistentId());
-    AssetManager local{Project::create(directory,"Physical lights")};
+    AssetManager local{Project::create(directory, "Physical lights").content()};
     registerEngineAssets(local);
     auto saved = ScenePersistence::save(w,local,AssetPath("/Game/Lights"),"Lights");
     ScenePersistence::load(loaded,local,saved.path);

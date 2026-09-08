@@ -95,6 +95,7 @@ void ScenePersistence::instantiate(World& world, const SceneDocument& s, AssetMa
 }
 void ScenePersistence::load(World& world, AssetManager& assets, const AssetPath& path) {
     const auto map = assets.load<SceneAsset>(path);
+    AssetManager::Scope content(assets, assets.origin(map->reference()));
     World staged;
     staged.storage_.registry.continueIdentitySequence(world.registry());
     staged.storage_.physics.continueHandleSequence(world.physics());
@@ -135,9 +136,12 @@ void ScenePersistence::load(World& world, AssetManager& assets, const AssetPath&
 }
 AssetRef ScenePersistence::save(World& world, AssetManager& assets, const AssetPath& path,
                                 const std::string& name) {
+    auto destination = assets.qualify(path);
+    AssetManager::Scope content(assets, assets.origin(path));
     auto document = capture(world, assets);
     AssetHeader header;
-    if (!world.resources.mapAsset.id.empty() && assets.resolve(world.resources.mapAsset).path == path)
+    if (!world.resources.mapAsset.id.empty() && world.resources.mapAsset.source == assets.origin(path)->id &&
+        assets.resolve(world.resources.mapAsset).path == destination)
         header = assets.descriptor(path);
     else {
         header.id = newPersistentId();

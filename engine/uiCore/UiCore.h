@@ -1,5 +1,6 @@
 #pragma once
 #include "UiFrame.h"
+#include "assets/ContentMounts.h"
 #include <filesystem>
 #include <functional>
 #include <string>
@@ -17,7 +18,7 @@ class UiCore {
     std::unique_ptr<Impl> impl_;
 
   public:
-    explicit UiCore(std::filesystem::path content);
+    explicit UiCore(std::shared_ptr<const ContentMounts>);
     ~UiCore();
     UiCore(const UiCore&) = delete;
     Rml::Context& context();

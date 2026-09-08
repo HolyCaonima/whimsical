@@ -2,12 +2,12 @@
 
 ## 架构边界
 
-`Project` 是独立内容根，`AssetManager` 是该 Project 的唯一资产注册与加载入口。`Asset` 是不可变资源；`SceneDocument` 是可序列化描述，其组件集合由 ComponentCatalog 统一编解码、校验与挂接；`World` 是描述实例化后的运行时世界。`RenderScene` 仍是常驻渲染代理集合，常驻不等于磁盘持久化。
+`Project` 只描述项目配置和启动入口；`ContentMounts` 把虚拟根映射到独立 Content 目录，`AssetManager` 在每个来源内管理资产索引、ID 和缓存。一个管理器可以同时访问多个 Content，不要求它们包含 `.project`。`Asset` 是不可变资源；`SceneDocument` 是可序列化描述，其组件集合由 ComponentCatalog 统一编解码、校验与挂接；`World` 是描述实例化后的运行时世界。`RenderScene` 仍是常驻渲染代理集合，常驻不等于磁盘持久化。
 
 本次移除了 `animation::Library` 和 ScriptRuntime、ControllerAsset、SkinnedMesh 中的项目文件访问。类型解码器接收字节流和已解析依赖；ONNX Runtime 从 AssetManager 读取的字节建立 session。Renderer 只消费 Frame 中的 mesh 与姿态，不认识项目目录或持久 ID。SPIR-V 和 captures 是引擎构建／诊断文件，不属于 Project Content。
 
 ```text
-afterlight_assets: Project → AssetManager → Asset / Json
+afterlight_assets: ContentMounts → AssetManager → Asset / Json；Project 独立描述启动配置
 afterlight_animation: Skeleton / Asset / Instance / Solver → afterlight_assets
 afterlight_core: World / ScenePersistence / ScriptRuntime → 上述两层
 EngineAssets: 在组合入口注册 Map、SkinnedMesh、AnimationController、OnnxModel
@@ -35,9 +35,63 @@ Projects/Afterlight/
 
 `Project(directory)` 或 `Project(directory / ".project")` 打开项目；`Project::create(directory, name)` 创建空项目。项目 ID 为 128 位随机持久标识。startupMap 可以为 null；scripts 是按顺序加载的公共脚本虚拟路径数组。
 
-`/Game/models/biped` 映射为 `Content/models/biped.asset`。路径不带扩展名、区分大小写；段内使用 ASCII 字母、数字、下划线、连字符。不接受 `.`、`..`、重复斜线、反斜线、盘符、空段。注册与保存拒绝 Windows 大小写别名。目录层次就是虚拟路径层次，不另建手写 manifest。
+挂载 `/Game` 后，`/Game/models/biped` 映射为该来源的 `models/biped.asset`；同样可以把另一个目录挂到 `/Library`。路径不带扩展名、区分大小写；段内使用 ASCII 字母、数字、下划线、连字符。不接受 `.`、`..`、重复斜线、反斜线、盘符、空段。注册与保存拒绝 Windows 大小写别名。目录层次就是虚拟路径层次，不另建手写 manifest。
 
 所有 `.asset` 扫描注册，非 `.asset` 文件不作为独立资产暴露。外部载荷仅通过头部声明的相对位置访问，并检查真实路径仍在 Content 内；绝对路径、缺失载荷和逃逸 Content 的映射报错。Project 整体拷贝到另一目录无需改变资产引用。
+
+## 多 Content 挂载与依赖边界
+
+```cpp
+AssetManager assets;                         // 不打开项目，也不执行脚本
+registerEngineAssets(assets);
+assets.mount("/Game", gameContent);
+assets.mount("/Library", libraryContent);
+auto value = assets.load<DataAsset>(AssetPath("/Library/config"));
+auto ref = value->reference();                // id + /Library/config + source
+assets.unmount("/Library");
+// value 仍是有效的不可变快照；assets.load(ref) 现在报错。
+```
+
+挂载名是一个虚拟根，如 `/Game`、`/Library`；物理根必须存在且互不重叠。挂载时只扫描信封描述符，不解码 payload、不启动 Map、不执行 Script。挂载失败会撤销本次注册。`mount(alias, root, false)` 创建只读来源。
+
+调用方可以显式访问所有挂载根。资产加载、类型解码、场景实例化和保存则进入所属来源的闭合作用域：其中的 `/Game/...` 总是指向该来源，外部别名和外部来源的 AssetRef 都被拒绝。ID 查找从不搜索其他挂载源。自定义解码器调用同一个 manager 时自动遵守此规则，不能在解码期间改变挂载表或退出依赖作用域。
+
+运行时 AssetRef 增加 `source`（本次挂载的身份），并提供当前挂载名下的可读 path。延迟使用的 Map、Data 和 metadata 引用也保留这个身份。卸载清除该来源的索引和缓存；重用别名、甚至重新挂载同一个目录，都会生成新身份。旧 AssetRef 不能解析或保存到新来源；旧 shared_ptr 和已经录制的 Frame 可以继续使用。字符串路径是软定位器，访问当前挂载；需要跨操作保留身份时使用 AssetRef。
+
+JSON 中带 `id` 和 `path` 的对象是保留的资产引用形态，可附带运行时 `source`。AssetManager 统一遍历 metadata 和声明为 `Encoding::Json` 的 payload，在解码前绑定来源，保存前验证来源并输出 `/Game/...`，移除运行时 `source`。二进制和文本解码器把结构化依赖放在 metadata 中；任意字符串不自动视为引用或改写。`registerLoader(type, decoder, encoding)` 的 encoding 为 Raw、Text 或 Json，与 embedded/external 存储方式独立。
+
+`ScenePersistence::save` 在 capture 之前进入目标来源，混合了其他 Content 资产的 World 不能直接保存，即使目标来源存在同 ID 资产。内容迁移需要显式导入并重新绑定本地资产。普通加载和保存不会隐式复制依赖。
+
+`read(path/ref)` 返回绑定来源的 `{ref, header, payload, encoding}`；`write(path/ref, header, payload)` 校验后写入完整内容，external 模式回写声明的 payload 文件。`save` 保留信封接口：external 模式传空 payload，读取并验证已有外置内容。每个文件原子替换；外置 payload 与信封的两次文件提交不是跨文件事务。
+
+## JS 内容访问
+
+`Engine.content` 独立于玩法当前场景，路径始终使用显式挂载名；`Engine.readJson` 和 `Engine.ui` 的 `/Game` 默认来源则由显式启动的项目或当前 Map 决定。一个脚本 realm 只属于一个 Content，以保证后续回调中的 `/Game` 也有固定含义；项目公共脚本和 Map 必须同源。启动另一来源的项目需要显式 `configure` / `initialize(project, mount)`，或使用独立 ScriptRuntime。
+
+```js
+var content = Engine.content;
+content.mount('/Library', 'D:/Library/Content'); // 第三个参数 false 表示只读
+var refs = content.browse('/Library');           // 只浏览 .asset，返回 AssetRef
+var doc = content.load(refs[0]);                 // 也接受 '/Library/config'
+// Json 类型返回 JS 值，Text 返回字符串，Raw 返回 Duktape buffer。
+doc.payload.value = 20;
+content.save(doc.ref, doc.header, doc.payload);  // 按原来源回写，包含 external payload
+content.unmount('/Library');
+```
+
+| API | 行为 |
+| --- | --- |
+| `mount(alias, directory, writable=true)` / `unmount(alias)` | 注册或卸载一个 Content |
+| `mounts()` / `browse(alias)` | 列出挂载身份、读写属性／所属资产引用 |
+| `reference(pathOrRef)` | 获得或刷新带来源身份的引用 |
+| `load(pathOrRef)` | 返回描述符和 payload；加载 Script、Map 不执行脚本或实例化世界 |
+| `save(pathOrRef, header, payload)` | 创建或修改资产；JSON payload 自动按来源规范化；Raw 接受 buffer 或字节字符串 |
+| `newId()` | 为新资产生成持久 ID，header 其余字段遵循 ALAS1 格式 |
+| `scan(alias)` | 显式刷新一个来源的磁盘索引 |
+
+UI 使用相同 `ContentMounts`，通过 `UiCore(assets.mounts())` 接入。UI 源文件保留真实扩展名，使用 `Engine.ui.loadDocument('/Library/UI/panel.rml')` 加载。RML、RCSS、纹理的相对路径与内部 `/Game` 都固定在各自文档来源；盘符、越界路径和跨来源引用失败。RmlUi 内部地址带挂载身份，使不同来源与重新挂载后的样式、纹理缓存互不混淆。引擎基础样式和系统字体由宿主显式挂载并组合，不依靠 UiCore 内的物理目录常量。
+
+最小可运行示例：[ContentMountsExample.js](../tests/ContentMountsExample.js)。[ContentMountTests.cpp](../tests/ContentMountTests.cpp) 在 build 下生成两个不含 `.project` 的 Content，并运行这个 JS 示例及必要的 C++/UI 边界检查。构建 `content_mount_tests` 后运行 `ctest --test-dir build -C Release -R '^content_mounts$' --output-on-failure`。
 
 ## 统一文件格式
 
@@ -75,13 +129,13 @@ external `.asset` 中只保存描述符及 payload 的相对地址，不含 inli
 
 所有 AssetPath / AssetRef 都只能定位已注册的 `.asset`。例如 `/Game/animations/ai4animation/biped/network` 唯一映射到 `network.asset`，再由它的 source 找到 `network.onnx`。虚拟路径保持无扩展名语法，`.onnx` 等 payload 扩展名不能进入 AssetPath；即使裸 payload 存在，也不会自动按名字或扩展名回退加载。移动 payload 只更新 `.asset` 的 source，不改变资产 ID 或其他资产的引用。
 
-资产引用为 `{"id":"...","path":"/Game/..."}`。ID 是权威身份，path 是可读定位提示。移动资产、保留头部 ID 并 scan 后，旧引用仍按 ID 找到新位置，保存时更新提示。ID 不存在时报错，不按旧路径误绑定另一资产。Project 和脚本中的字符串路径是软定位器，重命名时需要更新。
+持久资产引用为 `{"id":"...","path":"/Game/..."}`。ID 只在所属 Content 内是权威身份，path 是可读定位提示。移动资产、保留头部 ID 并 scan 后，旧引用仍按 ID 找到新位置，保存时更新提示。ID 不存在时报错，不按旧路径误绑定另一资产。Project 和脚本中的字符串路径是软定位器，重命名时需要更新。
 
 ## 注册、缓存与生命周期
 
-AssetManager 由程序组合入口持有，一实例绑定一个 Project，限定 simulation 线程访问。扫描只读取描述符，不解码 ONNX 或网格。`load<T>(AssetPath/AssetRef)` 检查类型，以资产 ID 强缓存 `shared_ptr<const Asset>`；加载器依赖经过同一 manager，依赖环报错。
+AssetManager 由程序组合入口持有，限定 simulation 线程访问。每个挂载源有独立索引、ID 表、依赖环检测和缓存；不同 Content 允许相同路径和相同资产 ID，同一 Content 内仍拒绝重复。扫描只读取描述符，不解码 ONNX 或网格。`load<T>(AssetPath/AssetRef)` 检查类型，以资产 ID 强缓存 `shared_ptr<const Asset>`；加载器依赖经过同一 manager，依赖环报错。
 
-scan 原子替换注册表并清缓存；失败保留原表。save 先校验类型载荷，写同目录临时文件，再通过 Windows replace 提交，成功后更新注册表并清缓存。已有位置不能改变 ID 或类型。没有隐式文件监视、活实例热替换、后台加载或跨项目全局缓存。
+`scan(alias)` 事务替换该来源注册表并清理其缓存；`scan()` 重扫全部来源；失败保留原表。save 先校验类型载荷及引用归属，写同目录临时文件，再通过 Windows replace 提交，成功后更新所属来源注册表并清理其缓存。已有位置不能改变 ID 或类型。没有隐式文件监视、活实例热替换、后台加载或跨项目全局缓存。
 
 clearCache、重扫、保存不销毁 World、Solver 或 Frame 持有的旧资产版本；最后一个 shared_ptr 释放后回收。GPU 资源仍由渲染线程在 fence 安全点管理。要使用磁盘新版本，先重扫，再显式重新加载场景。
 
@@ -116,14 +170,15 @@ capture 跳过已删除对象，删除对象也移除其命名引用。未注册
 
 load 先在临时 World 检查全部依赖、骨架绑定、动画属性、关节碰撞体和物理形状；成功后建立身份和层级，再经各系统挂接实际组件，恢复 player 与命名引用。内容预检失败保留原场景。加载建立两次轻量运行时组件，共享昂贵资产缓存，不执行两次 ONNX 推理；内存耗尽等分配失败不承诺事务回滚。
 
-ScriptRuntime 在 C++ 重建后创建新 heap，依次载入 Project 公共脚本、Map 脚本，调用可选 initialize。Rain Court 的 initialize 只绑定控制、同伴、相机与交互。供电状态由 setSceneData 显式更新，门位置／碰撞和缓存材质随组件保存，因此加载后能继续交互。脚本初始化错误向调用方报告，此时 Map 已加载，不回滚整个 VM。
+显式调用 `ScriptRuntime::initialize(project, mount)` 或 `loadScene` 才启动内容。ScriptRuntime 在 C++ 重建后创建新 heap，依次载入 Project 公共脚本、Map 脚本，调用可选 initialize。Rain Court 的 initialize 只绑定控制、同伴、相机与交互。供电状态由 setSceneData 显式更新，门位置／碰撞和缓存材质随组件保存，因此加载后能继续交互。脚本初始化错误向调用方报告，此时 Map 已加载，不回滚整个 VM。
 
 这是场景与显式玩法状态持久化，不是整个游戏进程的逐指令快照。新增玩法应定义稳定数据，在 initialize 恢复，不向持久数据写入 Entity。
 
 ## 使用入口
 
 ```cpp
-AssetManager assets{Project(projectDirectory)};
+Project project(projectDirectory);
+AssetManager assets(project.content());
 registerEngineAssets(assets);
 World world;
 ScriptRuntime scripts(world, assets);

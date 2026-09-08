@@ -33,6 +33,98 @@ static void pushJson(duk_context* c, const Json& j) {
     duk_json_decode(c, -1);
 }
 
+static Json argumentJson(duk_context* c, int index) {
+    duk_dup(c, index);
+    duk_json_encode(c, -1);
+    auto result = Json::parse(duk_require_string(c, -1));
+    duk_pop(c);
+    return result;
+}
+// Keep RAII owners out of the callback frame that returns errors through Duktape longjmp.
+__declspec(noinline) static duk_ret_t contentDispatch(duk_context* c) {
+    auto& manager = assets(c);
+    AssetManager::Scope caller(manager, {}, false); // Content management uses explicit mounted paths.
+    const int op = duk_get_current_magic(c);
+    if (op == 0) {
+        auto source =
+            manager.mount(duk_require_string(c, 0), std::filesystem::u8path(duk_require_string(c, 1)),
+                          duk_get_boolean_default(c, 2, true) != 0);
+        pushJson(c, {{"mount", source->mount}, {"source", source->id}, {"writable", source->writable}});
+    } else if (op == 1) {
+        manager.unmount(duk_require_string(c, 0));
+        return 0;
+    } else if (op == 2) {
+        Json list = Json::array();
+        for (auto source : manager.mounts()->sources())
+            list.push({{"mount", source->mount}, {"source", source->id}, {"writable", source->writable}});
+        pushJson(c, list);
+    } else if (op == 3) {
+        Json list = Json::array();
+        for (const auto& ref : manager.browse(duk_require_string(c, 0)))
+            list.push(ref.json());
+        pushJson(c, list);
+    } else if (op == 4 || op == 5 || op == 6) {
+        bool path = duk_is_string(c, 0);
+        AssetRef ref;
+        AssetPath target;
+        if (path)
+            target = AssetPath(duk_require_string(c, 0));
+        else
+            ref = AssetRef::fromJson(argumentJson(c, 0));
+        if (op == 4 || op == 6) {
+            if (path)
+                ref = manager.reference(target);
+            if (op == 6) {
+                pushJson(c, manager.resolve(ref).json());
+                return 1;
+            }
+            auto doc = manager.read(ref);
+            pushJson(c, {{"ref", doc.ref.json()},
+                         {"header", doc.header.json()},
+                         {"encoding", doc.encoding == AssetManager::Encoding::Json   ? "json"
+                                      : doc.encoding == AssetManager::Encoding::Text ? "text"
+                                                                                     : "raw"}});
+            if (doc.encoding == AssetManager::Encoding::Json)
+                pushJson(c, Json::parse(doc.payload));
+            else if (doc.encoding == AssetManager::Encoding::Text)
+                duk_push_lstring(c, doc.payload.data(), doc.payload.size());
+            else {
+                auto* buffer = duk_push_fixed_buffer(c, doc.payload.size());
+                std::memcpy(buffer, doc.payload.data(), doc.payload.size());
+            }
+            duk_put_prop_string(c, -2, "payload");
+        } else {
+            auto header = AssetHeader::fromJson(argumentJson(c, 1));
+            std::string bytes;
+            if (manager.encoding(header.type) == AssetManager::Encoding::Json)
+                bytes = argumentJson(c, 2).dump();
+            else {
+                duk_size_t size;
+                const char* data = duk_is_buffer_data(c, 2)
+                                       ? static_cast<const char*>(duk_require_buffer_data(c, 2, &size))
+                                       : duk_require_lstring(c, 2, &size);
+                bytes.assign(data, size);
+            }
+            auto saved = path ? manager.write(target, header, bytes) : manager.write(ref, header, bytes);
+            pushJson(c, saved.json());
+        }
+    } else if (op == 8) {
+        duk_push_string(c, newPersistentId().c_str());
+    } else if (op == 7) {
+        manager.scan(duk_require_string(c, 0));
+        return 0;
+    }
+    return 1;
+}
+static duk_ret_t contentCall(duk_context* c) {
+    try {
+        return contentDispatch(c);
+    } catch (const std::exception& e) {
+        duk_push_error_object(c, DUK_ERR_ERROR, "%s", e.what());
+    }
+    duk_throw_raw(c);
+}
+
 static World& world(duk_context* c) {
     duk_push_heap_stash(c);
     duk_get_prop_string(c, -1, "world");
@@ -579,9 +671,12 @@ static duk_ret_t callNative(duk_context* c) {
             duk_push_string(c, path.c_str());
             return 1;
         }
-        case FindObject:
-            duk_push_uint(c, w.resolveObject(ObjectPath(duk_require_string(c, 0))));
+        case FindObject: {
+            ObjectPath path(duk_require_string(c, 0));
+            path.map = assets(c).qualify(path.map);
+            duk_push_uint(c, w.resolveObject(path));
             return 1;
+        }
         case CameraState:
             pushJson(c, {{"yaw", w.resources.camera.yaw},
                          {"pitch", w.resources.camera.pitch},
@@ -912,9 +1007,20 @@ void ScriptRuntime::createContext() {
         duk_set_magic(context_, -1, b.op);
         duk_put_prop_string(context_, -2, b.name);
     }
+    duk_push_object(context_);
+    const char* contentNames[] = {"mount", "unmount",   "mounts", "browse", "load",
+                                  "save",  "reference", "scan",   "newId"};
+    for (int i = 0; i < 9; ++i) {
+        duk_push_c_function(context_, contentCall, DUK_VARARGS);
+        duk_set_magic(context_, -1, i);
+        duk_put_prop_string(context_, -2, contentNames[i]);
+    }
+    duk_put_prop_string(context_, -2, "content");
     duk_put_global_string(context_, "Engine");
     if (ui_) {
-        uiBindings_ = std::make_unique<UiBindings>(context_, *ui_, [this](const auto& text) { log(text); });
+        uiBindings_ = std::make_unique<UiBindings>(
+            context_, *ui_, [this](const auto& text) { log(text); },
+            [this](const auto& path) { return assets_.file(path).uri(); });
         uiBindings_->setVisible(hudEnabled_);
     }
 }
@@ -931,11 +1037,13 @@ void ScriptRuntime::checkedCall(int args) {
     }
     duk_pop(context_);
 }
-void ScriptRuntime::evaluateFile(const std::string& path) {
-    auto asset = assets_.load<ScriptAsset>(AssetPath(path));
-    evaluateSource(asset->source, path);
+void ScriptRuntime::evaluateFile(const AssetRef& ref) {
+    auto asset = assets_.load<ScriptAsset>(ref);
+    AssetManager::Scope content(assets_, assets_.origin(ref), false);
+    evaluateSource(asset->source, ref.path.string());
 }
 void ScriptRuntime::execute(const std::string& source, const std::string& label) {
+    AssetManager::Scope content(assets_, scriptOrigin_, false);
     evaluateSource(source, label);
     processSceneRequest();
 }
@@ -950,17 +1058,39 @@ void ScriptRuntime::evaluateSource(const std::string& source, const std::string&
     }
     checkedCall(0);
 }
+void ScriptRuntime::configure(const Project& project, const std::string& mount) {
+    scriptOrigin_ = assets_.mounts()->source(mount);
+    AssetManager::Scope content(assets_, scriptOrigin_, false);
+    projectScripts_.clear();
+    for (const auto& path : project.scripts())
+        projectScripts_.push_back(assets_.reference(path));
+}
+void ScriptRuntime::initialize(const Project& project, const std::string& mount) {
+    configure(project, mount);
+    if (!project.startupMap().empty()) {
+        AssetManager::Scope content(assets_, scriptOrigin_, false);
+        loadScene(project.startupMap());
+    } else
+        initialize();
+}
 void ScriptRuntime::initialize() {
-    if (!assets_.project().startupMap().empty())
-        loadScene(assets_.project().startupMap());
-    else
-        startScripts();
+    if (!world_.resources.mapAsset.id.empty())
+        scriptOrigin_ = assets_.origin(world_.resources.mapAsset);
+    startScripts();
 }
 void ScriptRuntime::startScripts() {
-    for (const auto& path : assets_.project().scripts())
-        evaluateFile(path.string());
+    if (!scriptOrigin_ && !world_.resources.scripts.empty())
+        scriptOrigin_ = assets_.origin(world_.resources.scripts.front());
+    // One realm has one /Game origin, including callbacks invoked after top-level evaluation.
+    for (const auto* scripts : {&projectScripts_, &world_.resources.scripts})
+        for (const auto& script : *scripts)
+            if (assets_.origin(script) != scriptOrigin_)
+                throw std::invalid_argument("Scripts in one realm must belong to the same Content");
+    AssetManager::Scope content(assets_, scriptOrigin_, false);
+    for (const auto& script : projectScripts_)
+        evaluateFile(script);
     for (const auto& script : world_.resources.scripts)
-        evaluateFile(assets_.resolve(script).path.string());
+        evaluateFile(script);
     duk_get_global_string(context_, "initialize");
     if (duk_is_function(context_, -1))
         checkedCall(0);
@@ -969,6 +1099,7 @@ void ScriptRuntime::startScripts() {
     updateUi(0);
 }
 void ScriptRuntime::updateUi(float dt) {
+    AssetManager::Scope content(assets_, scriptOrigin_, false);
     if (!ui_)
         return;
     if (std::this_thread::get_id() != owner_)
@@ -987,13 +1118,23 @@ void ScriptRuntime::setHudEnabled(bool enabled) {
         uiBindings_->setVisible(enabled);
 }
 void ScriptRuntime::processUiInput(Input& input) {
+    AssetManager::Scope content(assets_, scriptOrigin_, false);
     if (ui_)
         ui_->processInput(input);
     processSceneRequest();
 }
+void ScriptRuntime::loadScene(const AssetRef& ref) {
+    auto current = assets_.resolve(ref);
+    AssetManager::Scope content(assets_, assets_.origin(current), false);
+    loadScene(current.path);
+}
 void ScriptRuntime::loadScene(const AssetPath& path) {
     if (std::this_thread::get_id() != owner_)
         throw std::logic_error("Scene loading requires the owner thread");
+    auto source = assets_.origin(path);
+    for (const auto& script : projectScripts_)
+        if (assets_.origin(script) != source)
+            throw std::invalid_argument("Project startup scripts and Map must belong to the same Content");
     auto observers = world_.deferObservers();
     std::exception_ptr publicationFailure;
     try {
@@ -1001,6 +1142,7 @@ void ScriptRuntime::loadScene(const AssetPath& path) {
     } catch (const ScenePersistence::CommittedError&) {
         publicationFailure = std::current_exception();
     }
+    scriptOrigin_ = assets_.origin(world_.resources.mapAsset);
     uiBindings_.reset();
     duk_destroy_heap(context_);
     context_ = nullptr;
@@ -1015,13 +1157,14 @@ AssetRef ScriptRuntime::saveScene(const AssetPath& path, const std::string& name
     return ScenePersistence::save(world_, assets_, path, name);
 }
 void ScriptRuntime::processSceneRequest() {
-    if (pendingScene_.empty())
+    if (pendingScene_.id.empty())
         return;
     auto path = std::move(pendingScene_);
-    pendingScene_.clear();
-    loadScene(AssetPath(path));
+    pendingScene_ = {};
+    loadScene(path);
 }
 void ScriptRuntime::tick(float dt, const Input& rawInput) {
+    AssetManager::Scope content(assets_, scriptOrigin_, false);
     CpuScope inputScope("Input / Picking / JS Arguments");
     if (std::this_thread::get_id() != owner_)
         throw std::runtime_error("JS accessed outside engine thread");

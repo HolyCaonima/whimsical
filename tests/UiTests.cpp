@@ -17,9 +17,10 @@ static void check(bool value, const char* message) {
 }
 static void ownership() {
     auto root = std::filesystem::path(AFTERLIGHT_ROOT) / "build" / "ui-project-tests" / newPersistentId();
-    AssetManager assets(Project::create(root, "Empty UI host"));
+    AssetManager assets(Project::create(root, "Empty UI host").content());
+    assets.mount("/Engine", std::filesystem::path(AFTERLIGHT_ROOT) / "engine/Content", false);
     registerEngineAssets(assets);
-    ui::UiCore ui(assets.project().content());
+    ui::UiCore ui(assets.mounts());
     World world;
     ui::EngineUi diagnostics(ui);
     ScriptRuntime scripts(world, assets, &ui);
@@ -64,7 +65,7 @@ int main() {
     std::cout.setf(std::ios::unitbuf);
     try {
         ownership();
-        ui::UiCore ui(testAssets().project().content());
+        ui::UiCore ui(testAssets().mounts());
         World world;
         ScriptRuntime scripts(world, testAssets(), &ui);
         std::string error;
@@ -177,13 +178,13 @@ var self=button.on('click',function(){button.off(self);button.remove();});
         check(error.empty(), "JS event callback raised an unexpected error");
         // A second context must neither steal the first one's file base nor shut down global RmlUi.
         {
-            ui::UiCore peer(testAssets().project().content());
+            ui::UiCore peer(testAssets().mounts());
             auto* doc = peer.createDocument(
                 "<rml><head/><body style='width:10px;height:10px;background-color:#fff;'/></rml>");
             doc->Show();
             check(!peer.snapshot()->draws.empty(), "Independent UI context");
         }
-        scripts.initialize();
+        scripts.initialize(testProject());
         scripts.execute(R"JS(
 var probe = Engine.create({name:'Spatial query',components:{transform:{position:[30,1,30]},render:{scale:[2,2,4],material:0},collider:{shape:{type:'box',halfExtents:[1.0,1.0,2.0]},blocking:true,pickable:true}}});
 Engine.collider(probe, {shape:'box',halfExtents:{x:1,y:1,z:2},layer:8,blocking:true});

@@ -23,6 +23,13 @@ Project::Project(const std::filesystem::path& path) {
         startupMap_ = AssetPath(j.at("startupMap").string());
     for (const auto& script : j.at("scripts").elements())
         scripts_.emplace_back(script.string());
+    auto requireLocal = [](const AssetPath& path) {
+        if (!path.empty() && path.string().rfind("/Game/", 0) != 0)
+            throw std::invalid_argument("Project startup paths must be local /Game references");
+    };
+    requireLocal(startupMap_);
+    for (const auto& script : scripts_)
+        requireLocal(script);
     root_ = std::filesystem::canonical(file).parent_path();
     if (!std::filesystem::is_directory(content()))
         throw std::runtime_error("Project has no Content directory");
