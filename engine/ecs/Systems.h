@@ -28,8 +28,6 @@ class RenderSystem {
     void remove(Entity);
     void publishTransform(Entity);
     void publishAttributes(Entity);
-    void setVisualPose(Entity, vec3 offset, vec3 scale);
-    void setScale(Entity, vec3);
     void setMaterial(Entity, std::shared_ptr<const MaterialAsset>);
     void setVisible(Entity, bool);
     void setStaticMesh(Entity, std::shared_ptr<const StaticMesh>);
@@ -38,13 +36,17 @@ class RenderSystem {
 class TransformSystem {
     SceneStorage& s;
     void propagate(Entity);
+    void validateSubtree(Entity, const TransformPose&) const;
 
   public:
     explicit TransformSystem(SceneStorage& storage) : s(storage) {}
-    void add(Entity, PhysicsPose = {});
+    void add(Entity, TransformPose = {});
     void remove(Entity);
     void setTransform(Entity, const PhysicsPose&); // World-space edit, converts to local.
-    void setLocal(Entity, const PhysicsPose&);
+    void setWorld(Entity, const TransformPose&);
+    void setLocal(Entity, const TransformPose&);
+    void setLocal(Entity, const TransformPose&, Entity parent);
+    void setScale(Entity, vec3);
     void setParent(Entity, Entity parent, bool keepWorld = true);
     void refreshEnabled(Entity);
 };

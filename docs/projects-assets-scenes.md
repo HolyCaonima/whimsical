@@ -167,7 +167,7 @@ clearCache、重扫、保存不销毁 World、Solver 或 Frame 持有的旧资�
 
 ## Scene Save/Load
 
-SceneDocument 保存：对象 ID/显示名/位置/旋转/启用/交互；RenderComponent 的 mesh 资产引用、scale/offset/animationScale、Material 资产引用和可见性；主碰撞体 shape/motion/layer/查询属性；关节碰撞体 joint/local/shape/blocking；动画与 mesh 引用、root-motion 选项、rootOffset 和实例属性；灯光组件、相机、导航（含 planeTolerance）；命名 Object 引用、Map 脚本引用和显式 gameplay JSON data。
+SceneDocument 保存：对象 ID/显示名/局部 TRS 与父级/启用/交互；RenderComponent 的 mesh 资产引用、Material 资产引用和可见性；主碰撞体 shape/motion/layer/查询属性；关节碰撞体 joint/local/shape/blocking；动画与 mesh 引用、root-motion 选项、rootOffset 和实例属性；灯光组件、相机、导航（含 planeTolerance）；命名 Object 引用、Map 脚本引用和显式 gameplay JSON data。
 
 Map 写入 `version: 10`，以 `entities[].components` 保存实际存在的能力、父级持久 ID 和 Material / mesh 等资产引用。变换保存 local，ALAS1 资产信封仍为 version 1。v7/v8 地图先运行 `python tools/migrate_material_assets.py <Map.asset>` 提取内嵌材质到 v9，再运行 `python tools/migrate_mesh_assets.py <Map.asset>` 转换图元为网格资产引用到 v10；更早版本先使用对应的 ECS / 灯光迁移工具。加载旧地图会明确报错，不在读取时写入资产。
 

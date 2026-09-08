@@ -31,6 +31,10 @@ struct ColliderShape {
     float radius = .4f, halfSegment = .6f;
     static ColliderShape box(vec3 halfExtents);
     static ColliderShape capsule(float radius, float height);
+    bool operator==(const ColliderShape& other) const {
+        return type == other.type && (type == ColliderType::Box ? halfExtents == other.halfExtents
+            : radius == other.radius && halfSegment == other.halfSegment);
+    }
     float height() const {
         return 2 * (radius + halfSegment);
     }

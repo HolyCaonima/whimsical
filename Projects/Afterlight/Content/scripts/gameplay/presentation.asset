@@ -7,6 +7,20 @@ var GameplayPresentation = {
         this.ring = this.marker('Active character', '/Game/materials/Feedback/ActiveCharacter', '/Game/models/Feedback/Ring');
         Engine.parent(this.ring, Locomotion.id, false);
         this.destination = this.marker('Move destination', '/Game/materials/Feedback/Destination', '/Game/models/Feedback/Destination');
+        // Gameplay targets actor roots; render feedback addresses their visual subtrees.
+        var rows = {}, visuals = this.visuals = {};
+        Engine.entities(['transform']).forEach(function(e) {
+            var row = Engine.entity(e);
+            if (row.effectivePersistent) rows[row.id] = row;
+        });
+        Object.keys(rows).forEach(function(id) {
+            var row = rows[id], render = row.entity;
+            if (!row.components.render) return;
+            while (row) {
+                (visuals[row.entity] || (visuals[row.entity] = [])).push(render);
+                row = rows[row.components.transform.parent];
+            }
+        });
         this.tick(0, {picked:0});
     },
     marker: function(name, material, mesh) {
@@ -14,12 +28,18 @@ var GameplayPresentation = {
             transform:{},render:{mesh:Engine.asset(mesh),material:Engine.asset(material),castShadow:false}
         }});
     },
+    setMaterial: function(owner, material) {
+        (this.visuals[owner] || []).forEach(function(e) { Engine.setMaterial(e, material); });
+    },
     tick: function(dt, input) {
         this.time += dt;
-        var selected = Controller.selected, outlines = [];
-        if (selected) outlines.push({entity:Locomotion.id,color:[0.55,1,0.86,1]});
+        var selected = Controller.selected, outlines = [], visuals = this.visuals;
+        function outline(owner, color) {
+            (visuals[owner] || []).forEach(function(e) { outlines.push({entity:e,color:color}); });
+        }
+        if (selected) outline(Locomotion.id,[0.55,1,0.86,1]);
         if (input.picked === Locomotion.id || Interactions.objects[input.picked])
-            outlines.push({entity:input.picked,color:[1,0.8,0.38,1]});
+            outline(input.picked,[1,0.8,0.38,1]);
         Engine.view.outlines(outlines);
         Engine.enabled(this.ring, selected);
         var height = Engine.component(Locomotion.id,'collider').shape.height;
@@ -29,7 +49,7 @@ var GameplayPresentation = {
         if (path.length) {
             var p = path[path.length-1], scale = 0.32+0.07*Math.sin(this.time*5);
             Engine.transform(this.destination,{position:{x:p.x,y:p.y+0.02,z:p.z}});
-            Engine.renderScale(this.destination,{x:scale,y:1,z:scale});
+            Engine.scale(this.destination,{x:scale,y:1,z:scale});
         }
     }
 };

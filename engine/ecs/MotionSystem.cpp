@@ -1,10 +1,14 @@
 #include "Systems.h"
+#include "physics/SpatialCollider.h"
 namespace afterlight {
 MotionSystem::MotionSystem(SceneStorage& storage, TransformSystem& t, NavigationSettings& n)
     : s(storage), transforms(t), navigation(n) {
     s.changes.subscribe<WorldPoseChanged>([this](Entity e) {
-        if (auto c = s.registry.tryGet<Collider>(e))
-            s.physics.setPose(c->body, s.registry.get<Transform>(e).world);
+        if (auto c = s.registry.tryGet<Collider>(e)) {
+            auto spatial = worldCollider(c->shape, s.registry.get<Transform>(e).world);
+            s.physics.setShape(c->body, spatial.shape);
+            s.physics.setPose(c->body, spatial.pose);
+        }
     });
     s.changes.subscribe<EffectiveEnabledChanged>([this](Entity e) {
         if (auto c = s.registry.tryGet<Collider>(e))
@@ -18,15 +22,18 @@ void MotionSystem::add(Entity e, PhysicsBody body) {
     if (s.registry.has<Collider>(e))
         throw std::logic_error("Collider already present");
     body.owner = e;
-    body.pose = t.world;
+    auto localShape = body.shape;
+    auto spatial = worldCollider(localShape, t.world);
+    body.shape = spatial.shape;
+    body.pose = spatial.pose;
     body.enabled = s.enabled(e);
     auto h = s.physics.create(body);
-    s.registry.emplace<Collider>(e, Collider{h});
+    s.registry.emplace<Collider>(e, Collider{h, localShape});
     batch.commit();
 }
 ColliderSettings MotionSystem::collider(Entity e) const {
     const auto& b = s.physics.body(s.registry.get<Collider>(e).body);
-    return {b.shape, b.motion, b.layer, b.blocking, b.walkable, b.pickable};
+    return {s.registry.get<Collider>(e).shape, b.motion, b.layer, b.blocking, b.walkable, b.pickable};
 }
 void MotionSystem::set(Entity e, PhysicsBody body) {
     // Shape validation happens before any property changes; the binding stays stable.
@@ -51,7 +58,10 @@ void MotionSystem::setColliderShape(Entity e, const ColliderShape& shape) {
     if (auto a = s.registry.tryGet<RootMotionBinding>(e);
         a && a->mode == RootMotionBinding::Mode::Grounded && shape.type != ColliderType::Capsule)
         throw std::logic_error("Root motion requires a capsule collider");
-    s.physics.setShape(s.registry.get<Collider>(e).body, shape);
+    auto& collider = s.registry.get<Collider>(e);
+    auto spatial = worldCollider(shape, s.registry.get<Transform>(e).world);
+    s.physics.setShape(collider.body, spatial.shape);
+    collider.shape = shape;
     s.changes.mark<Collider>(e);
     batch.commit();
 }
@@ -93,14 +103,14 @@ vec3 MotionSystem::characterPosition(Entity e, vec3 delta) const {
 vec3 MotionSystem::moveCharacter(Entity e, vec3 delta) {
     auto pose = s.registry.get<Transform>(e).world;
     pose.position = characterPosition(e, delta);
-    transforms.setTransform(e, pose);
+    transforms.setWorld(e, pose);
     return pose.position;
 }
 vec3 MotionSystem::rootMotion(Entity e, vec3 delta, float yaw) {
     if (!std::isfinite(yaw))
         throw std::invalid_argument("Invalid root rotation");
     auto rotation = s.registry.get<Transform>(e).world.rotation;
-    auto p = characterPosition(e, rotation * delta);
+    auto p = characterPosition(e, rotation * (s.registry.get<Transform>(e).world.scale * delta));
     transforms.setTransform(e, {p, glm::normalize(rotation * glm::angleAxis(yaw, vec3(0, 1, 0)))});
     return p;
 }
@@ -123,8 +133,10 @@ float MotionSystem::setCharacterHeight(Entity e, float height) {
     auto batch = Changes::Batch(s.changes);
     s.physics.resizeCharacter(h, height);
     pose.position = s.physics.body(h).pose.position;
+    auto shape = s.physics.body(h).shape;
+    s.registry.get<Collider>(e).shape = ColliderShape::capsule(shape.radius / pose.scale.x, shape.height() / pose.scale.x);
     s.changes.emit(CharacterResized{e, pose.position - before});
-    transforms.setTransform(e, pose);
+    transforms.setWorld(e, pose);
     s.changes.mark<Collider>(e);
     batch.commit();
     return s.physics.body(h).shape.height();
@@ -149,8 +161,8 @@ PhysicsPose MotionSystem::solveRootMotion(Entity e, const animation::Transform& 
     auto pose = s.registry.get<Transform>(e).world;
     auto binding = s.registry.tryGet<RootMotionBinding>(e);
     if (!binding)
-        return pose;
-    auto translation = pose.rotation * (delta.position + offset - delta.rotation * offset);
+        return {pose.position, pose.rotation};
+    auto translation = pose.rotation * (pose.scale * (delta.position + offset) - delta.rotation * (pose.scale * offset));
     auto rotation = glm::normalize(pose.rotation * delta.rotation);
     switch (binding->mode) {
     case RootMotionBinding::Mode::Transform:

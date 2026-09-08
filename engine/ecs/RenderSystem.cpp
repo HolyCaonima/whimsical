@@ -5,7 +5,6 @@
 namespace afterlight {
 RenderSystem::RenderSystem(SceneStorage& storage) : s(storage) {
     s.changes.subscribe<WorldPoseChanged>([this](Entity e) { publishTransform(e); });
-    s.changes.subscribe<RenderTransformChanged>([this](Entity e) { publishTransform(e); });
     s.changes.subscribe<EffectiveEnabledChanged>([this](Entity e) { publishAttributes(e); });
     s.changes.subscribe<RenderAttributesChanged>([this](Entity e) { publishAttributes(e); });
     s.changes.subscribe<GeometryChanged>([this](Entity e) {
@@ -13,9 +12,8 @@ RenderSystem::RenderSystem(SceneStorage& storage) : s(storage) {
             s.renderScene.geometryChanged(r->slot);
     });
 }
-static ProxyTransform proxyTransform(const Transform& t, const Renderable& r) {
-    return {t.world.position + t.world.rotation * r.appearance.offset,
-            r.appearance.scale * r.appearance.animationScale, t.world.rotation};
+static ProxyTransform proxyTransform(const Transform& t) {
+    return {t.world.position, t.world.scale, t.world.rotation};
 }
 void RenderSystem::add(Entity e, RenderComponent appearance, std::shared_ptr<const StaticMesh> mesh) {
     if (!appearance.material)
@@ -24,7 +22,7 @@ void RenderSystem::add(Entity e, RenderComponent appearance, std::shared_ptr<con
     auto& t = s.registry.get<Transform>(e);
     auto batch = Changes::Batch(s.changes);
     auto& r = s.registry.emplace<Renderable>(e, Renderable{appearance, std::move(mesh)});
-    r.slot = s.renderScene.create(proxyTransform(t, r),
+    r.slot = s.renderScene.create(proxyTransform(t),
                                   {e, 0,
                                    s.enabled(e) && appearance.visible,
                                    appearance.castShadow, appearance.overlay, appearance.overlayColor}, appearance.material);
@@ -42,7 +40,6 @@ void RenderSystem::set(Entity e, RenderComponent appearance, std::shared_ptr<con
     auto batch = Changes::Batch(s.changes);
     setStaticMesh(e, std::move(mesh));
     s.registry.get<Renderable>(e).appearance = appearance;
-    s.changes.mark<RenderTransformChanged>(e);
     s.changes.mark<RenderAttributesChanged>(e);
     s.changes.mark<Renderable>(e);
     batch.commit();
@@ -52,7 +49,7 @@ void RenderSystem::remove(Entity e) {
 }
 void RenderSystem::publishTransform(Entity e) {
     if (auto r = s.registry.tryGet<Renderable>(e))
-        s.renderScene.setTransform(r->slot, proxyTransform(s.registry.get<Transform>(e), *r));
+        s.renderScene.setTransform(r->slot, proxyTransform(s.registry.get<Transform>(e)));
 }
 void RenderSystem::publishAttributes(Entity e) {
     if (auto r = s.registry.tryGet<Renderable>(e))
@@ -73,34 +70,12 @@ void RenderSystem::setStaticMesh(Entity e, std::shared_ptr<const StaticMesh> mes
     s.changes.mark<Renderable>(e);
     batch.commit();
 }
-void RenderSystem::setVisualPose(Entity e, vec3 offset, vec3 scale) {
-    auto batch = Changes::Batch(s.changes);
-    for (int i = 0; i < 3; ++i)
-        if (!std::isfinite(offset[i]) || !std::isfinite(scale[i]) || scale[i] <= 0)
-            throw std::invalid_argument("Invalid visual pose");
-    auto& r = s.registry.get<Renderable>(e).appearance;
-    r.offset = offset;
-    r.animationScale = scale;
-    s.changes.mark<RenderTransformChanged>(e);
-    s.changes.mark<Renderable>(e);
-    batch.commit();
-}
 void RenderSystem::setMaterial(Entity e, std::shared_ptr<const MaterialAsset> material) {
     auto batch = Changes::Batch(s.changes);
     if (!material)
         throw std::invalid_argument("Render requires a Material asset");
     s.registry.get<Renderable>(e).appearance.material = std::move(material);
     s.changes.mark<RenderAttributesChanged>(e);
-    s.changes.mark<Renderable>(e);
-    batch.commit();
-}
-void RenderSystem::setScale(Entity e, vec3 scale) {
-    auto batch = Changes::Batch(s.changes);
-    for (int i = 0; i < 3; ++i)
-        if (!std::isfinite(scale[i]) || scale[i] <= 0)
-            throw std::invalid_argument("Invalid render scale");
-    s.registry.get<Renderable>(e).appearance.scale = scale;
-    s.changes.mark<RenderTransformChanged>(e);
     s.changes.mark<Renderable>(e);
     batch.commit();
 }
@@ -138,9 +113,7 @@ void RenderSystem::extract(Frame& f, bool debug, RenderTargetAccess& targets) {
         Frame::SkeletonPose pose;
         pose.owner = e;
         for (const auto& p : joints) {
-            auto position = t.position + t.rotation * p.position;
-            pose.jointWorld.push_back(glm::translate(mat4(1), position) *
-                                      glm::mat4_cast(t.rotation * p.rotation));
+            pose.jointWorld.push_back(transformMatrix(composeTransform(t, {p.position, p.rotation})));
         }
         // Disabled animation retains its final pose and geometry binding. Visibility
         // is an instance flag, never a mesh resource lifetime event.
@@ -148,13 +121,8 @@ void RenderSystem::extract(Frame& f, bool debug, RenderTargetAccess& targets) {
             Frame::Skin draw;
             draw.slot = s.registry.get<Renderable>(e).slot;
             draw.mesh = skin->mesh;
-            const auto& appearance = s.registry.get<Renderable>(e).appearance;
-            auto root = glm::translate(mat4(1), t.position) * glm::mat4_cast(t.rotation);
-            auto visual = root * glm::translate(mat4(1), appearance.offset) *
-                          glm::scale(mat4(1), appearance.scale * appearance.animationScale) *
-                          glm::inverse(root);
             for (size_t j = 0; j < skin->joints.size(); ++j)
-                draw.palette.push_back(visual * pose.jointWorld[skin->joints[j]] *
+                draw.palette.push_back(pose.jointWorld[skin->joints[j]] *
                                        skin->mesh->bindings[j].inverseBind);
             f.skins.push_back(std::move(draw));
         }

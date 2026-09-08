@@ -20,8 +20,8 @@ HE.editable = function () {
 HE.entities = function () { return Engine.entities([]).filter(function (e) { return Engine.entity(e).effectivePersistent; }); };
 HE.ids = function () { return HE.selected.filter(Engine.alive).map(function (e) { return Engine.entity(e).id; }); };
 HE.syncOutlines = function () {
-    Engine.view.outlines(Engine.simulation.state().running ? [] : HE.selected.filter(Engine.alive).map(function(e) {
-        return {entity:e, color:[0.55,1,0.86,1]};
+    Engine.view.outlines(Engine.simulation.state().running ? [] : HE.subtree(HE.roots(HE.selected.filter(Engine.alive))).filter(function(row){return !!row.components.render;}).map(function(row) {
+        return {entity:row.entity, color:[0.55,1,0.86,1]};
     }));
 };
 HE.select = function (e, additive) {
@@ -176,7 +176,7 @@ HE.add = function (kind, asset) {
     HE.command('Add ' + kind, function () {
         var c = {transform:{position:HE.copy(HE.camera.target)}};
         if (kind === 'Box' || kind === 'Capsule' || kind === 'StaticMesh') {
-            c.render = {mesh:Engine.asset('/Engine/Meshes/'+(kind === 'Capsule' ? 'Capsule' : 'Box')), scale:[1,1,1], material:HE.defaultMaterial()};
+            c.render = {mesh:Engine.asset('/Engine/Meshes/'+(kind === 'Capsule' ? 'Capsule' : 'Box')), material:HE.defaultMaterial()};
             if (asset) c.render.mesh = asset;
         } else if (kind !== 'Entity') {
             c.light = {type:kind.toLowerCase(), color:[1,0.88,0.72], intensity:kind === 'Directional' ? 2 : 500};

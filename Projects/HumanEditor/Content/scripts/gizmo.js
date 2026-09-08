@@ -24,7 +24,7 @@ HE.createGizmo=function(){
     HE.gizmoAxes.concat(HE.gizmoPlanes).forEach(function(axis){
         var i=HE.gizmoAxes.indexOf(axis.length===1?axis:({xy:'z',xz:'y',yz:'x'})[axis]);
         var color=i===0?[0.94,0.19,0.16]:i===1?[0.30,0.86,0.20]:[0.18,0.42,1];
-        var render={mesh:g.meshes.Move,material:material,scale:[1,1,1],overlay:true,overlayColor:color,castShadow:false};
+        var render={mesh:g.meshes.Move,material:material,overlay:true,overlayColor:color,castShadow:false};
         var entity=Engine.create({name:'Gizmo '+axis.toUpperCase(),persistent:false,components:{transform:{parent:parent,position:[0,0,0]},render:render}});
         g.handles[axis]={entity:entity,color:color,render:render};g.byEntity[entity]=axis;
     });
@@ -66,8 +66,8 @@ HE.updateGizmo=function(){
             else {var angle=Math.atan2(b,a);q=HE.qmul(q,HE.qaxis([0,0,1],angle));u=HE.rotateVector(q,[1,0,0]);v=HE.rotateVector(q,[0,1,0]);}
         }
         g.frame.axes[axis]={normal:n,u:u,v:v,full:mesh==='Ring'};
-        var row=g.handles[axis];row.render.mesh=g.meshes[mesh];row.render.scale=[radius,radius,radius];
-        Engine.setComponent(row.entity,'transform',{parent:g.parent,position:[0,0,0],rotation:q});Engine.setComponent(row.entity,'render',row.render);
+        var row=g.handles[axis];row.render.mesh=g.meshes[mesh];
+        Engine.setComponent(row.entity,'transform',{parent:g.parent,position:[0,0,0],rotation:q,scale:[radius,radius,radius]});Engine.setComponent(row.entity,'render',row.render);
     });
     HE.gizmoPlanes.forEach(function(axes){
         var u=g.frame.axes[axes[0]].normal,v=g.frame.axes[axes[1]].normal,n=HE.cross(u,v);
@@ -77,8 +77,8 @@ HE.updateGizmo=function(){
         Engine.enabled(row.entity,HE.mode!=='rotate'&&Math.abs(HE.dot(n,toward))>0.12);
         var q=axes==='xy'?[0,0,0,1]:axes==='xz'?HE.qaxis([1,0,0],Math.PI/2):[0.5,0.5,0.5,0.5];
         if(HE.gizmoSpace()==='local')q=HE.qmul([p.rotation.x,p.rotation.y,p.rotation.z,p.rotation.w],q);
-        row.render.mesh=g.meshes.Plane;row.render.scale=[radius,radius,radius];
-        Engine.setComponent(row.entity,'transform',{parent:g.parent,position:[0,0,0],rotation:q});Engine.setComponent(row.entity,'render',row.render);
+        row.render.mesh=g.meshes.Plane;
+        Engine.setComponent(row.entity,'transform',{parent:g.parent,position:[0,0,0],rotation:q,scale:[radius,radius,radius]});Engine.setComponent(row.entity,'render',row.render);
     });
     var root=HE.el('gizmo');root.setProperty('display','block');root.setProperty('left',Math.round(point.x)+'px');root.setProperty('top',Math.round(point.y)+'px');
     ['move','rotate','scale'].forEach(function(mode){root.setClass(mode,HE.mode===mode);});
@@ -111,7 +111,7 @@ HE.beginDrag=function(axis,x,y){
     var frame=HE.gizmo.frame,axisFrame=frame.axes[axis];
     HE.drag={before:HE.checkpoint(),mode:HE.mode,x:x,y:y,changed:false,pivot:frame.position,radius:frame.radius,
         axes:axis.split(''),vectors:axis.split('').map(function(a){return frame.axes[a].normal;}),rows:roots.map(function(e){
-        return {e:e,pose:Engine.position(e),render:Engine.hasComponent(e,'render')?Engine.component(e,'render'):null};
+        return {e:e,pose:Engine.position(e),transform:Engine.component(e,'transform')};
     })};
     HE.gizmoHighlight(axis);
     if(axis.length===2){
@@ -173,10 +173,10 @@ HE.dragTo=function(x,y){
             var position=[p.x,p.y,p.z];
             amounts.forEach(function(amount,i){position=position.map(function(v,k){return v+d.vectors[i][k]*amount;});});
             Engine.transform(row.e,{position:{x:position[0],y:position[1],z:position[2]},rotation:p.rotation});
-        }else if(row.render){
-            var render=HE.copy(row.render);
-            amounts.forEach(function(amount,i){var index=HE.gizmoAxes.indexOf(d.axes[i]);render.scale[index]=Math.max(0.01,render.scale[index]+amount);});
-            Engine.setComponent(row.e,'render',render);
+        }else {
+            var transform=HE.copy(row.transform);
+            amounts.forEach(function(amount,i){var index=HE.gizmoAxes.indexOf(d.axes[i]);transform.scale[index]=Math.max(0.01,transform.scale[index]+amount);});
+            Engine.setComponent(row.e,'transform',transform);
         }
     });
 };

@@ -230,9 +230,8 @@ int main(int argc, char** argv) {
                 const float x = -11.f + float(i % side) * 22.f / float(side);
                 const float z = -8.f + float(i / side) * 16.f / float(side);
                 const auto id = world.create("Stress prop");
-                world.transforms.add(id, {{x, .3f, z}});
+                world.transforms.add(id, {{x, .3f, z}, {1, 0, 0, 0}, {.25f, .6f, .25f}});
                 RenderComponent appearance;
-                appearance.scale = {.25f, .6f, .25f};
                 appearance.material = material;
                 world.render.add(id, appearance, mesh);
                 if (stressMoving.size() < 8)

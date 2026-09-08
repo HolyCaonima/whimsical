@@ -156,7 +156,6 @@ class Changes {
 struct WorldPoseChanged {};
 struct EffectiveEnabledChanged {};
 struct JointPoseChanged {};
-struct RenderTransformChanged {};
 struct RenderAttributesChanged {};
 struct GeometryChanged {};
 struct CharacterResized {

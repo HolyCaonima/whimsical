@@ -1,4 +1,5 @@
 #include "AnimationCollision.h"
+#include "physics/SpatialCollider.h"
 #include <algorithm>
 #include <stdexcept>
 namespace afterlight {
@@ -7,12 +8,9 @@ std::vector<AnimationColliderDescription> AnimationCollision::describe(uint32_t 
     for (const auto& b : bindings_)
         if (b.owner == owner) {
             const auto& body = scene_.body(b.body);
-            result.push_back({b.joint, body.shape, b.local, body.blocking});
+            result.push_back({b.joint, b.shape, b.local, body.blocking});
         }
     return result;
-}
-static PhysicsPose combine(PhysicsPose a, PhysicsPose b) {
-    return {a.position + a.rotation * b.position, glm::normalize(a.rotation * b.rotation)};
 }
 static void validPose(const PhysicsPose& p) {
     if (!std::isfinite(p.position.x) || !std::isfinite(p.position.y) || !std::isfinite(p.position.z) ||
@@ -32,12 +30,12 @@ BodyHandle AnimationCollision::bind(uint32_t owner, uint32_t joint, const Collid
     body.pickable = false;
     body.enabled = false;
     auto handle = scene_.create(body);
-    bindings_.push_back({owner, joint, handle, local});
+    bindings_.push_back({owner, joint, handle, local, shape});
     return handle;
 }
 void AnimationCollision::replace(uint32_t owner,
                                  const std::vector<AnimationColliderDescription>& descriptions,
-                                 PhysicsPose root, const std::vector<PhysicsPose>& joints, bool enabled) {
+                                 const TransformPose& root, const std::vector<PhysicsPose>& joints, bool enabled) {
     AnimationCollision staged(scene_);
     try {
         for (const auto& b : descriptions) {
@@ -54,16 +52,22 @@ void AnimationCollision::replace(uint32_t owner,
     remove(owner);
     bindings_.insert(bindings_.end(), staged.bindings_.begin(), staged.bindings_.end());
 }
-void AnimationCollision::update(uint32_t owner, PhysicsPose root, const std::vector<PhysicsPose>& joints) {
-    validPose(root);
+void AnimationCollision::update(uint32_t owner, const TransformPose& root, const std::vector<PhysicsPose>& joints) {
+    validateTransformPose(root);
     for (const auto& pose : joints)
         validPose(pose);
     for (const auto& b : bindings_)
         if (b.owner == owner && b.joint >= joints.size())
             throw std::out_of_range("Animation collider references a missing joint");
     for (const auto& b : bindings_)
-        if (b.owner == owner)
-            scene_.setPose(b.body, combine(combine(root, joints[b.joint]), b.local));
+        if (b.owner == owner) {
+            const auto& joint = joints[b.joint];
+            auto world = composeTransform(composeTransform(root, {joint.position, joint.rotation}),
+                                          {b.local.position, b.local.rotation});
+            auto spatial = worldCollider(b.shape, world);
+            scene_.setShape(b.body, spatial.shape);
+            scene_.setPose(b.body, spatial.pose);
+        }
 }
 void AnimationCollision::setEnabled(uint32_t owner, bool enabled) {
     for (const auto& b : bindings_)

@@ -362,6 +362,8 @@ void PhysicsScene::setPose(BodyHandle h, const PhysicsPose& p) {
 void PhysicsScene::setShape(BodyHandle h, const ColliderShape& shape) {
     validate(shape);
     auto& s = require(h);
+    if (s.body.shape == shape)
+        return;
     s.body.shape = shape;
     s.bounds = bodyBounds(s.body);
     if (s.leaf != -1)

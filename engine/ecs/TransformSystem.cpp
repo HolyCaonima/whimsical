@@ -1,14 +1,8 @@
 #include "Systems.h"
 #include "Validation.h"
+#include "physics/SpatialCollider.h"
 #include <algorithm>
 namespace afterlight {
-static PhysicsPose compose(PhysicsPose a, PhysicsPose b) {
-    return {a.position + a.rotation * b.position, glm::normalize(a.rotation * b.rotation)};
-}
-static PhysicsPose relative(PhysicsPose parent, PhysicsPose world) {
-    auto inverse = glm::inverse(parent.rotation);
-    return {inverse * (world.position - parent.position), glm::normalize(inverse * world.rotation)};
-}
 bool SceneStorage::enabled(Entity e) const {
     while (e) {
         if (registry.has<Disabled>(e))
@@ -18,9 +12,9 @@ bool SceneStorage::enabled(Entity e) const {
     }
     return true;
 }
-void TransformSystem::add(Entity e, PhysicsPose pose) {
+void TransformSystem::add(Entity e, TransformPose pose) {
     auto batch = Changes::Batch(s.changes);
-    validateRigidPose(pose);
+    validateTransformPose(pose);
     s.registry.emplace<Transform>(e, Transform{pose, pose});
     batch.commit();
 }
@@ -29,28 +23,16 @@ void TransformSystem::remove(Entity e) {
 }
 void TransformSystem::propagate(Entity e) {
     auto& t = s.registry.get<Transform>(e);
-    t.world = t.parent ? compose(s.registry.get<Transform>(t.parent).world, t.local) : t.local;
+    t.world = t.parent ? composeTransform(s.registry.get<Transform>(t.parent).world, t.local) : t.local;
     s.changes.mark<WorldPoseChanged>(e);
     for (auto child : t.children)
         propagate(child);
 }
-void TransformSystem::setLocal(Entity e, const PhysicsPose& pose) {
-    validateRigidPose(pose);
-    auto& t = s.registry.get<Transform>(e);
-    if (t.local.position == pose.position && t.local.rotation == pose.rotation)
-        return;
-    auto batch = Changes::Batch(s.changes);
-    t.local = pose;
-    s.changes.mark<Transform>(e);
-    propagate(e);
-    batch.commit();
+void TransformSystem::setLocal(Entity e, const TransformPose& pose) {
+    setLocal(e, pose, s.registry.get<Transform>(e).parent);
 }
-void TransformSystem::setTransform(Entity e, const PhysicsPose& pose) {
-    validateRigidPose(pose);
-    auto& t = s.registry.get<Transform>(e);
-    setLocal(e, t.parent ? relative(s.registry.get<Transform>(t.parent).world, pose) : pose);
-}
-void TransformSystem::setParent(Entity e, Entity parent, bool keepWorld) {
+void TransformSystem::setLocal(Entity e, const TransformPose& pose, Entity parent) {
+    validateTransformPose(pose);
     auto& t = s.registry.get<Transform>(e);
     if (parent) {
         s.registry.get<Transform>(parent);
@@ -58,22 +40,60 @@ void TransformSystem::setParent(Entity e, Entity parent, bool keepWorld) {
             if (p == e)
                 throw std::invalid_argument("Transform hierarchy cycle");
     }
-    if (t.parent == parent)
+    bool reparent = t.parent != parent;
+    if (!reparent && t.local.position == pose.position && t.local.rotation == pose.rotation &&
+        t.local.scale == pose.scale)
         return;
+    validateSubtree(e, parent ? composeTransform(s.registry.get<Transform>(parent).world, pose) : pose);
     auto batch = Changes::Batch(s.changes);
-    if (t.parent) {
-        auto& siblings = s.registry.get<Transform>(t.parent).children;
-        siblings.erase(std::find(siblings.begin(), siblings.end(), e));
+    if (reparent) {
+        if (t.parent) {
+            auto& siblings = s.registry.get<Transform>(t.parent).children;
+            siblings.erase(std::find(siblings.begin(), siblings.end(), e));
+        }
+        t.parent = parent;
+        if (parent)
+            s.registry.get<Transform>(parent).children.push_back(e);
     }
-    t.parent = parent;
+    t.local = pose;
     s.changes.mark<Transform>(e);
-    if (parent)
-        s.registry.get<Transform>(parent).children.push_back(e);
-    if (keepWorld)
-        t.local = parent ? relative(s.registry.get<Transform>(parent).world, t.world) : t.world;
     propagate(e);
-    refreshEnabled(e);
+    if (reparent)
+        refreshEnabled(e);
     batch.commit();
+}
+void TransformSystem::validateSubtree(Entity e, const TransformPose& world) const {
+    validateTransformPose(world);
+    if (auto c = s.registry.tryGet<Collider>(e))
+        (void)worldCollider(c->shape, world);
+    if (s.registry.has<JointColliders>(e))
+        for (const auto& c : s.jointColliders.describe(e))
+            (void)scaledCollider(c.shape, world.scale);
+    for (auto child : s.registry.get<Transform>(e).children)
+        validateSubtree(child, composeTransform(world, s.registry.get<Transform>(child).local));
+}
+void TransformSystem::setWorld(Entity e, const TransformPose& pose) {
+    validateTransformPose(pose);
+    auto& t = s.registry.get<Transform>(e);
+    setLocal(e, t.parent ? relativeTransform(s.registry.get<Transform>(t.parent).world, pose) : pose);
+}
+void TransformSystem::setTransform(Entity e, const PhysicsPose& pose) {
+    auto world = s.registry.get<Transform>(e).world;
+    world.position = pose.position;
+    world.rotation = pose.rotation;
+    setWorld(e, world);
+}
+void TransformSystem::setScale(Entity e, vec3 scale) {
+    auto local = s.registry.get<Transform>(e).local;
+    local.scale = scale;
+    setLocal(e, local);
+}
+void TransformSystem::setParent(Entity e, Entity parent, bool keepWorld) {
+    const auto& t = s.registry.get<Transform>(e);
+    auto local = keepWorld ? (parent ? relativeTransform(s.registry.get<Transform>(parent).world, t.world)
+                                    : t.world)
+                           : t.local;
+    setLocal(e, local, parent);
 }
 void TransformSystem::refreshEnabled(Entity e) {
     auto batch = Changes::Batch(s.changes);

@@ -136,7 +136,7 @@ var Effects = {
             var age = .9 - smoke.life;
             var scale = (.25 + age * .85) * Math.min(1, smoke.life / .23);
             Engine.transform(smoke.id, {position: {x: smoke.x + age * .24, y: .3 + age * .7, z: smoke.z}, rotation: MathUtil.rotation(age)});
-            Engine.visualPose(smoke.id, {x: 0, y: 0, z: 0}, {x: scale, y: scale, z: scale});
+            Engine.scale(smoke.id, {x: scale, y: scale, z: scale});
         }
     }
 };

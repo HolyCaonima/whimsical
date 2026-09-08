@@ -102,9 +102,14 @@ HE.focus = function () {
     var selected=HE.selected.filter(function(e){return Engine.hasComponent(e,'transform');});
     if(!selected.length)return;
     var center=[0,0,0],size=2;
-    selected.forEach(function(e){var p=Engine.position(e);center[0]+=p.x;center[1]+=p.y;center[2]+=p.z;
-        if(Engine.hasComponent(e,'render'))size=Math.max(size,Math.max.apply(Math,Engine.component(e,'render').scale));});
-    HE.camera.target=center.map(function(v){return v/selected.length;});HE.camera.distance=Math.max(4,size*3);HE.applyCamera();
+    selected.forEach(function(e){var p=Engine.position(e);center[0]+=p.x;center[1]+=p.y;center[2]+=p.z;});
+    center=center.map(function(v){return v/selected.length;});
+    HE.subtree(HE.roots(selected)).forEach(function(row){
+        if(!row.components.render)return;
+        var p=Engine.position(row.entity),dx=p.x-center[0],dy=p.y-center[1],dz=p.z-center[2];
+        size=Math.max(size,Math.sqrt(dx*dx+dy*dy+dz*dz)+Math.max(p.scale.x,p.scale.y,p.scale.z));
+    });
+    HE.camera.target=center;HE.camera.distance=Math.max(4,size*3);HE.applyCamera();
 };
 HE.applyCamera = function(){HE.cancelPick();Engine.view.set({camera:HE.camera});};
 HE.layout={left:250,right:360,bottom:270,details:0.43,content:true,maximized:false};

@@ -124,12 +124,18 @@ objects=[]; references={}; meshes={}; material=[]
 def obj(name,p=(0,0,0),scale=(1,1,1),mesh=None,mat=0,yaw=0,half=None,layer=1,enabled=True,ref=False):
     components=dict(transform=dict(position=list(p),rotation=[0,math.sin(yaw/2),0,math.cos(yaw/2)]))
     if mesh:
-        components['render']=dict(scale=list(scale),offset=[0,0,0],animationScale=[1,1,1],material=material[mat],visible=True,mesh=mesh)
+        components['render']=dict(material=material[mat],visible=True,mesh=mesh)
+        if not half:
+            components['transform']['scale']=list(scale)
     if half:
         components['collider']=dict(shape=dict(type='box',halfExtents=list(half)),motion='kinematic' if ref else 'static',
                                    layer=layer,blocking=True,pickable=False,walkable=False)
     o=dict(id=uid('object/'+name),name=name,enabled=enabled,components=components)
     objects.append(o)
+    if mesh and half and tuple(scale)!=(1,1,1):
+        objects.append(dict(id=uid('object/'+name+'/visual'),name=name+' Visual',enabled=True,
+            components=dict(transform=dict(parent=o['id'],position=[0,0,0],scale=list(scale)),
+                            render=components.pop('render'))))
     if ref: references[name]=o['id']
     return o
 
@@ -157,7 +163,7 @@ obj('Circuit',mesh=road.save('circuit'))
 lawn=Mesh();lawn.box((0,-.15,0),(250,.3,250),'79A356')
 o=obj('Lawn',mesh=lawn.save('lawn'),half=(125,.15,125),p=(0,0,0));o['components']['collider']['walkable']=True
 # Physics ground top sits below car bottoms; flat racing is governed by the project vehicle controller.
-o['components']['collider']['shape']['halfExtents']=[125,.1,125];o['position'][1]=-.1
+o['components']['collider']['shape']['halfExtents']=[125,.1,125];o['components']['transform']['position'][1]=-.1
 
 tree=Mesh();tree.ring((0,0,0),[(0,.52),(.35,.36),(3.8,.22)],7,'B98263')
 tree.ring((0,0,0),[(2.8,1.0),(3.6,1.65),(5.5,1.48),(7.7,.7),(8.4,.05)],9,'279D73',smooth=True)
@@ -294,7 +300,7 @@ objects.extend(lighting['lights'])
 for entity in objects:
     if entity['name'] in lighting['renderOverrides']:
         entity['components']['render'].update(lighting['renderOverrides'][entity['name']])
-scene=dict(version=10,entities=objects,
+scene=dict(version=11,entities=objects,
     camera=dict(target=[-60,1,-30],yaw=math.pi,pitch=.27,distance=10,fov=.95),
     navigation=dict(min=[-120,0,-120],max=[120,12,120],cellSize=1,planeTolerance=.03),
     references=references,data=data,scripts=[])

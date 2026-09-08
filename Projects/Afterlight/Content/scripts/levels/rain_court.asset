@@ -17,14 +17,14 @@ var RainCourt = {
             var light = Engine.component(Engine.sceneObject('cyanLight'), 'light');
             light.intensity = state.power ? state.cyanLightPower : 0;
             Engine.setComponent(Engine.sceneObject('cyanLight'), 'light', light);
-            Engine.setMaterial(beacon, state.power ? m.brass : m.dark);
+            GameplayPresentation.setMaterial(beacon, state.power ? m.brass : m.dark);
             var p = Engine.position(door);
             Engine.transform(door, {position:{x:p.x, y:state.power ? 1.3 : 4.3, z:p.z}, rotation:{w:1}});
             Engine.solid(door, state.power);
             Engine.setSceneData(state);
         });
         Interactions.register(cache, 'Supply cache', {x : 3, y : 0, z : 5.3}, function() {
-            Engine.setMaterial(cache, m.cyan);
+            GameplayPresentation.setMaterial(cache, m.cyan);
         });
         Engine.log('Rain Court loaded: animated Kiln and following dog Ash, dynamic RT lights.');
     }

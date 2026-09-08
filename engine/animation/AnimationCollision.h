@@ -1,5 +1,6 @@
 #pragma once
 #include "physics/PhysicsScene.h"
+#include "core/SpatialTransform.h"
 namespace afterlight {
 struct AnimationColliderDescription {
     uint32_t joint = 0;
@@ -14,6 +15,7 @@ class AnimationCollision {
         uint32_t owner, joint;
         BodyHandle body;
         PhysicsPose local;
+        ColliderShape shape;
     };
     PhysicsScene& scene_;
     std::vector<Binding> bindings_;
@@ -25,9 +27,9 @@ class AnimationCollision {
     }
     BodyHandle bind(uint32_t owner, uint32_t joint, const ColliderShape&, PhysicsPose local,
                     bool blocking = false);
-    void replace(uint32_t owner, const std::vector<AnimationColliderDescription>&, PhysicsPose root,
+    void replace(uint32_t owner, const std::vector<AnimationColliderDescription>&, const TransformPose& root,
                  const std::vector<PhysicsPose>& joints, bool enabled);
-    void update(uint32_t owner, PhysicsPose root, const std::vector<PhysicsPose>& joints);
+    void update(uint32_t owner, const TransformPose& root, const std::vector<PhysicsPose>& joints);
     void setEnabled(uint32_t owner, bool);
     void remove(uint32_t owner);
     std::vector<AnimationColliderDescription> describe(uint32_t owner) const;

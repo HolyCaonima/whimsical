@@ -64,7 +64,7 @@ Box 和 Capsule 支持任意刚体旋转；角色查询体为竖直胶囊。提�
 
 先执行 `Locomotion.prepare` 提交站立／蹲下请求，再让 Controller 请求路径。胶囊缩放保持脚底位置，扩张会检查头顶净空；低顶下松开 Ctrl 仍保持实际蹲姿和速度，移出后才站起。
 
-手动位移和 `Engine.rootMotion` 共用物理扫掠／滑移，返回实际位移；当前 root motion 受 grounded controller 约束，不能直接越过地面／高度检查。行走 bob 和显示缩放走 `visualPose`，不让物理胶囊上下抖动。
+手动位移和 `Engine.rootMotion` 共用物理扫掠／滑移，返回实际位移；当前 root motion 受 grounded controller 约束，不能直接越过地面／高度检查。行走 bob 和仅影响显示的缩放放在视觉子节点的 Transform 上，不改变父级物理胶囊。
 
 附属碰撞体由“对象根姿态 × 关节相对根姿态 × 附属体局部姿态”驱动，更新后立即可查询，生命周期跟随对象。原生和 JS 接口均已测试；双足与四足角色通过 Animator 提交 FK 姿态。附属体更新不自动生成连续碰撞事件，高速攻击可显式请求 `physicsSweep`。
 
@@ -80,11 +80,10 @@ Box 和 Capsule 支持任意刚体旋转；角色查询体为竖直胶囊。提�
 | `Engine.rootMotion(id,localDelta,deltaYaw)` | 局部动画位移经过同一物理控制器 |
 | `Engine.characterHeight(id,height)` | 保持脚底并检查净空，返回生效高度 |
 | `Engine.findPath(id,target)` | 使用角色实际脚底和物理尺寸寻路 |
-| `Engine.transform(id,pose)` / `localTransform(id,pose)` | 写世界／局部刚体姿态，并传播关联空间资源 |
-| `Engine.renderScale(id,scale)` | 单独修改显示尺寸，不改变 Collider |
-| `Engine.transform(id,{position,rotation})` | 瞬移到完整刚体姿态，保持显示尺寸；不做沿途碰撞检测 |
-| `Engine.position(id)` | 返回 `{x,y,z,yaw,rotation}`；yaw 是从四元数计算的水平朝向，范围为 −π 到 π |
-| `Engine.visualPose(id,offset,scale)` | 纯显示偏移和缩放 |
+| `Engine.transform(id,pose)` / `localTransform(id,pose)` | 写世界／局部 TRS，并传播关联空间资源；省略 scale 时保留当前缩放 |
+| `Engine.scale(id,scale)` | 修改局部缩放，派生世界碰撞尺寸；盒支持逐轴缩放，胶囊要求均匀世界缩放 |
+| `Engine.transform(id,{position,rotation})` | 瞬移到完整位移与旋转，保持世界缩放；不做沿途碰撞检测 |
+| `Engine.position(id)` | 返回 `{x,y,z,yaw,rotation,scale}`；yaw 是从四元数计算的水平朝向，范围为 −π 到 π |
 | `Engine.solid(id,bool)` | 更新物理阻挡属性 |
 | `Engine.visible(id,bool)` / `enabled(id,bool)` / `destroy(id)` | 显示、整个对象的启用、生命周期 |
 | `Engine.physicsRaycast(origin,direction,distance,mask)` | 最近物理命中或 null |

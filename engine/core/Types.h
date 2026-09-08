@@ -24,7 +24,6 @@ struct TextureAsset;
 struct CpuProfile;
 
 struct RenderComponent {
-    vec3 scale{1}, offset{0}, animationScale{1};
     std::shared_ptr<const MaterialAsset> material;
     bool visible = true;
     bool castShadow = true;

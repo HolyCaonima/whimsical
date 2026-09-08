@@ -1,4 +1,5 @@
 #pragma once
+#include "core/SpatialTransform.h"
 #include "assets/Asset.h"
 #include "core/Types.h"
 #include "physics/PhysicsScene.h"
@@ -8,7 +9,7 @@
 #include "ecs/ComponentCatalog.h"
 namespace afterlight {
 struct SceneTransform {
-    PhysicsPose local;
+    TransformPose local;
     std::string parent;
 };
 struct SceneRender {

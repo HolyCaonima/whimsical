@@ -47,7 +47,7 @@ AnimationSystem::AnimationSystem(SceneStorage& storage, MotionSystem& m, Transfo
             return;
         auto& a = s.registry.get<Animator>(change.entity);
         auto localDelta =
-            glm::inverse(s.registry.get<Transform>(change.entity).world.rotation) * change.centerDelta;
+            (glm::inverse(s.registry.get<Transform>(change.entity).world.rotation) * change.centerDelta) / s.registry.get<Transform>(change.entity).world.scale;
         a.rootOffset -= localDelta;
         for (auto& joint : s.registry.get<JointPose>(change.entity).model)
             joint.position -= localDelta;
@@ -275,7 +275,7 @@ void AnimationSystem::update(float dt) {
             continue;
         auto& a = s.registry.get<Animator>(e);
         const auto& t = s.registry.get<Transform>(e).world;
-        animation::Transform root{t.position + t.rotation * a.rootOffset, t.rotation};
+        animation::Transform root{t.position + t.rotation * (t.scale * a.rootOffset), t.rotation};
         auto output = a.instance->prepare(dt, root, a.input);
         std::vector<PhysicsPose> joints;
         PhysicsPose acceptedRoot;

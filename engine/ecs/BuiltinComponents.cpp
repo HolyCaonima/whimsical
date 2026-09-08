@@ -111,15 +111,19 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
     {
         auto c = component<Transform, SceneTransform>("transform");
         c.validateValue = [](const std::any& value) {
-            validateRigidPose(std::any_cast<const SceneTransform&>(value).local);
+            validateTransformPose(std::any_cast<const SceneTransform&>(value).local);
         };
         codec<SceneTransform>(
             c,
             [](const Json& j) {
-                return SceneTransform{pose(j), j.contains("parent") ? j.at("parent").string() : ""};
+                auto p = pose(j);
+                TransformPose local{p.position, p.rotation, j.contains("scale") ? vector3(j.at("scale")) : vec3(1)};
+                validateTransformPose(local);
+                return SceneTransform{local, j.contains("parent") ? j.at("parent").string() : ""};
             },
             [](const SceneTransform& v) {
-                auto j = pose(v.local);
+                auto j = pose(PhysicsPose{v.local.position, v.local.rotation});
+                j["scale"] = vector(v.local.scale);
                 j["parent"] = v.parent;
                 return j;
             });
@@ -138,8 +142,7 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
                 return [e, v, parent](ComponentAccess& access) {
                     auto& w = access.world;
                     if (w.has<Transform>(e)) {
-                        w.transforms.setParent(e, parent, false);
-                        w.transforms.setLocal(e, v.local);
+                        w.transforms.setLocal(e, v.local, parent);
                     } else {
                         w.transforms.add(e, v.local);
                         if (parent)
@@ -176,12 +179,8 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
                 auto& a = v.appearance;
                 if (j.contains("shape"))
                     throw std::invalid_argument("Render.shape was removed; bind a Mesh asset instead");
-                if (j.contains("scale"))
-                    a.scale = vector3(j.at("scale"));
-                if (j.contains("offset"))
-                    a.offset = vector3(j.at("offset"));
-                if (j.contains("animationScale"))
-                    a.animationScale = vector3(j.at("animationScale"));
+                if (j.contains("scale") || j.contains("offset") || j.contains("animationScale"))
+                    throw std::invalid_argument("Render transforms were removed; use Transform or a visual child");
                 v.material = AssetRef::fromJson(j.at("material"));
                 if (j.contains("visible"))
                     a.visible = j.at("visible").boolean();
@@ -198,10 +197,7 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
             },
             [](const SceneRender& v) {
                 const auto& a = v.appearance;
-                Json j{{"scale", vector(a.scale)},
-                       {"offset", vector(a.offset)},
-                       {"animationScale", vector(a.animationScale)},
-                       {"material", v.material.json()},
+                Json j{{"material", v.material.json()},
                        {"visible", a.visible}, {"castShadow", a.castShadow}};
                 if (a.overlay)
                     j["overlay"] = true;

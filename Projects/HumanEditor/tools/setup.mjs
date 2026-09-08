@@ -27,12 +27,12 @@ const ground=surface('Ground',[0.18,0.20,0.23]),cube=surface('Cube',[0.65,0.32,0
 const mesh=name=>({id:JSON.parse(fs.readFileSync(path.join(root,'../../engine/Content/Meshes',name+'.asset'),'utf8').split('\n')[1]).id,path:'/Engine/Meshes/'+name});
 const entities=[];
 function entity(name,components){entities.push({id:id(name),name,enabled:true,components});}
-entity('Ground',{transform:{position:[0,-0.2,0]},render:{mesh:mesh('Box'),scale:[12,0.3,12],material:ground}});
-entity('Cube',{transform:{position:[0,0.65,0]},render:{mesh:mesh('Box'),scale:[1.3,1.3,1.3],material:cube}});
-entity('Capsule',{transform:{position:[2,1,0]},render:{mesh:mesh('Capsule'),scale:[0.7,1.2,0.7],material:capsule}});
+entity('Ground',{transform:{position:[0,-0.2,0],scale:[12,0.3,12]},render:{mesh:mesh('Box'),material:ground}});
+entity('Cube',{transform:{position:[0,0.65,0],scale:[1.3,1.3,1.3]},render:{mesh:mesh('Box'),material:cube}});
+entity('Capsule',{transform:{position:[2,1,0],scale:[0.7,1.2,0.7]},render:{mesh:mesh('Capsule'),material:capsule}});
 entity('Key light',{transform:{position:[1,5,3]},light:{type:'point',intensity:1500,color:[1,0.85,0.65],radius:0.35}});
 entity('Fill light',{transform:{position:[-4,3,-2]},light:{type:'point',intensity:700,color:[0.45,0.65,1],radius:0.5}});
-asset('Maps/Workbench','Map',{version:10,entities,camera:{target:[0,0.7,0],yaw:0.5,pitch:0.45,distance:13,fov:0.62},navigation:{min:[-20,-5,-20],max:[20,20,20],cellSize:0.5,planeTolerance:0.2},scripts:[],references:{},data:{}});
+asset('Maps/Workbench','Map',{version:11,entities,camera:{target:[0,0.7,0],yaw:0.5,pitch:0.45,distance:13,fov:0.62},navigation:{min:[-20,-5,-20],max:[20,20,20],cellSize:0.5,planeTolerance:0.2},scripts:[],references:{},data:{}});
 asset('Settings','Data',{project:'Projects/Afterlight/.project'});
 console.log('HumanEditor assets ready.');
 

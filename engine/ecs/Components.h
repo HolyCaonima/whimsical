@@ -1,5 +1,6 @@
 #pragma once
 #include "Registry.h"
+#include "core/SpatialTransform.h"
 #include "core/Types.h"
 #include "physics/PhysicsScene.h"
 #include "animation/SkinnedMesh.h"
@@ -22,12 +23,11 @@ struct Interactable {};
 struct ScriptData {
     Json value = Json::object();
 };
-// Hierarchies are rigid (translation + rotation). Geometry dimensions belong to render
-// and collider components; nonuniform parent scale cannot represent a rigid collider.
+// Transform is the only spatial authority for rendering, physics and children.
 struct Transform {
     using Ownership = SystemComponent;
-    PhysicsPose local;
-    PhysicsPose world; // Derived cache, written only by TransformSystem.
+    TransformPose local;
+    TransformPose world; // Derived cache, written only by TransformSystem.
     Entity parent = 0;
     std::vector<Entity> children;
     float yaw() const {
@@ -45,11 +45,12 @@ struct DrawEntityID {
     using Ownership = SystemComponent;
     std::shared_ptr<const RenderTargetAsset> target;
 };
-// PhysicsScene owns shape/material/query state. This is the sole ECS binding to it;
-// its pose is a derived spatial index of Transform, not another editable transform.
+// Local shape dimensions are authored here; PhysicsScene owns derived world shape,
+// rigid pose and query state. Transform remains the spatial authority.
 struct Collider {
     using Ownership = SystemComponent;
     BodyHandle body;
+    ColliderShape shape; // Local authored shape; PhysicsScene contains its scaled world shape.
 };
 struct JointPose {
     using Ownership = SystemComponent;

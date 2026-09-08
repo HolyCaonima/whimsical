@@ -11,10 +11,6 @@ inline void validateRigidPose(const PhysicsPose& p) {
 }
 inline void validateRenderAppearance(const RenderComponent& r) {
     for (int i = 0; i < 3; ++i)
-        if (!std::isfinite(r.scale[i]) || r.scale[i] <= 0 || !std::isfinite(r.animationScale[i]) ||
-            r.animationScale[i] <= 0 || !std::isfinite(r.offset[i]))
-            throw std::invalid_argument("Invalid render dimensions");
-    for (int i = 0; i < 3; ++i)
         if (!std::isfinite(r.overlayColor[i]) || r.overlayColor[i] < 0 || r.overlayColor[i] > 1)
             throw std::invalid_argument("Overlay colour must be in [0, 1]");
 }

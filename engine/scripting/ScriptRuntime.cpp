@@ -209,6 +209,15 @@ static PhysicsPose readPhysicsPose(duk_context* c, int idx) {
     duk_pop(c);
     return p;
 }
+static TransformPose readTransformPose(duk_context* c, int idx, vec3 scale = vec3(1)) {
+    idx = duk_normalize_index(c, idx);
+    auto p = readPhysicsPose(c, idx);
+    duk_get_prop_string(c, idx, "scale");
+    if (duk_is_object(c, -1))
+        scale = readVec(c, -1);
+    duk_pop(c);
+    return {p.position, p.rotation, scale};
+}
 static ColliderShape readShape(duk_context* c, int idx, ColliderShape fallback = {}) {
     idx = duk_normalize_index(c, idx);
     duk_get_prop_string(c, idx, "shape");
@@ -292,7 +301,7 @@ enum Op {
     SetEntityData,
     AddLight,
     GetPose,
-    RenderScale,
+    TransformScale,
     SetTransform,
     MoveBody,
     ShapeSweep,
@@ -305,7 +314,6 @@ enum Op {
     ReadJson,
     LightIntensity,
     ConfigureCollider,
-    VisualPose,
     CharacterHeight,
     RootMotion,
     SetVisible,
@@ -513,9 +521,11 @@ static duk_ret_t callNative(duk_context* c) {
             w.transforms.setParent(duk_require_uint(c, 0), duk_require_uint(c, 1),
                                    duk_get_boolean_default(c, 2, true) != 0);
             return 0;
-        case LocalTransform:
-            w.transforms.setLocal(duk_require_uint(c, 0), readPhysicsPose(c, 1));
+        case LocalTransform: {
+            Entity e = duk_require_uint(c, 0);
+            w.transforms.setLocal(e, readTransformPose(c, 1, w.get<Transform>(e).local.scale));
             return 0;
+        }
         case EntityData:
             pushJson(c, w.get<ScriptData>(duk_require_uint(c, 0)).value);
             return 1;
@@ -542,16 +552,20 @@ static duk_ret_t callNative(duk_context* c) {
             const auto& e = w.get<Transform>(duk_require_uint(c, 0));
             pushVec(c, e.world.position);
             value(c, "yaw", e.yaw());
+            pushVec(c, e.world.scale);
+            duk_put_prop_string(c, -2, "scale");
             pushRotation(c, e.world.rotation);
             duk_put_prop_string(c, -2, "rotation");
             return 1;
         }
-        case RenderScale:
-            w.render.setScale(duk_require_uint(c, 0), readVec(c, 1));
+        case TransformScale:
+            w.transforms.setScale(duk_require_uint(c, 0), readVec(c, 1));
             return 0;
-        case SetTransform:
-            w.transforms.setTransform(duk_require_uint(c, 0), readPhysicsPose(c, 1));
+        case SetTransform: {
+            Entity e = duk_require_uint(c, 0);
+            w.transforms.setWorld(e, readTransformPose(c, 1, w.get<Transform>(e).world.scale));
             return 0;
+        }
         case MoveBody: {
             uint32_t id = duk_require_uint(c, 0);
             quat target = duk_is_undefined(c, 2) ? w.get<Transform>(id).world.rotation : readRotation(c, 2);
@@ -684,9 +698,6 @@ static duk_ret_t callNative(duk_context* c) {
                 boolProp(c, 1, "walkable", b.walkable), boolProp(c, 1, "pickable", b.pickable));
             return 0;
         }
-        case VisualPose:
-            w.render.setVisualPose(duk_require_uint(c, 0), readVec(c, 1), readVec(c, 2));
-            return 0;
         case CharacterHeight:
             duk_push_number(c, w.motion.setCharacterHeight(duk_require_uint(c, 0), num(c, 1)));
             return 1;
@@ -955,7 +966,7 @@ void ScriptRuntime::createContext() {
                                 {"setData", SetEntityData, 2},
                                 {"light", AddLight, 8},
                                 {"position", GetPose, 1},
-                                {"renderScale", RenderScale, 2},
+                                {"scale", TransformScale, 2},
                                 {"transform", SetTransform, 2},
                                 {"moveBody", MoveBody, 4},
                                 {"physicsShapeSweep", ShapeSweep, 4},
@@ -968,7 +979,6 @@ void ScriptRuntime::createContext() {
                                 {"readJson", ReadJson, 1},
                                 {"lightIntensity", LightIntensity, 2},
                                 {"collider", ConfigureCollider, 2},
-                                {"visualPose", VisualPose, 3},
                                 {"characterHeight", CharacterHeight, 2},
                                 {"rootMotion", RootMotion, 3},
                                 {"visible", SetVisible, 2},

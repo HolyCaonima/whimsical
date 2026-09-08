@@ -89,7 +89,7 @@ HE.pickDetailAsset=function(f){
 };
 HE.detailLabel=function(key){return key.replace(/([a-z0-9])([A-Z])/g,'$1 $2').replace(/_/g,' ').replace(/^./,function(c){return c.toUpperCase();});};
 HE.detailOrder=function(value,component){
-    var order={transform:['position','rotation','parent'],render:['mesh','material','scale','offset','visible','castShadow','animationScale'],light:['type','color','intensity'],collider:['enabled','shape']}[component]||[];
+    var order={transform:['position','rotation','scale','parent'],render:['mesh','material','visible','castShadow'],light:['type','color','intensity'],collider:['enabled','shape']}[component]||[];
     return Object.keys(value).sort(function(a,b){var ai=order.indexOf(a),bi=order.indexOf(b);return (ai<0?99:ai)-(bi<0?99:bi)||a.localeCompare(b);});
 };
 HE.detailNumber=function(value){return value%1===0?String(value):String(Number(value.toPrecision(7)));};

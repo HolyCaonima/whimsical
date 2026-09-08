@@ -39,7 +39,7 @@ componentCatalog().add(std::move(type));
 | --- | --- | --- |
 | Transform | local、parent / world、children | 父级必须有 Transform |
 | Renderable | 外观、不可变静态网格 / render slot | Transform |
-| Collider | PhysicsScene 独占形状、运动分类、层、查询标志；组件持有唯一 BodyHandle | Transform |
+| Collider | 局部形状、唯一 BodyHandle / PhysicsScene 保存世界形状、运动分类、层、查询标志 | Transform |
 | Animator | Instance/Solver、输入、属性、根偏移 / 求解输出 | Transform |
 | RootMotionBinding | 根运动消费策略、碰撞 mask、是否保持动画锚点 | Animator；碰撞移动策略还依赖 Collider |
 | JointPose | 手工模型空间姿态及可选骨架布局；有 Animator 时是其拥有的 FK 结果 | Transform |
@@ -49,7 +49,7 @@ componentCatalog().add(std::move(type));
 | Interactable | 交互标记 | 无 |
 | ScriptData | 实体级 JSON 对象 | 无 |
 
-Transform 的 world 是空间事实；物理体 pose、关节附件 pose 和 render proxy 是派生镜像。PhysicsScene 中的形状与查询标志不在 ECS 再保存一份。Animator 独占 solver/local pose，JointPose 缓存一次 FK，碰撞附件和蒙皮共用这个结果。手工 JointPose 可携带骨架名称及父子布局，直接驱动 Skin，不必创建 Animator。
+Transform 的 world 是空间事实；物理体 pose、关节附件 pose 和 render proxy 是派生镜像。Collider 保存局部尺寸，PhysicsScene 的世界尺寸随 Transform.scale 派生；查询标志仍由 PhysicsScene 独占。Animator 独占 solver/local pose，JointPose 缓存一次 FK，碰撞附件和蒙皮共用这个结果。手工 JointPose 可携带骨架名称及父子布局，直接驱动 Skin，不必创建 Animator。
 
 Skin 与静态 mesh 共用当前后端的一个 render binding，因此二者不能同时挂到一个 Renderable；该限制在绑定入口校验，不要求所有渲染实体拥有 Animator。蒙皮资源与动画求解器仍分离。
 
@@ -70,12 +70,12 @@ Registry 在组件实际增删时发布类型通知。普通数据编辑发布�
 ```text
 TransformSystem：local / parent → 整个子树的 world
     → WorldPoseChanged
-        → MotionSystem：主物理体 pose
-        → AnimationSystem：关节附件 pose
+        → MotionSystem：主物理体 pose / world shape
+        → AnimationSystem：关节附件 pose / world shape
         → RenderSystem：proxy transform
 启停 → EffectiveEnabledChanged → 物理、附件、render attributes
 JointPoseChanged → 关节附件
-渲染外观变更 → transform / attributes / geometry 各自的通知
+渲染外观变更 → attributes / geometry 各自的通知
 ```
 
 常规系统调用和脚本调用返回前完成提交，同一 JS tick 的后续查询可见更新。原生调用者可显式使用 `auto batch = world.changes()` 合并多次写入，再调用 `batch.commit()`；批次中的 Registry 是编辑状态，禁止对外做后端查询或帧提取。这个批次只合并通知，不承诺回滚任意原生代码的写入；组件组接入的回滚由目录负责。异常路径若留下未提交的原生编辑，需由调用者修正并 `commitChanges()`。不能用 `commitChanges()` 穿透尚未结束的批次；一个批次只允许提交一次。移动、导航等系统查询也遵守同一边界；权威描述读取可用于批次内编辑，但不会暴露未同步的后端 pose。
@@ -86,7 +86,7 @@ JointPoseChanged → 关节附件
 
 ## 层级与调度
 
-Transform 层级保持刚体平移与旋转：`world = parent.world * local`。渲染尺寸和碰撞尺寸独立，不用共享缩放给刚体后端制造剪切或胶囊形变。蒙皮使用 `entityWorld * visualOffset * visualScale * jointModel * inverseBind`；骨架调试与关节碰撞继续使用刚体模型空间，显示变换不会污染物理。
+Transform 的 local/world 都是 TRS，采用 UE 风格的直接组合：世界缩放逐轴相乘，旋转四元数相乘，局部位移先乘父缩放再受父旋转和平移。层级不乘世界矩阵，也不生成或存储切变。渲染、骨架与关节碰撞使用同一组合规则；仅影响外观的变换由独立视觉子节点表达。盒碰撞支持逐轴缩放，胶囊要求均匀世界缩放。详见 [Transform TRS](transform-trs.md)。
 
 `setParent(child,parent,keepWorld=true)` 默认保持世界姿态，false 保持 local，0 解除父级。环路与缺失父级在写入前拒绝。父级修改只传播子树；禁用继承不覆盖子级本地 Disabled。Maple Circuit 的车轮仍通过局部姿态跟随车身。
 
@@ -96,15 +96,15 @@ Transform 层级保持刚体平移与旋转：`world = parent.world * local`。�
 
 snapshot 不推进求解器。渲染线程不访问 Registry、PhysicsScene、JS heap 或 ONNX Instance；它仍独占 GPU 资源及 fence 后的创建、更新、释放。静态资产共享、按实例蒙皮、几何空闲区复用和局部 BLAS 更新沿用既有实现。
 
-## Map v7 与场景替换
+## Map v11 与场景替换
 
-Map v7 保存实际存在的组件描述。父级使用持久 ID，Transform 保存 local；world、children、slot、BodyHandle、骨骼映射和 solver 输出不入盘。手工 joints 可以是姿态数组，或 `{poses, layout}`；求解器拥有的 joints 不捕获为手工组件。`Engine.component` 返回可保存的描述副本，读取派生组件会明确报错。
+Map v11 保存实际存在的组件描述。父级使用持久 ID，Transform 保存 local；world、children、slot、BodyHandle、骨骼映射和 solver 输出不入盘。手工 joints 可以是姿态数组，或 `{poses, layout}`；求解器拥有的 joints 不捕获为手工组件。`Engine.component` 返回可保存的描述副本，读取派生组件会明确报错。
 
 场景加载先建立身份，按父先子后实例化实体，再由目录决定实体内部的组件顺序。所有资产与后端准备在隔离 World 中完成。验证成功后一次交换 Registry、后端绑定及资源，旧状态随隔离 World 一起销毁，不在交换前逐个发布销毁回调，也不重复创建求解器。系统和订阅关系留在所属 World，最终发布旧实体移除和新实体接入通知。准备失败保留原世界和 JS realm。脚本加载延迟外部观察者，直到新 realm 的初始化完成；发布阶段失败不撤销已交换的世界，也不会继续使用旧 realm。`ScenePersistence::CommittedError` 标识交换完成后的发布失败，需按已提交状态处理。脚本初始化本身的错误也发生在交换之后。
 
 实体 ID 和物理句柄 generation 序列跨地图延续，旧引用不能落到新对象上。RenderScene 的 revision/topology 跨替换单调推进；整张地图替换允许一次完整同步，局部组件变更仍只影响相关资源。未消费的旧 Frame 继续持有不可变资产和数值快照。
 
-v3–v6 只在读取边界迁移：Animator 的 rootMotion 布尔值被转换为独立 grounded 组件，并显式开启原有锚点策略。旧顶层 lights 导入为 Transform + LightComponent 实体。现有地图与生成工具已迁移为 v7，已有资产和实体持久 ID 不变。新灯具使用实体 ID，Rain Court 的 cyanLight 改为持久角色引用。`Engine.light` 返回实体 ID，`Engine.lightIntensity` 接受该 ID；可以用普通组件 API 创建／编辑 light。灯具继承启停与层级，Frame 携带与灯数组对应的实体 ID，同数量替换也会使渲染历史失效；参数变化不触发几何重建。
+现有地图与生成工具已迁移为 v11。旧版地图使用离线迁移工具升级，运行时不保留旧 Render 变换入口；原实体持久 ID 保持不变，必要时添加视觉子节点。`Engine.light` 返回实体 ID，`Engine.lightIntensity` 接受该 ID；可以用普通组件 API 创建／编辑 light。灯具继承启停与层级，Frame 携带与灯数组对应的实体 ID，同数量替换也会使渲染历史失效；参数变化不触发几何重建。
 
 ```js
 var e = Engine.create({name:'Sensor', components:{
@@ -112,13 +112,13 @@ var e = Engine.create({name:'Sensor', components:{
     data:{count:0}
 }});
 Engine.addComponents(e, {
-    render:{material:Engine.asset('/Game/materials/Stone'),scale:[1,1,1]},
+    render:{mesh:Engine.asset('/Engine/Meshes/Box'),material:Engine.asset('/Game/materials/Stone')},
     collider:{shape:{type:'box',halfExtents:[.5,.5,.5]},pickable:true},
     interactable:{}
 });
-var description = Engine.component(e,'render'); // 副本
+var description = Engine.component(e,'transform'); // 副本
 description.scale = [2,1,1];
-Engine.setComponent(e,'render',description);
+Engine.setComponent(e,'transform',description);
 Engine.entities(['transform','render']);
 Engine.removeComponent(e,'render');
 Engine.destroy(e);
