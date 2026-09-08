@@ -147,7 +147,8 @@ HE.resize = function(w,h,force){
     HE.el('content').setProperty('display',bottom?'block':'none');
     HE.el('log-panel').setProperty('display',bottom&&HE.logVisible?'block':'none');
     HE.el('split-bottom').setProperty('display',bottom?'block':'none');
-    HE.el('maximize-view').setText(full?'Restore':'Maximize');
+    HE.el('maximize-view').setClass('restored',full);
+    HE.el('maximize-view').setAttribute('title',full?'Restore viewport':'Maximize viewport');
     HE.el('content-drawer').setClass('active',!!bottom);
     HE.sizeInspector();
     HE.sizeTree();

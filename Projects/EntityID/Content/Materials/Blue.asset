@@ -1,0 +1,17 @@
+ALAS1
+{"id": "1dcf369788315ca9ac404153f4e2bbfd", "type": "Material", "name": "Blue", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "28b5fbce0b534eb2a76bb822e671e527",
+    "path": "/Game/shaders/Standard"
+  },
+  "properties": {
+    "baseColor": [
+      0.1,
+      0.2,
+      0.8
+    ],
+    "roughness": 0.5
+  },
+  "textures": {}
+}

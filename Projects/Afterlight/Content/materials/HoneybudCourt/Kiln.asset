@@ -1,0 +1,28 @@
+ALAS1
+{"id": "8d72050523d65c69af25f61a4dcc9853", "type": "Material", "name": "Kiln", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "c6152da2cdb35ce49c81a5f9157b4179",
+    "path": "/Game/shaders/Standard"
+  },
+  "properties": {
+    "baseColor": [
+      0.72,
+      0.79,
+      0.83
+    ],
+    "roughness": 0.65,
+    "emission": [
+      0,
+      0,
+      0
+    ],
+    "metallic": 0.12,
+    "uvScale": [
+      1,
+      1
+    ],
+    "normalStrength": 1
+  },
+  "textures": {}
+}

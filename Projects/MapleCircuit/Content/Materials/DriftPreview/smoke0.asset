@@ -1,0 +1,12 @@
+ALAS1
+{"id": "3b570df62c5059e08dacbd50c6289ab9", "type": "Material", "name": "smoke0", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "be0c13c257be5783b6da98c6bc8b9e46",
+    "path": "/Game/shaders/Standard"
+  },
+  "properties": {
+    "roughness": 0.95
+  },
+  "textures": {}
+}

@@ -120,72 +120,6 @@ HE.sizeTree=function(){
     // Scroll contents need a definite width in RmlUi, just like inspector fields.
     HE.el('tree').querySelectorAll('.tree-row').forEach(function(el){el.setProperty('width',((HE.detailsWidth||HE.layout.right)-18)+'px');});
 };
-HE.refreshDetails = function(){
-    if(!HE.doc)return;
-    HE.el('selection-count').setText(HE.selected.length?HE.selected.length+' selected':'');
-    if(!HE.selected.length){HE.el('inspector').setInnerRML('<div class="empty">Select an actor to view details.<br/>Click a surface in the viewport<br/>or choose an actor in the Outliner.</div>');return;}
-    var e=HE.selected[HE.selected.length-1];if(!Engine.alive(e))return;
-    var row=Engine.entity(e),html='<div class="inspect-pad"><input id="entity-name" class="inspect-name" type="text"/><button id="rename-entity" class="subtle">Rename</button><div class="id-label">Object '+row.id+'</div><div class="id-label">Entity '+e+(HE.selected.length>1?' — inspecting the active selection':'')+'</div><button id="entity-enabled" class="subtle">'+(row.enabled?'Enabled':'Disabled')+'</button><button id="add-component" class="subtle">+ Component</button>',fields=[];
-    var priority=['transform','render','light','collider'];
-    var componentNames=Object.keys(row.components).sort(function(a,b){var ai=priority.indexOf(a),bi=priority.indexOf(b);return (ai<0?99:ai)-(bi<0?99:bi)||a.localeCompare(b);});
-    componentNames.forEach(function(name){
-        var value=row.components[name];html+='<div class="component-section" id="section-'+name+'"><div class="component-title"><button id="collapse-'+name+'" class="component-toggle">'+(HE.componentCollapsed[name]?'+ ':'- ')+HE.escape(name)+'</button><button id="remove-'+name+'">Remove</button></div><div id="component-body-'+name+'">';
-        if(value&&typeof value==='object'&&!Array.isArray(value))Object.keys(value).forEach(function(key){
-            var v=value[key],id='field-'+fields.length;
-            if(v!==null&&(typeof v!=='object'||(Array.isArray(v)&&v.length<=4&&v.every(function(n){return typeof n==='number';})))&&key!=='parent'){
-                fields.push({id:id,component:name,key:key,value:v});
-                html+='<div class="field"><span class="field-label">'+HE.escape(key)+'</span>';
-                if(Array.isArray(v)){html+='<span class="vector">';v.forEach(function(n,i){html+='<input type="text" id="'+id+'-'+i+'" style="width:'+(v.length===4?'19%':'25%')+';"/>';});html+='</span>';}
-                else if(typeof v==='boolean')html+='<select id="'+id+'"><option value="true">true</option><option value="false">false</option></select>';
-                else html+='<input type="text" id="'+id+'"/>';
-                html+='</div>';
-            }
-        });
-        html+='<button id="apply-'+name+'" class="subtle">Apply fields</button><button id="json-'+name+'" class="subtle">Complete JSON...</button></div></div>';
-    });
-    if(row.derived.length)html+='<div class="derived">Derived (read only): '+HE.escape(row.derived.join(', '))+'</div>';
-    html+='</div>';HE.el('inspector').setInnerRML(html);HE.el('entity-name').setValue(row.name);
-    HE.sizeInspector();
-    HE.bind('rename-entity',function(){var name=HE.el('entity-name').getValue();HE.command('Rename actor',function(){Engine.rename(e,name);});});
-    HE.bind('entity-enabled',HE.toggleEnabled);HE.bind('add-component',function(){HE.addComponentDialog(e);});
-    Object.keys(row.components).forEach(function(name){
-        HE.bind('collapse-'+name,function(){HE.componentCollapsed[name]=!HE.componentCollapsed[name];HE.filterDetails();});
-        HE.bind('remove-'+name,function(){HE.command('Remove '+name,function(){Engine.removeComponent(e,name);});});
-        HE.bind('json-'+name,function(){HE.jsonDialog(name,Engine.component(e,name),function(value){HE.command('Edit '+name,function(){Engine.setComponent(e,name,value);});});});
-        HE.bind('apply-'+name,function(){
-            var c=Engine.component(e,name);
-            fields.filter(function(f){return f.component===name;}).forEach(function(f){
-                if(Array.isArray(f.value))c[f.key]=f.value.map(function(v,i){return HE.number(HE.el(f.id+'-'+i).getValue());});
-                else if(typeof f.value==='number')c[f.key]=HE.number(HE.el(f.id).getValue());
-                else if(typeof f.value==='boolean')c[f.key]=HE.el(f.id).getValue()==='true';
-                else c[f.key]=HE.el(f.id).getValue();
-            });
-            HE.command('Edit '+name,function(){Engine.setComponent(e,name,c);});
-        });
-    });
-    fields.forEach(function(f){
-        if(Array.isArray(f.value))f.value.forEach(function(v,i){HE.el(f.id+'-'+i).setValue(String(Math.round(v*10000)/10000));});
-        else HE.el(f.id).setValue(String(f.value));
-    });
-    HE.detailFields=fields;HE.filterDetails();
-};
-HE.filterDetails=function(){
-    var search=HE.el('details-search').getValue().toLowerCase();
-    HE.el('inspector').querySelectorAll('.component-section').forEach(function(section){
-        var name=section.getAttribute('id').substring(8),all=!search||name.toLowerCase().indexOf(search)>=0;
-        var fields=(HE.detailFields||[]).filter(function(f){return f.component===name;});
-        var hit=all||fields.some(function(f){return f.key.toLowerCase().indexOf(search)>=0;});
-        section.setProperty('display',hit?'block':'none');
-        HE.el('component-body-'+name).setProperty('display',search||!HE.componentCollapsed[name]?'block':'none');
-        HE.el('collapse-'+name).setText((!search&&HE.componentCollapsed[name]?'+ ':'- ')+name);
-    });
-};
-HE.sizeInspector=function(){
-    var pad=HE.el('inspector').querySelector('.inspect-pad');if(!pad)return;
-    var width=(HE.detailsWidth||340)-26;
-    pad.setProperty('width',width+'px');
-    HE.el('inspector').querySelectorAll('.field').forEach(function(el){el.setProperty('width',width+'px');});
-};
 HE.number=function(s){if(!String(s).replace(/\s/g,'').length||!isFinite(Number(s)))throw Error('Enter a finite number.');return Number(s);};
 HE.modal=function(title,body,buttons,setup){
     HE.closeContext();
@@ -204,9 +138,9 @@ HE.addComponentDialog=function(e){
     var types=Engine.componentTypes(e),html='<p>Dependencies are validated by the engine component catalog.</p><select id="component-type">';
     types.forEach(function(t){if(!Engine.hasComponent(e,t.name))html+='<option value="'+t.name+'">'+t.name+(t.dependencies.length?' (requires '+t.dependencies.map(function(d){return d.name;}).join(', ')+')':'')+'</option>';});
     html+='</select><textarea id="component-value"/>';
-    var defaults={transform:{position:[0,0,0]},render:{shape:'box',material:0,scale:[1,1,1]},collider:{shape:{type:'box',halfExtents:[0.5,0.5,0.5]}},light:{type:'point',color:[1,1,1],intensity:500},data:{},interactable:{},rootMotion:{mode:'transform'},joints:[],jointColliders:[]};
+    var defaults={transform:{position:[0,0,0]},render:{shape:'box',scale:[1,1,1]},collider:{shape:{type:'box',halfExtents:[0.5,0.5,0.5]}},light:{type:'point',color:[1,1,1],intensity:500},data:{},interactable:{},rootMotion:{mode:'transform'},joints:[],jointColliders:[]};
     HE.modal('Add component',html,[{label:'Add',run:function(d){var name=d.getElementById('component-type').getValue(),value=JSON.parse(d.getElementById('component-value').getValue());HE.command('Add '+name,function(){Engine.addComponent(e,name,value);});}},{label:'Cancel'}],function(d){
-        function fill(){var name=d.getElementById('component-type').getValue();d.getElementById('component-value').setValue(JSON.stringify(defaults[name]||{},null,2));}
+        function fill(){var name=d.getElementById('component-type').getValue(),value=HE.copy(defaults[name]||{});if(name==='render')value.material=HE.defaultMaterial();d.getElementById('component-value').setValue(JSON.stringify(value,null,2));}
         d.getElementById('component-type').on('change',fill);fill();
     });
 };

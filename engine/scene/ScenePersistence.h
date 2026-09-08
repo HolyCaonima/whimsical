@@ -19,7 +19,6 @@ class ScenePersistence {
     // Prepare and validate resource edits before replacing the live resource table.
     static void setResources(World&, AssetManager&, const Json& patch);
     static Json resources(const World&, const AssetManager&);
-    static uint32_t addMaterial(World&, AssetManager&, const Json& definitionOrAsset, bool persistent = true);
     static void load(World&, AssetManager&, const AssetPath&);
     // Same path preserves the Map ID; Save As creates a new Map ID and keeps Object IDs.
     static AssetRef save(World&, AssetManager&, const AssetPath&, const std::string& name);

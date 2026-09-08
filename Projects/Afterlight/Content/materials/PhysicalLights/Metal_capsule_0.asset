@@ -1,0 +1,18 @@
+ALAS1
+{"id": "1106f1a1e3765aeca2dc14164da91bfc", "type": "Material", "name": "Metal capsule 0", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "c6152da2cdb35ce49c81a5f9157b4179",
+    "path": "/Game/shaders/Standard"
+  },
+  "properties": {
+    "baseColor": [
+      0.3,
+      0.32,
+      0.35
+    ],
+    "roughness": 0.25,
+    "metallic": 1
+  },
+  "textures": {}
+}

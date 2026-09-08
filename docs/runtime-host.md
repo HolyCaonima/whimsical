@@ -73,9 +73,9 @@ Engine.scene.load('/Target/Maps/Main');
 | `Engine.scene.capture()` | 返回 `{source, document}`，包含可持久化的场景描述和带来源的引用 |
 | `Engine.scene.restore(snapshot)` | 用同一个 staged loader 恢复内存描述，不执行脚本 |
 | `Engine.scene.save(pathOrRef, name)` | 同步保存，沿用目标 Content 的依赖闭合与原子文件替换规则 |
-| `Engine.scene.resources()` | 查询当前材质表、相机、导航、脚本、玩家、命名引用和场景数据 |
+| `Engine.scene.resources()` | 查询当前相机、导航、脚本、命名引用和场景数据 |
 | `Engine.scene.resources(patch)` | 验证并替换指定资源字段；未指定字段保留，实体保持原句柄 |
-| `Engine.scene.addMaterial(definitionOrAsset, persistent=true)` | 添加完整 MaterialDefinition 或 Material 资产，返回运行时材质索引 |
+| `Engine.setMaterial(entity, assetRefOrPath)` | 将 Render 组件绑定到 Material 资产；数字索引不属于组件接口 |
 
 `loadScene(path)` 保留为游戏导航入口，等价于数据装载后启动场景程序。跨 Content 导航不会把原项目的公共脚本带入目标 realm。同源时自动使用配置的 Project 公共脚本；跨源场景如需公共脚本，应使用数据装载后显式 `simulation.play({scripts:[...]})`。
 
@@ -113,7 +113,7 @@ var output = Engine.create({
 
 `persistent:false` 是实体生命周期元数据，默认 true。临时实体继续参与 ECS、渲染和查询，其 Transform 子树继承“不保存”；不会把该属性作为 Map 的新组件写入磁盘。`Engine.persistent(entity,bool)` 修改本地标记。
 
-capture 在解析资产引用前排除临时实体，因此目标地图不会依赖宿主的 ID RT。临时材质通过 `scene.addMaterial(value,false)` 声明；保存时排除并重排剩余材质索引，创作实体的材质引用同步重映射。创作实体引用临时材质、命名引用指向被排除的实体时，保存明确失败。
+capture 在解析资产引用前排除临时实体，因此目标地图不会依赖宿主的 ID RT 或 gizmo 材质。所有 Render 组件直接引用 Material 资产；渲染内部的材质槽位不参与保存，也没有场景材质表需要重排。命名引用指向被排除的实体时，保存明确失败。
 
 完整场景替换会移除临时对象，宿主在 `sceneChanged()` 中重建。临时对象也不进入 Play 检查点。保存不会修改它们当前的运行时索引或身份。
 

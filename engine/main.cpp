@@ -220,6 +220,10 @@ int main(int argc, char** argv) {
         // per-frame work proportional to the change does not.
         std::vector<uint32_t> stressMoving;
         if (stress) {
+            auto visuals = world.registry().view<Renderable>();
+            if (visuals.empty())
+                throw std::invalid_argument("Stress props require a scene with a Material asset");
+            auto material = world.get<Renderable>(visuals.front()).appearance.material;
             const auto side = uint32_t(std::ceil(std::sqrt(double(stress))));
             for (uint32_t i = 0; i < stress; i++) {
                 const float x = -11.f + float(i % side) * 22.f / float(side);
@@ -228,6 +232,7 @@ int main(int argc, char** argv) {
                 world.transforms.add(id, {{x, .3f, z}});
                 RenderComponent appearance;
                 appearance.scale = {.25f, .6f, .25f};
+                appearance.material = material;
                 world.render.add(id, appearance);
                 if (stressMoving.size() < 8)
                     stressMoving.push_back(id);

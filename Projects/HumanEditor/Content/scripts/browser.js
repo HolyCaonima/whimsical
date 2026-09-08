@@ -118,7 +118,7 @@ HE.openAsset=function(ref){
     if(asset.header.type==='StaticMesh'){HE.add('StaticMesh',ref);return;}
     if(asset.header.type==='Material'){
         HE.modal(asset.header.name,'<p>Apply this material to the selected mesh actors, or edit its asset data.</p>',[
-            {label:'Apply to selection',run:function(){HE.command('Assign material',function(){var index=Engine.scene.addMaterial(ref);HE.selected.forEach(function(e){if(Engine.hasComponent(e,'render'))Engine.setMaterial(e,index);});});}},
+            {label:'Apply to selection',run:function(){HE.command('Assign material',function(){HE.selected.forEach(function(e){if(Engine.hasComponent(e,'render'))Engine.setMaterial(e,ref);});});}},
             {label:'Edit asset',run:function(){HE.editAsset(asset);}},{label:'Close'}]);return;
     }
     HE.editAsset(asset);
@@ -130,7 +130,17 @@ HE.editAsset=function(asset){
     ],function(d){d.getElementById('asset-editor').setValue(asset.encoding==='json'?JSON.stringify(asset.payload,null,2):asset.payload);});
 };
 HE.newAsset=function(){
-    HE.modal('Create asset','<p>Path without .asset</p><input id="new-path" type="text"/><select id="new-type"><option value="Data">Data (JSON)</option><option value="Script">Script (JavaScript)</option></select><textarea id="new-payload"/>',[
-        {label:'Create',run:function(d){HE.editable();var type=d.getElementById('new-type').getValue(),path=d.getElementById('new-path').getValue(),payload=d.getElementById('new-payload').getValue();Engine.content.save(path,{id:Engine.content.newId(),type:type,name:path.split('/').pop(),version:1,storage:'embedded',metadata:{}},type==='Data'?JSON.parse(payload):payload);HE.scan();}}, {label:'Cancel'}
-    ],function(d){d.getElementById('new-path').setValue(HE.folder+'/NewAsset');d.getElementById('new-payload').setValue('{}');});
+    HE.modal('Create asset','<p>Path without .asset</p><input id="new-path" type="text"/><select id="new-type"><option value="Data">Data (JSON)</option><option value="Material">Material</option><option value="Script">Script (JavaScript)</option></select><textarea id="new-payload"/>',[
+        {label:'Create',run:function(d){HE.editable();var type=d.getElementById('new-type').getValue(),path=d.getElementById('new-path').getValue(),payload=d.getElementById('new-payload').getValue();Engine.content.save(path,{id:Engine.content.newId(),type:type,name:path.split('/').pop(),version:1,storage:'embedded',metadata:{}},type==='Script'?payload:JSON.parse(payload));HE.scan();}}, {label:'Cancel'}
+    ],function(d){
+        d.getElementById('new-path').setValue(HE.folder+'/NewAsset');d.getElementById('new-payload').setValue('{}');
+        d.getElementById('new-type').on('change',HE.guard(function(){
+            var type=d.getElementById('new-type').getValue(),payload=type==='Script'?'':'{}';
+            if(type==='Material'){
+                var shaders=HE.assetChoices('Shader');
+                payload=JSON.stringify({shader:shaders.length?shaders[0].ref:null,properties:{},textures:{}},null,2);
+            }
+            d.getElementById('new-payload').setValue(payload);
+        }));
+    });
 };

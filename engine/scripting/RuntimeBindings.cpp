@@ -41,7 +41,6 @@ enum Op {
     Restore,
     Save,
     Resources,
-    AddMaterial,
     Info,
     Play,
     Stop,
@@ -157,12 +156,6 @@ duk_ret_t dispatch(duk_context* c) {
         if (duk_get_top(c) && !duk_is_undefined(c, 0))
             ScenePersistence::setResources(world, assets, json(c, 0));
         push(c, ScenePersistence::resources(world, assets));
-        return 1;
-    }
-    if (op == AddMaterial) {
-        auto definition = duk_is_string(c, 0) ? reference(c, assets, 0).json() : json(c, 0);
-        duk_push_uint(c, ScenePersistence::addMaterial(world, assets, definition,
-                                                       duk_get_boolean_default(c, 1, true) != 0));
         return 1;
     }
     auto& host = stored<ScriptRuntime>(c, "runtime").host();
@@ -319,7 +312,6 @@ void installRuntimeBindings(duk_context* c) {
     bind(c, "restore", Restore);
     bind(c, "save", Save);
     bind(c, "resources", Resources);
-    bind(c, "addMaterial", AddMaterial);
     bind(c, "info", Info);
     duk_put_prop_string(c, -2, "scene");
     duk_push_object(c);

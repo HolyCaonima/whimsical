@@ -1,8 +1,9 @@
 #include "Systems.h"
 #include "Validation.h"
 #include "core/CpuProfile.h"
+#include "assets/MaterialAsset.h"
 namespace afterlight {
-RenderSystem::RenderSystem(SceneStorage& storage, const std::vector<Material>& m) : s(storage), materials(m) {
+RenderSystem::RenderSystem(SceneStorage& storage) : s(storage) {
     s.changes.subscribe<WorldPoseChanged>([this](Entity e) { publishTransform(e); });
     s.changes.subscribe<RenderTransformChanged>([this](Entity e) { publishTransform(e); });
     s.changes.subscribe<EffectiveEnabledChanged>([this](Entity e) { publishAttributes(e); });
@@ -17,16 +18,16 @@ static ProxyTransform proxyTransform(const Transform& t, const Renderable& r) {
             r.appearance.scale * r.appearance.animationScale, t.world.rotation};
 }
 void RenderSystem::add(Entity e, RenderComponent appearance, std::shared_ptr<const StaticMesh> mesh) {
-    if (appearance.material >= materials.size())
-        throw std::out_of_range("Invalid material");
+    if (!appearance.material)
+        throw std::invalid_argument("Render requires a Material asset");
     validateRenderAppearance(appearance);
     auto& t = s.registry.get<Transform>(e);
     auto batch = Changes::Batch(s.changes);
     auto& r = s.registry.emplace<Renderable>(e, Renderable{appearance, std::move(mesh)});
     r.slot = s.renderScene.create(proxyTransform(t, r),
-                                  {e, appearance.material, appearance.shape,
+                                  {e, 0, appearance.shape,
                                    s.enabled(e) && appearance.visible,
-                                   appearance.castShadow, appearance.overlay, appearance.overlayColor});
+                                   appearance.castShadow, appearance.overlay, appearance.overlayColor}, appearance.material);
     if (r.mesh)
         s.changes.mark<GeometryChanged>(e);
     s.changes.mark<Renderable>(e);
@@ -34,8 +35,8 @@ void RenderSystem::add(Entity e, RenderComponent appearance, std::shared_ptr<con
 }
 void RenderSystem::set(Entity e, RenderComponent appearance, std::shared_ptr<const StaticMesh> mesh) {
     validateRenderAppearance(appearance);
-    if (appearance.material >= materials.size())
-        throw std::invalid_argument("Invalid material");
+    if (!appearance.material)
+        throw std::invalid_argument("Render requires a Material asset");
     if (mesh && s.registry.has<Skin>(e))
         throw std::invalid_argument("Remove skin before static geometry");
     auto batch = Changes::Batch(s.changes);
@@ -56,9 +57,9 @@ void RenderSystem::publishTransform(Entity e) {
 void RenderSystem::publishAttributes(Entity e) {
     if (auto r = s.registry.tryGet<Renderable>(e))
         s.renderScene.setAttributes(r->slot,
-                                    {e, r->appearance.material, r->appearance.shape,
+                                    {e, 0, r->appearance.shape,
                                      s.enabled(e) && r->appearance.visible,
-                                     r->appearance.castShadow, r->appearance.overlay, r->appearance.overlayColor});
+                                     r->appearance.castShadow, r->appearance.overlay, r->appearance.overlayColor}, r->appearance.material);
 }
 void RenderSystem::setStaticMesh(Entity e, std::shared_ptr<const StaticMesh> mesh) {
     auto batch = Changes::Batch(s.changes);
@@ -84,11 +85,11 @@ void RenderSystem::setVisualPose(Entity e, vec3 offset, vec3 scale) {
     s.changes.mark<Renderable>(e);
     batch.commit();
 }
-void RenderSystem::setMaterial(Entity e, uint32_t material) {
+void RenderSystem::setMaterial(Entity e, std::shared_ptr<const MaterialAsset> material) {
     auto batch = Changes::Batch(s.changes);
-    if (material >= materials.size())
-        throw std::out_of_range("Invalid material");
-    s.registry.get<Renderable>(e).appearance.material = material;
+    if (!material)
+        throw std::invalid_argument("Render requires a Material asset");
+    s.registry.get<Renderable>(e).appearance.material = std::move(material);
     s.changes.mark<RenderAttributesChanged>(e);
     s.changes.mark<Renderable>(e);
     batch.commit();

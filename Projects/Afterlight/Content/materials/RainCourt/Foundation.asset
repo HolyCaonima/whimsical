@@ -1,0 +1,28 @@
+ALAS1
+{"id": "8fcfc3506bf650638cd801d8912f58a9", "type": "Material", "name": "Stone", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "properties": {
+    "baseColor": [
+      0.3199999928474426,
+      0.3499999940395355,
+      0.3100000023841858
+    ],
+    "emission": [
+      0,
+      0,
+      0
+    ],
+    "metallic": 0.05000000074505806,
+    "normalStrength": 1,
+    "roughness": 0.3799999952316284,
+    "uvScale": [
+      1,
+      1
+    ]
+  },
+  "shader": {
+    "id": "e5cc4ae90847574ebd50bc0392f6410e",
+    "path": "/Game/shaders/Paving"
+  },
+  "textures": {}
+}

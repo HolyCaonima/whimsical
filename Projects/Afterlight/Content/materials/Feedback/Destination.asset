@@ -1,0 +1,21 @@
+ALAS1
+{"id": "1acc6c51dba95a1d9dca3b204db23b7d", "type": "Material", "name": "Destination", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "c6152da2cdb35ce49c81a5f9157b4179",
+    "path": "/Game/shaders/Standard"
+  },
+  "properties": {
+    "baseColor": [
+      0,
+      0,
+      0
+    ],
+    "emission": [
+      0.95,
+      0.77,
+      0.36
+    ]
+  },
+  "textures": {}
+}

@@ -1,0 +1,23 @@
+ALAS1
+{"id": "efd67ab5704256889e43ef0da77662cf", "type": "Material", "name": "Capsule", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "05cd212aed9371ff84b25eaeee7a5501",
+    "path": "/Game/shaders/Standard"
+  },
+  "properties": {
+    "baseColor": [
+      0.15,
+      0.35,
+      0.55
+    ],
+    "roughness": 0.25,
+    "metallic": 0.4,
+    "emission": [
+      0,
+      0,
+      0
+    ]
+  },
+  "textures": {}
+}

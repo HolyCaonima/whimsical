@@ -1,0 +1,17 @@
+ALAS1
+{"id": "6554bfbd077f58279e26cdb2a85c09b2", "type": "Material", "name": "Red", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "28b5fbce0b534eb2a76bb822e671e527",
+    "path": "/Game/shaders/Standard"
+  },
+  "properties": {
+    "baseColor": [
+      0.8,
+      0.1,
+      0.1
+    ],
+    "roughness": 0.5
+  },
+  "textures": {}
+}

@@ -1,0 +1,21 @@
+ALAS1
+{"id": "6eebdf9f9ac750918bc5d1f0326a4143", "type": "Material", "name": "ActiveCharacter", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "c6152da2cdb35ce49c81a5f9157b4179",
+    "path": "/Game/shaders/Standard"
+  },
+  "properties": {
+    "baseColor": [
+      0,
+      0,
+      0
+    ],
+    "emission": [
+      0.38,
+      0.94,
+      0.79
+    ]
+  },
+  "textures": {}
+}

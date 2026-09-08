@@ -1,0 +1,28 @@
+ALAS1
+{"id": "94acf6bc248253528e220ca2e8cdf4fa", "type": "Material", "name": "Kiln", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "properties": {
+    "baseColor": [
+      0.7200000286102295,
+      0.7900000214576721,
+      0.8299999833106995
+    ],
+    "emission": [
+      0,
+      0,
+      0
+    ],
+    "metallic": 0.11999999731779099,
+    "normalStrength": 1,
+    "roughness": 0.6499999761581421,
+    "uvScale": [
+      1,
+      1
+    ]
+  },
+  "shader": {
+    "id": "e5cc4ae90847574ebd50bc0392f6410e",
+    "path": "/Game/shaders/Paving"
+  },
+  "textures": {}
+}

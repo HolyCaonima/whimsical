@@ -13,7 +13,7 @@ struct Material {
         return shader == other.shader && properties == other.properties && textures == other.textures;
     }
 };
-// Serializable instance, also used by inline Map materials. Resolution is an
+// Material asset payload. Resolution is an
 // asset-loading operation, independent of the renderer and its binding tables.
 struct MaterialDefinition {
     AssetRef shader;

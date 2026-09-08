@@ -16,8 +16,7 @@ HE.setMode=function(mode){
     HE.cancelPick();HE.mode=mode;HE.updateGizmo();
 };
 HE.createGizmo=function(){
-    // Tool rendering owns a transient material instead of assuming the scene has material zero.
-    var material=Engine.scene.addMaterial({shader:Engine.asset('/Game/shaders/Standard'),properties:{},textures:{}},false);
+    var material=Engine.asset('/Game/Materials/Gizmo');
     var root=Engine.create({name:'Transform gizmo',persistent:false,enabled:false,components:{transform:{position:[0,0,0]}}});
     var parent=Engine.entity(root).id;
     var g=HE.gizmo={root:root,parent:parent,handles:{},byEntity:{},meshes:{},hover:null,visible:false};

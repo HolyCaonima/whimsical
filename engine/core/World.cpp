@@ -126,7 +126,7 @@ Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug,
     f.pixelReads = renderTargets.snapshot(tick);
     f.proxies = storage_.renderScene.proxies();
     f.delta = storage_.renderScene.publish();
-    f.materials = resources.materials;
+    f.materials = storage_.renderScene.materials();
     f.camera = view && view->camera ? *view->camera : resources.camera;
     f.viewport = (view ? view->rectangle : ViewRect{}).fit(input.width, input.height);
     f.input = input;

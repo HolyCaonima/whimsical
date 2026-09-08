@@ -1,0 +1,10 @@
+ALAS1
+{"id": "d8257b9fae6cad637326bf809df51f9f", "type": "Material", "name": "Gizmo", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "05cd212aed9371ff84b25eaeee7a5501",
+    "path": "/Game/shaders/Standard"
+  },
+  "properties": {},
+  "textures": {}
+}

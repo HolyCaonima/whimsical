@@ -1,0 +1,10 @@
+ALAS1
+{"id": "8f3889e68ab65e71a4a5d0758c53bfff", "type": "Material", "name": "sky", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "a1b61a89ab7856eb86cc44718ae9e78d",
+    "path": "/Game/shaders/Sky"
+  },
+  "properties": {},
+  "textures": {}
+}

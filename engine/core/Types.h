@@ -19,6 +19,7 @@ struct UiFrame;
 }
 struct SkinnedMesh;
 struct StaticMesh;
+struct MaterialAsset;
 struct TextureAsset;
 struct CpuProfile;
 
@@ -26,7 +27,7 @@ enum class Shape : uint32_t { Box, Capsule };
 struct RenderComponent {
     Shape shape = Shape::Box;
     vec3 scale{1}, offset{0}, animationScale{1};
-    uint32_t material = 0;
+    std::shared_ptr<const MaterialAsset> material;
     bool visible = true;
     bool castShadow = true;
     bool overlay = false; // Unlit, vertex-coloured helper geometry, outside scene lighting.

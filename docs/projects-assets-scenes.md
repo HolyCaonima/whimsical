@@ -90,6 +90,7 @@ content.unmount('/Library');
 | `mount(alias, directory, writable=true)` / `unmount(alias)` | 注册或卸载一个 Content |
 | `mounts()` / `browse(alias)` | 列出挂载身份、读写属性／所属资产引用 |
 | `reference(pathOrRef)` | 获得或刷新带来源身份的引用 |
+| `describe(pathOrRef)` | 只读返回 `{ref, header}`，不读取或加载 payload，用于按真实资产类型筛选与显示名称 |
 | `load(pathOrRef)` | 返回描述符和 payload；加载 Script、Map 不执行脚本或实例化世界 |
 | `save(pathOrRef, header, payload)` | 创建或修改资产；JSON payload 自动按来源规范化；Raw 接受 buffer 或字节字符串 |
 | `newId()` | 为新资产生成持久 ID，header 其余字段遵循 ALAS1 格式 |
@@ -166,11 +167,11 @@ clearCache、重扫、保存不销毁 World、Solver 或 Frame 持有的旧资�
 
 ## Scene Save/Load
 
-SceneDocument 保存：对象 ID/显示名/位置/旋转/启用/交互；RenderComponent 的 primitive、scale/offset/animationScale、材质索引和可见性；主碰撞体 shape/motion/layer/查询属性；关节碰撞体 joint/local/shape/blocking；动画与 mesh 引用、root-motion 选项、rootOffset 和实例属性；材质值表、灯表、相机、导航（含 planeTolerance）；命名 Object 引用、Map 脚本引用和显式 gameplay JSON data。
+SceneDocument 保存：对象 ID/显示名/位置/旋转/启用/交互；RenderComponent 的 primitive、scale/offset/animationScale、Material 资产引用和可见性；主碰撞体 shape/motion/layer/查询属性；关节碰撞体 joint/local/shape/blocking；动画与 mesh 引用、root-motion 选项、rootOffset 和实例属性；灯光组件、相机、导航（含 planeTolerance）；命名 Object 引用、Map 脚本引用和显式 gameplay JSON data。
 
-Map 现写入 `version: 8`，以 `entities[].components` 保存实际存在的能力与父级持久 ID，变换保存 local。版本 3–7 在读取边界转换；旧版 player 字段仅在导入时转为 references.player，1/2 仍被拒绝；ALAS1 资产信封版本仍为 1。现有地图、生成器及验证脚本已同步迁移，详细字段、组件依赖和脚本入口见 [ECS 架构](ecs.md)。
+Map 写入 `version: 9`，以 `entities[].components` 保存实际存在的能力、父级持久 ID 和 Material / mesh 等资产引用。变换保存 local，ALAS1 资产信封仍为 version 1。v7/v8 地图先运行 `python tools/migrate_material_assets.py <Map.asset>` 提取内嵌材质；更早版本先使用对应的 ECS / 灯光迁移工具。加载旧地图会明确报错，不在读取时写入资产。
 
-材质可作为 Map 内嵌值；复用的材质是注册的 Material 资产。Shader 与 Texture 按持久 ID 解析。CPU 材质不保存 descriptor index，World 和 Frame 仅持有参数值与不可变资产引用，纹理绑定由 renderer 分配。
+`render.material` 必须是 `{id,path}`，与 mesh 一样按资产 ID 加载。材质参数只保存在 Material 资产；地图不再保存 `materials`、`materialAssets` 表。运行时组件持有不可变 MaterialAsset，RenderScene 根据实际引用共享槽位，最后一个使用者释放后回收槽位并更新渲染代理。组件和持久化均不知道这些数字。Shader 与 Texture 继续使用相同的 AssetRef 机制。
 
 capture 跳过已删除对象，删除对象也移除其命名引用。未注册的自定义 Solver/mesh 无法重建，保存明确报错。save 始终把 SceneDocument 写成 inline payload；对同一 Map 保留 ID，Save As 创建新 Map ID，保留 Object ID。无 Solver 的手动关节姿态可保存；有 Solver 的姿态重新求解。选择、悬停、路径命令、计时器、推理序列、IK 历史、RenderDelta、GPU 句柄、物理缓存与 JS 闭包不序列化。
 

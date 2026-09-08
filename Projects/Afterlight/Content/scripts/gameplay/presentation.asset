@@ -4,16 +4,14 @@ ALAS1
 var GameplayPresentation = {
     time: 0,
     initialize: function() {
-        this.ring = this.marker('Active character', [0.38,0.94,0.79], '/Game/models/Feedback/Ring');
+        this.ring = this.marker('Active character', '/Game/materials/Feedback/ActiveCharacter', '/Game/models/Feedback/Ring');
         Engine.parent(this.ring, Locomotion.id, false);
-        this.destination = this.marker('Move destination', [0.95,0.77,0.36], '/Game/models/Feedback/Destination');
+        this.destination = this.marker('Move destination', '/Game/materials/Feedback/Destination', '/Game/models/Feedback/Destination');
         this.tick(0, {picked:0});
     },
-    marker: function(name, color, mesh) {
-        var material = Engine.scene.addMaterial({shader:Engine.asset('/Game/shaders/Standard'),
-            properties:{baseColor:[0,0,0],emission:color},textures:{}}, false);
+    marker: function(name, material, mesh) {
         return Engine.create({name:name,persistent:false,enabled:false,components:{
-            transform:{},render:{mesh:Engine.asset(mesh),material:material,castShadow:false}
+            transform:{},render:{mesh:Engine.asset(mesh),material:Engine.asset(material),castShadow:false}
         }});
     },
     tick: function(dt, input) {

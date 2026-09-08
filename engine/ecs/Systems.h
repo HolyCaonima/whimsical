@@ -20,10 +20,9 @@ struct SceneStorage {
 };
 class RenderSystem {
     SceneStorage& s;
-    const std::vector<Material>& materials;
 
   public:
-    RenderSystem(SceneStorage&, const std::vector<Material>&);
+    explicit RenderSystem(SceneStorage&);
     void add(Entity, RenderComponent, std::shared_ptr<const StaticMesh> = {});
     void set(Entity, RenderComponent, std::shared_ptr<const StaticMesh>);
     void remove(Entity);
@@ -31,7 +30,7 @@ class RenderSystem {
     void publishAttributes(Entity);
     void setVisualPose(Entity, vec3 offset, vec3 scale);
     void setScale(Entity, vec3);
-    void setMaterial(Entity, uint32_t);
+    void setMaterial(Entity, std::shared_ptr<const MaterialAsset>);
     void setVisible(Entity, bool);
     void setStaticMesh(Entity, std::shared_ptr<const StaticMesh>);
     void extract(Frame&, bool debug, RenderTargetAccess&);

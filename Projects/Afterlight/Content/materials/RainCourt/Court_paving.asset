@@ -1,0 +1,28 @@
+ALAS1
+{"id": "ba5a38a9604250a586db24f2eae360a5", "type": "Material", "name": "Tile", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "properties": {
+    "baseColor": [
+      0.44999998807907104,
+      0.4399999976158142,
+      0.36000001430511475
+    ],
+    "emission": [
+      0,
+      0,
+      0
+    ],
+    "metallic": 0.05000000074505806,
+    "normalStrength": 1,
+    "roughness": 0.2800000011920929,
+    "uvScale": [
+      1,
+      1
+    ]
+  },
+  "shader": {
+    "id": "e5cc4ae90847574ebd50bc0392f6410e",
+    "path": "/Game/shaders/Paving"
+  },
+  "textures": {}
+}

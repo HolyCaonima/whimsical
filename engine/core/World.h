@@ -11,9 +11,6 @@ struct SceneResources {
     std::vector<AssetRef> scripts;
     Json data = Json::object();
     std::map<std::string, std::string> references;
-    std::vector<Material> materials;
-    std::map<uint32_t, std::shared_ptr<const MaterialAsset>> materialAssets;
-    std::set<uint32_t> transientMaterials;
     Camera camera;
     NavigationSettings navigation;
 };
@@ -44,7 +41,7 @@ class World {
     SceneResources resources;
     RenderTargetAccess renderTargets;
     bool resetHistory = true;
-    RenderSystem render{storage_, resources.materials};
+    RenderSystem render{storage_};
     TransformSystem transforms{storage_};
     MotionSystem motion{storage_, transforms, resources.navigation};
     AnimationSystem animation{storage_, motion, transforms};

@@ -124,7 +124,7 @@ objects=[]; references={}; meshes={}; material=[]
 def obj(name,p=(0,0,0),scale=(1,1,1),mesh=None,mat=0,yaw=0,half=None,layer=1,enabled=True,ref=False):
     components=dict(transform=dict(position=list(p),rotation=[0,math.sin(yaw/2),0,math.cos(yaw/2)]))
     if mesh:
-        components['render']=dict(shape='box',scale=list(scale),offset=[0,0,0],animationScale=[1,1,1],material=mat,visible=True,mesh=mesh)
+        components['render']=dict(shape='box',scale=list(scale),offset=[0,0,0],animationScale=[1,1,1],material=material[mat],visible=True,mesh=mesh)
     if half:
         components['collider']=dict(shape=dict(type='box',halfExtents=list(half)),motion='kinematic' if ref else 'static',
                                    layer=layer,blocking=True,pickable=False,walkable=False)
@@ -139,8 +139,9 @@ schema=dict(materialModel='metallicRoughness',properties=[
     textures=[],renderState=dict(surface='opaque',cull='none',alphaCutoff=.5))
 standard=asset('shaders/Standard','Shader',metadata=schema,source='Standard.glsl')
 skyshader=asset('shaders/Sky','Shader',metadata=schema,source='Sky.glsl')
-for rough in [.8,.38,.95]: material.append(dict(shader=standard,properties=dict(roughness=rough),textures={}))
-material.append(dict(shader=skyshader,properties={},textures={}))
+for name, rough in [('Surface',.8),('Gloss',.38),('Matte',.95)]:
+    material.append(asset('Materials/'+name,'Material',dict(shader=standard,properties=dict(roughness=rough),textures={})))
+material.append(asset('Materials/Sky','Material',dict(shader=skyshader,properties={},textures={})))
 
 # Road, sidewalk, curbs and lane paint are a single shared authored mesh.
 road=Mesh();strip(road,-6.6,6.6,.025,'303B42')
@@ -293,10 +294,10 @@ objects.extend(lighting['lights'])
 for entity in objects:
     if entity['name'] in lighting['renderOverrides']:
         entity['components']['render'].update(lighting['renderOverrides'][entity['name']])
-scene=dict(version=7,entities=objects,materials=material,materialAssets=[],
+scene=dict(version=9,entities=objects,
     camera=dict(target=[-60,1,-30],yaw=math.pi,pitch=.27,distance=10,fov=.95),
     navigation=dict(min=[-120,0,-120],max=[120,12,120],cellSize=1,planeTolerance=.03),
-    player=references['car0'],references=references,data=data,scripts=[])
+    references=references,data=data,scripts=[])
 asset('Maps/MapleCircuit','Map',scene)
 # Native-engine QA scene uses exactly the same assets and gameplay with player AI enabled.
 scene['data']=dict(data,verification=True)

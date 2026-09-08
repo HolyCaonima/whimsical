@@ -15,12 +15,7 @@ manifest=json.loads((ROOT/'Projects/Afterlight/SourceArt/Honeybud/manifest.json'
 from honeybud_budget import audit
 audit(manifest)
 original=json.loads(read_asset(CONTENT/'Maps/RainCourt.asset')[1])
-materials=[];material_assets=[];mat_index={}
-for name,ref in manifest['materials'].items():
-    mat_index[name]=len(materials)
-    data=json.loads(read_asset(CONTENT/(ref['path'][6:]+'.asset'))[1])
-    materials.append(data)
-    material_assets.append({'index':mat_index[name],'asset':ref})
+materials=manifest['materials']
 
 def uid(name):return uuid.uuid5(uuid.NAMESPACE_URL,'afterlight/honeybud/'+name).hex
 objects=[]
@@ -32,7 +27,7 @@ def object_at(name,p,scale=(1,1,1),material=0,visible=True):
 for i,instance in enumerate(manifest['placements']):
     x,y,z=instance['position'];scale=instance['scale']
     for part in manifest['kits'][instance['kit']]:
-        o=object_at(f"{instance['kit']}_{i:03d}_{part['material']}",(x,z,-y),(scale,)*3,mat_index[part['material']])
+        o=object_at(f"{instance['kit']}_{i:03d}_{part['material']}",(x,z,-y),(scale,)*3,materials[part['material']])
         o['components']['transform']['rotation']=[0,math.sin(instance['angle']/2),0,math.cos(instance['angle']/2)];o['components']['render']['mesh']=part['mesh'];objects.append(o)
 
 def collider(name,p,half,yaw=0,walkable=False):
@@ -58,9 +53,7 @@ references={}
 for role,p in [('player',(2,1,4.7)),('companion',(3.4,.55,5.4))]:
     source=next(o for o in original['entities'] if o['id']==original['references'][role])
     o=copy.deepcopy(source);o['id']=uid(role);o['components']['transform']['position']=[p[0],source['components']['transform']['position'][1],p[2]]
-    o['components']['render']['material']=len(materials)
-    character_mat=copy.deepcopy(original['materials'][source['components']['render']['material']]);character_mat['shader']=asset_reference(CONTENT/'shaders/Standard.asset')
-    materials.append(character_mat);objects.append(o);references[role]=o['id']
+    objects.append(o);references[role]=o['id']
 
 script='''function initialize() {
     var player = Engine.sceneObject('player');
@@ -77,7 +70,7 @@ script_path=CONTENT/'scripts/levels/honeybud_court.asset'
 write_asset(script_path,'Script',script.encode())
 lighting=json.loads((ROOT/'Projects/Afterlight/SourceArt/lighting.json').read_text())['HoneybudCourt']
 objects.extend(copy.deepcopy(lighting['lights']))
-scene={'version':8,'entities':objects,'materials':materials,'materialAssets':material_assets,
+scene={'version':9,'entities':objects,
        'camera':{'target':[0,.5,-.8],'yaw':.32,'pitch':.57,'distance':27.5,'fov':.72},
        'navigation':{'min':[-10.6,0,-8.7],'max':[10.6,8,8.7],'cellSize':.25,'planeTolerance':.03},
        'references':references,'data':{'theme':'Honeybud Court'},

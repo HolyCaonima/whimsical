@@ -1,0 +1,18 @@
+ALAS1
+{"id": "7bdca3ba33f75fc9875de6be5e3d0468", "type": "Material", "name": "Ground", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "c6152da2cdb35ce49c81a5f9157b4179",
+    "path": "/Game/shaders/Standard"
+  },
+  "properties": {
+    "baseColor": [
+      0.5,
+      0.5,
+      0.5
+    ],
+    "roughness": 0.8,
+    "metallic": 0
+  },
+  "textures": {}
+}

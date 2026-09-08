@@ -1,4 +1,5 @@
 #include "RenderScene.h"
+#include "assets/MaterialAsset.h"
 #include <algorithm>
 #include <stdexcept>
 namespace afterlight {
@@ -36,7 +37,37 @@ void RenderScene::mark(uint32_t slot, Mark kind) {
     else
         pending_.attributes.push_back(slot);
 }
-uint32_t RenderScene::create(const ProxyTransform& transform, const ProxyAttributes& attributes) {
+uint32_t RenderScene::retainMaterial(const std::shared_ptr<const MaterialAsset>& asset) {
+    for (uint32_t i = 0; i < materialSlots_.size(); ++i)
+        if (materialSlots_[i].asset == asset) {
+            ++materialSlots_[i].users;
+            return i;
+        }
+    materialSlots_.push_back({asset, 1});
+    materials_.push_back(asset->parameters);
+    return uint32_t(materials_.size() - 1);
+}
+void RenderScene::releaseMaterial(uint32_t index) {
+    if (--materialSlots_[index].users)
+        return;
+    // Compact only when an asset loses its last proxy. Unused assets must not
+    // retain shaders/textures or consume the renderer's binding limits.
+    const auto last = uint32_t(materialSlots_.size() - 1);
+    if (index != last) {
+        materialSlots_[index] = std::move(materialSlots_.back());
+        materials_[index] = std::move(materials_.back());
+        for (uint32_t slot = 0; slot < proxies_.size(); ++slot)
+            if (proxies_[slot].live && proxies_[slot].attributes.material == last) {
+                proxies_[slot].attributes.material = index;
+                mark(slot, MarkAttributes);
+            }
+    }
+    materialSlots_.pop_back();
+    materials_.pop_back();
+}
+uint32_t RenderScene::create(const ProxyTransform& transform, ProxyAttributes attributes,
+                             const std::shared_ptr<const MaterialAsset>& material) {
+    attributes.material = retainMaterial(material);
     uint32_t slot;
     if (free_.empty()) {
         slot = uint32_t(proxies_.size());
@@ -60,6 +91,7 @@ void RenderScene::destroy(uint32_t slot) {
         return;
     auto& p = proxies_[slot];
     p.live = false;
+    releaseMaterial(p.attributes.material);
     p.attributes.visible = false;
     free_.push_back(slot);
     ++revision_;
@@ -72,25 +104,32 @@ void RenderScene::setTransform(uint32_t slot, const ProxyTransform& transform) {
     ++revision_;
     mark(slot, MarkMoved);
 }
-void RenderScene::setAttributes(uint32_t slot, const ProxyAttributes& attributes) {
-    if (!proxy(slot).live || proxies_[slot].attributes == attributes)
+void RenderScene::setAttributes(uint32_t slot, ProxyAttributes attributes,
+                                const std::shared_ptr<const MaterialAsset>& material) {
+    if (!proxy(slot).live)
+        return;
+    auto previous = proxies_[slot].attributes.material;
+    attributes.material = previous;
+    const bool materialChanged = materialSlots_[previous].asset != material;
+    if (materialChanged)
+        attributes.material = retainMaterial(material);
+    if (proxies_[slot].attributes == attributes && !materialChanged)
         return;
     // Geometry is the one attribute a consumer cannot fold into an incremental update.
     if (proxies_[slot].attributes.shape != attributes.shape)
         ++topology_;
     proxies_[slot].attributes = attributes;
+    if (materialChanged)
+        releaseMaterial(previous);
     ++revision_;
     mark(slot, MarkAttributes);
 }
-void RenderScene::setMaterial(uint32_t slot, uint32_t material) {
-    auto attributes = proxy(slot).attributes;
-    attributes.material = material;
-    setAttributes(slot, attributes);
-}
 void RenderScene::setVisible(uint32_t slot, bool visible) {
+    if (!proxy(slot).live)
+        return;
     auto attributes = proxy(slot).attributes;
     attributes.visible = visible;
-    setAttributes(slot, attributes);
+    setAttributes(slot, attributes, materialSlots_[attributes.material].asset);
 }
 void RenderScene::geometryChanged(uint32_t slot) {
     if (!proxy(slot).live)
@@ -117,6 +156,8 @@ SceneDelta RenderScene::publish() {
 void RenderScene::exchangeScene(RenderScene& other) {
     proxies_.swap(other.proxies_);
     free_.swap(other.free_);
+    materialSlots_.swap(other.materialSlots_);
+    materials_.swap(other.materials_);
     marks_.assign(proxies_.size(), 0);
     pending_ = {};
     revision_ += other.revision_ + 1;

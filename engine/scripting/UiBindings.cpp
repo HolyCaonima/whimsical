@@ -2,6 +2,8 @@
 #include "uiCore/UiCore.h"
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/Elements/ElementFormControl.h>
+#include <RmlUi/Core/Elements/ElementFormControlInput.h>
+#include <RmlUi/Core/Elements/ElementFormControlTextArea.h>
 #include <unordered_map>
 
 namespace afterlight {
@@ -216,6 +218,13 @@ struct UiBindings::Impl {
                 duk_push_string(c, control->GetValue().c_str());
                 return 1;
             }
+        } else if (op == "select") {
+            if (auto* input = dynamic_cast<Rml::ElementFormControlInput*>(&e))
+                input->Select();
+            else if (auto* textarea = dynamic_cast<Rml::ElementFormControlTextArea*>(&e))
+                textarea->Select();
+            else
+                throw std::invalid_argument("UI select requires an input or textarea");
         } else if (op == "append") {
             auto child = e.GetOwnerDocument()->CreateElement(string(2));
             auto* raw = child.get();
@@ -300,6 +309,7 @@ struct UiBindings::Impl {
     command('setAttribute','attr'); command('removeAttribute','removeAttr'); command('setClass','class');
     command('setValue','value'); command('show','show'); command('hide','hide'); command('close','close');
     command('remove','remove'); command('focus','focus'); command('blur','blur');
+    command('select','select');
     getter('getInnerRML','getRml'); getter('getProperty','getStyle'); getter('getAttribute','getAttr');
     getter('hasClass','hasClass'); getter('getValue','getValue'); getter('getBounds','bounds');
     Element.prototype.querySelector = function(s) { return element(native('query',this._id,s)); };

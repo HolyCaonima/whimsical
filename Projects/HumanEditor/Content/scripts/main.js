@@ -27,12 +27,13 @@ HE.openProjectDialog=function(){
         if(HE.projectPath)read(HE.projectPath);
     });
 };
-HE.parentDialog=function(){
-    if(!HE.selected.length)return;
-    var rows=HE.entities().map(Engine.entity).filter(function(r){return r.components.transform&&HE.selected.indexOf(r.entity)<0;});
-    var html='<p>Reparent the selected roots, preserving their world pose.</p><select id="parent-choice"><option value="0">World (no parent)</option>';
+HE.parentDialog=function(entity){
+    var selection=entity?[entity]:HE.selected;
+    if(!selection.length)return;
+    var rows=HE.entities().map(Engine.entity).filter(function(r){return r.components.transform&&selection.indexOf(r.entity)<0;});
+    var html='<p>'+(entity?'Reparent '+HE.escape(Engine.entity(entity).name):'Reparent the selected roots')+', preserving world pose.</p><select id="parent-choice"><option value="0">World (no parent)</option>';
     rows.forEach(function(r){html+='<option value="'+r.entity+'">'+HE.escape(r.name)+' ['+r.entity+']</option>';});
-    HE.modal('Set parent',html+'</select>',[{label:'Apply',run:function(d){HE.setParent(Number(d.getElementById('parent-choice').getValue()));}},{label:'Cancel'}]);
+    HE.modal('Set parent',html+'</select>',[{label:'Apply',run:function(d){var parent=Number(d.getElementById('parent-choice').getValue());if(entity)HE.command('Change parent',function(){Engine.parent(entity,parent,true);});else HE.setParent(parent);}},{label:'Cancel'}],function(d){if(selection.length===1){var parent=Engine.component(selection[0],'transform').parent;d.getElementById('parent-choice').setValue(String(parent?Engine.findEntity(parent):0));}});
 };
 HE.help=function(){HE.modal('HumanEditor controls',
     '<p>Click visible geometry to select using the GPU Entity ID image. Ctrl+click adds or removes actors. Select lights and non-rendering entities in the Outliner.</p>'+
@@ -90,6 +91,7 @@ function initialize(){
     HE.bind('menu-shield',HE.closeMenu,'mousedown');
     HE.bind('tree-search',HE.refreshTree,'change');HE.bind('asset-search',HE.refreshAssets,'change');
     HE.bind('place-search',HE.refreshPalette,'change');HE.bind('details-search',HE.filterDetails,'change');HE.bind('asset-filter',HE.refreshAssets,'change');
+    HE.bind('details-search',function(){HE.el('details-search').select();});
     HE.bind('folder-search',HE.refreshFolders,'change');HE.bind('asset-sort',HE.refreshAssets,'change');
     HE.doc.on('mousedown',function(){HE.browserFocused=false;},true);
     HE.el('content').on('mousedown',function(){HE.browserFocused=true;},true);
@@ -122,6 +124,7 @@ function sceneChanged(){
         p.from.pop();p.to.push({label:p.entry.label,state:p.current});HE.revision=p.revision;HE.log('Restored '+p.entry.label);
     }else if(p&&p.kind==='rollback')HE.revision=p.revision;
     else if(p&&(p.kind==='open'||p.kind==='new')){
+        HE.detailDrafts={};
         HE.undoStack=[];HE.redoStack=[];HE.revision=++HE.serial;HE.savedRevision=p.kind==='new'?-1:HE.revision;
         if(p.kind==='new')HE.source=null;
         HE.camera=HE.copy(Engine.scene.resources().camera);
@@ -139,6 +142,7 @@ var uiElapsed=0;
 function updateUI(dt){
     if(!HE.doc)return;uiElapsed+=dt;if(uiElapsed<0.2)return;uiElapsed=0;
     var s=Engine.simulation.state();
+    if(HE.detailRunning!==s.running)HE.refreshDetails();
     var key=[s.running,s.paused,HE.undoStack.length,HE.redoStack.length].join(':');if(HE.uiState===key)return;HE.uiState=key;
     HE.el('pause').setText(s.paused?'Resume':'Pause');
     HE.el('play').setClass('active',s.running);

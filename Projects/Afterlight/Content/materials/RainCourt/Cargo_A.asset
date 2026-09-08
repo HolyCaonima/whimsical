@@ -1,0 +1,28 @@
+ALAS1
+{"id": "1ade7d33c5e358bcb0430f2c58d28e96", "type": "Material", "name": "Crate", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "properties": {
+    "baseColor": [
+      0.25,
+      0.20000000298023224,
+      0.11999999731779099
+    ],
+    "emission": [
+      0,
+      0,
+      0
+    ],
+    "metallic": 0.15000000596046448,
+    "normalStrength": 1,
+    "roughness": 0.6499999761581421,
+    "uvScale": [
+      1,
+      1
+    ]
+  },
+  "shader": {
+    "id": "e5cc4ae90847574ebd50bc0392f6410e",
+    "path": "/Game/shaders/Paving"
+  },
+  "textures": {}
+}

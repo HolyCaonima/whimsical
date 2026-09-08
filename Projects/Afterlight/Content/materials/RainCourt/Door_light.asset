@@ -1,0 +1,28 @@
+ALAS1
+{"id": "b4f91dde892d5d50a6ff18e0e668814a", "type": "Material", "name": "Warm", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "properties": {
+    "baseColor": [
+      0.8999999761581421,
+      0.6000000238418579,
+      0.2800000011920929
+    ],
+    "emission": [
+      7,
+      3,
+      0.800000011920929
+    ],
+    "metallic": 0.10000000149011612,
+    "normalStrength": 1,
+    "roughness": 0.3199999928474426,
+    "uvScale": [
+      1,
+      1
+    ]
+  },
+  "shader": {
+    "id": "e5cc4ae90847574ebd50bc0392f6410e",
+    "path": "/Game/shaders/Paving"
+  },
+  "textures": {}
+}

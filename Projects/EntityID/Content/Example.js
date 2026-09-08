@@ -10,8 +10,8 @@ function box(name, z, size, material) {
     }});
 }
 function initialize() {
-    var red = Engine.material(0.8, 0.1, 0.1, 0.5, 0, 0, 0, 0);
-    var blue = Engine.material(0.1, 0.2, 0.8, 0.5, 0, 0, 0, 0);
+    var red = Engine.asset('/Game/Materials/Red');
+    var blue = Engine.asset('/Game/Materials/Blue');
     Engine.camera(0, 0, 0, 0, 0, 8);
     // The farther box is drawn last: a correct center ID requires depth testing.
     nearBox = box("Near", 3, [1.5, 1.5, 1.5], red);

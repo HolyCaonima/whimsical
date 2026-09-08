@@ -1,0 +1,28 @@
+ALAS1
+{"id": "1b238b435b8c566b8565dac5087016a9", "type": "Material", "name": "Dark", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "properties": {
+    "baseColor": [
+      0.07999999821186066,
+      0.12999999523162842,
+      0.11999999731779099
+    ],
+    "emission": [
+      0,
+      0,
+      0
+    ],
+    "metallic": 0.3499999940395355,
+    "normalStrength": 1,
+    "roughness": 0.41999998688697815,
+    "uvScale": [
+      1,
+      1
+    ]
+  },
+  "shader": {
+    "id": "e5cc4ae90847574ebd50bc0392f6410e",
+    "path": "/Game/shaders/Paving"
+  },
+  "textures": {}
+}

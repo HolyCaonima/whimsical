@@ -1,0 +1,28 @@
+ALAS1
+{"id": "9926ae5a97aa52369dd240c82f9cf5a9", "type": "Material", "name": "Ash", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "c6152da2cdb35ce49c81a5f9157b4179",
+    "path": "/Game/shaders/Standard"
+  },
+  "properties": {
+    "baseColor": [
+      1,
+      1,
+      1
+    ],
+    "roughness": 0.8,
+    "emission": [
+      0,
+      0,
+      0
+    ],
+    "metallic": 0,
+    "uvScale": [
+      1,
+      1
+    ],
+    "normalStrength": 1
+  },
+  "textures": {}
+}

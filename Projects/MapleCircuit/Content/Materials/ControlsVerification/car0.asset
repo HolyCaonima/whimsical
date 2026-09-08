@@ -1,0 +1,12 @@
+ALAS1
+{"id": "c5fd0d75c4c955e8bfc557de10664ecc", "type": "Material", "name": "car0", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "be0c13c257be5783b6da98c6bc8b9e46",
+    "path": "/Game/shaders/Standard"
+  },
+  "properties": {
+    "roughness": 0.38
+  },
+  "textures": {}
+}

@@ -14,6 +14,7 @@ struct SceneTransform {
 struct SceneRender {
     RenderComponent appearance;
     std::optional<AssetRef> mesh;
+    AssetRef material;
 };
 struct SceneDrawEntityID {
     AssetRef target;
@@ -42,8 +43,6 @@ struct SceneEntity {
 // Maps and live resource access use this same codec and validation contract.
 struct SceneResourceDescription {
     std::vector<AssetRef> scripts;
-    std::vector<MaterialDefinition> materials;
-    std::map<uint32_t, AssetRef> materialAssets;
     Camera camera;
     NavigationSettings navigation;
     std::map<std::string, std::string> references;

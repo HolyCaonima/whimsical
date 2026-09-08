@@ -1,0 +1,12 @@
+ALAS1
+{"id": "d8a382ce499c5d3094ee9cd81cc6c6bd", "type": "Material", "name": "Circuit", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "be0c13c257be5783b6da98c6bc8b9e46",
+    "path": "/Game/shaders/Standard"
+  },
+  "properties": {
+    "roughness": 0.8
+  },
+  "textures": {}
+}

@@ -1,0 +1,28 @@
+ALAS1
+{"id": "dbf5af91eae85cdbaf8b662672aeec85", "type": "Material", "name": "Cyan", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "properties": {
+    "baseColor": [
+      0.20000000298023224,
+      0.800000011920929,
+      0.699999988079071
+    ],
+    "emission": [
+      0.30000001192092896,
+      4,
+      3
+    ],
+    "metallic": 0.20000000298023224,
+    "normalStrength": 1,
+    "roughness": 0.30000001192092896,
+    "uvScale": [
+      1,
+      1
+    ]
+  },
+  "shader": {
+    "id": "e5cc4ae90847574ebd50bc0392f6410e",
+    "path": "/Game/shaders/Paving"
+  },
+  "textures": {}
+}

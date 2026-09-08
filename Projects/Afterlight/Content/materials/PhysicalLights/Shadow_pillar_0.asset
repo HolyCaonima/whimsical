@@ -1,0 +1,18 @@
+ALAS1
+{"id": "275c66c59e7b54b3a2bc4ca27d268a4e", "type": "Material", "name": "Shadow pillar 0", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "c6152da2cdb35ce49c81a5f9157b4179",
+    "path": "/Game/shaders/Standard"
+  },
+  "properties": {
+    "baseColor": [
+      0.6,
+      0.6,
+      0.6
+    ],
+    "roughness": 0.6,
+    "metallic": 0
+  },
+  "textures": {}
+}

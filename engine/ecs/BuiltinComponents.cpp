@@ -165,7 +165,9 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
         auto c = component<Renderable, SceneRender>("render");
         c.dependencies = {{"transform"}};
         c.validateValue = [](const std::any& value) {
-            validateRenderAppearance(std::any_cast<const SceneRender&>(value).appearance);
+            const auto& render = std::any_cast<const SceneRender&>(value);
+            validateRenderAppearance(render.appearance);
+            validatePersistentId(render.material.id);
         };
         codec<SceneRender>(
             c,
@@ -184,8 +186,7 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
                     a.offset = vector3(j.at("offset"));
                 if (j.contains("animationScale"))
                     a.animationScale = vector3(j.at("animationScale"));
-                if (j.contains("material"))
-                    a.material = j.at("material").uint();
+                v.material = AssetRef::fromJson(j.at("material"));
                 if (j.contains("visible"))
                     a.visible = j.at("visible").boolean();
                 if (j.contains("castShadow"))
@@ -205,7 +206,7 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
                        {"scale", vector(a.scale)},
                        {"offset", vector(a.offset)},
                        {"animationScale", vector(a.animationScale)},
-                       {"material", a.material},
+                       {"material", v.material.json()},
                        {"visible", a.visible}, {"castShadow", a.castShadow}};
                 if (a.overlay)
                     j["overlay"] = true;
@@ -217,27 +218,30 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
             });
         binding<SceneRender>(
             c,
-            [](const World& w, Entity e, const SceneRender& v, AssetManager& a) {
-                if (v.appearance.material >= w.resources.materials.size())
-                    throw std::invalid_argument("Invalid material");
+            [](const World&, Entity e, const SceneRender& v, AssetManager& a) {
+                auto appearance = v.appearance;
+                appearance.material = a.load<MaterialAsset>(v.material);
                 auto mesh = v.mesh ? a.load<StaticMesh>(*v.mesh) : nullptr;
-                return [e, v, mesh](ComponentAccess& access) {
+                return [e, appearance, mesh](ComponentAccess& access) {
                     auto& w = access.world;
                     if (w.has<Renderable>(e))
-                        w.render.set(e, v.appearance, mesh);
+                        w.render.set(e, appearance, mesh);
                     else
-                        w.render.add(e, v.appearance, mesh);
+                        w.render.add(e, appearance, mesh);
                 };
             },
             [](const World& w, Entity e) {
                 const auto& r = w.get<Renderable>(e);
                 SceneRender v{r.appearance};
+                v.material = r.appearance.material->reference();
+                v.appearance.material.reset();
                 if (r.mesh)
                     v.mesh = r.mesh->reference();
                 return v;
             });
         c.resolveReferences = [](std::any& value, const AssetManager& assets) {
             auto& v = std::any_cast<SceneRender&>(value);
+            v.material = assets.resolve(v.material);
             if (v.mesh)
                 v.mesh = assets.resolve(*v.mesh);
         };

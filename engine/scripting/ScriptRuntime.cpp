@@ -69,7 +69,7 @@ __declspec(noinline) static duk_ret_t contentDispatch(duk_context* c) {
         for (const auto& ref : manager.browse(duk_require_string(c, 0)))
             list.push(ref.json());
         pushJson(c, list);
-    } else if (op == 4 || op == 5 || op == 6) {
+    } else if (op == 4 || op == 5 || op == 6 || op == 9) {
         bool path = duk_is_string(c, 0);
         AssetRef ref;
         AssetPath target;
@@ -77,11 +77,16 @@ __declspec(noinline) static duk_ret_t contentDispatch(duk_context* c) {
             target = AssetPath(duk_require_string(c, 0));
         else
             ref = AssetRef::fromJson(argumentJson(c, 0));
-        if (op == 4 || op == 6) {
+        if (op == 4 || op == 6 || op == 9) {
             if (path)
                 ref = manager.reference(target);
             if (op == 6) {
                 pushJson(c, manager.resolve(ref).json());
+                return 1;
+            }
+            if (op == 9) {
+                ref = manager.resolve(ref);
+                pushJson(c, {{"ref", ref.json()}, {"header", manager.descriptor(ref.path).json()}});
                 return 1;
             }
             auto doc = manager.read(ref);
@@ -272,7 +277,6 @@ enum Op {
     FindObject,
     CameraState,
     Log,
-    MaterialAdd,
     Create,
     AddComponent,
     SetComponent,
@@ -421,17 +425,6 @@ static duk_ret_t callNative(duk_context* c) {
         case Log:
             runtime(c).log(duk_safe_to_string(c, 0));
             return 0;
-        case MaterialAdd: {
-            MaterialDefinition definition;
-            definition.shader = assets(c).reference(AssetPath("/Game/shaders/Standard"));
-            definition.properties = {{"baseColor", Json::array({num(c, 0), num(c, 1), num(c, 2)})},
-                                     {"roughness", num(c, 3)},
-                                     {"emission", Json::array({num(c, 4), num(c, 5), num(c, 6)})},
-                                     {"metallic", num(c, 7)}};
-            w.resources.materials.push_back(definition.resolve(assets(c)));
-            duk_push_uint(c, uint32_t(w.resources.materials.size() - 1));
-            return 1;
-        }
         case Create: {
             duk_dup(c, 0);
             duk_json_encode(c, -1);
@@ -619,10 +612,16 @@ static duk_ret_t callNative(duk_context* c) {
             w.motion.setSolid(duk_require_uint(c, 0), duk_get_boolean(c, 1) != 0);
             return 0;
         case SetMaterial: {
-            auto i = duk_require_uint(c, 1);
-            if (i >= w.resources.materials.size())
-                throw std::runtime_error("Invalid material");
-            w.render.setMaterial(duk_require_uint(c, 0), i);
+            AssetRef ref;
+            if (duk_is_string(c, 1))
+                ref = assets(c).reference(AssetPath(duk_require_string(c, 1)));
+            else {
+                duk_dup(c, 1);
+                duk_json_encode(c, -1);
+                ref = AssetRef::fromJson(Json::parse(duk_require_string(c, -1)));
+                duk_pop(c);
+            }
+            w.render.setMaterial(duk_require_uint(c, 0), assets(c).load<MaterialAsset>(ref));
             return 0;
         }
         case ReadJson: {
@@ -941,7 +940,6 @@ void ScriptRuntime::createContext() {
                                 {"findObject", FindObject, 1},
                                 {"cameraState", CameraState, 0},
                                 {"log", Log, 1},
-                                {"material", MaterialAdd, 8},
                                 {"create", Create, 1},
                                 {"addComponent", AddComponent, 3},
                                 {"setComponent", SetComponent, 3},
@@ -998,8 +996,8 @@ void ScriptRuntime::createContext() {
     }
     duk_push_object(context_);
     const char* contentNames[] = {"mount", "unmount",   "mounts", "browse", "load",
-                                  "save",  "reference", "scan",   "newId"};
-    for (int i = 0; i < 9; ++i) {
+                                  "save",  "reference", "scan",   "newId", "describe"};
+    for (int i = 0; i < 10; ++i) {
         duk_push_c_function(context_, contentCall, DUK_VARARGS);
         duk_set_magic(context_, -1, i);
         duk_put_prop_string(context_, -2, contentNames[i]);

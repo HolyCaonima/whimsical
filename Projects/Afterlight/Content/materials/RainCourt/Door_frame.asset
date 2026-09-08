@@ -1,0 +1,28 @@
+ALAS1
+{"id": "869454723b245c1f9c09a17e5bb7e384", "type": "Material", "name": "Brass", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "properties": {
+    "baseColor": [
+      0.5199999809265137,
+      0.30000001192092896,
+      0.10000000149011612
+    ],
+    "emission": [
+      0,
+      0,
+      0
+    ],
+    "metallic": 0.699999988079071,
+    "normalStrength": 1,
+    "roughness": 0.30000001192092896,
+    "uvScale": [
+      1,
+      1
+    ]
+  },
+  "shader": {
+    "id": "e5cc4ae90847574ebd50bc0392f6410e",
+    "path": "/Game/shaders/Paving"
+  },
+  "textures": {}
+}

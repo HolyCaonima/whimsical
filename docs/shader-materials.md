@@ -2,8 +2,8 @@
 
 `ShaderAsset` owns GLSL source, an ordered property/texture schema, the material model,
 and render state. `MaterialAsset` owns a resolved `Material`: a shared immutable Shader,
-schema-ordered values and shared Texture assets. Map-inline materials use the same
-`MaterialDefinition` serialization and resolution as standalone Material assets.
+schema-ordered values and shared Texture assets. `MaterialDefinition` is the asset payload;
+Render components and Maps reference Material assets by durable ID.
 Neither assets, World nor Frame contain texture descriptors or Shader dispatch IDs.
 
 ## Compilation model
@@ -126,16 +126,23 @@ invalidate history. Ordinary values/textures invalidate history without Shader c
 
 ## Persistence and migration
 
-Map payloads now use version 3 with Shader-backed inline definitions; the outer ALAS1
-envelope stays version 1. Checked-in maps and Honeybud materials have been migrated, and
-the Blender material exporter writes the new format. Legacy object yaw was converted to
-quaternions during that migration. Old v1/v2 payloads are explicitly rejected.
+Map payloads use version 9; the outer ALAS1 envelope stays version 1. Each
+`render.material` is an AssetRef, just like `mesh`. Runtime components retain immutable
+Material assets, while RenderScene owns the dense GPU material table and remaps only
+render proxies when an unused slot is reclaimed. Map material tables and the parallel
+`materialAssets` index map have been removed.
 
-For another project, register Shader assets first, then replace each legacy material's
-`albedoRoughness`, `emissionMetallic`, `surface` and texture channels with a Shader reference
-and named properties/textures. Map the old seam-enabled surface to Paving; ordinary PBR
-materials use Standard. Runtime GPU indices are never serialized. Reusable materials keep
-their durable asset IDs, and Shader/Texture references survive path moves by ID.
+Run `python tools/migrate_material_assets.py <Map.asset>` on v7/v8 maps. Existing
+Material asset bindings retain their IDs; inline definitions become standalone assets.
+Project-owned numeric aliases (for example RainCourt's `data.materials`) must also be
+converted to AssetRefs by the project. Loads never create assets. New materials are
+created through the regular Content asset API; `Engine.material(...)` and
+`Engine.scene.addMaterial(...)` have been removed. `Engine.setMaterial(entity, ref)`
+accepts an AssetRef or asset path. Shader/Texture reference and property semantics are
+unchanged. See [the framework audit](material-asset-references.md).
+
+The following validation descriptions predate v9. Their fixtures have not been changed
+or run as part of this migration, as requested.
 
 `shader_tests` covers defaults, invalid schemas, reference/instance round trips, renderer
 binding deduplication, Shader-ID stability on Material reorder, real SPIR-V compilation

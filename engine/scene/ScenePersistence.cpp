@@ -7,16 +7,6 @@ SceneDocument ScenePersistence::capture(const World& world, const AssetManager& 
     world.storage_.changes.requireCommitted();
     SceneDocument s;
     const auto& r = world.resources;
-    std::map<uint32_t, uint32_t> materialIndices;
-    for (uint32_t i = 0; i < r.materials.size(); ++i)
-        if (!r.transientMaterials.count(i)) {
-            materialIndices[i] = uint32_t(s.materials.size());
-            s.materials.push_back(MaterialDefinition::capture(r.materials[i], assets));
-        }
-    for (const auto& material : r.materialAssets)
-        if (materialIndices.count(material.first))
-            s.materialAssets.emplace(materialIndices.at(material.first),
-                                     assets.resolve(material.second->reference()));
     s.camera = r.camera;
     s.navigation = r.navigation;
     for (const auto& script : r.scripts)
@@ -32,12 +22,6 @@ SceneDocument ScenePersistence::capture(const World& world, const AssetManager& 
         o.name = identity.name;
         o.enabled = !world.has<Disabled>(e);
         o.components = componentCatalog().capture(world, e, assets);
-        if (auto render = o.components.find<SceneRender>()) {
-            auto i = materialIndices.find(render->appearance.material);
-            if (i == materialIndices.end())
-                throw std::invalid_argument("Authored entity references a transient material");
-            render->appearance.material = i->second;
-        }
         s.entities.push_back(std::move(o));
     }
     s.validate();
@@ -64,16 +48,6 @@ uint32_t ScenePersistence::createEntity(World& world, const SceneEntity& o, Asse
 }
 static SceneResources resolveResources(const SceneResourceDescription& s, AssetManager& assets) {
     SceneResources r;
-    for (uint32_t i = 0; i < s.materials.size(); ++i) {
-        auto binding = s.materialAssets.find(i);
-        if (binding == s.materialAssets.end())
-            r.materials.push_back(s.materials[i].resolve(assets));
-        else {
-            auto material = assets.load<MaterialAsset>(binding->second);
-            r.materialAssets.emplace(i, material);
-            r.materials.push_back(material->parameters);
-        }
-    }
     r.camera = s.camera;
     r.navigation = s.navigation;
     for (const auto& script : s.scripts) {
@@ -162,32 +136,9 @@ void ScenePersistence::replace(World& world, World& staged, const AssetRef& sour
         throw CommittedError(std::string("Scene committed; publication failed: ") + error.what());
     }
 }
-uint32_t ScenePersistence::addMaterial(World& world, AssetManager& assets, const Json& value,
-                                       bool persistent) {
-    std::shared_ptr<const MaterialAsset> asset;
-    Material material;
-    if (value.contains("id")) {
-        asset = assets.load<MaterialAsset>(AssetRef::fromJson(value));
-        material = asset->parameters;
-    } else
-        material = MaterialDefinition::fromJson(value).resolve(assets);
-    auto i = uint32_t(world.resources.materials.size());
-    world.resources.materials.push_back(std::move(material));
-    if (asset)
-        world.resources.materialAssets.emplace(i, std::move(asset));
-    if (!persistent)
-        world.resources.transientMaterials.insert(i);
-    world.resetHistory = true;
-    return i;
-}
-static SceneResourceDescription resourceDocument(const World& world, const AssetManager& assets) {
-    // Work in the live material index space, including temporary tool materials.
+static SceneResourceDescription resourceDocument(const World& world, const AssetManager&) {
     SceneResourceDescription document;
     const auto& r = world.resources;
-    for (const auto& material : r.materials)
-        document.materials.push_back(MaterialDefinition::capture(material, assets));
-    for (const auto& material : r.materialAssets)
-        document.materialAssets.emplace(material.first, assets.resolve(material.second->reference()));
     document.camera = r.camera;
     document.navigation = r.navigation;
     document.scripts = r.scripts;
@@ -207,18 +158,12 @@ void ScenePersistence::setResources(World& world, AssetManager& assets, const Js
         json[property.first] = property.second;
     }
     document = SceneResourceDescription::fromJson(json);
-    for (auto e : world.registry().view<Renderable>())
-        if (world.get<Renderable>(e).appearance.material >= document.materials.size())
-            throw std::invalid_argument("Live entity references a material outside the new table");
     for (const auto& ref : document.references)
         if (!world.findObject(ref.second))
             throw std::invalid_argument("Scene reference targets a missing entity: " + ref.first);
     auto& r = world.resources;
     auto next = resolveResources(document, assets);
     next.mapAsset = r.mapAsset;
-    for (auto i : r.transientMaterials)
-        if (i < next.materials.size())
-            next.transientMaterials.insert(i);
     r = std::move(next);
     world.resetHistory = true;
 }

@@ -1,0 +1,28 @@
+ALAS1
+{"id": "ba978c92fb7a527c9dc39b4303596296", "type": "Material", "name": "Ash", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "properties": {
+    "baseColor": [
+      1,
+      1,
+      1
+    ],
+    "emission": [
+      0,
+      0,
+      0
+    ],
+    "metallic": 0,
+    "normalStrength": 1,
+    "roughness": 0.800000011920929,
+    "uvScale": [
+      1,
+      1
+    ]
+  },
+  "shader": {
+    "id": "e5cc4ae90847574ebd50bc0392f6410e",
+    "path": "/Game/shaders/Paving"
+  },
+  "textures": {}
+}

@@ -39,20 +39,20 @@ Content 路径和公共脚本从项目文件读取，无需手填。启动地图
 | 聚焦 / 重置相机 | F / 右键 Focus selected；Perspective 恢复地图相机 |
 | 添加实体 | Place Actors 的 Basic / Shapes / Lights 分类；搜索覆盖全部类别，点击放置在相机观察目标处 |
 | 重命名 / 启停 | Details 的 Rename / Enabled；多选启停使用右键 Toggle enabled |
-| 修改组件 | Details 输入字段后点 Apply fields；复杂引用和嵌套数据使用 Complete JSON |
-| 查找 / 折叠组件 | Details 的 Filter 按组件名或属性名筛选组件；点击组件标题折叠，搜索期间自动展开匹配组件 |
+| 修改组件 | Details 使用布尔开关、带轴标识的向量和可展开的嵌套属性；修改后显示 Apply / Revert，Enter 应用当前组件，Esc 恢复当前字段；复杂数组及完整数据使用标题栏 JSON |
+| 查找 / 折叠组件 | Details 的 Filter 按组件名或属性名筛选到具体字段；组件和嵌套分组可折叠，搜索期间自动展开匹配项，无匹配时显示提示 |
 | 添加 / 删除组件 | + Component 从引擎 ComponentCatalog 枚举；依赖规则由引擎验证 |
 | 设置父级 | 右键 Set parent / Detach from parent，保持世界姿态，拒绝循环层级 |
 | 复制 / 粘贴 / 副本 | Ctrl+C / Ctrl+V / Ctrl+D；包含子树，副本使用新持久 ID |
 | 删除 | Delete / 右键 Delete；删除选中根对象的整个子树 |
 | 撤销 / 重做 | Ctrl+Z / Ctrl+Y；最多保留 50 个场景操作，一次拖拽为一个操作 |
 | 新建 / 保存 / 另存为 | New Level、Ctrl+S、Save、Save As；路径不带 `.asset` 后缀 |
-| 场景资源 | World Settings 编辑材质表、地图相机、导航、脚本、引用和场景数据 |
+| 场景资源 | World Settings 编辑地图相机、导航、脚本、引用和场景数据 |
 | 文件夹导航 | 单击卡片选中、双击或 Enter 进入；Up / Backspace 返回上级；Back / Forward 恢复目录及当时的搜索和类别条件；顶部路径可点击 |
 | 目录树 | 左侧 +/- 展开折叠，单击目录进入；Find 搜索目录名并保留祖先层级，网格进入子目录时展开对应父级 |
 | 内容搜索 | Search 搜索当前目录及子目录中的文件夹和资产；类别筛选保留直接子文件夹入口；Refresh 重新扫描 |
 | 内容视图 | 文件夹优先排列，Name A-Z / Z-A 排序；List / Tiles 切换列表和卡片；底部显示数量及选中项完整路径 |
-| 资产创建 | + New asset 创建 Data / Script；选中资产显示高亮，双击打开 |
+| 资产创建 | + New asset 创建 Data / Material / Script；选中资产显示高亮，双击打开 |
 | 资产打开 | 双击 Map 加载、StaticMesh 放置、Material 指派；文本 / JSON 资产可编辑保存 |
 | 模拟 | Play 启动目标程序，Pause / Resume 暂停恢复，Stop 恢复 Play 前场景和选择 |
 | 日志 / 帮助 | Output Log / Help；引擎控制台继续通过 F10 使用 |
@@ -63,13 +63,17 @@ Content 路径和公共脚本从项目文件读取，无需手填。启动地图
 
 多选支持成组变换、启停、删除、层级和材质指派；Details 编辑最后选中的活动对象。灯光或没有可见网格的实体通过 Outliner 选中。变换的 rotation 字段遵循引擎的四元数 `[x,y,z,w]`，轴向旋转工具负责生成正确旋转值。
 
+Details 的 Material / mesh 等资产字段显示资产名称，点击选择同类型资产，选择后通过 Apply / Revert 提交或恢复。资产字段整体保存 `{id,path,source}` 引用，不展开成可编辑的 ID/path 文本。Material 选择器按真实资产类型筛选；新建几何默认沿用场景已有材质，空场景使用目标 Content 的现有材质。
+
+Details 内的启停和父级操作同样只作用于活动对象。字段草稿按对象与组件保留，切换选择或应用其他组件不会丢失；组件原值被其他操作改变时丢弃对应旧草稿。Apply 将当前组件的修改记录为一次撤销操作，Revert 放弃该组件草稿；草稿尚未写入场景，保存前需先 Apply。数字以紧凑格式显示，编辑向量某一轴不会舍入其他轴的原始值。模拟期间 Details 属性只读。
+
 缩放修改 `render.scale`，碰撞体尺寸是独立组件数据，按引擎契约单独编辑。复制重映射 Transform 父级；自定义脚本数据内的引用仍保持原值。
 
 布局、折叠状态和视口设置在当前编辑器会话内保留，不写入地图，也不进入场景撤销历史。资源类别沿用项目目录约定（Maps / Materials / Models / textures / scripts）；未按这些目录组织的资源归入 Other，打开时仍以资产头的真实类型执行操作。没有搜索或类别筛选时，内容网格只显示当前目录的直接子项。
 
 Content Browser 获得焦点时，Delete / Ctrl+D 等演员快捷键不会操作场景选择。Enter 打开选中项，Backspace 返回上级，Esc 清空网格搜索和选择；文本框内保留正常输入行为。
 
-**当前 Content 接口边界：** `Engine.content.browse` 只返回资产引用，目录树由资产路径建立，因此不显示空文件夹或仅含未索引源文件的目录。完整支持空目录需要 Content 层导出按挂载来源枚举目录条目的接口；准确的资产类型筛选还需要只读资产头元数据接口，避免为了目录列表加载整个资产。两项都不是 UI Core 缺少导出。目录列表仍按上述边界工作；“..”只是返回上级的导航入口。
+**当前 Content 接口边界：** `Engine.content.browse` 只返回资产引用，目录树由资产路径建立，因此不显示空文件夹或仅含未索引源文件的目录。完整支持空目录需要 Content 层导出按挂载来源枚举目录条目的接口；资产类型与名称可以通过 `Engine.content.describe` 读取而无需加载载荷，Details 选择器已使用它。目录枚举不是 UI Core 缺少导出。目录列表仍按上述边界工作；“..”只是返回上级的导航入口。
 
 ## 拾取、历史与保存
 
@@ -89,7 +93,8 @@ Content Browser 获得焦点时，Delete / Ctrl+D 等演员快捷键不会操作
 - `Content/scripts/viewport.js`：UI 输入、相机、ID 回读、投影与轴向变换。
 - `Content/scripts/gizmo.js`：临时实体 gizmo、屏幕尺寸、半圆朝向、悬停、旋转与变换事务；颜色及选轴共用 GPU 网格和深度排序。
 - `tools/gizmo-meshes.mjs`：生成普通 STM1 格式的箭头、缩放手柄、平面方块、半圆环与整圆环网格；运行 `node Projects/HumanEditor/tools/gizmo-meshes.mjs` 可重新生成。
-- `Content/scripts/panels.js`：对象树、组件面板、对象右键菜单与通用对话框。
+- `Content/scripts/panels.js`：对象树、对象右键菜单与通用对话框。
+- `Content/scripts/inspector.js`：属性布局、嵌套字段、组件草稿、筛选及编辑交互。
 - `Content/scripts/browser.js`：Content 目录索引、导航历史、搜索、网格 / 列表及资产打开操作。
 - `Content/scripts/main.js`：UI 绑定及宿主生命周期。
 - `Content/UI/`：项目自身的 RML / RCSS。
@@ -108,3 +113,5 @@ $editorTest = Get-Content Projects/HumanEditor/Saved/smoke-project.txt
 测试只在本项目 Saved 中生成隔离的宿主和目标 Content。真实 Duktape + Vulkan 验证覆盖：ID 选中、组件修改、子树复制删除、撤销重做、轴向拖拽、保存重载、Save As 目的地、Play/Pause/Stop、失败回滚，以及 UI 接管输入后的相机与快捷键。另检查视口最大化 / 恢复、抽屉与分隔条布局、目录及资源筛选、放置分类，以及属性折叠和关键控件尺寸。
 
 2026-09-08：1440×900 隔离验证输出 `SMOKE PASS`、`layout PASS`、`browser PASS`，正常退出，Vulkan validation errors=0。浏览器验证包含嵌套目录进入、前进 / 后退、搜索状态恢复、资产打开、键盘焦点隔离，以及滚动时的网格和列表布局。另以 1600×1000 打开默认 RainCourt 并检查 GPU 截图。交互验证调用项目输入处理函数，不视为外部鼠标端到端测试。
+
+2026-09-08 材质引用迁移：需要重新构建 Afterlight；地图使用 v9 与独立 Material 资产，旧材质编号接口已移除。详见 [框架审计](../../docs/material-asset-references.md)。

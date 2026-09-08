@@ -96,7 +96,7 @@ HE.openProject = function (project) {
             Engine.scene.load(project.startupMap.replace('/Game/',HE.mount+'/'));
         }else{
             var snapshot=Engine.scene.capture(),document=snapshot.document;
-            snapshot.source=null;document.entities=[];document.materials=[];document.materialAssets=[];
+            snapshot.source=null;document.entities=[];
             document.scripts=[];document.references={};document.data={};
             HE.pending={kind:'new'};Engine.scene.restore(snapshot);
         }
@@ -116,7 +116,7 @@ HE.saveAs = function (after) {
 };
 HE.newLevel = function () {
     HE.unsaved(function () {
-        // Preserve the target Content's material library so new objects stay source-local.
+        // Asset references retain their Content identity independently of scene resources.
         var snap = Engine.scene.capture();
         snap.document.entities = []; snap.document.references = {};
         snap.document.scripts = []; snap.document.data = {};
@@ -176,7 +176,7 @@ HE.add = function (kind, asset) {
     HE.command('Add ' + kind, function () {
         var c = {transform:{position:HE.copy(HE.camera.target)}};
         if (kind === 'Box' || kind === 'Capsule' || kind === 'StaticMesh') {
-            c.render = {shape:kind === 'Capsule' ? 'capsule' : 'box', scale:[1,1,1], material:0};
+            c.render = {shape:kind === 'Capsule' ? 'capsule' : 'box', scale:[1,1,1], material:HE.defaultMaterial()};
             if (asset) c.render.mesh = asset;
         } else if (kind !== 'Entity') {
             c.light = {type:kind.toLowerCase(), color:[1,0.88,0.72], intensity:kind === 'Directional' ? 2 : 500};
