@@ -166,6 +166,15 @@ target_link_libraries(render_audit_tests PRIVATE afterlight_core)
 target_compile_options(render_audit_tests PRIVATE /W4 /permissive- /utf-8)
 afterlight_copy_onnx(render_audit_tests)
 add_test(NAME render_audit COMMAND render_audit_tests)
+# Compiling a frame is a pure function of the declarations, so the resource contract —
+# dependencies, culling, validation, liveness and storage reuse — is checked without a GPU.
+add_executable(render_graph_tests tests/RenderGraphTests.cpp
+  engine/render/graph/RenderGraph.cpp engine/render/graph/Registry.cpp
+  engine/render/graph/ResourcePool.cpp engine/render/VulkanContext.cpp engine/render/GpuProfiler.cpp)
+target_link_libraries(render_graph_tests PRIVATE afterlight_core volk user32 gdi32)
+target_compile_options(render_graph_tests PRIVATE /W4 /permissive- /utf-8)
+afterlight_copy_onnx(render_graph_tests)
+add_test(NAME render_graph_contract COMMAND render_graph_tests)
 add_executable(shader_tests tests/ShaderTests.cpp)
 target_link_libraries(shader_tests PRIVATE afterlight_shader_runtime)
 add_dependencies(shader_tests afterlight_shader_bindings)

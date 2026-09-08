@@ -63,13 +63,28 @@ Resize、首帧、大相机跳变、灯数量／材质变化会清理历史。NR
 
 ```cpp
 graph.add("RTXDI Spatial Resampling")
-    .read(r_.gbuffer.surface(), Access::ComputeRead)
-    .read(r_.di.neighbours, Access::ComputeRead)
-    .readWrite(r_.di.reservoirs, Access::ComputeReadWrite)
+    .read(r_.gbuffer.surface(), Access::Compute)
+    .read(r_.di.neighbours, Access::Compute)
+    .modify(r_.di.reservoirs, Access::Compute)
     .dispatch(compute_[DiSpatial]);
 ```
 
-`Access` 是唯一的意图词汇表，`accessInfo()` 是把意图翻译成 stage/access/layout 三元组的唯一位置。因此**接入一个新功能不需要改中央资源表，也不需要手写 barrier**：在 `RenderResources` 里 `declare` 资源，在 `RenderPipeline` 里声明读写，binding 号、descriptor layout、GLSL 声明、显存分配和同步全部由此推导。
+### 资源契约
+
+声明由两句话组成，两句都不可省：`Access` 说**在哪里碰**，`Usage` 说**把内容怎么了**。方向不在 `Access` 里，所以没有哪个访问位能顺带暗示错误的方向。
+
+| Usage | 含义 | 编译器由此得到 |
+| --- | --- | --- |
+| `read` | 消费到达本 pass 的内容，不产出 | 指向产出者的依赖边；attachment 无关 |
+| `overwrite` | 每个元素都重写，旧内容就此作废 | 断开旧版本；aliasing 安全；attachment 用 CLEAR |
+| `modify` | 既消费又产出，旧内容必须完整到达 | 既连边又产出新版本；attachment 用 LOAD |
+
+每个资源（history 的两半各算一个）在帧内有一条**内容版本链**。`compile()` 正向走一遍声明，把每个消费用法解析到产出它的那个 pass，这就是全部的依赖分析；`Access` 只在 `accessInfo(Access, Usage)` 里翻译成 stage/access/layout，那是唯一一处知道 Vulkan 的地方。因此**接入一个新功能不需要改中央资源表，也不需要手写 barrier**。
+
+契约同时是可校验的：
+
+- 存活 pass 消费了本帧没人产出、生命期又不跨帧的内容时，`compile()` 直接报错并指名 pass 和资源。这正是 transient 共享显存后会读到上一个租户像素的那种错误。
+- pass body 只能通过 `PassContext::image/buffer` 拿到句柄，拿没声明过的资源会抛异常。**实际录制的 GPU 工作因此被约束在编译器同步过的那组声明里**，而不是靠人记得两边写一致。
 
 ### 所有权
 
@@ -80,7 +95,7 @@ graph.add("RTXDI Spatial Resampling")
 | `Transient` | 只在首次写入到最后一次读取之间有意义 | 可被裁剪；生命期不重叠时共享显存 |
 | `Persistent` | 图拥有，内容原地带入下一帧 | 不裁剪、不共享、跨帧排序 |
 | `History` | 图拥有的一对，`previous(id)` 命名上一帧写的那半 | 每帧翻转，两套 descriptor set 各绑一种奇偶 |
-| `Imported` | 外部分配、图负责同步（swapchain、TLAS） | 只同步不分配 |
+| `Imported` | 外部分配、图负责同步（swapchain、BLAS/TLAS） | 只同步不分配 |
 | `External` | 外部分配且外部同步（顶点、实例、灯表） | 只绑定，不参与 barrier |
 
 `History` 是替代"帧末复制"的机制。`ResourcePool` 为它分配两个物理槽位，`flip()` 翻转奇偶，`previous` 视图指向上一帧写入的那半，两半的 descriptor 在两套 set 里各写一次。G-buffer 的 albedo/normal/position/viewZ 和 GI reservoir 都走这条路，帧末不再有拷贝。
@@ -89,23 +104,27 @@ DI 的四层 reservoir 不是 `History`，因为四层里两层跨帧、两层�
 
 ### 图编译
 
-`compile()` 做三件事，全部从声明推导：
+`compile()` 是声明的纯函数——不需要设备就能跑完，`render_graph_tests` 正是这么测契约的——依次做五件事：
 
-1. **裁剪**：反向遍历，一个 pass 只有在写了跨帧资源、写了存活 pass 要读的东西，或显式标了 `sideEffect()` 时才存活。因此 capture、audit、history 初始化这些条件功能不出现时不花任何代价，也不需要 `if` 包住半个管线。
-2. **显存复用**：从存活 pass 算出每个 transient 的活跃区间，区间不重叠且存储签名相同的就共享一块分配。`storageSignature` 只看尺寸、格式和 buffer 字节数——所有彩色 image 都带全部 color usage，所以同格式的 image 是一个可互换的存储类，角色不再切分池子。
-3. **实现**：只有存储形状真正变化的槽位才重新分配，所以某一帧多出一个 pass 不会连带丢掉 history 和 persistent 的内容。
+1. **依赖**：正向解析内容版本，每个消费用法连一条指向产出者的边。边只指向更早的 pass。
+2. **裁剪**：根是跨帧内容的**最后一个**产出者，加上 `sideEffect()` 的 pass；从根反向扫一遍即可。因为根是"最后一个"，**一个还没被人读就被覆盖掉的版本会把它的产出者一起带走**，不管资源是不是 transient；`modify` 链则会把整条链拉活。capture、audit、history 初始化这些条件功能不出现时不花任何代价。
+3. **校验**：存活 pass 是否消费了不存在的内容（见上）。
+4. **存活期**：反向扫一遍，得出每个产出的版本后面还有没有人读。attachment 的 `storeOp` 直接来自这一条，不再逐 pass 手写 `DONT_CARE`。
+5. **显存**：图拥有的资源在跨帧、被存活 pass 碰到、或带 shader 视图时才需要显存——整条管线共用一个 descriptor set，带视图的资源任何 dispatch 都够得着，这是图看不到另一端的真实消费者。其余的这一帧什么都不占。剩下的 transient 里，活跃区间不重叠且存储签名相同的共享一块分配；只有存储形状真变了的槽位才重新分配，所以某一帧多出一个 pass 不会连带丢掉 history 和 persistent 的内容。
 
 `synchronise()` 按物理槽位记录 `AccessState`（上一次写的 stage/access、之后的读 stage、已经 flush 过的部分），逐 pass 合并出这一批 barrier。状态存在 pool 里并跨越帧边界，所以第 N 帧的首次访问会自动对第 N-1 帧的末次访问排序——ping-pong 的 history 和共享显存的 transient 都靠这一条成立，没有额外规则。
+
+帧末还有一步 **handover**：声明里写了交接状态的资源，由图自己发出那次转换——swapchain 交给呈现引擎前进 `PRESENT_SRC`，回读 buffer 对 host 可见。没有任何 pass 是为了做一次 layout 转换而存在的。
 
 ### 边界
 
 NRD、加速结构、UI、回读和呈现都是普通 pass，用同一套 `Access` 词汇表描述：
 
-- **NRD**：图把它的输入输出声明成 `ComputeRead`/`ComputeWrite` 并保证进入时已在 `GENERAL`；`NrdDenoiser` 只 transition 自己 pool 里的纹理。
-- **加速结构**：`BuildRead`/`BuildWrite`/`TraceRead`。BLAS refit 写 `scene.tlas`、TLAS build 也写它，光追 pass 读它，refit → build → trace 的顺序因此是推导出来的而不是写死的。**分配不在录制里**：结构对象必须在本帧 descriptor 写入之前存在，所以 `reserveTlas` 在图装配阶段决定并分配，`recordTlas` 只发命令。
+- **NRD**：输入输出声明成 `Access::Compute` 的 read/overwrite，进入时保证已在 `GENERAL`；`NrdDenoiser` 只 transition 自己 pool 里的纹理。它还往图既不拥有、也叫不出名字的自有纹理池里累积，而且那份累积只有在逐帧都跑的前提下才成立——这就是 `sideEffect()` 的唯一用途：pass 凭自己的理由存活，而不是假装写了什么东西。
+- **加速结构**：两级都是资源。BLAS refit `modify(scene.blas)`，TLAS build `read(scene.blas)` 再按 `tlasRefits()` 决定 `modify` 还是 `overwrite` 顶层，光追 pass 两级都 `read(Access::Trace)`——遍历确实要走两级，只报顶层会让 ray query 与喂给它的 refit 之间没有依赖。refit → build → trace 因此是真实依赖，不是靠"写一个图认识的结构"凑出来的边。**分配不在录制里**：结构对象必须在本帧 descriptor 写入之前存在，所以 `reserveTlas` 在图装配阶段决定并分配，`recordTlas` 只发命令。
 - **UI**：`UiRenderer::draw` 只画，attachment、layout 和 `vkCmdBeginRendering` 由声明了 `color(hud, black())` 的 pass 提供。
-- **回读**：`TransferRead` 源图 + `TransferWrite` 目标 buffer，加 `sideEffect()`（它的产物在 fence 之后才被 CPU 读，图看不见消费者）。audit 信号按**名字**解析成资源，`RenderAudit` 不再持有 binding 表。
-- **呈现**：swapchain 是 `Imported`，最后一个 pass 声明 `Access::Present`。
+- **回读**：`Access::Transfer` 的 read 源图 + overwrite 目标 buffer。buffer 声明了 `Access::Host` 交接，于是 CPU 是图看得见的消费者：它让这些 pass 免于被裁，并在帧末发出让拷贝对 host 可见的 barrier——**只等 fence 是不够的，fence 只给执行依赖不给内存依赖**。同一句声明也决定了它分配在 readback 显存里。audit 信号按**名字**解析成资源，`RenderAudit` 不再持有 binding 表。
+- **呈现**：swapchain 是 `Imported`，声明 `Access::Present` 交接，帧末由图转换。
 
 ### shader binding
 

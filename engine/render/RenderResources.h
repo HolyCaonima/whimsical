@@ -23,13 +23,16 @@ struct alignas(16) GpuGlobals {
 
 // Scene inputs. The scene owns these allocations because they grow with the content rather
 // than with the screen, so they are External: the graph binds them and never allocates or
-// synchronises them. The acceleration structure is Imported instead — the scene allocates
-// it, the graph orders the build against the ray queries that read it.
+// synchronises them. Both levels of the acceleration structure are Imported instead — the
+// scene allocates them, the graph orders the refits, the top-level build and the ray
+// queries against each other. The bottom level has no descriptor of its own; a ray query
+// reaches it through the top level, which is exactly why it has to be named to be ordered.
 struct SceneResources {
-    rg::ResourceId globals, instances, materials, lights, vertices, indices, textures, tlas;
+    rg::ResourceId globals, instances, materials, lights, vertices, indices, textures, blas, tlas;
     explicit SceneResources(rg::Registry&);
     rg::ResourceList shared() const;   // visible to raster and compute
-    rg::ResourceList geometry() const; // vertex/index/acceleration structure, compute only
+    rg::ResourceList geometry() const;   // vertex/index buffers, compute only
+    rg::ResourceList structures() const; // both levels, as a ray query walks them
 };
 
 // The four halves that the next frame reads back are History; the graph gives each of them

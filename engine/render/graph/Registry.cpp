@@ -53,8 +53,8 @@ ResourceList Registry::resettable() const {
     ResourceList list;
     for (uint16_t i = 0; i < declarations_.size(); ++i) {
         const auto& declaration = declarations_[i];
-        if (!graphOwned(declaration.lifetime) || declaration.readback ||
-            declaration.format == Format::D32)
+        if (!graphOwned(declaration.lifetime) || !crossesFrames(declaration.lifetime) ||
+            hostRead(declaration))
             continue;
         list.push_back(ResourceId{i});
         if (declaration.lifetime == Lifetime::History)

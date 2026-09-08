@@ -7,6 +7,15 @@ namespace afterlight::rg {
 // and equally the test for whether an existing allocation still fits its declaration.
 uint64_t storageSignature(const Declaration&, uint32_t width, uint32_t height);
 
+// What compiling the frame decided about one logical resource: whether its contents are
+// needed at all, and whose storage it borrows when they are. A transient no live pass
+// touches is not needed, so the pool holds nothing for it — allocation is a consequence of
+// the same liveness that drove culling rather than a separate opinion about the frame.
+struct Residency {
+    ResourceId root;     // itself when the resource owns its storage
+    bool needed = false; // graph-owned resources only; the rest are the owner's business
+};
+
 // Physical side of the registry: one Vulkan object per live slot, the descriptor set the
 // whole pipeline binds, and the access state the compiler synchronises against. Logical
 // resources reach their memory only through here, so a history pair can swap halves and a
@@ -23,12 +32,12 @@ class ResourcePool {
     void importTlas(ResourceId, VkAccelerationStructureKHR);
     void importSamplers(ResourceId, std::vector<VkDescriptorImageInfo>);
 
-    // aliasRoot maps each logical resource to the resource whose storage it shares; a
-    // resource that owns its own storage maps to itself. The compiler produces it from
-    // transient lifetimes, so reuse is a consequence of the graph rather than a decision.
-    // Only slots whose storage actually changed are reallocated, so a frame that grows a
-    // pass keeps every history and persistent resource it had.
-    void realize(uint32_t width, uint32_t height, const std::vector<ResourceId>& aliasRoot);
+    // Makes the pool match what compiling the frame decided: resources the frame does not
+    // need hold no memory, the rest either own their storage or borrow the storage of the
+    // resource named as their root. Only slots whose storage actually changed are
+    // reallocated, so a frame that grows a pass keeps every history and persistent
+    // resource it had.
+    void realize(uint32_t width, uint32_t height, const std::vector<Residency>&);
     void flip() {
         parity_ ^= 1;
     }
@@ -94,7 +103,6 @@ class ResourcePool {
     std::vector<Physical> slots_;
     std::vector<uint16_t> root_; // physical slot -> slot that owns the storage
     std::vector<uint32_t> bases_;
-    std::vector<ResourceId> aliasRoot_;
     uint32_t parity_ = 0, width_ = 0, height_ = 0;
     uint64_t declaredBytes_ = 0;
     bool descriptorsDirty_ = true;

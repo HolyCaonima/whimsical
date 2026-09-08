@@ -3,83 +3,86 @@
 #include <algorithm>
 
 namespace afterlight::rg {
-AccessInfo accessInfo(Access access) {
+AccessInfo accessInfo(Access access, Usage usage) {
     AccessInfo info;
-    auto layout = [&](VkImageLayout wanted) {
-        if (info.layout != VK_IMAGE_LAYOUT_UNDEFINED && info.layout != wanted)
-            throw std::runtime_error("A pass asked one resource for two image layouts");
-        info.layout = wanted;
-    };
-    if (has(access, Access::ComputeRead)) {
-        info.stage |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        info.access |= VK_ACCESS_2_SHADER_READ_BIT;
-        layout(VK_IMAGE_LAYOUT_GENERAL);
-    }
-    if (has(access, Access::ComputeWrite)) {
-        info.stage |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        info.access |= VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-        layout(VK_IMAGE_LAYOUT_GENERAL);
-    }
-    if (has(access, Access::GraphicsRead)) {
-        info.stage |= VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-        info.access |= VK_ACCESS_2_SHADER_READ_BIT;
-        layout(VK_IMAGE_LAYOUT_GENERAL);
-    }
-    if (has(access, Access::ColorWrite)) {
-        info.stage |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-        info.access |= VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
-        layout(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-    }
-    if (has(access, Access::DepthWrite)) {
-        info.stage |= VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-        info.access |=
+    const bool reads = consumes(usage), writes = produces(usage);
+    switch (access) {
+    case Access::Compute:
+    case Access::Graphics:
+        info.stage = access == Access::Compute
+                         ? VkPipelineStageFlags2(VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT)
+                         : VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        info.layout = VK_IMAGE_LAYOUT_GENERAL;
+        if (reads)
+            info.access |= VK_ACCESS_2_SHADER_READ_BIT;
+        if (writes)
+            info.access |= VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+        return info;
+    case Access::Color:
+        info.stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        info.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        info.access = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+        if (reads)
+            info.access |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
+        return info;
+    case Access::Depth:
+        // The depth test reads what the load op put there, so both bits belong to a
+        // depth attachment however the contents got their value.
+        info.stage =
+            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+        info.layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        info.access =
             VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-        layout(VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+        return info;
+    case Access::Transfer:
+        info.stage = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
+        info.layout = writes ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        if (reads)
+            info.access |= VK_ACCESS_2_TRANSFER_READ_BIT;
+        if (writes)
+            info.access |= VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        return info;
+    case Access::Vertex:
+        info.stage = VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT;
+        info.access = VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
+        return info;
+    case Access::Index:
+        info.stage = VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT;
+        info.access = VK_ACCESS_2_INDEX_READ_BIT;
+        return info;
+    case Access::Build:
+        info.stage = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+        // Build inputs are read as buffers, a refit also reads the structure it updates.
+        if (reads)
+            info.access |= VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_2_SHADER_READ_BIT;
+        if (writes)
+            info.access |= VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+        return info;
+    case Access::Trace:
+        info.stage = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        info.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR;
+        return info;
+    case Access::Present:
+        // The presentation engine is ordered by the submit's semaphore, so the handover
+        // needs the layout and an execution dependency, nothing more.
+        info.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        return info;
+    case Access::Host:
+        info.stage = VK_PIPELINE_STAGE_2_HOST_BIT;
+        info.access = VK_ACCESS_2_HOST_READ_BIT;
+        return info;
     }
-    if (has(access, Access::TransferRead)) {
-        info.stage |= VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
-        info.access |= VK_ACCESS_2_TRANSFER_READ_BIT;
-        layout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-    }
-    if (has(access, Access::TransferWrite)) {
-        info.stage |= VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
-        info.access |= VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        layout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    }
-    if (has(access, Access::VertexBuffer)) {
-        info.stage |= VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT;
-        info.access |= VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
-    }
-    if (has(access, Access::IndexBuffer)) {
-        info.stage |= VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT;
-        info.access |= VK_ACCESS_2_INDEX_READ_BIT;
-    }
-    if (has(access, Access::BuildRead)) {
-        info.stage |= VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
-        info.access |= VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_2_SHADER_READ_BIT;
-    }
-    if (has(access, Access::BuildWrite)) {
-        info.stage |= VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
-        info.access |= VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR |
-                       VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR;
-    }
-    if (has(access, Access::TraceRead)) {
-        info.stage |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        info.access |= VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR;
-    }
-    if (has(access, Access::Present))
-        layout(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-    return info;
+    throw std::runtime_error("Unknown render graph access");
 }
 
-RenderGraph::RenderGraph(ResourcePool& pool) : pool_(pool) {
-    aliasRoot_.resize(pool_.resourceCount());
-}
+RenderGraph::RenderGraph(ResourcePool& pool) : registry_(pool.registry()), pool_(&pool) {}
+RenderGraph::RenderGraph(const Registry& registry) : registry_(registry) {}
 
 void RenderGraph::reset() {
     passes_.clear();
     uses_.clear();
     colors_.clear();
+    edges_.clear();
 }
 
 RenderGraph::Builder RenderGraph::add(const char* name) {
@@ -91,40 +94,55 @@ RenderGraph::Builder RenderGraph::add(const char* name) {
     return {this, uint32_t(passes_.size() - 1)};
 }
 
-RenderGraph::Builder& RenderGraph::Builder::read(ResourceRef ref, Access access) {
-    graph_->uses_.push_back({ref, access});
+RenderGraph::Builder& RenderGraph::Builder::use(ResourceRef ref, Access access, Usage usage) {
+    graph_->uses_.push_back({ref, access, usage});
     graph_->passes_[pass_].count++;
     return *this;
 }
+RenderGraph::Builder& RenderGraph::Builder::read(ResourceRef ref, Access access) {
+    return use(ref, access, Usage::Read);
+}
 RenderGraph::Builder& RenderGraph::Builder::read(const ResourceList& list, Access access) {
     for (auto ref : list)
-        read(ref, access);
+        use(ref, access, Usage::Read);
     return *this;
 }
-RenderGraph::Builder& RenderGraph::Builder::write(ResourceRef ref, Access access) {
-    return read(ref, access);
+RenderGraph::Builder& RenderGraph::Builder::overwrite(ResourceRef ref, Access access) {
+    return use(ref, access, Usage::Overwrite);
 }
-RenderGraph::Builder& RenderGraph::Builder::write(const ResourceList& list, Access access) {
-    return read(list, access);
+RenderGraph::Builder& RenderGraph::Builder::overwrite(const ResourceList& list, Access access) {
+    for (auto ref : list)
+        use(ref, access, Usage::Overwrite);
+    return *this;
+}
+RenderGraph::Builder& RenderGraph::Builder::modify(ResourceRef ref, Access access) {
+    return use(ref, access, Usage::Modify);
+}
+RenderGraph::Builder& RenderGraph::Builder::modify(const ResourceList& list, Access access) {
+    for (auto ref : list)
+        use(ref, access, Usage::Modify);
+    return *this;
 }
 RenderGraph::Builder& RenderGraph::Builder::color(ResourceId id) {
-    graph_->colors_.push_back({id, false, {}});
+    graph_->colors_.push_back({id, uint32_t(graph_->uses_.size()), false, {}});
     graph_->passes_[pass_].colorCount++;
-    return write(id, Access::ColorWrite);
+    return modify(id, Access::Color);
 }
 RenderGraph::Builder& RenderGraph::Builder::color(ResourceId id, VkClearColorValue clear) {
     Attachment attachment;
     attachment.id = id;
+    attachment.use = uint32_t(graph_->uses_.size());
     attachment.clear = true;
     attachment.value.color = clear;
     graph_->colors_.push_back(attachment);
     graph_->passes_[pass_].colorCount++;
-    return write(id, Access::ColorWrite);
+    return overwrite(id, Access::Color);
 }
 RenderGraph::Builder& RenderGraph::Builder::depth(ResourceId id, float clear) {
     graph_->passes_[pass_].depth = id;
     graph_->passes_[pass_].depthClear = clear;
-    return write(id, Access::DepthWrite);
+    graph_->passes_[pass_].depthUse = uint32_t(graph_->uses_.size());
+    return overwrite(id, Access::Depth);
 }
 RenderGraph::Builder& RenderGraph::Builder::dispatch(VkPipeline pipeline, uint16_t divisor) {
     graph_->passes_[pass_].pipeline = pipeline;
@@ -140,43 +158,115 @@ RenderGraph::Builder& RenderGraph::Builder::sideEffect() {
     return *this;
 }
 
-// A pass survives if it writes something that outlives the frame or that a surviving pass
-// reads. Conditional features therefore cost nothing when their consumer is absent.
-void RenderGraph::cull() {
-    needed_.assign(aliasRoot_.size() * 2, 0);
-    auto& needed = needed_;
-    live_ = 0;
-    for (auto pass = passes_.rbegin(); pass != passes_.rend(); ++pass) {
-        bool alive = pass->sideEffect;
-        for (uint32_t i = 0; i < pass->count && !alive; ++i) {
-            const auto& use = uses_[pass->first + i];
-            if (!writes(use.access))
-                continue;
-            alive = pool_.declaration(use.ref.id).lifetime != Lifetime::Transient ||
-                    needed[use.ref.id.index * 2 + (use.ref.slot == Slot::Previous)];
+// Every history half is its own content slot, so the version a pass consumes is never
+// confused with the one another pass is producing into the other half of the pair. Walking
+// the declarations forward turns each consuming use into an edge to the pass that produced
+// the version it sees; a producing use then becomes the version the rest of the frame
+// consumes. This is the whole of the dependency analysis.
+void RenderGraph::analyse() {
+    producer_.assign(registry_.size() * 2, NoPass);
+    edges_.clear();
+    for (uint32_t p = 0; p < passes_.size(); ++p) {
+        auto& pass = passes_[p];
+        pass.firstEdge = uint32_t(edges_.size());
+        for (uint32_t i = 0; i < pass.count; ++i) {
+            auto& use = uses_[pass.first + i];
+            use.source = consumes(use.usage) ? producer_[content(use.ref)] : NoPass;
+            if (use.source != NoPass &&
+                std::find(edges_.begin() + pass.firstEdge, edges_.end(), use.source) == edges_.end())
+                edges_.push_back(use.source);
         }
-        pass->alive = alive;
-        if (!alive)
+        pass.edgeCount = uint32_t(edges_.size()) - pass.firstEdge;
+        for (uint32_t i = 0; i < pass.count; ++i)
+            if (produces(uses_[pass.first + i].usage))
+                producer_[content(uses_[pass.first + i].ref)] = p;
+    }
+}
+
+// A pass survives if it produced a version something still consumes. The roots are the last
+// producer of contents that outlive the frame, plus the passes that admit to changing state
+// the graph cannot see. Edges only ever point backwards, so one reverse sweep is the whole
+// reachability. Conditional features therefore cost nothing when their consumer is absent,
+// and a version that is replaced before anyone reads it takes its producer with it.
+void RenderGraph::cull() {
+    for (auto& pass : passes_)
+        pass.alive = pass.sideEffect;
+    for (uint32_t slot = 0; slot < producer_.size(); ++slot)
+        if (producer_[slot] != NoPass && crossesFrames(registry_[ResourceId{uint16_t(slot / 2)}].lifetime))
+            passes_[producer_[slot]].alive = true;
+    live_ = 0;
+    for (uint32_t p = uint32_t(passes_.size()); p-- > 0;) {
+        if (!passes_[p].alive)
             continue;
         ++live_;
-        for (uint32_t i = 0; i < pass->count; ++i) {
-            const auto& use = uses_[pass->first + i];
-            if (!writes(use.access) || has(use.access, Access::ComputeRead))
-                needed[use.ref.id.index * 2 + (use.ref.slot == Slot::Previous)] = 1;
+        for (uint32_t e = 0; e < passes_[p].edgeCount; ++e)
+            passes_[edges_[passes_[p].firstEdge + e]].alive = true;
+    }
+}
+
+// The one thing the declarations can be wrong about that nothing downstream would notice:
+// consuming contents that do not exist. A transient starts every frame undefined, so a read
+// or a loaded attachment with no producer would be reading whatever the storage it now
+// shares was last used for.
+void RenderGraph::validate() const {
+    for (const auto& pass : passes_) {
+        if (!pass.alive)
+            continue;
+        for (uint32_t i = 0; i < pass.count; ++i) {
+            const auto& use = uses_[pass.first + i];
+            const auto& declaration = registry_[use.ref.id];
+            if (consumes(use.usage) && use.source == NoPass && !crossesFrames(declaration.lifetime))
+                throw std::runtime_error(std::string(pass.name) + " consumes '" + declaration.name +
+                                         "', which nothing in this frame produced");
         }
     }
 }
 
-// Transients whose live ranges do not overlap can share one allocation. The ranges come
-// from the surviving passes, so this is a property of the frame rather than a hand table.
-void RenderGraph::alias(uint32_t width, uint32_t height) {
+// Walking the live passes backwards says, for every version produced, whether anything
+// consumes it before it is replaced. Contents that cross the frame boundary start out
+// consumed because the next frame is the reader. Attachment store ops come straight from
+// this, so "nobody reads it" is stated once instead of hand-written per pass.
+void RenderGraph::liveness() {
+    std::vector<uint8_t> consumed(registry_.size() * 2, 0);
+    for (uint16_t i = 0; i < registry_.size(); ++i)
+        if (crossesFrames(registry_[{i}].lifetime))
+            consumed[i * 2] = consumed[i * 2 + 1] = 1;
+    for (uint32_t p = uint32_t(passes_.size()); p-- > 0;) {
+        const auto& pass = passes_[p];
+        if (!pass.alive)
+            continue;
+        for (uint32_t i = 0; i < pass.count; ++i) {
+            auto& use = uses_[pass.first + i];
+            if (produces(use.usage))
+                use.consumedLater = consumed[content(use.ref)] != 0;
+        }
+        for (uint32_t i = 0; i < pass.count; ++i) {
+            const auto& use = uses_[pass.first + i];
+            if (produces(use.usage) && !consumes(use.usage))
+                consumed[content(use.ref)] = 0;
+        }
+        for (uint32_t i = 0; i < pass.count; ++i) {
+            const auto& use = uses_[pass.first + i];
+            if (consumes(use.usage))
+                consumed[content(use.ref)] = 1;
+        }
+    }
+}
+
+// Storage follows liveness. A graph-owned resource needs memory when its contents cross the
+// frame boundary, when a live pass names it, or when a shader could reach it: the pipeline
+// binds one descriptor set, so any resource with a view is reachable from any dispatch and
+// that is a real consumer the graph cannot see the far end of. Everything else holds
+// nothing this frame. Transients whose live ranges do not overlap then share one
+// allocation, which is a property of the frame rather than a hand-written table.
+void RenderGraph::plan(uint32_t width, uint32_t height) {
     struct Range {
         ResourceId id;
-        uint32_t first = UINT32_MAX, last = 0;
+        uint32_t first = NoPass, last = 0;
     };
-    std::vector<Range> ranges(aliasRoot_.size());
-    for (size_t i = 0; i < ranges.size(); ++i)
-        ranges[i].id = ResourceId{uint16_t(i)};
+    std::vector<Range> ranges(registry_.size());
+    for (uint16_t i = 0; i < registry_.size(); ++i)
+        ranges[i].id = ResourceId{i};
     for (uint32_t p = 0; p < passes_.size(); ++p) {
         if (!passes_[p].alive)
             continue;
@@ -186,8 +276,15 @@ void RenderGraph::alias(uint32_t width, uint32_t height) {
             range.last = std::max(range.last, p);
         }
     }
-    for (size_t i = 0; i < aliasRoot_.size(); ++i)
-        aliasRoot_[i] = ResourceId{uint16_t(i)};
+    touched_.assign(registry_.size(), 0);
+    residency_.assign(registry_.size(), {});
+    for (uint16_t i = 0; i < registry_.size(); ++i) {
+        const auto& declaration = registry_[{i}];
+        touched_[i] = ranges[i].first != NoPass;
+        residency_[i].root = ResourceId{i};
+        residency_[i].needed = graphOwned(declaration.lifetime) &&
+                               (crossesFrames(declaration.lifetime) || touched_[i] || declaration.view);
+    }
     aliased_ = 0;
     // One tenant list per storage signature; a transient joins the first tenant that is
     // already dead when it is first written.
@@ -199,19 +296,19 @@ void RenderGraph::alias(uint32_t width, uint32_t height) {
     std::vector<Tenant> tenants;
     std::vector<Range> ordered;
     for (const auto& range : ranges)
-        if (range.first != UINT32_MAX && pool_.declaration(range.id).lifetime == Lifetime::Transient)
+        if (range.first != NoPass && registry_[range.id].lifetime == Lifetime::Transient)
             ordered.push_back(range);
     std::sort(ordered.begin(), ordered.end(),
               [](const Range& a, const Range& b) { return a.first < b.first; });
     for (const auto& range : ordered) {
-        const uint64_t signature = storageSignature(pool_.declaration(range.id), width, height);
+        const uint64_t signature = storageSignature(registry_[range.id], width, height);
         auto tenant = std::find_if(tenants.begin(), tenants.end(), [&](const Tenant& t) {
             return t.signature == signature && t.last < range.first;
         });
         if (tenant == tenants.end())
             tenants.push_back({signature, range.last, range.id});
         else {
-            aliasRoot_[range.id.index] = tenant->root;
+            residency_[range.id.index].root = tenant->root;
             tenant->last = range.last;
             ++aliased_;
         }
@@ -220,40 +317,71 @@ void RenderGraph::alias(uint32_t width, uint32_t height) {
 
 void RenderGraph::compile(uint32_t width, uint32_t height) {
     CpuScope scope("Graph / Compile");
+    analyse();
     cull();
-    alias(width, height);
-    pool_.realize(width, height, aliasRoot_);
+    validate();
+    liveness();
+    plan(width, height);
+    if (pool_)
+        pool_->realize(width, height, residency_);
 }
 
-// One barrier batch per pass, derived from what every physical slot was last used for.
-// The state lives in the pool and survives the frame boundary, so the first access of a
-// ping-ponged history half is ordered against last frame's reads without any extra rule.
-void RenderGraph::synchronise(VkCommandBuffer command, const Pass& pass) {
+void RenderGraph::checkDeclared(uint32_t pass, ResourceRef ref) const {
+    const auto& declaring = passes_[pass];
+    for (uint32_t i = 0; i < declaring.count; ++i)
+        if (uses_[declaring.first + i].ref == ref)
+            return;
+    throw std::runtime_error(std::string(declaring.name) + " touched '" + registry_[ref.id].name +
+                             "' without declaring it");
+}
+
+Image& PassContext::image(ResourceRef ref) const {
+    graph->checkDeclared(pass, ref);
+    return pool->image(ref);
+}
+Buffer& PassContext::buffer(ResourceRef ref) const {
+    graph->checkDeclared(pass, ref);
+    return pool->buffer(ref);
+}
+
+// One barrier batch, derived from what every physical slot was last used for. The state
+// lives in the pool and survives the frame boundary, so the first access of a ping-ponged
+// history half is ordered against last frame's reads without any extra rule.
+void RenderGraph::synchronise(VkCommandBuffer command, const Use* uses, uint32_t count) {
     merged_.clear();
-    for (uint32_t i = 0; i < pass.count; ++i) {
-        const auto& use = uses_[pass.first + i];
-        if (pool_.declaration(use.ref.id).lifetime == Lifetime::External)
+    for (uint32_t i = 0; i < count; ++i) {
+        const auto& use = uses[i];
+        if (registry_[use.ref.id].lifetime == Lifetime::External)
             continue;
-        const uint32_t slot = pool_.physical(use.ref);
-        auto found = std::find_if(merged_.begin(), merged_.end(), [&](const Use& other) {
-            return pool_.physical(other.ref) == slot;
-        });
-        if (found == merged_.end())
-            merged_.push_back(use);
-        else
-            found->access |= use.access;
+        const uint32_t slot = pool_->physical(use.ref);
+        const auto info = accessInfo(use.access, use.usage);
+        auto found = std::find_if(merged_.begin(), merged_.end(),
+                                  [&](const Merged& other) { return other.slot == slot; });
+        if (found == merged_.end()) {
+            merged_.push_back({use.ref, slot, info, produces(use.usage)});
+            continue;
+        }
+        if (info.layout != VK_IMAGE_LAYOUT_UNDEFINED) {
+            if (found->info.layout != VK_IMAGE_LAYOUT_UNDEFINED && found->info.layout != info.layout)
+                throw std::runtime_error("A pass asked one resource for two image layouts: " +
+                                         registry_[use.ref.id].name);
+            found->info.layout = info.layout;
+        }
+        found->info.stage |= info.stage;
+        found->info.access |= info.access;
+        found->produces = found->produces || produces(use.usage);
     }
     imageBarriers_.clear();
     bufferBarriers_.clear();
     memoryBarriers_.clear();
     for (const auto& use : merged_) {
-        const auto& declaration = pool_.declaration(use.ref.id);
-        const auto info = accessInfo(use.access);
-        auto& state = pool_.state(pool_.physical(use.ref));
+        const auto& declaration = registry_[use.ref.id];
+        const auto& info = use.info;
+        auto& state = pool_->state(use.slot);
         const bool isImage = declaration.kind == Kind::Image;
-        Image* image = isImage ? &pool_.image(use.ref) : nullptr;
+        Image* image = isImage ? &pool_->image(use.ref) : nullptr;
         const bool transition = isImage && image->layout != info.layout;
-        const bool write = writes(use.access) || transition;
+        const bool write = use.produces || transition;
         VkPipelineStageFlags2 sourceStage = 0;
         VkAccessFlags2 sourceAccess = 0;
         if (write) {
@@ -285,7 +413,7 @@ void RenderGraph::synchronise(VkCommandBuffer command, const Pass& pass) {
             imageBarriers_.push_back(barrier);
             image->layout = info.layout;
         } else if (declaration.kind == Kind::Buffer) {
-            const auto& buffer = pool_.buffer(use.ref);
+            const auto& buffer = pool_->buffer(use.ref);
             VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
             barrier.srcStageMask = sourceStage ? sourceStage : VK_PIPELINE_STAGE_2_NONE;
             barrier.srcAccessMask = sourceAccess;
@@ -297,17 +425,21 @@ void RenderGraph::synchronise(VkCommandBuffer command, const Pass& pass) {
             barrier.size = VK_WHOLE_SIZE;
             bufferBarriers_.push_back(barrier);
         } else {
-            VkMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
-            barrier.srcStageMask = sourceStage ? sourceStage : VK_PIPELINE_STAGE_2_NONE;
-            barrier.srcAccessMask = sourceAccess;
-            barrier.dstStageMask = info.stage;
-            barrier.dstAccessMask = info.access;
-            memoryBarriers_.push_back(barrier);
+            // Acceleration structures are reached through device addresses rather than one
+            // handle a barrier could name, so their dependency is a memory one. A memory
+            // barrier has no subject, so a batch never needs more than the union of them.
+            if (memoryBarriers_.empty())
+                memoryBarriers_.push_back({VK_STRUCTURE_TYPE_MEMORY_BARRIER_2});
+            auto& barrier = memoryBarriers_.front();
+            barrier.srcStageMask |= sourceStage;
+            barrier.srcAccessMask |= sourceAccess;
+            barrier.dstStageMask |= info.stage;
+            barrier.dstAccessMask |= info.access;
         }
         if (write) {
             state.writeStage = info.stage;
             state.writeAccess = info.access;
-            state.readStages = writes(use.access) ? 0 : info.stage;
+            state.readStages = use.produces ? 0 : info.stage;
             state.flushedStages = 0;
             state.flushedAccess = 0;
         } else {
@@ -329,27 +461,45 @@ void RenderGraph::synchronise(VkCommandBuffer command, const Pass& pass) {
     barriers_ += uint32_t(imageBarriers_.size() + bufferBarriers_.size() + memoryBarriers_.size());
 }
 
+// A resource leaves the graph in the state its consumer needs: the swapchain in PRESENT_SRC
+// for the presentation engine, a readback buffer made visible to the host, whose fence wait
+// is an execution dependency and not a memory one. Deriving that from the declaration is
+// what removes the pass that used to exist only to make the transition.
+void RenderGraph::handover(VkCommandBuffer command) {
+    handover_.clear();
+    for (uint16_t i = 0; i < registry_.size(); ++i) {
+        const auto& declaration = registry_[{i}];
+        if (declaration.handover && touched_[i])
+            handover_.push_back({ResourceId{i}, *declaration.handover, Usage::Read});
+    }
+    if (!handover_.empty())
+        synchronise(command, handover_.data(), uint32_t(handover_.size()));
+}
+
 void RenderGraph::execute(VkCommandBuffer command, GpuProfiler& profiler) {
     PassContext context;
     context.command = command;
-    context.descriptors = pool_.descriptors();
-    context.layout = pool_.pipelineLayout();
-    context.pool = &pool_;
+    context.descriptors = pool_->descriptors();
+    context.layout = pool_->pipelineLayout();
+    context.pool = pool_;
+    context.graph = this;
     barriers_ = 0;
-    for (const auto& pass : passes_) {
+    for (uint32_t p = 0; p < passes_.size(); ++p) {
+        const auto& pass = passes_[p];
         if (!pass.alive)
             continue;
         CpuScope cpuScope(pass.name);
         GpuScope gpuScope(profiler, command, pass.name);
-        synchronise(command, pass);
-        uint32_t width = pool_.width(), height = pool_.height();
+        synchronise(command, uses_.data() + pass.first, pass.count);
+        uint32_t width = pool_->width(), height = pool_->height();
         if (pass.colorCount || pass.depth.valid()) {
             const auto& reference = pass.colorCount ? colors_[pass.firstColor].id : pass.depth;
-            width = pool_.extentWidth(reference);
-            height = pool_.extentHeight(reference);
+            width = pool_->extentWidth(reference);
+            height = pool_->extentHeight(reference);
         }
         context.width = width;
         context.height = height;
+        context.pass = p;
         auto& attachments = attachments_;
         VkRenderingAttachmentInfo depthAttachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
         if (pass.colorCount || pass.depth.valid()) {
@@ -357,10 +507,11 @@ void RenderGraph::execute(VkCommandBuffer command, GpuProfiler& profiler) {
             for (uint32_t i = 0; i < pass.colorCount; ++i) {
                 const auto& attachment = colors_[pass.firstColor + i];
                 VkRenderingAttachmentInfo info{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-                info.imageView = pool_.image(attachment.id).view;
+                info.imageView = pool_->image(attachment.id).view;
                 info.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
                 info.loadOp = attachment.clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
-                info.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+                info.storeOp = uses_[attachment.use].consumedLater ? VK_ATTACHMENT_STORE_OP_STORE
+                                                                   : VK_ATTACHMENT_STORE_OP_DONT_CARE;
                 info.clearValue = attachment.value;
                 attachments.push_back(info);
             }
@@ -370,10 +521,12 @@ void RenderGraph::execute(VkCommandBuffer command, GpuProfiler& profiler) {
             rendering.colorAttachmentCount = uint32_t(attachments.size());
             rendering.pColorAttachments = attachments.data();
             if (pass.depth.valid()) {
-                depthAttachment.imageView = pool_.image(pass.depth).view;
+                depthAttachment.imageView = pool_->image(pass.depth).view;
                 depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
                 depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-                depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+                depthAttachment.storeOp = uses_[pass.depthUse].consumedLater
+                                              ? VK_ATTACHMENT_STORE_OP_STORE
+                                              : VK_ATTACHMENT_STORE_OP_DONT_CARE;
                 depthAttachment.clearValue.depthStencil = {pass.depthClear, 0};
                 rendering.pDepthAttachment = &depthAttachment;
             }
@@ -387,8 +540,8 @@ void RenderGraph::execute(VkCommandBuffer command, GpuProfiler& profiler) {
             vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipeline);
             vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, context.layout, 0, 1,
                                     &context.descriptors, 0, nullptr);
-            const uint32_t w = (pool_.width() + pass.divisor - 1) / pass.divisor;
-            const uint32_t h = (pool_.height() + pass.divisor - 1) / pass.divisor;
+            const uint32_t w = (pool_->width() + pass.divisor - 1) / pass.divisor;
+            const uint32_t h = (pool_->height() + pass.divisor - 1) / pass.divisor;
             vkCmdDispatch(command, (w + 7) / 8, (h + 7) / 8, 1);
         }
         if (pass.record)
@@ -396,5 +549,6 @@ void RenderGraph::execute(VkCommandBuffer command, GpuProfiler& profiler) {
         if (pass.colorCount || pass.depth.valid())
             vkCmdEndRendering(command);
     }
+    handover(command);
 }
 } // namespace afterlight::rg

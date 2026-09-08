@@ -39,6 +39,11 @@ class GpuScene {
     bool skinsDirty() const {
         return !dirtySkinMeshes.empty();
     }
+    // Whether this frame's top-level build keeps the structure it targets or replaces it,
+    // decided by reserveTlas before the frame is declared.
+    bool tlasRefits() const {
+        return tlasUpdate;
+    }
     void recordSkinnedBlas(VkCommandBuffer);
     void recordTlas(VkCommandBuffer, GpuProfiler&);
     void recordDraws(VkCommandBuffer, const Frame&, const std::map<std::shared_ptr<const ShaderAsset>, VkPipeline>&);

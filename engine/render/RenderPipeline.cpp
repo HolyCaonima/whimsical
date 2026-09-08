@@ -164,10 +164,12 @@ void RenderPipeline::ensurePrograms(const MaterialBindings& bindings) {
 }
 
 void RenderPipeline::traceInputs(RenderGraph::Builder& pass) const {
-    pass.read(r_.scene.shared(), Access::ComputeRead)
-        .read(r_.scene.geometry(), Access::ComputeRead)
-        .read(r_.scene.tlas, Access::TraceRead)
-        .read(r_.gbuffer.surface(), Access::ComputeRead);
+    pass.read(r_.scene.shared(), Access::Compute)
+        .read(r_.scene.geometry(), Access::Compute)
+        // Traversal walks both levels. Naming only the top one would leave a ray query
+        // ordered against the top-level build but not against the refit that fed it.
+        .read(r_.scene.structures(), Access::Trace)
+        .read(r_.gbuffer.surface(), Access::Compute);
 }
 
 void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
@@ -182,7 +184,7 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
     if (setup.clearHistory) {
         auto resettable = pool_.registry().resettable();
         graph.add("Initialize History / Reservoirs")
-            .write(resettable, Access::TransferWrite)
+            .overwrite(resettable, Access::Transfer)
             .record([resettable](const PassContext& c) {
                 VkClearColorValue clear{};
                 VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
@@ -203,17 +205,21 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
 
     auto* gpuScene = setup.scene;
     if (gpuScene->skinsDirty())
-        // The refit writes bottom-level structures the top-level build then consumes;
-        // naming the structure the graph does know about produces exactly that edge.
+        // A refit rewrites the bottom-level structures of the meshes that moved and leaves
+        // the rest standing, which is what Modify says and why the top-level build below
+        // depends on it without either pass naming the other.
         graph.add("Skinned BLAS Refit")
-            .read(scene.geometry(), Access::BuildRead)
-            .write(scene.tlas, Access::BuildWrite)
+            .read(scene.geometry(), Access::Build)
+            .modify(scene.blas, Access::Build)
             .record([gpuScene](const PassContext& c) { gpuScene->recordSkinnedBlas(c.command); });
 
     auto* profiler = setup.profiler;
+    // A refit keeps the structure it updates; a rebuild replaces it. The scene has already
+    // decided which, so the graph is told rather than assuming the conservative one.
     graph.add("Acceleration Structures")
-        .read(scene.instances, Access::BuildRead)
-        .write(scene.tlas, Access::BuildWrite)
+        .read(scene.instances, Access::Build)
+        .read(scene.blas, Access::Build)
+        .use(scene.tlas, Access::Build, gpuScene->tlasRefits() ? Usage::Modify : Usage::Overwrite)
         .record([gpuScene, profiler](const PassContext& c) { gpuScene->recordTlas(c.command, *profiler); });
 
     VkClearColorValue farViewZ{};
@@ -227,9 +233,9 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
         .color(g.viewZ, farViewZ)
         .color(g.emission, black())
         .depth(g.depth)
-        .read(scene.shared(), Access::GraphicsRead)
-        .read(scene.vertices, Access::VertexBuffer)
-        .read(scene.indices, Access::IndexBuffer)
+        .read(scene.shared(), Access::Graphics)
+        .read(scene.vertices, Access::Vertex)
+        .read(scene.indices, Access::Index)
         .record([gpuScene, &frame, &programs](const PassContext& c) {
             vkCmdBindDescriptorSets(c.command, VK_PIPELINE_BIND_POINT_GRAPHICS, c.layout, 0, 1,
                                     &c.descriptors, 0, nullptr);
@@ -237,94 +243,103 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
         });
 
     // The gradient replays last frame's selected sample against the current scene, so it
-    // reads the previous G-buffer and the reservoirs before this frame overwrites them.
+    // reads the previous G-buffer and the reservoirs while they still hold last frame's
+    // contents, which is why it is declared ahead of everything that rewrites them.
     auto gradient = graph.add("RTXDI Same Sample Gradient");
     traceInputs(gradient);
-    gradient.read(g.previousSurface(), Access::ComputeRead)
-        .read(previous(di.luminance), Access::ComputeRead)
-        .read(di.reservoirs, Access::ComputeRead)
-        .read(di.lightSamples, Access::ComputeRead)
-        .write(di.gradient, Access::ComputeWrite)
+    gradient.read(g.previousSurface(), Access::Compute)
+        .read(previous(di.luminance), Access::Compute)
+        .read(di.reservoirs, Access::Compute)
+        .read(di.lightSamples, Access::Compute)
+        .overwrite(di.gradient, Access::Compute)
         .dispatch(compute_[DiGradient], GradientDivisor);
 
     graph.add("RTXDI Gradient Filter")
-        .read(previous(g.normal), Access::ComputeRead)
-        .read(previous(g.viewZ), Access::ComputeRead)
-        .read(di.gradient, Access::ComputeRead)
-        .write(di.filteredGradient, Access::ComputeWrite)
+        .read(previous(g.normal), Access::Compute)
+        .read(previous(g.viewZ), Access::Compute)
+        .read(di.gradient, Access::Compute)
+        .overwrite(di.filteredGradient, Access::Compute)
         .dispatch(compute_[DiGradientFilter], GradientDivisor);
 
     graph.add("RTXDI History Confidence")
-        .read(di.filteredGradient, Access::ComputeRead)
-        .read(di.confidenceHistory, Access::ComputeRead)
-        .write(di.diffuseConfidence, Access::ComputeWrite)
-        .write(di.specularConfidence, Access::ComputeWrite)
+        .read(di.filteredGradient, Access::Compute)
+        .read(di.confidenceHistory, Access::Compute)
+        .overwrite(di.diffuseConfidence, Access::Compute)
+        .overwrite(di.specularConfidence, Access::Compute)
         .dispatch(compute_[DiConfidence]);
 
+    // The reservoir arrays rotate roles inside one allocation instead of being copied, so
+    // every DI pass leaves most of the buffer standing: they modify it, and the chain from
+    // the initial samples through to the resolve is a chain of real versions.
     auto lighting = graph.add("RTXDI Initial + Secondary GI + Specular");
     traceInputs(lighting);
-    lighting.read(di.lightSamples, Access::ComputeRead)
-        .write(di.reservoirs, Access::ComputeWrite)
-        .write(gi.candidate, Access::ComputeWrite)
-        .write(shade.rawDiffuse, Access::ComputeWrite)
-        .write(shade.rawSpecular, Access::ComputeWrite)
+    lighting.read(di.lightSamples, Access::Compute)
+        .modify(di.reservoirs, Access::Compute)
+        .overwrite(gi.candidate, Access::Compute)
+        .overwrite(shade.rawDiffuse, Access::Compute)
+        .overwrite(shade.rawSpecular, Access::Compute)
         .dispatch(compute_[Lighting]);
 
     auto temporal = graph.add("RTXDI Temporal Resampling");
     traceInputs(temporal);
-    temporal.read(g.previousSurface(), Access::ComputeRead)
-        .read(g.motion, Access::ComputeRead)
-        .read(di.diffuseConfidence, Access::ComputeRead)
-        .read(di.specularConfidence, Access::ComputeRead)
-        .read(di.lightSamples, Access::ComputeRead)
-        .write(di.reservoirs, Access::ComputeReadWrite)
+    temporal.read(g.previousSurface(), Access::Compute)
+        .read(g.motion, Access::Compute)
+        .read(di.diffuseConfidence, Access::Compute)
+        .read(di.specularConfidence, Access::Compute)
+        .read(di.lightSamples, Access::Compute)
+        .modify(di.reservoirs, Access::Compute)
         .dispatch(compute_[DiTemporal]);
 
     auto spatial = graph.add("RTXDI Spatial Resampling");
     traceInputs(spatial);
-    spatial.read(di.neighbours, Access::ComputeRead)
-        .read(di.lightSamples, Access::ComputeRead)
-        .write(di.reservoirs, Access::ComputeReadWrite)
+    spatial.read(di.neighbours, Access::Compute)
+        .read(di.lightSamples, Access::Compute)
+        .modify(di.reservoirs, Access::Compute)
         .dispatch(compute_[DiSpatial]);
 
     auto reuse = graph.add("ReSTIR GI Reconnection");
     traceInputs(reuse);
-    reuse.read(g.motion, Access::ComputeRead)
-        .read(previous(g.position), Access::ComputeRead)
-        .read(previous(g.normal), Access::ComputeRead)
-        .read(gi.candidate, Access::ComputeRead)
-        .read(previous(gi.reservoirs), Access::ComputeRead)
-        .write(gi.reservoirs, Access::ComputeWrite)
+    reuse.read(g.motion, Access::Compute)
+        .read(previous(g.position), Access::Compute)
+        .read(previous(g.normal), Access::Compute)
+        .read(gi.candidate, Access::Compute)
+        .read(previous(gi.reservoirs), Access::Compute)
+        .overwrite(gi.reservoirs, Access::Compute)
         .dispatch(compute_[GiReuse]);
 
     auto resolve = graph.add("Visibility + Radiance Resolve");
     traceInputs(resolve);
-    resolve.read(g.motion, Access::ComputeRead)
-        .read(di.diffuseConfidence, Access::ComputeRead)
-        .read(di.specularConfidence, Access::ComputeRead)
-        .read(di.lightSamples, Access::ComputeRead)
-        .read(gi.reservoirs, Access::ComputeRead)
-        .write(di.reservoirs, Access::ComputeReadWrite)
-        .write(di.confidenceHistory, Access::ComputeWrite)
-        .write(di.luminance, Access::ComputeWrite)
-        .write(shade.rawDiffuse, Access::ComputeReadWrite)
-        .write(shade.rawSpecular, Access::ComputeReadWrite)
-        .write(shade.directDebug, Access::ComputeWrite)
-        .write(shade.indirectDebug, Access::ComputeWrite)
+    resolve.read(g.motion, Access::Compute)
+        .read(di.diffuseConfidence, Access::Compute)
+        .read(di.specularConfidence, Access::Compute)
+        .read(di.lightSamples, Access::Compute)
+        .read(gi.reservoirs, Access::Compute)
+        .modify(di.reservoirs, Access::Compute)
+        .overwrite(di.confidenceHistory, Access::Compute)
+        .overwrite(di.luminance, Access::Compute)
+        .modify(shade.rawDiffuse, Access::Compute)
+        .modify(shade.rawSpecular, Access::Compute)
+        .overwrite(shade.directDebug, Access::Compute)
+        .overwrite(shade.indirectDebug, Access::Compute)
         .dispatch(compute_[Resolve]);
 
     auto* denoiser = setup.denoiser;
     const auto& camera = frame.camera;
+    // RELAX accumulates into a texture pool of its own that the graph neither owns nor can
+    // name, and that accumulation is only valid if the denoiser runs on every frame. That
+    // is what sideEffect() is for: the pass survives on its own account, not by pretending
+    // to write something.
     graph.add("NRD RELAX Diffuse Specular")
-        .read(g.motion, Access::ComputeRead)
-        .read(g.normal, Access::ComputeRead)
-        .read(g.viewZ, Access::ComputeRead)
-        .read(di.diffuseConfidence, Access::ComputeRead)
-        .read(di.specularConfidence, Access::ComputeRead)
-        .read(shade.rawDiffuse, Access::ComputeRead)
-        .read(shade.rawSpecular, Access::ComputeRead)
-        .write(shade.denoisedDiffuse, Access::ComputeWrite)
-        .write(shade.denoisedSpecular, Access::ComputeWrite)
+        .read(g.motion, Access::Compute)
+        .read(g.normal, Access::Compute)
+        .read(g.viewZ, Access::Compute)
+        .read(di.diffuseConfidence, Access::Compute)
+        .read(di.specularConfidence, Access::Compute)
+        .read(shade.rawDiffuse, Access::Compute)
+        .read(shade.rawSpecular, Access::Compute)
+        .overwrite(shade.denoisedDiffuse, Access::Compute)
+        .overwrite(shade.denoisedSpecular, Access::Compute)
+        .sideEffect()
         .record([this, denoiser, &camera, profiler, index = uint32_t(setup.frameNumber),
                  reset = setup.reset, ms = setup.frameMs](const PassContext& c) {
             std::array<Image*, size_t(nrd::ResourceType::MAX_NUM)> resources{};
@@ -344,26 +359,28 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
         });
 
     graph.add("Composition + Tone Map + HUD")
-        .read(scene.globals, Access::ComputeRead)
-        .read(g.surface(), Access::ComputeRead)
-        .read(g.motion, Access::ComputeRead)
-        .read(shade.denoisedDiffuse, Access::ComputeRead)
-        .read(shade.denoisedSpecular, Access::ComputeRead)
-        .read(shade.rawDiffuse, Access::ComputeRead)
-        .read(shade.rawSpecular, Access::ComputeRead)
-        .read(shade.directDebug, Access::ComputeRead)
-        .read(shade.indirectDebug, Access::ComputeRead)
-        .read(shade.hud, Access::ComputeRead)
-        .write(shade.display, Access::ComputeWrite)
+        .read(scene.globals, Access::Compute)
+        .read(g.surface(), Access::Compute)
+        .read(g.motion, Access::Compute)
+        .read(shade.denoisedDiffuse, Access::Compute)
+        .read(shade.denoisedSpecular, Access::Compute)
+        .read(shade.rawDiffuse, Access::Compute)
+        .read(shade.rawSpecular, Access::Compute)
+        .read(shade.directDebug, Access::Compute)
+        .read(shade.indirectDebug, Access::Compute)
+        .read(shade.hud, Access::Compute)
+        .overwrite(shade.display, Access::Compute)
         .dispatch(compute_[Composite]);
 
+    // The readback buffers declare a Host handover, so the CPU is a consumer the graph can
+    // see: it keeps these passes alive and ends the frame with the barrier that makes the
+    // copy visible. Waiting on the fence alone would not.
     if (setup.audit) {
         auto signals = setup.auditSignals;
         auto readback = r_.output.audit;
         graph.add("Audit Readback")
-            .read(signals, Access::TransferRead)
-            .write(readback, Access::TransferWrite)
-            .sideEffect()
+            .read(signals, Access::Transfer)
+            .overwrite(readback, Access::Transfer)
             .record([signals, readback](const PassContext& c) {
                 for (uint32_t s = 0; s < signals.size(); ++s) {
                     auto& image = c.image(signals[s]);
@@ -382,9 +399,8 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
     if (setup.capture) {
         auto display = shade.display, image = r_.output.capture, buffer = r_.output.screenshot;
         graph.add("Screenshot Resolve")
-            .read(display, Access::TransferRead)
-            .write(image, Access::TransferWrite)
-            .sideEffect()
+            .read(display, Access::Transfer)
+            .overwrite(image, Access::Transfer)
             .record([display, image](const PassContext& c) {
                 VkImageBlit region{};
                 region.srcSubresource = region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
@@ -394,9 +410,8 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
                                c.image(image).handle, c.image(image).layout, 1, &region, VK_FILTER_NEAREST);
             });
         graph.add("Screenshot Readback")
-            .read(image, Access::TransferRead)
-            .write(buffer, Access::TransferWrite)
-            .sideEffect()
+            .read(image, Access::Transfer)
+            .overwrite(buffer, Access::Transfer)
             .record([image, buffer](const PassContext& c) {
                 VkBufferImageCopy copy{};
                 copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
@@ -406,11 +421,13 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
             });
     }
 
+    // The swapchain declares a Present handover, so the frame ends in PRESENT_SRC without a
+    // pass whose whole job was the transition, and this blit survives because it produced
+    // contents the presentation engine consumes.
     auto display = shade.display, swapchain = r_.output.swapchain;
     graph.add("Swapchain Blit")
-        .read(display, Access::TransferRead)
-        .write(swapchain, Access::TransferWrite)
-        .sideEffect()
+        .read(display, Access::Transfer)
+        .overwrite(swapchain, Access::Transfer)
         .record([display, swapchain](const PassContext& c) {
             auto& target = c.image(swapchain);
             VkImageBlit region{};
@@ -420,6 +437,5 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
             vkCmdBlitImage(c.command, c.image(display).handle, c.image(display).layout, target.handle,
                            target.layout, 1, &region, VK_FILTER_NEAREST);
         });
-    graph.add("Present Transition").read(swapchain, Access::Present).sideEffect();
 }
 } // namespace afterlight

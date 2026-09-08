@@ -48,7 +48,7 @@ uint32_t divide(uint32_t value, uint16_t divisor) {
 uint64_t storageSignature(const Declaration& declaration, uint32_t width, uint32_t height) {
     if (declaration.kind != Kind::Image)
         return (uint64_t(1) << 63) | (declaration.bytes(width, height) << 1) |
-               uint64_t(declaration.readback);
+               uint64_t(hostRead(declaration));
     return (uint64_t(divide(width, declaration.divisor)) << 40) |
            (uint64_t(divide(height, declaration.divisor)) << 12) |
            (uint64_t(declaration.format) << 1) | 1;
@@ -60,11 +60,8 @@ ResourcePool::ResourcePool(VulkanContext& vk, const Registry& registry) : vk_(vk
         bases_[i] = registry_.physicalBase({i});
     slots_.resize(registry_.physicalCount());
     root_.resize(slots_.size());
-    aliasRoot_.resize(registry_.size());
     for (uint16_t i = 0; i < root_.size(); ++i)
         root_[i] = i;
-    for (uint16_t i = 0; i < registry_.size(); ++i)
-        aliasRoot_[i] = ResourceId{i};
     createLayout();
 }
 
@@ -173,24 +170,30 @@ uint32_t ResourcePool::physical(ResourceRef ref) const {
     return root_[index];
 }
 
-void ResourcePool::realize(uint32_t width, uint32_t height, const std::vector<ResourceId>& aliasRoot) {
+void ResourcePool::realize(uint32_t width, uint32_t height, const std::vector<Residency>& residency) {
     width_ = width;
     height_ = height;
-    aliasRoot_ = aliasRoot;
     declaredBytes_ = 0;
     for (uint16_t i = 0; i < registry_.size(); ++i) {
         const auto& declaration = registry_[{i}];
         if (!graphOwned(declaration.lifetime))
             continue;
+        const uint32_t halves = declaration.lifetime == Lifetime::History ? 2 : 1;
+        if (!residency[i].needed) {
+            for (uint32_t half = 0; half < halves; ++half) {
+                release(slots_[bases_[i] + half]);
+                root_[bases_[i] + half] = uint16_t(bases_[i] + half);
+            }
+            continue;
+        }
         const uint32_t w = divide(width, declaration.divisor), h = divide(height, declaration.divisor);
         const uint64_t bytes = declaration.kind == Kind::Image
                                    ? uint64_t(w) * h * formatInfo(declaration.format).bytes
                                    : declaration.bytes(width, height);
-        const uint32_t halves = declaration.lifetime == Lifetime::History ? 2 : 1;
         declaredBytes_ += bytes * halves;
-        if (aliasRoot_[i].index != i) {
+        if (residency[i].root.index != i) {
             release(slots_[bases_[i]]);
-            root_[bases_[i]] = uint16_t(bases_[aliasRoot_[i].index]);
+            root_[bases_[i]] = uint16_t(bases_[residency[i].root.index]);
             continue;
         }
         const uint64_t signature = storageSignature(declaration, width, height);
@@ -212,7 +215,7 @@ void ResourcePool::realize(uint32_t width, uint32_t height, const std::vector<Re
                               VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                               VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
                 slot.image = vk_.image(w, h, vulkanFormat(declaration.format), usage);
-            } else if (declaration.readback)
+            } else if (hostRead(declaration))
                 slot.buffer = vk_.buffer(bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, BufferMemory::Readback);
             else
                 slot.buffer = vk_.buffer(bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |

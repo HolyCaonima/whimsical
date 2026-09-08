@@ -80,12 +80,18 @@ SceneResources::SceneResources(Registry& registry) {
     indices = registry.declare(
         storage("indices", Lifetime::External, "Indices", "    uint indices[];", nullptr, true));
 
-    Declaration structure;
-    structure.name = "tlas";
-    structure.kind = Kind::Tlas;
-    structure.lifetime = Lifetime::Imported;
-    structure.view = {BindingType::Tlas, true, "scene"};
-    tlas = registry.declare(std::move(structure));
+    Declaration bottom;
+    bottom.name = "blas";
+    bottom.kind = Kind::AccelerationStructure;
+    bottom.lifetime = Lifetime::Imported;
+    blas = registry.declare(std::move(bottom));
+
+    Declaration top;
+    top.name = "tlas";
+    top.kind = Kind::AccelerationStructure;
+    top.lifetime = Lifetime::Imported;
+    top.view = {BindingType::Tlas, true, "scene"};
+    tlas = registry.declare(std::move(top));
 }
 
 ResourceList SceneResources::shared() const {
@@ -93,6 +99,9 @@ ResourceList SceneResources::shared() const {
 }
 ResourceList SceneResources::geometry() const {
     return {vertices, indices};
+}
+ResourceList SceneResources::structures() const {
+    return {blas, tlas};
 }
 
 GBufferResources::GBufferResources(Registry& registry) {
@@ -194,14 +203,18 @@ OutputResources::OutputResources(Registry& registry, bool captureEnabled, uint32
     presented.name = "swapchain";
     presented.lifetime = Lifetime::Imported;
     presented.format = Format::RGBA8;
+    presented.handover = Access::Present;
     swapchain = registry.declare(std::move(presented));
 
+    // Persistent because the host reads them after the fence, which is the next frame as
+    // far as the graph is concerned. The Host handover is both what puts them in readback
+    // memory and what makes the last write visible to the CPU.
     auto readback = [&](const char* name, std::function<uint64_t(uint32_t, uint32_t)> bytes) {
         Declaration d;
         d.name = name;
         d.kind = Kind::Buffer;
         d.lifetime = Lifetime::Persistent;
-        d.readback = true;
+        d.handover = Access::Host;
         d.bytes = std::move(bytes);
         return registry.declare(std::move(d));
     };
