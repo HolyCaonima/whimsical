@@ -14,12 +14,13 @@
 
 ## 打开另一个项目
 
-1. 点击 **Open Content**。
-2. 选择 Afterlight / MapleCircuit 预设，或填写任意项目的 Content 目录。自定义目录建议使用绝对路径。
-3. 如果需要 Play，填写该项目 `.project` 的 `scripts` 数组；预设会自动填入。地图自己的脚本自动加载，无需重复填写。
-4. 点击 **Mount Content**，在 Content Browser 中选择 Maps 文件夹，双击地图卡片。
+1. 点击 **Open Project**，再点击 **Browse...**。
+2. 在系统文件选择框中选择项目根目录的 **.project** 文件。
+3. 确认项目名称和启动地图，点击 **Open Project**。
 
-每次挂载使用独立别名。编辑器自身 UI、操作历史和目标项目资产保留各自的来源身份。挂载另一个目录只是浏览内容；打开地图时才替换当前场景，并提示处理未保存的场景修改。
+Content 路径和公共脚本从项目文件读取，无需手填。启动地图只加载数据，点击 Play 才运行公共脚本和地图脚本；目标项目的 `hostScripts` 不会替换编辑器。没有启动地图时打开空场景。默认项目由 `Content/Settings.asset` 中的 `project` 字段指定。
+
+首次挂载使用独立别名，重复打开时复用已有挂载。编辑器自身 UI、操作历史和目标项目资产保留各自的来源身份。打开另一个项目前会提示处理未保存的场景修改。
 
 ## 基本操作
 
@@ -66,7 +67,7 @@
 
 Content Browser 获得焦点时，Delete / Ctrl+D 等演员快捷键不会操作场景选择。Enter 打开选中项，Backspace 返回上级，Esc 清空网格搜索和选择；文本框内保留正常输入行为。
 
-**当前 Content 接口边界：** `Engine.content.browse` 只返回资产引用，目录树由资产路径建立，因此不显示空文件夹或仅含未索引源文件的目录。完整支持空目录需要 Content 层导出按挂载来源枚举目录条目的接口；准确的资产类型筛选还需要只读资产头元数据接口，避免为了目录列表加载整个资产。两项都不是 UI Core 缺少导出。本项目没有添加虚构文件夹或修改引擎。
+**当前 Content 接口边界：** `Engine.content.browse` 只返回资产引用，目录树由资产路径建立，因此不显示空文件夹或仅含未索引源文件的目录。完整支持空目录需要 Content 层导出按挂载来源枚举目录条目的接口；准确的资产类型筛选还需要只读资产头元数据接口，避免为了目录列表加载整个资产。两项都不是 UI Core 缺少导出。目录列表仍按上述边界工作；“..”只是返回上级的导航入口。
 
 ## 拾取、历史与保存
 
@@ -90,8 +91,8 @@ Content Browser 获得焦点时，Delete / Ctrl+D 等演员快捷键不会操作
 - `Content/scripts/browser.js`：Content 目录索引、导航历史、搜索、网格 / 列表及资产打开操作。
 - `Content/scripts/main.js`：UI 绑定及宿主生命周期。
 - `Content/UI/`：项目自身的 RML / RCSS。
-- `Content/Settings.asset`：默认目标与项目预设。
-- `Content/Maps/Workbench.asset`：独立小场景；清空 Settings 的 content 字段可直接编辑它。
+- `Content/Settings.asset`：默认目标项目的 `.project` 路径。
+- `Content/Maps/Workbench.asset`：独立小场景；清空 Settings 的 project 字段可直接编辑它。
 - `tools/setup.mjs`：重新生成本项目的资产信封、设置和 Workbench。
 
 ## 验证

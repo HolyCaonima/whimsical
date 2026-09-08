@@ -8,6 +8,11 @@ RuntimeHost::RuntimeHost(World& world, AssetManager& assets, ui::UiCore* ui)
     simulation_ = realm();
 }
 RuntimeHost::~RuntimeHost() = default;
+std::optional<std::string> RuntimeHost::openFileDialog(const OpenFileDialogOptions& options) const {
+    if (!openFileDialog_)
+        throw std::runtime_error("File selection is unavailable in this host");
+    return openFileDialog_(options);
+}
 std::unique_ptr<ScriptRuntime> RuntimeHost::realm() {
     auto script = std::make_unique<ScriptRuntime>(world_, assets_, ui_, this);
     script->setLogSink(logSink_);

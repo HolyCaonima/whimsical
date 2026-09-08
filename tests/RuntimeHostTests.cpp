@@ -102,6 +102,23 @@ int main() {
         host.setLogSink([&](const std::string& error) { uiError = error; });
         host.initialize(project);
         host.processRequests();
+        // File selection is a generic host service; project inspection is independent and read-only.
+        host.setOpenFileDialog([&](const OpenFileDialogOptions& options) -> std::optional<std::string> {
+            check(options.title == "Import image" && options.initialDirectory == "C:/Assets" &&
+                      options.filters.size() == 1 && options.filters[0].pattern == "*.png;*.jpg",
+                  "File dialog options reach the host without project-specific policy");
+            return (project.root() / ".project").generic_u8string();
+        });
+        host.executeHost(R"JS(
+            var pickedFile=Engine.files.openDialog({title:'Import image',initialDirectory:'C:/Assets',filters:[{name:'Images',pattern:'*.png;*.jpg'}]});
+            var inspectedProject=Engine.project.read(pickedFile);
+            if(inspectedProject.name!=='Runtime host contract fixture'||inspectedProject.startupMap!==''||inspectedProject.hostScripts[0]!=='/Game/Host')throw Error('Project metadata');
+            if(!Engine.content.mounts().some(function(m){return m.mount==='/Game'&&m.root===inspectedProject.content;}))throw Error('Mount root metadata');
+            var invalidProject=false;try{Engine.project.read(pickedFile+'/missing');}catch(e){invalidProject=true;}
+            if(!invalidProject)throw Error('Invalid project accepted');
+        )JS");
+        host.setOpenFileDialog([](const OpenFileDialogOptions&) -> std::optional<std::string> { return {}; });
+        host.executeHost("if(Engine.files.openDialog({})!==null)throw Error('Picker cancellation');");
         auto* document = ui.context().GetDocument("host-ui");
         auto near = world.findObject("11111111111111111111111111111111");
         check(document && near && !host.running(),

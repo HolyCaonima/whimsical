@@ -15,7 +15,8 @@ project.hostScripts.push('/Game/scripts/smoke');fs.writeFileSync(path.join(host,
 fs.copyFileSync(path.join(root,'Tests','smoke.js'),path.join(host,'Content','scripts','smoke.js'));
 write(path.join(host,'Content','scripts','smoke.asset'),{id:'41111111111111111111111111111111',type:'Script',name:'Smoke',version:1,storage:'external',metadata:{},source:'smoke.js'},'');
 const settings=read(path.join(host,'Content','Settings.asset'));
-settings.payload.content=target.replace(/\\/g,'/');settings.payload.map='/Game/Maps/Workbench';settings.payload.scripts=[];settings.payload.smoke=true;
+settings.payload.project=path.join(run,'Target','.project').replace(/\\/g,'/');settings.payload.smoke=true;
+fs.writeFileSync(settings.payload.project,JSON.stringify({version:1,id:'44444444444444444444444444444444',name:'Smoke target',startupMap:'/Game/Maps/Workbench',scripts:[]}));
 write(path.join(host,'Content','Settings.asset'),settings.header,settings.payload);
 const script={id:'42222222222222222222222222222222',path:'/Game/scripts/simulation'};
 write(path.join(target,'scripts','simulation.asset'),{id:script.id,type:'Script',name:'Simulation',version:1,storage:'embedded',metadata:{}},'function initialize(){var d=Engine.sceneData();d.playStarted=true;Engine.setSceneData(d);}');

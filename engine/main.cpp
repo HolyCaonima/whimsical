@@ -210,6 +210,7 @@ int main(int argc, char** argv) {
         ui::UiCore uiCore(assets.mounts());
         ui::EngineUi engineUi(uiCore);
         RuntimeHost scripts(world, assets, &uiCore);
+        scripts.setOpenFileDialog([&](const OpenFileDialogOptions& options) { return window.openFileDialog(options); });
         scripts.setLogSink([&](const auto& text) { console.log(text); });
         scripts.initialize(project, "/Game",
                            mapPath.empty() ? std::optional<AssetPath>{} : AssetPath(mapPath));

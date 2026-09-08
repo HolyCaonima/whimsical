@@ -2,6 +2,7 @@
 #include "ScriptRuntime.h"
 #include "assets/Project.h"
 #include "scene/SceneAsset.h"
+#include "platform/FileDialog.h"
 #include <deque>
 
 namespace afterlight {
@@ -17,6 +18,7 @@ class RuntimeHost {
     bool runOnStartup_ = true, running_ = true, paused_ = false, hudEnabled_ = true;
     double simulationTime_ = 0;
     std::function<void(const std::string&)> logSink_;
+    std::function<std::optional<std::string>(const OpenFileDialogOptions&)> openFileDialog_;
     struct Checkpoint {
         SceneDocument document;
         AssetRef source;
@@ -84,6 +86,10 @@ class RuntimeHost {
     void processUiInput(Input&);
     void setHudEnabled(bool);
     void setLogSink(std::function<void(const std::string&)>);
+    void setOpenFileDialog(std::function<std::optional<std::string>(const OpenFileDialogOptions&)> picker) {
+        openFileDialog_ = std::move(picker);
+    }
+    std::optional<std::string> openFileDialog(const OpenFileDialogOptions&) const;
     void execute(const std::string&, const std::string& label = "runtime");
     void executeHost(const std::string&, const std::string& label = "host");
 };

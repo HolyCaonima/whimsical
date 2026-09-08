@@ -71,15 +71,33 @@ HE.open = function (ref) {
 };
 HE.mountContent = function (path, scripts) {
     HE.editable();
-        // A unique alias keeps history/source references valid until the old scene is replaced.
-        var alias = '/Content' + (++HE.mountSerial);
-        var mounted=Engine.content.mount(alias, path, true);
+        // Reuse the source lease when reopening a project; other sources keep their identities.
+        function key(p){return p.replace(/\\/g,'/').toLowerCase();}
+        var mounted=Engine.content.mounts().filter(function(source){return key(source.root)===key(path);})[0];
+        if(!mounted)mounted=Engine.content.mount('/Content'+(++HE.mountSerial),path,true);
+        var alias=mounted.mount;
         HE.mount = alias; HE.targetPath = path; HE.publicScripts = (scripts||[]).map(function(p){return p.replace('/Game/',alias+'/');});
         HE.programs[mounted.source]=HE.publicScripts;
         HE.assets = Engine.content.browse(alias); HE.folder = alias;
         HE.refreshAssets(); HE.log('Mounted ' + path + '. Double-click a Map to open it.');
 };
 HE.mountSerial = 0;
+HE.openProject = function (project) {
+    HE.unsaved(function () {
+        HE.mountContent(project.content, project.scripts);
+        HE.projectPath=project.path;HE.projectName=project.name;
+        if(project.startupMap){
+            HE.pending={kind:'open'};
+            Engine.scene.load(project.startupMap.replace('/Game/',HE.mount+'/'));
+        }else{
+            var snapshot=Engine.scene.capture(),document=snapshot.document;
+            snapshot.source=null;document.entities=[];document.materials=[];document.materialAssets=[];
+            document.scripts=[];document.player='';document.references={};document.data={};
+            HE.pending={kind:'new'};Engine.scene.restore(snapshot);
+        }
+        HE.refreshStatus();
+    });
+};
 HE.save = function (path) {
     HE.editable();
     var target = path || HE.source;
@@ -178,7 +196,7 @@ HE.play = function () {
     HE.playSaveTarget = HE.source;
     Engine.view.set({camera:null});
     var source=Engine.scene.info().source;
-    Engine.simulation.play({scripts:source?(HE.programs[source.source]||[]):[]}); HE.log('Play — Stop restores the authored scene');
+    Engine.simulation.play({scripts:source?(HE.programs[source.source]||[]):HE.publicScripts}); HE.log('Play — Stop restores the authored scene');
 };
 HE.stop = function () { if (Engine.simulation.state().running) Engine.simulation.stop(); };
 HE.scan = function () { Engine.content.scan(HE.mount); HE.assets = Engine.content.browse(HE.mount); HE.refreshAssets(); };

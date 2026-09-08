@@ -1,47 +1,5 @@
 ALAS1
 {"id":"a85f732b63f492c1aae773dd60d90e76","type":"Data","name":"Settings","version":1,"storage":"embedded","metadata":{}}
 {
-  "content": "Projects/Afterlight/Content",
-  "map": "/Game/Maps/RainCourt",
-  "scripts": [
-    "/Game/scripts/3c/locomotion",
-    "/Game/scripts/3c/camera",
-    "/Game/scripts/3c/controller",
-    "/Game/scripts/gameplay/interactions",
-    "/Game/scripts/gameplay/companion",
-    "/Game/scripts/ui/animation_panel",
-    "/Game/scripts/ui/minimap",
-    "/Game/scripts/gameplay/hud",
-    "/Game/scripts/bootstrap"
-  ],
-  "presets": [
-    {
-      "name": "Afterlight",
-      "content": "Projects/Afterlight/Content",
-      "scripts": [
-        "/Game/scripts/3c/locomotion",
-        "/Game/scripts/3c/camera",
-        "/Game/scripts/3c/controller",
-        "/Game/scripts/gameplay/interactions",
-        "/Game/scripts/gameplay/companion",
-        "/Game/scripts/ui/animation_panel",
-        "/Game/scripts/ui/minimap",
-        "/Game/scripts/gameplay/hud",
-        "/Game/scripts/bootstrap"
-      ],
-      "map": "/Game/Maps/RainCourt"
-    },
-    {
-      "name": "MapleCircuit",
-      "content": "Projects/MapleCircuit/Content",
-      "scripts": [
-        "/Game/scripts/track",
-        "/Game/scripts/vehicle",
-        "/Game/scripts/race",
-        "/Game/scripts/hud",
-        "/Game/scripts/main"
-      ],
-      "map": "/Game/Maps/MapleCircuit"
-    }
-  ]
+  "project": "Projects/Afterlight/.project"
 }

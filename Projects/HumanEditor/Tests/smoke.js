@@ -66,7 +66,7 @@ HE.smokeTick=function(dt,input){
     function find(name){return HE.entities().filter(function(e){return Engine.entity(e).name===name;})[0];}
     if(HE.pending)return;
     if(s.phase===0){
-        check(HE.source.path.indexOf('/Target/')===0,'mounted scene');
+        check(HE.source.path.indexOf(HE.mount+'/')===0,'mounted scene');
         s.cube=find('Cube');s.id=Engine.entity(s.cube).id;s.original=HE.copy(Engine.component(s.cube,'transform'));
         HE.camera={target:[0,0.65,0],yaw:0,pitch:0,distance:8,fov:0.62};HE.applyCamera();s.phase=1;return;
     }
@@ -119,19 +119,19 @@ HE.smokeTick=function(dt,input){
     }
     if(s.phase===5){
         s.cube=Engine.findEntity(s.id);check(Math.abs(Engine.position(s.cube).x-1.25)<0.001,'drag is a single undo transaction');
-        HE.save('/Target/Maps/SmokeSave');
-        var saved=Engine.content.load('/Target/Maps/SmokeSave');
+        HE.save(HE.mount+'/Maps/SmokeSave');
+        var saved=Engine.content.load(HE.mount+'/Maps/SmokeSave');
         check(saved.payload.entities.every(function(e){return !e.components.drawEntityID;}),'transient tools excluded from disk');
         check(saved.payload.entities.some(function(e){return e.id===s.id&&e.components.data.answer===42;}),'component saved with persistent identity');
-        HE.open('/Target/Maps/SmokeSave');s.phase=6;return;
+        HE.open(HE.mount+'/Maps/SmokeSave');s.phase=6;return;
     }
     if(s.phase===6){
         s.cube=Engine.findEntity(s.id);check(Engine.entity(s.cube).name==='Edited cube','saved level roundtrip');
         HE.select(s.cube);HE.command('Before Save As undo',function(){Engine.rename(s.cube,'After save');});
-        HE.save('/Target/Maps/SaveAs');HE.history(false);s.phase=7;return;
+        HE.save(HE.mount+'/Maps/SaveAs');HE.history(false);s.phase=7;return;
     }
     if(s.phase===7){
-        check(HE.source.path==='/Target/Maps/SaveAs','undo keeps Save As destination');
+        check(HE.source.path===HE.mount+'/Maps/SaveAs','undo keeps Save As destination');
         s.beforePlay=Engine.scene.capture();HE.play();s.phase=8;s.wait=0;return;
     }
     if(s.phase===8){
@@ -180,8 +180,9 @@ HE.smokeTick=function(dt,input){
         HE.layout.right=360;HE.resize(input.width,input.height,true);
         check(HE.undoStack.length===undoCount,'workspace changes do not enter scene history');
         HE.browseFolder(HE.mount+'/Maps');HE.el('asset-filter').setValue('Script');HE.refreshAssets();
-        check(HE.el('assets').querySelectorAll('.asset').length===0,'type filter excludes maps');
+        check(!HE.browser.items.some(function(item){return item.kind==='asset';}),'type filter excludes maps');
         HE.el('asset-filter').setValue('All');HE.browseFolder(HE.mount);
+        check(!HE.browser.items.some(function(item){return item.parent;}),'mount root has no parent entry');
         check(HE.el('assets').querySelectorAll('.folder-card').length>=2,'root shows child folders');
         var folderItem=HE.browser.items.filter(function(item){return item.path===HE.mount+'/Props';})[0];
         HE.selectBrowserItem(folderItem);check(HE.folder===HE.mount,'single click selects without entering');
@@ -189,12 +190,19 @@ HE.smokeTick=function(dt,input){
         HE.keyEvent({parameters:{key_identifier:99,ctrl_key:0,shift_key:0}},false);
         check(Engine.alive(HE.selected[0])&&HE.undoStack.length===undoCount,'asset focus does not delete scene selection');
         HE.openBrowserItem(folderItem);check(HE.folder===HE.mount+'/Props','folder open enters directory');
-        HE.openBrowserItem(HE.browser.items[0]);check(HE.folder===HE.mount+'/Props/Architecture','nested folder open');
+        check(HE.browser.items[0].parent&&HE.browser.items[0].path===HE.mount,'parent entry comes first');
+        HE.selectBrowserItem(HE.browser.items[0]);
+        HE.browserKey({parameters:{key_identifier:72},stopPropagation:function(){}});
+        check(HE.folder===HE.mount,'Enter on parent returns to root');HE.browserTravel(-1);
+        HE.openBrowserItem(HE.browser.items.filter(function(item){return !item.parent;})[0]);check(HE.folder===HE.mount+'/Props/Architecture','nested folder open');
         HE.browserTravel(-1);check(HE.folder===HE.mount+'/Props','Back');
         HE.browserTravel(1);check(HE.folder===HE.mount+'/Props/Architecture','Forward');
-        HE.selectBrowserItem(HE.browser.items[0]);HE.openBrowserItem(HE.browser.selected);
+        HE.selectBrowserItem(HE.browser.items.filter(function(item){return item.kind==='asset';})[0]);HE.openBrowserItem(HE.browser.selected);
         check(!!HE.modalDoc&&!!HE.modalDoc.getElementById('asset-editor'),'asset open reaches its editor');
         HE.modalDoc.close();HE.modalDoc=null;
+        HE.el('asset-search').setValue('no-match');HE.el('asset-filter').setValue('Map');HE.el('asset-sort').setValue('desc');HE.refreshAssets();
+        check(HE.browser.items.length===1&&HE.browser.items[0].parent,'parent survives search, category and descending sort');
+        HE.el('asset-sort').setValue('asc');
         HE.browseFolder(HE.mount);HE.el('asset-filter').setValue('Map');HE.refreshAssets();
         check(HE.browser.items.some(function(item){return item.kind==='folder'&&item.name==='Props';}),'category filter keeps folder navigation');
         HE.el('asset-filter').setValue('All');HE.el('asset-search').setValue('Architecture');HE.refreshAssets();

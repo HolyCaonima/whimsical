@@ -35,6 +35,7 @@ HE.pointerUp=function(ev){
 };
 HE.pointerWheel=function(ev){HE.pointer.wheel-=ev.parameters.wheel_delta_y;ev.stopPropagation();};
 HE.keyEvent=function(ev,down){
+    if(HE.activeMenu){if(down)HE.menuKey(ev);else ev.stopPropagation();return;}
     var p=ev.parameters,k=p.key_identifier,code=k>=12&&k<=37?k+53:({1:32,69:8,70:9,72:13,81:27,99:46,138:16,139:16,140:17,141:17})[k];
     HE.keys[16]=!!p.shift_key;HE.keys[17]=!!p.ctrl_key;
     if(down&&HE.rightGesture&&[87,65,83,68,81,69].indexOf(code)>=0)HE.rightGesture.moved=true;

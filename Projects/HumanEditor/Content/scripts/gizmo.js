@@ -16,6 +16,8 @@ HE.setMode=function(mode){
     HE.cancelPick();HE.mode=mode;HE.updateGizmo();
 };
 HE.createGizmo=function(){
+    // Tool rendering owns a transient material instead of assuming the scene has material zero.
+    var material=Engine.scene.addMaterial({shader:Engine.asset('/Game/shaders/Standard'),properties:{},textures:{}},false);
     var root=Engine.create({name:'Transform gizmo',persistent:false,enabled:false,components:{transform:{position:[0,0,0]}}});
     var parent=Engine.entity(root).id;
     var g=HE.gizmo={root:root,parent:parent,handles:{},byEntity:{},meshes:{},hover:null,visible:false};
@@ -23,7 +25,7 @@ HE.createGizmo=function(){
     HE.gizmoAxes.concat(HE.gizmoPlanes).forEach(function(axis){
         var i=HE.gizmoAxes.indexOf(axis.length===1?axis:({xy:'z',xz:'y',yz:'x'})[axis]);
         var color=i===0?[0.94,0.19,0.16]:i===1?[0.30,0.86,0.20]:[0.18,0.42,1];
-        var render={mesh:g.meshes.Move,scale:[1,1,1],overlay:true,overlayColor:color,castShadow:false};
+        var render={mesh:g.meshes.Move,material:material,scale:[1,1,1],overlay:true,overlayColor:color,castShadow:false};
         var entity=Engine.create({name:'Gizmo '+axis.toUpperCase(),persistent:false,components:{transform:{parent:parent,position:[0,0,0]},render:render}});
         g.handles[axis]={entity:entity,color:color,render:render};g.byEntity[entity]=axis;
     });

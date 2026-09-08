@@ -42,6 +42,10 @@ static Json argumentJson(duk_context* c, int index) {
     duk_pop(c);
     return result;
 }
+static Json contentSourceJson(const ContentSourceRef& source) {
+    return {{"mount", source->mount}, {"source", source->id},
+            {"root", source->root.u8string()}, {"writable", source->writable}};
+}
 // Keep RAII owners out of the callback frame that returns errors through Duktape longjmp.
 __declspec(noinline) static duk_ret_t contentDispatch(duk_context* c) {
     auto& manager = assets(c);
@@ -51,14 +55,14 @@ __declspec(noinline) static duk_ret_t contentDispatch(duk_context* c) {
         auto source =
             manager.mount(duk_require_string(c, 0), std::filesystem::u8path(duk_require_string(c, 1)),
                           duk_get_boolean_default(c, 2, true) != 0);
-        pushJson(c, {{"mount", source->mount}, {"source", source->id}, {"writable", source->writable}});
+        pushJson(c, contentSourceJson(source));
     } else if (op == 1) {
         manager.unmount(duk_require_string(c, 0));
         return 0;
     } else if (op == 2) {
         Json list = Json::array();
         for (auto source : manager.mounts()->sources())
-            list.push({{"mount", source->mount}, {"source", source->id}, {"writable", source->writable}});
+            list.push(contentSourceJson(source));
         pushJson(c, list);
     } else if (op == 3) {
         Json list = Json::array();

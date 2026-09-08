@@ -85,26 +85,28 @@ HE.refreshAssets=function(){
     items.sort(function(a,c){if(a.kind!==c.kind)return a.kind==='folder'?-1:1;return (descending?-1:1)*a.name.toLowerCase().localeCompare(c.name.toLowerCase())||a.path.localeCompare(c.path);});
     var folders=0,assets=0;
     items.forEach(function(item){item.element=item.kind==='folder'?'asset-folder-'+folders++:'asset-'+assets++;});
+    // Navigation stays first regardless of filtering/sort, and is not a real directory entry.
+    if(folder!==HE.mount)items.unshift({kind:'folder',parent:true,path:HE.parentFolder(folder),name:'..',type:'Parent folder',element:'asset-parent'});
     b.items=items;
     if(b.selected){b.selected=items.filter(function(item){return item.kind===b.selected.kind&&item.path===b.selected.path;})[0]||null;HE.assetSelected=b.selected&&b.selected.ref||null;}
     HE.el('assets').setClass('list-view',b.list);
     HE.el('asset-grid').setInnerRML(items.map(function(item){
         var icon=item.kind==='folder'?HE.folderGlyph():item.type==='Map'?'△':item.type==='Material'?'●':item.type==='Script'?'JS':'◇';
-        return '<div id="'+item.element+'" class="asset '+(item.kind==='folder'?'folder-card ':'')+(b.selected&&b.selected.path===item.path?'selected':'')+'"><div class="asset-icon type-'+item.type+'">'+icon+'</div><div class="asset-name">'+HE.escape(item.name)+'</div><div class="asset-type">'+item.type+'</div><div class="asset-path">'+HE.escape(HE.parentFolder(item.path).replace(HE.mount,'Content'))+'</div></div> ';
-    }).join('')||'<div class="empty">'+(search||filter!=='All'?'No matching items. Clear the search or choose All categories.':'This folder contains no indexed assets.')+'</div>');
+        return '<div id="'+item.element+'" class="asset '+(item.kind==='folder'?'folder-card ':'')+(b.selected&&b.selected.path===item.path?'selected':'')+'"><div class="asset-icon type-'+(item.kind==='folder'?'Folder':item.type)+'">'+icon+'</div><div class="asset-name">'+HE.escape(item.name)+'</div><div class="asset-type">'+item.type+'</div><div class="asset-path">'+HE.escape((item.parent?item.path:HE.parentFolder(item.path)).replace(HE.mount,'Content'))+'</div></div> ';
+    }).join('')+(folders+assets===0?'<div class="empty">'+(search||filter!=='All'?'No matching items. Clear the search or choose All categories.':'This folder contains no indexed assets.')+'</div>':''));
     items.forEach(function(item){HE.bind(item.element,function(){HE.selectBrowserItem(item);});HE.bind(item.element,function(){HE.openBrowserItem(item);},'dblclick');});
     var parts=folder.split('/'),crumbs=[];for(var n=2;n<=parts.length;n++)crumbs.push(parts.slice(0,n).join('/'));
     HE.el('breadcrumb').setInnerRML(crumbs.map(function(p,i){return (i?' / ':'')+'<button id="crumb-'+i+'" class="subtle">'+HE.escape(i?p.split('/').pop():'Content')+'</button>';}).join(''));
     crumbs.forEach(function(p,i){HE.bind('crumb-'+i,function(){HE.browseFolder(p);});});
     HE.el('asset-count').setText(folders+' folders / '+assets+' assets'+(search||filter!=='All'?' (including subfolders)':''));
     HE.el('asset-location').setText((b.selected?b.selected.path:folder).replace(HE.mount,'Content'));
-    HE.el('asset-view').setText(b.list?'Tiles':'List');
+    HE.el('asset-tiles').setClass('active',!b.list);HE.el('asset-list').setClass('active',b.list);
     [['asset-up',folder===HE.mount],['asset-back',b.cursor<=0],['asset-forward',b.cursor>=b.history.length-1]].forEach(function(pair){var el=HE.el(pair[0]);if(pair[1])el.setAttribute('disabled','disabled');else el.removeAttribute('disabled');});
     HE.sizeBrowser();
 };
 HE.sizeBrowser=function(){
     var width=Math.max(1,(HE.width||1440)-(HE.detailsWidth||360)-254);
-    HE.el('asset-area').setProperty('width',width+'px');
+    HE.el('asset-area').setProperty('width',width+'px').setClass('compact',width<600);
     HE.el('assets').setProperty('width',width+'px');
     HE.el('asset-grid').setProperty('width',Math.max(1,width-18)+'px');
     HE.el('asset-controls').setProperty('width',width+'px');

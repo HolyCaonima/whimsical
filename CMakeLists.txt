@@ -134,7 +134,7 @@ target_sources(Afterlight PRIVATE engine/render/RenderAuditWorker.cpp engine/ren
   engine/render/RenderPipeline.cpp engine/render/RenderResources.cpp
   engine/render/graph/Registry.cpp engine/render/graph/ResourcePool.cpp engine/render/graph/RenderGraph.cpp
   engine/render/graph/ShaderAccess.cpp)
-target_link_libraries(Afterlight PRIVATE afterlight_shader_runtime volk NRD user32 gdi32 winmm)
+target_link_libraries(Afterlight PRIVATE afterlight_shader_runtime volk NRD user32 gdi32 winmm comdlg32)
 target_include_directories(Afterlight PRIVATE "${DEPS}/rtxdi/Include")
 afterlight_copy_onnx(Afterlight)
 target_compile_options(Afterlight PRIVATE /W4 /permissive- /utf-8)

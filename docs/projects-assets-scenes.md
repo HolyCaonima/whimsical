@@ -35,6 +35,12 @@ Projects/Afterlight/
 
 `Project(directory)` 或 `Project(directory / ".project")` 打开项目；`Project::create(directory, name)` 创建空项目。项目 ID 为 128 位随机持久标识。startupMap 可以为 null；scripts 是按顺序加载的公共脚本虚拟路径数组。
 
+脚本通过 `Engine.project.read(path)` 复用该解析器，返回 `path/name/id/content/startupMap/scripts/hostScripts/startupMode`；这是只读元数据访问，不挂载 Content、不切换场景、不执行脚本。路径为 UTF-8，返回的文件及 Content 路径为绝对路径；空启动地图返回空字符串。
+
+文件选择是独立的宿主能力：`Engine.files.openDialog({title, initialDirectory, filters:[{name, pattern}]})` 返回所选文件的 UTF-8 路径，取消返回 `null`。三个选项均可省略，`pattern` 使用分号分隔的文件通配符（如 `*.png;*.jpg`）。无文件选择服务的宿主会报错。`RuntimeHost::setOpenFileDialog` 注入宿主实现，桌面程序连接 `Window::openFileDialog`；项目类型、筛选规则、选择后的处理均由调用方决定。
+
+`Engine.content.mount` 和 `Engine.content.mounts()` 返回的挂载描述包含 `mount/source/root/writable`，其中 `root` 是规范化的绝对 Content 路径。调用方可查询已有根路径并复用挂载身份，而不是为同一目录重复挂载。
+
 挂载 `/Game` 后，`/Game/models/biped` 映射为该来源的 `models/biped.asset`；同样可以把另一个目录挂到 `/Library`。路径不带扩展名、区分大小写；段内使用 ASCII 字母、数字、下划线、连字符。不接受 `.`、`..`、重复斜线、反斜线、盘符、空段。注册与保存拒绝 Windows 大小写别名。目录层次就是虚拟路径层次，不另建手写 manifest。
 
 所有 `.asset` 扫描注册，非 `.asset` 文件不作为独立资产暴露。外部载荷仅通过头部声明的相对位置访问，并检查真实路径仍在 Content 内；绝对路径、缺失载荷和逃逸 Content 的映射报错。Project 整体拷贝到另一目录无需改变资产引用。

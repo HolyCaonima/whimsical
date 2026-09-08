@@ -1,8 +1,52 @@
 #include "Window.h"
+#include <commdlg.h>
+#include <filesystem>
 #include <windowsx.h>
 #include <mmsystem.h>
 #include <stdexcept>
 namespace afterlight {
+namespace {
+std::wstring wide(const std::string& text) {
+    if (text.empty())
+        return {};
+    const int size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), int(text.size()), nullptr, 0);
+    if (!size)
+        throw std::invalid_argument("File dialog text must be UTF-8");
+    std::wstring result(size, L'\0');
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), int(text.size()), result.data(), size);
+    return result;
+}
+} // namespace
+std::optional<std::string> Window::openFileDialog(const OpenFileDialogOptions& options) {
+    wchar_t path[32768] = {};
+    const auto title = wide(options.title), directory = wide(options.initialDirectory);
+    std::wstring filters;
+    for (const auto& filter : options.filters) {
+        filters += wide(filter.name);
+        filters += L'\0';
+        filters += wide(filter.pattern);
+        filters += L'\0';
+    }
+    filters += L'\0';
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = hwnd_;
+    dialog.lpstrTitle = title.empty() ? nullptr : title.c_str();
+    dialog.lpstrInitialDir = directory.empty() ? nullptr : directory.c_str();
+    dialog.lpstrFilter = options.filters.empty() ? nullptr : filters.c_str();
+    dialog.lpstrFile = path;
+    dialog.nMaxFile = DWORD(std::size(path));
+    dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER;
+    const bool selected = GetOpenFileNameW(&dialog) != FALSE;
+    const auto error = selected ? 0 : CommDlgExtendedError();
+    releaseGameInput();
+    consumeEdges();
+    if (error)
+        throw std::runtime_error("File picker failed: " + std::to_string(error));
+    if (!selected)
+        return {};
+    return std::filesystem::path(path).u8string();
+}
 void Window::uiEvent(ui::InputEvent::Type type, uint32_t code, float x, float y) {
     const auto& keys = input_.keys;
     int modifiers = (keys[VK_SHIFT] ? 1 : 0) | (keys[VK_CONTROL] ? 2 : 0) | (keys[VK_MENU] ? 4 : 0);

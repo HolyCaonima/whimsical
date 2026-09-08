@@ -56,13 +56,43 @@ enum Op {
     Persistent,
     FindEntity,
     ComponentTypes,
-    Components
+    Components,
+    ProjectRead,
+    OpenFileDialog
 };
 // Duktape reports errors only after the C++ owners in dispatch have unwound.
 duk_ret_t dispatch(duk_context* c) {
     auto& world = stored<World>(c, "world");
     auto& assets = stored<AssetManager>(c, "assets");
     auto op = Op(duk_get_current_magic(c));
+    if (op == ProjectRead) {
+        Project project(std::filesystem::u8path(duk_require_string(c, 0)));
+        Json scripts = Json::array(), hostScripts = Json::array();
+        for (const auto& path : project.scripts())
+            scripts.push(path.string());
+        for (const auto& path : project.hostScripts())
+            hostScripts.push(path.string());
+        push(c, {{"path", (project.root() / ".project").u8string()},
+                 {"name", project.name()}, {"id", project.id()},
+                 {"content", project.content().u8string()},
+                 {"startupMap", project.startupMap().string()}, {"scripts", scripts},
+                 {"hostScripts", hostScripts}, {"startupMode", project.runOnStartup() ? "run" : "load"}});
+        return 1;
+    }
+    if (op == OpenFileDialog) {
+        auto& host = stored<ScriptRuntime>(c, "runtime").host();
+        auto value = json(c, 0);
+        OpenFileDialogOptions options;
+        if (value.contains("title")) options.title = value.at("title").string();
+        if (value.contains("initialDirectory")) options.initialDirectory = value.at("initialDirectory").string();
+        if (value.contains("filters"))
+            for (const auto& filter : value.at("filters").elements())
+                options.filters.push_back({filter.at("name").string(), filter.at("pattern").string()});
+        auto path = host.openFileDialog(options);
+        if (path) duk_push_string(c, path->c_str());
+        else duk_push_null(c);
+        return 1;
+    }
     if (op == EntityInfo || op == Components) {
         auto e = duk_require_uint(c, 0);
         const auto& id = world.get<Identity>(e);
@@ -250,6 +280,12 @@ void bind(duk_context* c, const char* name, Op op) {
 } // namespace
 void installRuntimeBindings(duk_context* c) {
     duk_get_global_string(c, "Engine");
+    duk_push_object(c);
+    bind(c, "read", ProjectRead);
+    duk_put_prop_string(c, -2, "project");
+    duk_push_object(c);
+    bind(c, "openDialog", OpenFileDialog);
+    duk_put_prop_string(c, -2, "files");
     bind(c, "entity", EntityInfo);
     bind(c, "rename", Rename);
     bind(c, "persistent", Persistent);

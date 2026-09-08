@@ -1,6 +1,8 @@
 #pragma once
 #include "core/Input.h"
+#include "FileDialog.h"
 #include <windows.h>
+#include <optional>
 namespace afterlight {
 class Window {
     HWND hwnd_ = nullptr;
@@ -33,5 +35,6 @@ class Window {
     void title(const std::string&);
     void resizeClient(uint32_t, uint32_t);
     void minimize(bool);
+    std::optional<std::string> openFileDialog(const OpenFileDialogOptions&);
 };
 } // namespace afterlight
