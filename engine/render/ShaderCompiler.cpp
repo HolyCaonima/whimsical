@@ -29,9 +29,12 @@ static std::string expandIncludes(const std::string& source, const std::filesyst
     while (std::getline(lines, line)) {
         std::smatch match;
         if (std::regex_match(line, match, include)) {
-            auto path = directory / match[1].str();
-            if (match[1].str().rfind("Rtxdi/", 0) == 0)
-                path = std::filesystem::path(AFTERLIGHT_RTXDI_INCLUDES) / match[1].str();
+            const auto& name = match[1].str();
+            auto path = directory / name;
+            if (name.rfind("Rtxdi/", 0) == 0)
+                path = std::filesystem::path(AFTERLIGHT_RTXDI_INCLUDES) / name;
+            else if (name.rfind("generated/", 0) == 0)
+                path = std::filesystem::path(AFTERLIGHT_SHADERS) / name;
             result << expandIncludes(read(path), path.parent_path());
         } else result << line << '\n';
     }

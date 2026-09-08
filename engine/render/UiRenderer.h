@@ -13,6 +13,7 @@ class UiRenderer {
     ~UiRenderer();
     // Called after the frame fence; upload resources and retire those no snapshot retains.
     void prepare(const ui::UiFrame*);
-    void draw(VkCommandBuffer, Image& target, const ui::UiFrame*);
+    // Called inside a render graph pass that has already declared the target attachment.
+    void draw(VkCommandBuffer, uint32_t width, uint32_t height, const ui::UiFrame*);
 };
 } // namespace afterlight

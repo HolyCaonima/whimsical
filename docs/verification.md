@@ -1,5 +1,67 @@
 # 实际验证记录
 
+## 2026-09-08：资源依赖驱动的 RenderGraph
+
+渲染系统改为由资源声明推导依赖、裁剪、同步和生命周期，设计见 [RT 渲染接入约定](rendering.md)。原来的 `RenderGraph` 只是一张有序 pass 表，每个 pass 之后无条件发一次 `ALL_COMMANDS → ALL_COMMANDS` 全局 barrier，各 pass 内部再自行 transition；历史内容靠帧末的 `copyHistory` 拷贝。现在 barrier 由声明的 `Access` 推导，历史靠奇偶翻转和 DI 角色轮转带入下一帧。
+
+### 同步正确性
+
+Khronos validation layer 与显式 synchronization validation 均开启，`--smoke --validation --width 960 --height 600` 完成 160 GPU 帧，包含点击移动、镜头 orbit/zoom、resize 到 1100×700、最小化、恢复、取消指令和第 125 帧后的 Map 重载，**0 个 validation errors**，正常退出。
+
+修掉的一处真实缺陷：TLAS 原来在录制期按需创建，而 descriptor 在录制之前就写好了，因此前几帧的 `scene` descriptor 指向 `VK_NULL_HANDLE`（`VUID-VkWriteDescriptorSetAccelerationStructureKHR-pAccelerationStructures-03580` 与 `VUID-vkCmdDispatch-None-08114`，共 6 条）。分配移到图装配阶段的 `reserveTlas`，录制只发 build 命令。
+
+### 画面语义：与 HEAD 逐位对照
+
+把 HEAD 单独 checkout 成 worktree 实际构建成第二个二进制，同一命令跑同一场景，逐字节比较 audit 的原始样本（不是只比 `audit.json` 的汇总）：
+
+```powershell
+.\build\bin\Release\Afterlight.exe --audit NAME --frames 90 --width 640 --height 400 --view 1
+.\build\bin\Release\Afterlight.exe --audit NAME --audit-motion --frames 90 --width 640 --height 400 --view 1
+.\tools\compare-audit.ps1 <a>.f32 <b>.f32
+```
+
+| 场景 | 逐字节一致的信号 |
+| --- | --- |
+| 静止 | 7 / 7 |
+| 运动 | 6 / 7（`denoised-specular` 不一致） |
+
+`denoised-specular` 是**基线自己也复现不出来的信号**：HEAD 二进制连跑两次，同样只有这一个文件不同。三方对比说明差异完全落在 NRD RELAX specular 自身的运行间抖动之内：
+
+| 对比 | 不同的 float | 最大绝对差 | 差值 RMS |
+| --- | --- | --- | --- |
+| HEAD 第一次 vs HEAD 第二次 | 24.005% | 0.00903 | 3.46e-5 |
+| RenderGraph vs HEAD | 9.355% | 0.00235 | 1.43e-5 |
+
+信号平均幅值 0.171。其余六个信号（`direct`、`albedo`、`display`、`raw-diffuse`、`raw-specular`、`denoised-diffuse`）在两种场景下都逐字节一致，包括改成角色轮转的 DI reservoir 链路。这不能当作 NRD specular 无关紧要的证明，只说明本次重构没有引入超出既有抖动的变化。
+
+文档里早前记录的 `direct 0.100413 / albedo 0.0173869` 等数字来自 lighting 改动之前的版本，不能直接和本轮比较；上表是同一天、同一场景、两个二进制的实际对照。
+
+### 实测资源与性能
+
+1100×700、`--present immediate --frames 900`，各跑 3 次（同一台 RTX 3080，均未开 validation）：
+
+| | HEAD | RenderGraph | 变化 |
+| --- | --- | --- | --- |
+| FPS | 222.4 / 214.8 / 215.1 | 240.4 / 244.3 / 245.4 | +12.6% |
+| Frame ms | 4.497 / 4.655 / 4.649 | 4.159 / 4.093 / 4.076 | −10.6% |
+| GPU ms | 3.701 / 3.820 / 3.773 | 3.338 / 3.357 / 3.366 | −11.0% |
+| CPU (Render) ms | 0.674 / 0.701 / 0.739 | 0.672 / 0.597 / 0.573 | −13.0% |
+
+GPU 变快有两个可归因的来源，都不是新算法：
+
+1. **帧末拷贝消失。** 原来每帧拷贝两层 DI reservoir（16 对齐后 2 × 18.65 MB）和一份 GI reservoir（49.3 MB），合计约 86.6 MB 的拷贝、约 173 MB 显存流量。现在换成索引轮转和奇偶翻转，一个字节都不搬。
+2. **barrier 从全局变成按资源。** 原来 12 个 pass 后各一次 `ALL_COMMANDS` 全局 barrier；现在 17 个 pass 共 66 条按物理槽位推导的 barrier。
+
+显存基本不变：资源集合没有增减，`graphDeclaredBytes` 365.5 MB，复用后 `graphResourceBytes` 362.4 MB（省 0.84%，且只在存在 capture 图的那一帧）。`render-report.json` 新增 `graphPasses`、`graphBarriers`、`graphAliasedResources`、`graphResourceBytes`、`graphDeclaredBytes`。基于这组数据决定不做多帧在途和并行调度，理由见 [rendering.md](rendering.md#按实测收益做的取舍)。
+
+### 其他
+
+- Release 全工程构建与链接成功，自有代码无 warning。
+- `shader_tests` 通过：9 个 surface program 全部经运行期 `ShaderCompiler` 编译，`gbuffer.vert`／`composite.comp`／`di_confidence.comp`／`di_gradient_filter.comp` 经离线 glslang 编译，两条路径都解析生成的 `generated/graph.*.glsl`。
+- 复现基线的方法：`git worktree add ../whimsical-baseline HEAD --detach`，把 `third_party` 目录 junction 过去后正常 configure/build。
+
+范围限定在渲染系统。没有验证多 GPU、跨厂商、大规模场景下的裁剪与流式加载，也没有做 ReSTIR 对离线路径追踪的收敛评估。
+
 ## 2026-09-06：示例项目目录整理
 
 示例项目移至 `Projects/Afterlight/`，默认启动入口、测试、动画工具和文档同步更新，`/Game` 虚拟路径及资产 ID 保持不变。Release 全工程构建与 6/6 CTest 通过。未传 `--project` 的 `Afterlight.exe --smoke --width 960 --height 600` 正常加载 Rain Court 并完成 Map 重载，共 160 GPU 帧、0 个 validation errors，正常退出。日志与报告分别为 `captures/project-directory-smoke.log` 和 `captures/project-directory-smoke-report.json`。

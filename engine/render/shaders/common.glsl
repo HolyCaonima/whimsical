@@ -28,76 +28,15 @@ struct GIReservoir {
     vec4 radiancePdf;
     vec4 stats;
 };
-layout(set = 0, binding = 0, std140) uniform Globals {
-    mat4 viewProjection;
-    mat4 previousViewProjection;
-    mat4 view;
-    mat4 inverseViewProjection;
-    vec4 eyeTime;
-    vec4 resolution;
-    vec4 player;
-    vec4 destination;
-    vec4 renderSettings;
-    vec4 previousEye;
-    uvec4 counts;
-}
-g;
-layout(set = 0, binding = 1, std430) readonly buffer Instances {
-    Instance instances[];
-};
-layout(set = 0, binding = 2, std430) readonly buffer Materials {
-    Material materials[];
-};
-layout(set = 0, binding = 3, std430) readonly buffer Lights {
-    Light lights[];
-};
-layout(set = 0, binding = 29) uniform sampler2D materialTextures[64];
+// Resource declarations are generated from the render graph registry, which is the only
+// place that assigns a binding number. See engine/render/RenderResources.cpp.
+#include "generated/graph.shared.glsl"
 #ifdef SURFACE_PASS
 #include "surface.glsl"
 #include "surface_link.glsl"
 #endif
 #ifdef COMPUTE_PASS
-layout(set = 0, binding = 4, std430) readonly buffer Vertices {
-    Vertex vertices[];
-};
-layout(set = 0, binding = 5, std430) readonly buffer Indices {
-    uint indices[];
-};
-layout(set = 0, binding = 6) uniform accelerationStructureEXT scene;
-layout(set = 0, binding = 7, rgba16f) uniform image2D gAlbedo;
-layout(set = 0, binding = 8, rgba16f) uniform image2D gNormal;
-layout(set = 0, binding = 9, rgba32f) uniform image2D gPosition;
-layout(set = 0, binding = 10, rgba16f) uniform image2D gMotion;
-layout(set = 0, binding = 11, r32f) uniform image2D gViewZ;
-layout(set = 0, binding = 12, rgba16f) uniform image2D gEmission;
-layout(set = 0, binding = 16, std430) buffer CurrentGI {
-    GIReservoir currentGI[];
-};
-layout(set = 0, binding = 17, std430) readonly buffer PreviousGI {
-    GIReservoir previousGI[];
-};
-layout(set = 0, binding = 18, std430) buffer CandidateGI {
-    GIReservoir candidateGI[];
-};
-layout(set = 0, binding = 19, rgba16f) uniform image2D rawDiffuse;
-layout(set = 0, binding = 20, rgba16f) uniform image2D rawSpecular;
-layout(set = 0, binding = 21, rgba16f) uniform image2D denoisedDiffuse;
-layout(set = 0, binding = 22, rgba16f) uniform image2D denoisedSpecular;
-layout(set = 0, binding = 23, rgba16f) uniform image2D finalImage;
-layout(set = 0, binding = 24, rgba16f) uniform image2D previousNormal;
-layout(set = 0, binding = 25, rgba32f) uniform image2D previousPosition;
-layout(set = 0, binding = 26, rgba16f) uniform image2D directDebug;
-layout(set = 0, binding = 27, rgba16f) uniform image2D indirectDebug;
-layout(set = 0, binding = 28, rgba8) uniform image2D hudImage;
-layout(set = 0, binding = 30, rgba16f) uniform image2D previousAlbedo;
-layout(set = 0, binding = 31, r32f) uniform image2D previousViewZ;
-layout(set = 0, binding = 32, rgba16f) uniform image2D diGradient;
-layout(set = 0, binding = 33, r16f) uniform image2D diffuseConfidence;
-layout(set = 0, binding = 34, r16f) uniform image2D specularConfidence;
-layout(set = 0, binding = 35, rgba16f) uniform image2D diLuminance;
-layout(set = 0, binding = 36, rgba16f) uniform image2D previousDiLuminance;
-layout(set = 0, binding = 37, rg16f) uniform image2D diConfidenceHistory;
-layout(set = 0, binding = 38, rgba16f) uniform image2D filteredDiGradient;
+#include "generated/graph.compute.glsl"
 uint rng;
 uint hash(uint x) {
     x ^= x >> 16;

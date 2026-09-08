@@ -270,10 +270,14 @@ void NrdDenoiser::dispatch(VkCommandBuffer command,
                 throw std::runtime_error(std::string("Unbound NRD resource: ") +
                                          nrd::GetResourceTypeString(request.type));
             bool storage = request.descriptorType == nrd::DescriptorType::STORAGE_TEXTURE;
-            vk_.transition(command, *image, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                           storage
-                               ? VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT
-                               : VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+            // Resources the render graph handed us already arrive in GENERAL and visible
+            // to compute; only NRD's own pool needs a transition, and only once.
+            if (image->layout != VK_IMAGE_LAYOUT_GENERAL)
+                vk_.transition(command, *image, VK_IMAGE_LAYOUT_GENERAL,
+                               VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                               storage ? VK_ACCESS_2_SHADER_STORAGE_READ_BIT |
+                                             VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT
+                                       : VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
             images[r] = {VK_NULL_HANDLE, image->view, VK_IMAGE_LAYOUT_GENERAL};
             VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
             write.dstSet = sets[0];

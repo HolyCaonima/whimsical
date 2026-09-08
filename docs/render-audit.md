@@ -2,6 +2,8 @@
 
 `--audit NAME` 是保留全部样本的渲染正确性测试。前 64 帧用于预热，之后逐帧记录七种信号；RGB 均值、亮度方差和相邻帧差依赖样本顺序，不能通过丢帧提速。`--capture` 则只保存最后一张显示截图。
 
+信号按**名字**声明，由渲染器解析成 render graph 资源，`RenderAudit` 不持有 binding 表；读回本身是一个声明了 `TransferRead` 源图和 `TransferWrite` 目标 buffer 的普通 pass。`tools/compare-audit.ps1` 逐 float 比较两份 `.f32`，用于跨二进制的逐位对照，比只比 `audit.json` 的汇总强得多——汇总打印六位有效数字，掩得住真实差异。
+
 ## 数据流与线程边界
 
 1. 渲染线程在原有 command buffer 中将七张图复制到 `BufferMemory::Readback` 缓冲。

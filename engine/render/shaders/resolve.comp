@@ -22,8 +22,8 @@ void main() {
     vec3 direct = vec3(0), specular = vec3(0), indirect = vec3(0);
     float hitDistance = imageLoad(rawDiffuse, p).w;
     RAB_Surface diSurface=RAB_GetGBufferSurface(p,false);
-    RTXDI_DIReservoir di=RTXDI_LoadDIReservoir(diBufferParams(),uvec2(p),2);
-    RTXDI_DIReservoir replay=RTXDI_LoadDIReservoir(diBufferParams(),uvec2(p),3);
+    RTXDI_DIReservoir di=RTXDI_LoadDIReservoir(diBufferParams(),uvec2(p),diLayer(2));
+    RTXDI_DIReservoir replay=RTXDI_LoadDIReservoir(diBufferParams(),uvec2(p),diLayer(3));
     vec2 replayLuminance=vec2(0);
     if (s.id != 0) {
         if (RTXDI_IsValidDIReservoir(di) && di.weightSum>0) {
@@ -53,8 +53,8 @@ void main() {
         }
     }
     vec4 spec = imageLoad(rawSpecular, p);
-    RTXDI_StoreDIReservoir(di,diBufferParams(),uvec2(p),2);
-    RTXDI_StoreDIReservoir(replay,diBufferParams(),uvec2(p),1);
+    RTXDI_StoreDIReservoir(di,diBufferParams(),uvec2(p),diLayer(2));
+    RTXDI_StoreDIReservoir(replay,diBufferParams(),uvec2(p),diLayer(1));
     imageStore(diLuminance,p,vec4(replayLuminance,
         luminance((direct+indirect)*s.albedo*(1-s.metallic)),luminance(spec.rgb+specular)));
     imageStore(rawDiffuse, p, vec4(clamp(direct + indirect, vec3(0), vec3(60000)), hitDistance));

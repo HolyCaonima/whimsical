@@ -34,6 +34,24 @@ proxy 拆成两半，因为它们的变化频率相差一到两个数量级：`P
 
 `--stress N` 生成一个 N 个额外物体、但每 tick 变化物体数固定为 8 的场景，`--full-upload` 强制退回逐帧全量重写。两者配合可以在同一个二进制里量出"代价随变化量还是随场景规模增长"，见 [验证](verification.md)。
 
+## 渲染系统的职责切分
+
+渲染侧按"渲染功能 / 图编译 / GPU 执行"三条职责拆开，每个文件只回答一个问题：
+
+| 文件 | 职责 | 知道 Vulkan |
+| --- | --- | --- |
+| `render/graph/Registry` | 逻辑资源声明：格式、尺寸规则、所有权、shader 视图；binding 号的唯一来源 | 否 |
+| `render/graph/ResourcePool` | 物理实现：显存、descriptor set、history 奇偶、transient 共享 | 是 |
+| `render/graph/RenderGraph` | 图编译与执行：裁剪、生命期、barrier 推导、pass 分发 | 是 |
+| `render/RenderResources` | 本管线声明了哪些资源（按功能分组） | 否 |
+| `render/GpuScene` | GPU 上的场景：几何、加速结构、instance 镜像、材质、纹理 | 是 |
+| `render/RenderPipeline` | pipeline 对象，以及本帧由哪些 pass 组成、各自读写什么 | 是 |
+| `render/Renderer` | 帧循环、swapchain、统计 | 是 |
+
+这条切分线的判据是**尺寸由什么决定**：`GpuScene` 里的东西按内容大小分配（实例数、网格数、灯数），所以它自己拥有并 `import` 给图；图拥有的都是按屏幕尺寸分配的。这也是为什么 `Lifetime::External` 的资源图只绑定不同步——它们的写入发生在渲染线程的 CPU 侧，早于命令录制。
+
+接入一个渲染功能只需要两处：在 `RenderResources` 里 `declare` 资源，在 `RenderPipeline::build` 里声明这个 pass 读写什么。binding 号、descriptor layout、GLSL 声明、显存分配、barrier 和裁剪都由此推导，没有中央资源表要改，也没有 barrier 要手补。详见 [RT 渲染接入约定](rendering.md#资源依赖驱动的-rendergraph)。
+
 ## 坐标和资产
 
 - 单位米，Y 向上，角色 +Z 朝前；GLM 列主序矩阵，列向量。

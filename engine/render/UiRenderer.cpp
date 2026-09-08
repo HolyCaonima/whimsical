@@ -216,31 +216,17 @@ struct UiRenderer::Impl {
             }
         }
     }
-    void draw(VkCommandBuffer command, Image& target, const ui::UiFrame* frame) {
-        vk.transition(command, target, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                      VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-        VkRenderingAttachmentInfo attachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-        attachment.imageView = target.view;
-        attachment.imageLayout = target.layout;
-        attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
-        rendering.renderArea.extent = {target.width, target.height};
-        rendering.layerCount = 1;
-        rendering.colorAttachmentCount = 1;
-        rendering.pColorAttachments = &attachment;
-        vkCmdBeginRendering(command, &rendering);
+    // The render graph owns the attachment: it has already put the target in the right
+    // layout, opened rendering and set the viewport for this pass.
+    void draw(VkCommandBuffer command, uint32_t width, uint32_t height, const ui::UiFrame* frame) {
         if (frame && frame->width > 0 && frame->height > 0) {
-            VkViewport viewport{0, 0, float(target.width), float(target.height), 0, 1};
-            vkCmdSetViewport(command, 0, 1, &viewport);
             vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-            float sx = float(target.width) / frame->width, sy = float(target.height) / frame->height;
+            float sx = float(width) / frame->width, sy = float(height) / frame->height;
             for (const auto& draw : frame->draws) {
-                int x = std::clamp(int(draw.scissor[0] * sx), 0, int(target.width));
-                int y = std::clamp(int(draw.scissor[1] * sy), 0, int(target.height));
-                int right = std::clamp(int((draw.scissor[0] + draw.scissor[2]) * sx), x, int(target.width));
-                int bottom = std::clamp(int((draw.scissor[1] + draw.scissor[3]) * sy), y, int(target.height));
+                int x = std::clamp(int(draw.scissor[0] * sx), 0, int(width));
+                int y = std::clamp(int(draw.scissor[1] * sy), 0, int(height));
+                int right = std::clamp(int((draw.scissor[0] + draw.scissor[2]) * sx), x, int(width));
+                int bottom = std::clamp(int((draw.scissor[1] + draw.scissor[3]) * sy), y, int(height));
                 if (x == right || y == bottom)
                     continue;
                 VkRect2D scissor{{x, y}, {uint32_t(right - x), uint32_t(bottom - y)}};
@@ -257,9 +243,6 @@ struct UiRenderer::Impl {
                 vkCmdDrawIndexed(command, uint32_t(draw.geometry->indices.size()), 1, 0, 0, 0);
             }
         }
-        vkCmdEndRendering(command);
-        vk.transition(command, target, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                      VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
     }
 };
 UiRenderer::UiRenderer(VulkanContext& vk) : impl_(std::make_unique<Impl>(vk)) {}
@@ -267,7 +250,8 @@ UiRenderer::~UiRenderer() = default;
 void UiRenderer::prepare(const ui::UiFrame* frame) {
     impl_->prepare(frame);
 }
-void UiRenderer::draw(VkCommandBuffer command, Image& target, const ui::UiFrame* frame) {
-    impl_->draw(command, target, frame);
+void UiRenderer::draw(VkCommandBuffer command, uint32_t width, uint32_t height,
+                      const ui::UiFrame* frame) {
+    impl_->draw(command, width, height, frame);
 }
 } // namespace afterlight

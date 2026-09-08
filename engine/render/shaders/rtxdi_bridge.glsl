@@ -10,16 +10,14 @@
 #include "Rtxdi/Utils/RandomSamplerState.hlsli"
 #include "Rtxdi/DI/Reservoir.hlsli"
 
-// Four block-linear arrays: previous final, initial/temporal (later replay),
-// spatial/final, previous replay. Replay keeps even occluded light selections.
-layout(set = 0, binding = 13, std430) buffer DiReservoirs {
-    RTXDI_PackedDIReservoir diReservoirs[];
-};
-layout(set = 0, binding = 14, std430) readonly buffer DiNeighbors { vec2 diNeighbors[]; };
-layout(set = 0, binding = 15, std430) readonly buffer DiLights {
-    vec4 lightDistribution[256]; // CDF, discrete PDF, unused, unused
-    Light previousLights[256];
-};
+#include "generated/graph.rtxdi.glsl"
+// Four block-linear arrays holding the roles: previous final, initial/temporal (later
+// replay), spatial/final, previous replay. Replay keeps even occluded light selections.
+// The two pairs exchange places every frame, which is what makes the end-of-frame history
+// copy unnecessary: last frame's final *is* this frame's previous final.
+uint diLayer(uint role) {
+    return role ^ uint(g.renderSettings.w);
+}
 #define RTXDI_LIGHT_RESERVOIR_BUFFER diReservoirs
 #define RTXDI_NEIGHBOR_OFFSETS_BUFFER diNeighbors
 #include "Rtxdi/DI/ReservoirStorage.hlsli"
@@ -102,7 +100,7 @@ void diInitial(ivec2 pixel) {
     RTXDI_DIReservoir reservoir = RTXDI_EmptyDIReservoir();
     RTXDI_RandomSamplerState randomState = RTXDI_InitRandomSampler(uvec2(pixel),g.counts.z,1);
     RAB_Surface s = RAB_GetGBufferSurface(pixel,false);
-    RTXDI_StoreDIReservoir(reservoir,diBufferParams(),uvec2(pixel),3);
+    RTXDI_StoreDIReservoir(reservoir,diBufferParams(),uvec2(pixel),diLayer(3));
     if (g.counts.y > 0) {
         for (int i=0; i<8; ++i) {
             float pick = RTXDI_GetNextRandom(randomState);
@@ -126,9 +124,9 @@ void diInitial(ivec2 pixel) {
                 RAB_LoadLightInfo(RTXDI_GetDIReservoirLightIndex(reservoir),false),s,RTXDI_GetDIReservoirSampleUV(reservoir));
             bool lit = RAB_GetConservativeVisibility(s,l);
             RTXDI_StoreVisibilityInDIReservoir(reservoir,vec3(lit ? 1 : 0),false);
-            RTXDI_StoreDIReservoir(reservoir,diBufferParams(),uvec2(pixel),3);
+            RTXDI_StoreDIReservoir(reservoir,diBufferParams(),uvec2(pixel),diLayer(3));
             RTXDI_StoreVisibilityInDIReservoir(reservoir,vec3(lit ? 1 : 0),true);
         }
     }
-    RTXDI_StoreDIReservoir(reservoir,diBufferParams(),uvec2(pixel),1);
+    RTXDI_StoreDIReservoir(reservoir,diBufferParams(),uvec2(pixel),diLayer(1));
 }

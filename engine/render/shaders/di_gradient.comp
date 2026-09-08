@@ -18,7 +18,7 @@ void main() {
         for (int y=0;y<3;++y) for (int x=0;x<3;++x) {
             ivec2 p=block*3+ivec2(x,y);
             if (!inBounds(p)) continue;
-            RTXDI_DIReservoir r=RTXDI_LoadDIReservoir(diBufferParams(),uvec2(p),3);
+            RTXDI_DIReservoir r=RTXDI_LoadDIReservoir(diBufferParams(),uvec2(p),diLayer(3));
             if (!RTXDI_IsValidDIReservoir(r)) continue;
             vec2 old=imageLoad(previousDiLuminance,p).xy;
             // Previously black shadows must also detect the occluder moving away.
@@ -27,7 +27,7 @@ void main() {
         }
         if (selected.x>=0) {
             RAB_Surface s=RAB_GetGBufferSurface(selected,true);
-            RTXDI_DIReservoir r=RTXDI_LoadDIReservoir(diBufferParams(),uvec2(selected),3);
+            RTXDI_DIReservoir r=RTXDI_LoadDIReservoir(diBufferParams(),uvec2(selected),diLayer(3));
             RAB_LightSample l=RAB_SamplePolymorphicLight(
                 RAB_LoadLightInfo(RTXDI_GetDIReservoirLightIndex(r),false),s,RTXDI_GetDIReservoirSampleUV(r));
             vec2 now=vec2(0);

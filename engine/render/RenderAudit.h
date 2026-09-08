@@ -12,10 +12,11 @@
 namespace afterlight {
 // GPU readback of unfiltered linear signals; no tone mapping or history filtering is applied here.
 struct RenderAudit {
-    inline static constexpr uint32_t bindings[] = {26, 7, 23, 19, 20, 21, 22};
+    // Signals are named, not numbered: the renderer resolves each name to a render graph
+    // resource, so nothing here has to know a binding or an allocation exists.
     inline static constexpr const char* names[] = {
         "direct", "albedo", "display", "raw-diffuse", "raw-specular", "denoised-diffuse", "denoised-specular"};
-    static constexpr size_t signalCount = sizeof(bindings) / sizeof(bindings[0]);
+    static constexpr size_t signalCount = sizeof(names) / sizeof(names[0]);
     struct Pixel {
         std::array<float, 4> mean{}; // RGB and luminance, updated together with x64 baseline SSE2.
         float m2 = 0, previousL = 0, delta2 = 0;

@@ -14,7 +14,7 @@ void main() {
     RTXDI_ReservoirBufferParameters buffers=diBufferParams();
     RTXDI_DIReservoir r=RTXDI_EmptyDIReservoir();
     if (RAB_IsSurfaceValid(s)) {
-        RTXDI_DIReservoir center=RTXDI_LoadDIReservoir(buffers,uvec2(p),1);
+        RTXDI_DIReservoir center=RTXDI_LoadDIReservoir(buffers,uvec2(p),diLayer(1));
         RTXDI_RandomSamplerState randomState=RTXDI_InitRandomSampler(uvec2(p),g.counts.z,3);
         RTXDI_DISpatialResamplingParameters params;
         params.numSamples=4;
@@ -28,7 +28,7 @@ void main() {
         params.discountNaiveSamples=false;
         params.pad1=params.pad2=params.pad3=0;
         RAB_LightSample selected=RAB_EmptyLightSample();
-        r=RTXDI_DISpatialResampling(uvec2(p),s,center,randomState,diRuntimeParams(),buffers,1,params,selected);
+        r=RTXDI_DISpatialResampling(uvec2(p),s,center,randomState,diRuntimeParams(),buffers,diLayer(1),params,selected);
     }
-    RTXDI_StoreDIReservoir(r,buffers,uvec2(p),2);
+    RTXDI_StoreDIReservoir(r,buffers,uvec2(p),diLayer(2));
 }

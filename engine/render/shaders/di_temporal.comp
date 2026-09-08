@@ -13,7 +13,7 @@ void main() {
     RAB_Surface s=RAB_GetGBufferSurface(p,false);
     if (!RAB_IsSurfaceValid(s)) return;
     RTXDI_ReservoirBufferParameters buffers=diBufferParams();
-    RTXDI_DIReservoir initial=RTXDI_LoadDIReservoir(buffers,uvec2(p),1);
+    RTXDI_DIReservoir initial=RTXDI_LoadDIReservoir(buffers,uvec2(p),diLayer(1));
     RTXDI_RandomSamplerState randomState=RTXDI_InitRandomSampler(uvec2(p),g.counts.z,2);
     RTXDI_DITemporalResamplingParameters params;
     params.maxHistoryLength=20;
@@ -37,6 +37,6 @@ void main() {
     ivec2 temporalPosition;
     RAB_LightSample selected=RAB_EmptyLightSample();
     RTXDI_DIReservoir r=RTXDI_DITemporalResampling(uvec2(p),s,initial,randomState,
-        diRuntimeParams(),buffers,screenMotion,0,params,temporalPosition,selected);
-    RTXDI_StoreDIReservoir(r,buffers,uvec2(p),1);
+        diRuntimeParams(),buffers,screenMotion,diLayer(0),params,temporalPosition,selected);
+    RTXDI_StoreDIReservoir(r,buffers,uvec2(p),diLayer(1));
 }

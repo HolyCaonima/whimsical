@@ -18,8 +18,8 @@ void main() {
     imageStore(rawDiffuse, p, vec4(0));
     imageStore(rawSpecular, p, vec4(0));
     if (s.id == 0) {
-        RTXDI_StoreDIReservoir(RTXDI_EmptyDIReservoir(), diBufferParams(), uvec2(p), 1);
-        RTXDI_StoreDIReservoir(RTXDI_EmptyDIReservoir(), diBufferParams(), uvec2(p), 3);
+        RTXDI_StoreDIReservoir(RTXDI_EmptyDIReservoir(), diBufferParams(), uvec2(p), diLayer(1));
+        RTXDI_StoreDIReservoir(RTXDI_EmptyDIReservoir(), diBufferParams(), uvec2(p), diLayer(3));
         candidateGI[index] = gi;
         return;
     }

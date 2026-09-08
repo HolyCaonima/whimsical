@@ -111,8 +111,25 @@ target_compile_definitions(afterlight_shader_runtime PRIVATE
   AFTERLIGHT_SHADER_SOURCES="${CMAKE_SOURCE_DIR}/engine/render/shaders"
   AFTERLIGHT_GLSLANG="${DEPS}/glslang/bin/glslang.exe"
   AFTERLIGHT_SHADERS="${CMAKE_BINARY_DIR}/shaders")
+# The registry is the single source of every binding number. This tool emits the GLSL the
+# shaders include, so the descriptor layout and the shader declarations are one statement.
+add_executable(shader_bindings engine/render/graph/ShaderBindings.cpp engine/render/graph/Registry.cpp
+  engine/render/RenderResources.cpp)
+target_link_libraries(shader_bindings PRIVATE afterlight_core)
+target_include_directories(shader_bindings PRIVATE "${DEPS}/rtxdi/Include")
+target_compile_options(shader_bindings PRIVATE /W4 /permissive- /utf-8)
+set(GENERATED_GLSL
+  "${CMAKE_BINARY_DIR}/shaders/generated/graph.shared.glsl"
+  "${CMAKE_BINARY_DIR}/shaders/generated/graph.compute.glsl"
+  "${CMAKE_BINARY_DIR}/shaders/generated/graph.rtxdi.glsl")
+add_custom_command(OUTPUT ${GENERATED_GLSL}
+  COMMAND shader_bindings "${CMAKE_BINARY_DIR}/shaders/generated"
+  DEPENDS shader_bindings VERBATIM)
+add_custom_target(afterlight_shader_bindings DEPENDS ${GENERATED_GLSL})
 add_executable(Afterlight engine/main.cpp engine/platform/Window.cpp engine/render/Renderer.cpp engine/render/VulkanContext.cpp engine/render/NrdDenoiser.cpp engine/render/GpuProfiler.cpp engine/render/UiRenderer.cpp)
-target_sources(Afterlight PRIVATE engine/render/RenderAuditWorker.cpp)
+target_sources(Afterlight PRIVATE engine/render/RenderAuditWorker.cpp engine/render/GpuScene.cpp
+  engine/render/RenderPipeline.cpp engine/render/RenderResources.cpp
+  engine/render/graph/Registry.cpp engine/render/graph/ResourcePool.cpp engine/render/graph/RenderGraph.cpp)
 target_link_libraries(Afterlight PRIVATE afterlight_shader_runtime volk NRD user32 gdi32 winmm)
 target_include_directories(Afterlight PRIVATE "${DEPS}/rtxdi/Include")
 afterlight_copy_onnx(Afterlight)
@@ -124,12 +141,13 @@ foreach(SHADER IN LISTS SHADER_FILES)
   set(OUTPUT "${CMAKE_BINARY_DIR}/shaders/${SHADER}.spv")
   add_custom_command(OUTPUT "${OUTPUT}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
-    COMMAND "${DEPS}/glslang/bin/glslang.exe" --target-env vulkan1.2 -V "${CMAKE_SOURCE_DIR}/engine/render/shaders/${SHADER}" -I${CMAKE_SOURCE_DIR}/engine/render/shaders -o "${OUTPUT}"
+    COMMAND "${DEPS}/glslang/bin/glslang.exe" --target-env vulkan1.2 -V "${CMAKE_SOURCE_DIR}/engine/render/shaders/${SHADER}" -I${CMAKE_SOURCE_DIR}/engine/render/shaders -I${CMAKE_BINARY_DIR}/shaders -o "${OUTPUT}"
     DEPENDS "${CMAKE_SOURCE_DIR}/engine/render/shaders/${SHADER}" "${CMAKE_SOURCE_DIR}/engine/render/shaders/common.glsl"
-      "${CMAKE_SOURCE_DIR}/engine/lighting/LightSampling.h" VERBATIM)
+      "${CMAKE_SOURCE_DIR}/engine/lighting/LightSampling.h" ${GENERATED_GLSL} VERBATIM)
   list(APPEND SPIRV "${OUTPUT}")
 endforeach()
 add_custom_target(afterlight_shaders DEPENDS ${SPIRV})
+add_dependencies(afterlight_shaders afterlight_shader_bindings)
 add_dependencies(Afterlight afterlight_shaders)
 target_compile_definitions(Afterlight PRIVATE AFTERLIGHT_SHADERS="${CMAKE_BINARY_DIR}/shaders")
 enable_testing()
@@ -150,6 +168,7 @@ afterlight_copy_onnx(render_audit_tests)
 add_test(NAME render_audit COMMAND render_audit_tests)
 add_executable(shader_tests tests/ShaderTests.cpp)
 target_link_libraries(shader_tests PRIVATE afterlight_shader_runtime)
+add_dependencies(shader_tests afterlight_shader_bindings)
 target_compile_options(shader_tests PRIVATE /W4 /permissive- /utf-8)
 afterlight_copy_onnx(shader_tests)
 add_test(NAME shader_assets_and_compilation COMMAND shader_tests)
