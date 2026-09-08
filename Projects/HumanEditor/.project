@@ -5,5 +5,5 @@
   "startupMap": "/Game/Maps/Workbench",
   "startupMode": "load",
   "scripts": [],
-  "hostScripts": ["/Game/scripts/editor", "/Game/scripts/viewport", "/Game/scripts/panels", "/Game/scripts/main"]
+  "hostScripts": ["/Game/scripts/editor", "/Game/scripts/viewport", "/Game/scripts/panels", "/Game/scripts/browser", "/Game/scripts/main"]
 }

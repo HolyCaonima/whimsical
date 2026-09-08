@@ -18,7 +18,8 @@ HE.parentDialog=function(){
 HE.help=function(){HE.modal('HumanEditor controls',
     '<p>Click visible geometry to select using the GPU Entity ID image. Ctrl+click adds or removes actors. Select lights and non-rendering entities in the Outliner.</p>'+
     '<p>W / E / R: move, rotate, scale. Drag the red X, green Y or blue Z handle at the selected actor. World / Local changes axis orientation. Scale changes render dimensions; collider dimensions remain independent.</p>'+
-    '<p>Right mouse: orbit, with WASD and Q/E for camera travel. Middle mouse: pan. Wheel: zoom. F: focus.</p>'+
+    '<p>Right click an actor or Outliner row for actor commands. Right drag: orbit, with WASD and Q/E for camera travel. Middle mouse: pan. Wheel: zoom. F: focus.</p>'+
+    '<p>Drag panel dividers to resize the workspace. Maximize / Restore expands the viewport. Ctrl+Space toggles the Content Drawer. Viewport Settings adjusts snapping increments and camera speed; Window resets the layout.</p>'+
     '<p>Ctrl+S save; Ctrl+Z / Y undo / redo; Ctrl+D duplicate subtree; Ctrl+C / V copy / paste; Delete removes selected subtrees. Escape cancels a transform drag.</p>'+
     '<p>Open Content mounts an existing project. Double-click a Map to open it, a StaticMesh to place it, a Material to assign it, or a text / JSON asset to edit it. Save As must stay in a Content containing all scene dependencies.</p>'+
     '<p>Play launches the target scripts. Pause suspends simulation. Stop discards play changes and restores the authored level. Asset file writes are separate from scene undo history.</p>',[{label:'Close'}]);};
@@ -27,37 +28,44 @@ function initialize(){
     HE.doc=Engine.ui.loadDocument('/Game/UI/editor.rml').show();
     var bindings={
         'open-content':HE.openContentDialog,'new-level':HE.newLevel,'save':function(){if(HE.source)HE.save();else HE.saveAs();},'save-as':HE.saveAs,
-        'undo':function(){HE.history(false);},'redo':function(){HE.history(true);},'duplicate':HE.duplicate,'delete':HE.remove,
-        'focus':HE.focus,'enable':HE.toggleEnabled,'parent':HE.parentDialog,'unparent':function(){HE.setParent(0);},
+        'undo':function(){HE.history(false);},'redo':function(){HE.history(true);},
         'play':HE.play,'stop':HE.stop,'pause':function(){var s=Engine.simulation.state();if(s.running)Engine.simulation.pause(!s.paused);},
         'world-settings':HE.worldSettings,'help':HE.help,'rescan':HE.scan,'asset-new':HE.newAsset,
-        'asset-up':function(){HE.folder=HE.folder.substring(0,HE.folder.lastIndexOf('/'))||HE.mount;HE.refreshAssets();},
-        'show-log':function(){HE.el('log-panel').setProperty('display','block');},'hide-log':function(){HE.el('log-panel').setProperty('display','none');},
+        'asset-up':function(){HE.browseFolder(HE.parentFolder(HE.folder));},
+        'asset-back':function(){HE.browserTravel(-1);},'asset-forward':function(){HE.browserTravel(1);},
+        'asset-view':function(){HE.browser.list=!HE.browser.list;HE.refreshAssets();},
+        'show-log':function(){HE.showLog(true);},'hide-log':function(){HE.showLog(false);},
+        'content-drawer':HE.toggleContent,'maximize-view':HE.toggleViewport,'view-options':HE.viewOptions,
         'camera-reset':function(){HE.camera=HE.copy(Engine.scene.resources().camera);HE.applyCamera();},
-        'space':function(){HE.space=HE.space==='world'?'local':'world';HE.el('space').setText(HE.space==='world'?'World coordinates':'Local coordinates');},
-        'snap':function(){HE.snapEnabled=!HE.snapEnabled;HE.el('snap').setText(HE.snapEnabled?'Snap: 0.25 m / 10 deg':'Snap: off');},
-        'file-menu':function(){HE.modal('File','<p>Level and Content operations</p>',[{label:'Open Content',run:HE.openContentDialog},{label:'New level',run:HE.newLevel},{label:'Save',run:function(){HE.save();}},{label:'Save As',run:HE.saveAs},{label:'Close'}]);},
+        'space':function(){HE.space=HE.space==='world'?'local':'world';HE.el('space').setText(HE.space==='world'?'World':'Local');},
+        'snap':function(){HE.snapEnabled=!HE.snapEnabled;HE.el('snap').setClass('active',HE.snapEnabled);},
+        'file-menu':function(){HE.modal('File','<p>Level and Content operations</p>',[{label:'Open Content',run:HE.openContentDialog},{label:'New level',run:HE.newLevel},{label:'Save',run:bindings.save},{label:'Save As',run:HE.saveAs},{label:'Close'}]);},
         'edit-menu':function(){HE.modal('Edit','<p>Scene command history and selection</p>',[{label:'Undo',run:function(){HE.history(false);}},{label:'Redo',run:function(){HE.history(true);}},{label:'Duplicate',run:HE.duplicate},{label:'Delete',run:HE.remove},{label:'Close'}]);},
-        'window-menu':function(){HE.modal('Window','<p>Editor panels</p>',[{label:'Content Browser',run:bindings['hide-log']},{label:'Output Log',run:bindings['show-log']},{label:'World Settings',run:HE.worldSettings},{label:'Close'}]);}
+        'window-menu':function(){HE.modal('Window','<p>Drag the panel dividers to resize your workspace. Ctrl+Space toggles the Content Drawer.</p>',[{label:'Content Browser',run:bindings['hide-log']},{label:'Output Log',run:bindings['show-log']},{label:'Maximize / Restore viewport',run:HE.toggleViewport},{label:'Reset layout',run:function(){HE.layout={left:250,right:360,bottom:270,details:0.43,content:true,maximized:false};HE.resize(HE.width,HE.height,true);}},{label:'Close'}]);}
     };
     Object.keys(bindings).forEach(function(id){HE.bind(id,bindings[id]);});
     ['move','rotate','scale'].forEach(function(mode){HE.bind('tool-'+mode,function(){HE.setMode(mode);});});
     HE.bind('tree-search',HE.refreshTree,'change');HE.bind('asset-search',HE.refreshAssets,'change');
-    var palette=['Entity','Box','Capsule','Point','Spot','Directional','Rect','CapsuleLight'];
-    HE.el('palette').setInnerRML(palette.map(function(k,i){return '<button id="place-'+i+'" class="wide">'+(i<3?'◇  ':'*  ')+k+'</button>';}).join(''));
-    palette.forEach(function(k,i){HE.bind('place-'+i,function(){HE.add(k);});});
+    HE.bind('place-search',HE.refreshPalette,'change');HE.bind('details-search',HE.filterDetails,'change');HE.bind('asset-filter',HE.refreshAssets,'change');
+    HE.bind('folder-search',HE.refreshFolders,'change');HE.bind('asset-sort',HE.refreshAssets,'change');
+    HE.doc.on('mousedown',function(){HE.browserFocused=false;},true);
+    HE.el('content').on('mousedown',function(){HE.browserFocused=true;},true);
+    HE.el('content').on('focus',function(){HE.browserFocused=true;},true);
+    HE.el('content').on('keydown',HE.guard(HE.browserKey),true);
+    HE.refreshPalette();
+    ['left','right','bottom','details'].forEach(function(edge){HE.bind('split-'+edge,function(ev){if(ev.parameters.button!==0)return;ev.stopPropagation();HE.panelDrag=edge;HE.navigation=null;HE.cancelPick();},'mousedown');});
     HE.bind('viewport',HE.pointerDown,'mousedown');
     HE.bind('viewport',HE.pointerWheel,'mousescroll');
     HE.doc.on('mousemove',HE.pointerMove,true);
     HE.doc.on('keydown',function(ev){HE.keyEvent(ev,true);},true);
     HE.doc.on('keyup',function(ev){HE.keyEvent(ev,false);},true);
-    HE.doc.on('focus',function(ev){var id=ev.target.getAttribute('id')||'';HE.editingText=/^(field-|entity-name|tree-search|asset-search|log-text)/.test(id);},true);
-    HE.doc.on('mouseup',HE.guard(function(ev){HE.navigationEnded=HE.navigation;HE.navigation=null;if(HE.drag)HE.dragTo(ev.parameters.mouse_x,ev.parameters.mouse_y);HE.endDrag(false);}),true);
+    HE.doc.on('focus',function(ev){HE.browserFocused=false;var id=ev.target.getAttribute('id')||'';HE.editingText=/^(field-|entity-name|tree-search|asset-search|folder-search|place-search|details-search|log-text|asset-filter|asset-sort)/.test(id);},true);
+    HE.doc.on('mouseup',HE.guard(HE.pointerUp),true);
     ['x','y','z'].forEach(function(axis){HE.bind('axis-'+axis,function(ev){if(ev.parameters.button!==0)return;ev.stopPropagation();HE.beginDrag(axis,ev.parameters.mouse_x,ev.parameters.mouse_y);},'mousedown');});
     HE.source=Engine.scene.info().source;HE.camera=HE.copy(Engine.scene.resources().camera);
     HE.createTools();HE.applyCamera();HE.refreshTree();HE.refreshDetails();HE.refreshStatus();
     if(HE.settings.content){
-        var mounted=Engine.content.mount('/Target',HE.settings.content,true);HE.targetPath=HE.settings.content;HE.mount='/Target';HE.folder='/Target/Maps';
+        var mounted=Engine.content.mount('/Target',HE.settings.content,true);HE.targetPath=HE.settings.content;HE.mount='/Target';HE.folder='/Target';
         HE.publicScripts=(HE.settings.scripts||[]).map(function(p){return p.replace('/Game/','/Target/');});
         HE.programs[mounted.source]=HE.publicScripts;
         HE.assets=Engine.content.browse('/Target');HE.refreshAssets();
@@ -67,6 +75,7 @@ function initialize(){
     if(HE.settings.smoke&&typeof HE.smokeStart==='function')HE.smokeStart();
 }
 function sceneChanged(){
+    HE.closeContext();
     var p=HE.pending;HE.pending=null;HE.drag=null;HE.navigation=null;
     HE.source=p&&(p.kind==='history'||p.kind==='rollback')?p.saveTarget:HE.playSelection?HE.playSaveTarget:Engine.scene.info().source;
     var ids=p&&p.selection?p.selection:HE.playSelection||[];

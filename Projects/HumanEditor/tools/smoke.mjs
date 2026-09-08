@@ -20,5 +20,6 @@ write(path.join(host,'Content','Settings.asset'),settings.header,settings.payloa
 const script={id:'42222222222222222222222222222222',path:'/Game/scripts/simulation'};
 write(path.join(target,'scripts','simulation.asset'),{id:script.id,type:'Script',name:'Simulation',version:1,storage:'embedded',metadata:{}},'function initialize(){var d=Engine.sceneData();d.playStarted=true;Engine.setSceneData(d);}');
 const map=read(path.join(target,'Maps','Workbench.asset'));map.payload.scripts=[script];write(path.join(target,'Maps','Workbench.asset'),map.header,map.payload);
+write(path.join(target,'Props','Architecture','Wall.asset'),{id:'43333333333333333333333333333333',type:'Data',name:'Wall',version:1,storage:'embedded',metadata:{}},{height:3});
 fs.writeFileSync(path.join(root,'Saved','smoke-project.txt'),host);
 console.log(host);

@@ -2,10 +2,23 @@
 HE.smokeStart=function(){HE.smoke={phase:0,wait:0};};
 HE.smokeTick=function(dt,input){
     var s=HE.smoke;if(!s)return;
-    if(s.done){if(!s.logged&&++s.wait>15){s.logged=true;
+    if(s.done){s.wait++;if(!s.logged&&s.wait>15){s.logged=true;
         if(HE.el('entity-name').getBounds().width<100)throw Error('Inspector layout collapsed');
         if(HE.el('asset-1').getBounds().x<=HE.el('asset-0').getBounds().x)throw Error('Content cards must form a row');
-        Engine.log('HumanEditor layout PASS: inspector width and Content card grid');
+        if(HE.el('place-search').getBounds().width<150)throw Error('Palette search collapsed');
+        if(HE.el('category-1').getBounds().x<=HE.el('category-0').getBounds().x)throw Error('Palette categories must form a row');
+        if(HE.el('section-render').getBounds().height>45)throw Error('Collapsed component still occupies field space');
+        Engine.log('HumanEditor layout PASS: inspector, Content grid, palette search, categories and component collapse');
+        HE.browseFolder(HE.mount);HE.layout.bottom=200;HE.resize(input.width,input.height,true);
+    }
+    if(s.wait===28){
+        if(HE.el('asset-folder-1').getBounds().x<=HE.el('asset-folder-0').getBounds().x)throw Error('Folder grid collapses when scrolling');
+        HE.browser.list=true;HE.refreshAssets();
+    }
+    if(s.wait===40){
+        var first=HE.el('asset-folder-0').getBounds(),second=HE.el('asset-folder-1').getBounds();
+        if(first.width<500||second.y<=first.y||second.x!==first.x)throw Error('Browser list layout is not a full-width column');
+        Engine.log('HumanEditor browser PASS: nested folders, history, search, asset open, keyboard focus, scrolling grid and list view');
     }return;}
     function check(ok,message){if(!ok)throw Error('HumanEditor smoke: '+message);}
     function find(name){return HE.entities().filter(function(e){return Engine.entity(e).name===name;})[0];}
@@ -18,16 +31,22 @@ HE.smokeTick=function(dt,input){
     if(s.phase===1){
         if(++s.wait<12)return;
         var info=Engine.renderTargetInfo(HE.rt);if(!info.width)return;
-        HE.pick(HE.rect.x+HE.rect.width/2,HE.rect.y+HE.rect.height/2,false);s.phase=2;return;
+        var rightClick={parameters:{button:1,mouse_x:HE.rect.x+HE.rect.width/2,mouse_y:HE.rect.y+HE.rect.height/2}};
+        HE.pointerDown(rightClick);HE.pointerUp(rightClick);
+        var openContext=HE.pickCallback;HE.pickCallback=function(entity){openContext(entity);s.contextOpened=!!HE.contextDoc&&HE.contextDoc.querySelectorAll('button').length===8;};
+        s.phase=2;return;
     }
     if(s.phase===2){
         if(HE.pickTicket)return;
         check(HE.lastPick&&HE.lastPick.entity===s.cube,'DrawEntityID selects the visible cube');
         check(HE.selected[0]===s.cube,'GPU selection reaches inspector');
+        check(s.contextOpened,'right click opens actor commands after GPU picking');
+        HE.closeContext();
         HE.command('Smoke edit',function(){Engine.rename(s.cube,'Edited cube');var t=Engine.component(s.cube,'transform');t.position[0]=1.25;Engine.setComponent(s.cube,'transform',t);Engine.addComponent(s.cube,'data',{answer:42});});
         s.child=Engine.create({name:'Child',components:{transform:{position:[0,1,0],parent:s.id},data:{child:true}}});
         HE.select(s.cube);HE.duplicate();
         check(HE.selected.length===2,'duplicate includes children');s.copyIds=HE.ids();
+        HE.actorContext(HE.selected[0],600,300);check(JSON.stringify(HE.ids())===JSON.stringify(s.copyIds),'right click preserves multi-selection');HE.closeContext();
         check(Engine.component(HE.selected[1],'transform').parent===s.copyIds[0],'duplicate remaps hierarchy');
         HE.remove();check(!Engine.findEntity(s.copyIds[0]),'delete subtree');
         HE.history(false);s.phase=3;return;
@@ -85,15 +104,55 @@ HE.smokeTick=function(dt,input){
         var before=HE.copy(HE.camera.target);
         HE.keyEvent({parameters:{key_identifier:34,ctrl_key:0,shift_key:0}},true);
         HE.input(dt,inputForUi);HE.keyEvent({parameters:{key_identifier:34,ctrl_key:0,shift_key:0}},false);
-        check(JSON.stringify(before)!==JSON.stringify(HE.camera.target),'UI-owned WASD fly');HE.navigation=null;
+        check(JSON.stringify(before)!==JSON.stringify(HE.camera.target),'UI-owned WASD fly');
+        HE.pointerUp({parameters:{button:1,mouse_x:inputForUi.x+30,mouse_y:inputForUi.y+10}});
+        check(!HE.pickTicket&&!HE.contextDoc,'right drag does not open a context menu');
         var distance=HE.camera.distance;
         HE.pointerWheel({parameters:{wheel_delta_y:-1},stopPropagation:function(){}});HE.input(dt,inputForUi);
         check(HE.camera.distance<distance,'UI wheel zoom');
         HE.keyEvent({parameters:{key_identifier:16,ctrl_key:0,shift_key:0}},true);HE.input(dt,inputForUi);
         check(HE.mode==='rotate','UI keyboard shortcut');HE.keyEvent({parameters:{key_identifier:16,ctrl_key:0,shift_key:0}},false);
         HE.setMode('move');HE.scan();
+        var undoCount=HE.undoStack.length,rect=HE.copy(HE.rect);
+        HE.toggleViewport();check(HE.rect.width>rect.width,'maximize expands viewport');
+        HE.toggleViewport();check(JSON.stringify(HE.rect)===JSON.stringify(rect),'restore preserves panel layout');
+        HE.toggleContent();check(HE.rect.height>rect.height,'drawer frees viewport space');HE.toggleContent();
+        HE.panelDrag='right';HE.movePanel(input.width-390,300);HE.panelDrag=null;
+        check(HE.detailsWidth===390,'panel divider resizes details');
+        HE.layout.right=360;HE.resize(input.width,input.height,true);
+        check(HE.undoStack.length===undoCount,'workspace changes do not enter scene history');
+        HE.browseFolder(HE.mount+'/Maps');HE.el('asset-filter').setValue('Script');HE.refreshAssets();
+        check(HE.el('assets').querySelectorAll('.asset').length===0,'type filter excludes maps');
+        HE.el('asset-filter').setValue('All');HE.browseFolder(HE.mount);
+        check(HE.el('assets').querySelectorAll('.folder-card').length>=2,'root shows child folders');
+        var folderItem=HE.browser.items.filter(function(item){return item.path===HE.mount+'/Props';})[0];
+        HE.selectBrowserItem(folderItem);check(HE.folder===HE.mount,'single click selects without entering');
+        HE.keyEvent({parameters:{key_identifier:99,ctrl_key:0,shift_key:0}},true);HE.input(dt,inputForUi);
+        HE.keyEvent({parameters:{key_identifier:99,ctrl_key:0,shift_key:0}},false);
+        check(Engine.alive(HE.selected[0])&&HE.undoStack.length===undoCount,'asset focus does not delete scene selection');
+        HE.openBrowserItem(folderItem);check(HE.folder===HE.mount+'/Props','folder open enters directory');
+        HE.openBrowserItem(HE.browser.items[0]);check(HE.folder===HE.mount+'/Props/Architecture','nested folder open');
+        HE.browserTravel(-1);check(HE.folder===HE.mount+'/Props','Back');
+        HE.browserTravel(1);check(HE.folder===HE.mount+'/Props/Architecture','Forward');
+        HE.selectBrowserItem(HE.browser.items[0]);HE.openBrowserItem(HE.browser.selected);
+        check(!!HE.modalDoc&&!!HE.modalDoc.getElementById('asset-editor'),'asset open reaches its editor');
+        HE.modalDoc.close();HE.modalDoc=null;
+        HE.browseFolder(HE.mount);HE.el('asset-filter').setValue('Map');HE.refreshAssets();
+        check(HE.browser.items.some(function(item){return item.kind==='folder'&&item.name==='Props';}),'category filter keeps folder navigation');
+        HE.el('asset-filter').setValue('All');HE.el('asset-search').setValue('Architecture');HE.refreshAssets();
+        check(HE.browser.items.some(function(item){return item.kind==='folder'&&item.name==='Architecture';}),'search finds nested folders');
+        HE.browseFolder(HE.mount+'/Maps');HE.browserTravel(-1);
+        check(HE.el('asset-search').getValue()==='Architecture','Back restores search state');
+        HE.browseFolder(HE.mount);
+        HE.el('asset-search').setValue('Workbench');HE.refreshAssets();
+        check(HE.el('assets').querySelectorAll('.asset').length===1,'search includes descendants');
+        HE.browseFolder(HE.mount+'/Maps');
+        HE.paletteCategory='Lights';HE.refreshPalette();
+        check(HE.el('palette').querySelectorAll('button').length===5,'light placement category');
+        HE.paletteCategory='Basic';HE.refreshPalette();
+        HE.componentCollapsed.render=true;HE.filterDetails();
         HE.focus();
-        HE.log('SMOKE PASS: GPU ID, ECS, hierarchy, history, transforms, save/load, Play/Pause/Stop, rollback, UI camera and keyboard input');
+        HE.log('SMOKE PASS: GPU ID, ECS, history, save/load, Play/Pause/Stop, UI input, layout, assets, palette and actor context menu');
         s.done=true;s.wait=0;
     }
 };

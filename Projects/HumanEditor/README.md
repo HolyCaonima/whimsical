@@ -10,7 +10,7 @@
 .\build\bin\Release\Afterlight.exe --project Projects/HumanEditor --width 1600 --height 1000
 ```
 
-默认挂载 Afterlight 的 Content 并打开 RainCourt，**仅加载场景数据，不执行它的游戏脚本**。启动不会保存或修改目标项目。建议使用 1440×900 及以上窗口；左侧工具、对象树、属性和内容列表可以滚动。
+默认挂载 Afterlight 的 Content 并打开 RainCourt，**仅加载场景数据，不执行它的游戏脚本**。Content Browser 从 Content 根目录显示文件夹，地图加载不改变正在浏览的目录。启动不会保存或修改目标项目。建议使用 1440×900 及以上窗口；左侧工具、对象树、属性和内容列表可以滚动。
 
 ## 打开另一个项目
 
@@ -28,28 +28,44 @@
 | 选中 / 多选 | 点击视口中的可见表面；Ctrl+点击增减选择；也可点击 Outliner |
 | 父子对象树 | 点击 `+ / -` 展开折叠；输入框搜索；双击对象聚焦 |
 | 移动 / 旋转 / 缩放 | W / E / R；拖拽选中对象处的 X / Y / Z 轴手柄 |
-| 世界 / 本地坐标 | 左侧 World coordinates / Local coordinates |
-| 吸附 | 位置 0.25 米、旋转 10 度、渲染尺寸增量 0.1；左侧按钮可关闭 |
+| 世界 / 本地坐标 | 视口工具栏 World / Local |
+| 吸附 | 视口 Snap 开关；Settings 设置位置、旋转、缩放步长，默认 0.25 米 / 10 度 / 0.1 |
+| 对象右键菜单 | 视口右键单击对象或右键 Outliner 条目；包含聚焦、复制粘贴、副本、删除、启停和父级操作；右键已选对象保留多选，Esc 或点击菜单外关闭 |
 | 相机 | 右键拖动环绕，右键按住配合 WASD / Q / E 移动，Shift 加速；中键平移；滚轮缩放 |
-| 聚焦 / 重置相机 | F / Focus selected；Perspective 恢复地图相机 |
-| 添加实体 | 左侧 Entity、Box、Capsule 或五类 Light；放置在相机观察目标处 |
-| 重命名 / 启停 | Details 的 Rename / Enabled；多选启停使用左侧按钮 |
+| 聚焦 / 重置相机 | F / 右键 Focus selected；Perspective 恢复地图相机 |
+| 添加实体 | Place Actors 的 Basic / Shapes / Lights 分类；搜索覆盖全部类别，点击放置在相机观察目标处 |
+| 重命名 / 启停 | Details 的 Rename / Enabled；多选启停使用右键 Toggle enabled |
 | 修改组件 | Details 输入字段后点 Apply fields；复杂引用和嵌套数据使用 Complete JSON |
+| 查找 / 折叠组件 | Details 的 Filter 按组件名或属性名筛选组件；点击组件标题折叠，搜索期间自动展开匹配组件 |
 | 添加 / 删除组件 | + Component 从引擎 ComponentCatalog 枚举；依赖规则由引擎验证 |
-| 设置父级 | Set parent / Detach from parent，保持世界姿态，拒绝循环层级 |
+| 设置父级 | 右键 Set parent / Detach from parent，保持世界姿态，拒绝循环层级 |
 | 复制 / 粘贴 / 副本 | Ctrl+C / Ctrl+V / Ctrl+D；包含子树，副本使用新持久 ID |
-| 删除 | Delete / 左侧 Delete；删除选中根对象的整个子树 |
+| 删除 | Delete / 右键 Delete；删除选中根对象的整个子树 |
 | 撤销 / 重做 | Ctrl+Z / Ctrl+Y；最多保留 50 个场景操作，一次拖拽为一个操作 |
 | 新建 / 保存 / 另存为 | New Level、Ctrl+S、Save、Save As；路径不带 `.asset` 后缀 |
 | 场景资源 | World Settings 编辑材质表、地图相机、导航、脚本、引用和场景数据 |
-| 内容操作 | 目录浏览、搜索、Refresh；New asset 创建 Data / Script |
+| 文件夹导航 | 单击卡片选中、双击或 Enter 进入；Up / Backspace 返回上级；Back / Forward 恢复目录及当时的搜索和类别条件；顶部路径可点击 |
+| 目录树 | 左侧 +/- 展开折叠，单击目录进入；Find 搜索目录名并保留祖先层级，网格进入子目录时展开对应父级 |
+| 内容搜索 | Search 搜索当前目录及子目录中的文件夹和资产；类别筛选保留直接子文件夹入口；Refresh 重新扫描 |
+| 内容视图 | 文件夹优先排列，Name A-Z / Z-A 排序；List / Tiles 切换列表和卡片；底部显示数量及选中项完整路径 |
+| 资产创建 | + New asset 创建 Data / Script；选中资产显示高亮，双击打开 |
 | 资产打开 | 双击 Map 加载、StaticMesh 放置、Material 指派；文本 / JSON 资产可编辑保存 |
 | 模拟 | Play 启动目标程序，Pause / Resume 暂停恢复，Stop 恢复 Play 前场景和选择 |
 | 日志 / 帮助 | Output Log / Help；引擎控制台继续通过 F10 使用 |
+| 面板布局 | 拖动左右分隔条、内容面板上沿、Outliner / Details 之间的分隔条；Window → Reset layout 恢复默认 |
+| 视口最大化 | Maximize / Restore；保留面板尺寸，继续支持拾取与变换 |
+| 内容抽屉 | 底部 Content Drawer 或 Ctrl+Space 收起 / 展开；Window 可重新打开 Content Browser / Output Log |
+| 相机速度 | 视口 Settings 中 Camera speed，Shift 仍可临时加速 |
 
 多选支持成组变换、启停、删除、层级和材质指派；Details 编辑最后选中的活动对象。灯光或没有可见网格的实体通过 Outliner 选中。变换的 rotation 字段遵循引擎的四元数 `[x,y,z,w]`，轴向旋转工具负责生成正确旋转值。
 
 缩放修改 `render.scale`，碰撞体尺寸是独立组件数据，按引擎契约单独编辑。复制重映射 Transform 父级；自定义脚本数据内的引用仍保持原值。
+
+布局、折叠状态和视口设置在当前编辑器会话内保留，不写入地图，也不进入场景撤销历史。资源类别沿用项目目录约定（Maps / Materials / Models / textures / scripts）；未按这些目录组织的资源归入 Other，打开时仍以资产头的真实类型执行操作。没有搜索或类别筛选时，内容网格只显示当前目录的直接子项。
+
+Content Browser 获得焦点时，Delete / Ctrl+D 等演员快捷键不会操作场景选择。Enter 打开选中项，Backspace 返回上级，Esc 清空网格搜索和选择；文本框内保留正常输入行为。
+
+**当前 Content 接口边界：** `Engine.content.browse` 只返回资产引用，目录树由资产路径建立，因此不显示空文件夹或仅含未索引源文件的目录。完整支持空目录需要 Content 层导出按挂载来源枚举目录条目的接口；准确的资产类型筛选还需要只读资产头元数据接口，避免为了目录列表加载整个资产。两项都不是 UI Core 缺少导出。本项目没有添加虚构文件夹或修改引擎。
 
 ## 拾取、历史与保存
 
@@ -67,7 +83,8 @@
 - `.project`：常驻 `hostScripts`，`startupMode: load`。
 - `Content/scripts/editor.js`：文档状态、命令、历史、层级、Content 与模拟生命周期。
 - `Content/scripts/viewport.js`：UI 输入、相机、ID 回读、投影与轴向变换。
-- `Content/scripts/panels.js`：对象树、组件面板、资产浏览与对话框。
+- `Content/scripts/panels.js`：对象树、组件面板、对象右键菜单与通用对话框。
+- `Content/scripts/browser.js`：Content 目录索引、导航历史、搜索、网格 / 列表及资产打开操作。
 - `Content/scripts/main.js`：UI 绑定及宿主生命周期。
 - `Content/UI/`：项目自身的 RML / RCSS。
 - `Content/Settings.asset`：默认目标与项目预设。
@@ -79,9 +96,9 @@
 ```powershell
 node Projects/HumanEditor/tools/smoke.mjs
 $editorTest = Get-Content Projects/HumanEditor/Saved/smoke-project.txt
-.\build\bin\Release\Afterlight.exe --project $editorTest --width 1440 --height 900 --frames 65 --validation --capture
+.\build\bin\Release\Afterlight.exe --project $editorTest --width 1440 --height 900 --frames 100 --validation --capture
 ```
 
-测试只在本项目 Saved 中生成隔离的宿主和目标 Content。真实 Duktape + Vulkan 验证覆盖：ID 选中、组件修改、子树复制删除、撤销重做、轴向拖拽、保存重载、Save As 目的地、Play/Pause/Stop、失败回滚，以及 UI 接管输入后的相机与快捷键。另检查属性面板宽度和资产卡片排列。
+测试只在本项目 Saved 中生成隔离的宿主和目标 Content。真实 Duktape + Vulkan 验证覆盖：ID 选中、组件修改、子树复制删除、撤销重做、轴向拖拽、保存重载、Save As 目的地、Play/Pause/Stop、失败回滚，以及 UI 接管输入后的相机与快捷键。另检查视口最大化 / 恢复、抽屉与分隔条布局、目录及资源筛选、放置分类，以及属性折叠和关键控件尺寸。
 
-2026-09-08：上述验证通过，输出 `SMOKE PASS` 与 `layout PASS`，正常退出，Vulkan validation errors=0。同时检查了引擎 GPU 截图。外部鼠标自动复测收到物理 Esc 停止信号后已停止；不将其计为通过。
+2026-09-08：1440×900 隔离验证输出 `SMOKE PASS`、`layout PASS`、`browser PASS`，正常退出，Vulkan validation errors=0。浏览器验证包含嵌套目录进入、前进 / 后退、搜索状态恢复、资产打开、键盘焦点隔离，以及滚动时的网格和列表布局。另以 1600×1000 打开默认 RainCourt 并检查 GPU 截图。交互验证调用项目输入处理函数，不视为外部鼠标端到端测试。
