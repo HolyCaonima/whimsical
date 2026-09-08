@@ -180,8 +180,186 @@ static void handover() {
             "Touching a resource a pass never declared must be rejected");
 }
 
+static void shaderContracts() {
+    Registry registry;
+    auto declare = [&](const char* name, Lifetime lifetime) {
+        Declaration d;
+        d.name = name;
+        d.lifetime = lifetime;
+        if (std::string(name) != "actual scratch")
+            d.view.type = BindingType::StorageImage;
+        return registry.declare(d);
+    };
+    auto input = declare("input slot", Lifetime::Transient);
+    auto output = declare("output slot", Lifetime::Transient);
+    auto shape = declare("shape only", Lifetime::Transient);
+    auto scratch = declare("actual scratch", Lifetime::Transient);
+    auto result = declare("actual result", Lifetime::Persistent);
+    auto unused = declare("unused view", Lifetime::Transient);
+    Program copy{VK_NULL_HANDLE,
+                 {{registry.view(input).binding, Access::Compute, true, false},
+                  {registry.view(output).binding, Access::Compute, false, true},
+                  {registry.view(shape).binding, Access::Compute, false, false}}};
+    RenderGraph graph(registry);
+    graph.add("unused shape contents").overwrite(shape, Access::Transfer);
+    graph.add("seed").overwrite(input, Access::Transfer);
+    graph.add("copy A").dispatch(copy).bind(output, scratch).overwrite(scratch, Access::Compute);
+    graph.add("copy B")
+        .dispatch(copy)
+        .bind(input, scratch)
+        .bind(output, result)
+        .overwrite(result, Access::Compute);
+    graph.add("partial update")
+        .shader({{registry.view(output).binding, Access::Compute, false, true}})
+        .bind(output, result)
+        .modify(result, Access::Compute);
+    graph.compile(64, 64);
+    check(graph.livePasses() == 4 && graph.alive(3), "Write-only partial update must retain its producer");
+    check(!graph.alive(0) && graph.residency()[shape.index].needed,
+          "Size-only access needs binding storage but no content producer");
+    check(!graph.residency()[output.index].needed && !graph.residency()[unused.index].needed,
+          "Default shader slots and unused views must not allocate when mapped elsewhere");
+    graph.checkDeclared(2, scratch);
+    graph.checkDeclared(3, result);
+    check(graph.bindings(2)[1].resource == scratch && graph.bindings(3)[1].resource == result,
+          "The same program must resolve different resources per pass");
+    graph.reset();
+    graph.add("missing coverage")
+        .shader({{registry.view(output).binding, Access::Compute, false, true}})
+        .bind(output, result);
+    rejects([&] { graph.compile(64, 64); }, "Write-only reflection must not imply full coverage");
+    graph.reset();
+    graph.add("uninitialised partial write")
+        .shader({{registry.view(output).binding, Access::Compute, false, true}})
+        .modify(output, Access::Compute)
+        .sideEffect();
+    rejects([&] { graph.compile(64, 64); }, "Partial writes need old contents even without shader reads");
+    graph.reset();
+    graph.add("read contradicts overwrite")
+        .dispatch(copy)
+        .bind(input, result)
+        .bind(output, result)
+        .overwrite(result, Access::Compute);
+    rejects([&] { graph.compile(64, 64); }, "Aliased input/output must not discard a shader read");
+}
+
+// Exercise the real descriptor cache with a tiny recording Vulkan boundary. Deliberately
+// recycle raw handles so the test cannot pass just because the driver picked new values.
+static void descriptorReplacement() {
+    using namespace afterlight;
+    static uint64_t nextSet = 10;
+    struct Written {
+        VkDescriptorSet set;
+        VkBuffer buffer;
+    };
+    static std::vector<Written> writes;
+    vkCreateDescriptorSetLayout = [](VkDevice, const VkDescriptorSetLayoutCreateInfo*,
+                                     const VkAllocationCallbacks*, VkDescriptorSetLayout* out) {
+        *out = VkDescriptorSetLayout(1);
+        return VK_SUCCESS;
+    };
+    vkCreatePipelineLayout = [](VkDevice, const VkPipelineLayoutCreateInfo*, const VkAllocationCallbacks*,
+                                VkPipelineLayout* out) {
+        *out = VkPipelineLayout(2);
+        return VK_SUCCESS;
+    };
+    vkCreateDescriptorPool = [](VkDevice, const VkDescriptorPoolCreateInfo*, const VkAllocationCallbacks*,
+                                VkDescriptorPool* out) {
+        *out = VkDescriptorPool(3);
+        return VK_SUCCESS;
+    };
+    vkAllocateDescriptorSets = [](VkDevice, const VkDescriptorSetAllocateInfo* info, VkDescriptorSet* out) {
+        for (uint32_t i = 0; i < info->descriptorSetCount; ++i)
+            out[i] = VkDescriptorSet(++nextSet);
+        return VK_SUCCESS;
+    };
+    vkUpdateDescriptorSets = [](VkDevice, uint32_t count, const VkWriteDescriptorSet* updates, uint32_t,
+                                const VkCopyDescriptorSet*) {
+        for (uint32_t i = 0; i < count; ++i)
+            writes.push_back(
+                {updates[i].dstSet, updates[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+                                        ? updates[i].pBufferInfo->buffer
+                                        : VK_NULL_HANDLE});
+    };
+    vkDestroyDescriptorSetLayout = [](VkDevice, VkDescriptorSetLayout, const VkAllocationCallbacks*) {};
+    vkDestroyPipelineLayout = [](VkDevice, VkPipelineLayout, const VkAllocationCallbacks*) {};
+    vkDestroyDescriptorPool = [](VkDevice, VkDescriptorPool, const VkAllocationCallbacks*) {};
+    vkDestroyBuffer = [](VkDevice, VkBuffer, const VkAllocationCallbacks*) {};
+    vkDestroyImage = [](VkDevice, VkImage, const VkAllocationCallbacks*) {};
+    vkDestroyImageView = [](VkDevice, VkImageView, const VkAllocationCallbacks*) {};
+    VulkanContext vk;
+    Registry registry;
+    auto declare = [&](Kind kind, BindingType type) {
+        Declaration d;
+        d.kind = kind;
+        d.lifetime = Lifetime::Imported;
+        d.view.type = type;
+        return registry.declare(d);
+    };
+    auto bufferId = declare(Kind::Buffer, BindingType::Storage);
+    auto imageId = declare(Kind::Image, BindingType::StorageImage);
+    auto tlasId = declare(Kind::AccelerationStructure, BindingType::Tlas);
+    auto otherId = declare(Kind::Buffer, BindingType::Storage);
+    Buffer buffer;
+    buffer.handle = VkBuffer(100);
+    buffer.size = 256;
+    buffer.generation = nextResourceGeneration();
+    Image image;
+    image.handle = VkImage(200);
+    image.view = VkImageView(201);
+    image.generation = nextResourceGeneration();
+    Buffer other;
+    other.handle = VkBuffer(101);
+    other.size = 256;
+    other.generation = nextResourceGeneration();
+    ResourcePool pool(vk, registry);
+    pool.importBuffer(otherId, other);
+    pool.importBuffer(bufferId, buffer);
+    pool.importImage(imageId, image);
+    pool.importTlas(tlasId, VkAccelerationStructureKHR(300), nextResourceGeneration());
+    std::vector<ShaderBinding> bindings{{0, bufferId}, {1, imageId}, {2, tlasId}};
+    auto first = pool.descriptors(0, bindings);
+    auto otherBindings = bindings;
+    otherBindings[0].resource = otherId;
+    auto second = pool.descriptors(1, otherBindings);
+    check(first != second && writes.size() == 6 && writes[0].set == first && writes[3].set == second &&
+              writes[0].buffer == buffer.handle && writes[3].buffer == other.handle,
+          "Per-pass descriptor sets must contain their actual mapped resources");
+    pool.descriptors(0, bindings);
+    check(writes.size() == 6, "Unchanged bindings must reuse the cache");
+    pool.flip();
+    pool.descriptors(0, bindings);
+    check(writes.size() == 9, "Both history parities need independent caches");
+    pool.state(pool.physical(imageId)).writeStage = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+    vk.destroy(buffer);
+    vk.destroy(image);
+    buffer.handle = VkBuffer(100);
+    buffer.size = 256;
+    buffer.generation = nextResourceGeneration();
+    image.handle = VkImage(200);
+    image.view = VkImageView(201);
+    image.generation = nextResourceGeneration();
+    pool.importTlas(tlasId, VkAccelerationStructureKHR(300), nextResourceGeneration());
+    pool.descriptors(0, bindings);
+    pool.flip();
+    pool.descriptors(0, bindings);
+    pool.descriptors(1, otherBindings);
+    check(writes.size() == 17, "Same-handle replacements must invalidate every pass and parity");
+    check(pool.state(pool.physical(imageId)).writeStage == 0,
+          "Replacement must also reset synchronization state");
+    buffer.generation = nextResourceGeneration();
+    vk.destroy(image);
+    rejects([&] { pool.descriptors(0, bindings); }, "A required missing binding must be rejected");
+    image.handle = VkImage(200);
+    image.view = VkImageView(201);
+    image.generation = nextResourceGeneration();
+    pool.descriptors(0, bindings);
+    check(writes.size() == 19, "A failed binding update must not cache writes it never submitted");
+}
+
 int main() {
     try {
+        shaderContracts();
         culling();
         modifyChain();
         undefinedContents();
@@ -189,6 +367,7 @@ int main() {
         ownership();
         reached();
         handover();
+        descriptorReplacement();
         std::cout << "Render graph contract verified\n";
         return 0;
     } catch (const std::exception& error) {

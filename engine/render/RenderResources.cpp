@@ -137,7 +137,6 @@ RestirDiResources::RestirDiResources(Registry& registry) {
         }));
     // A pass writes the layers playing the roles it produces and leaves the others
     // standing, so writing this buffer preserves it rather than replacing it.
-    reservoirArrays.wholeWrites = false;
     reservoirs = registry.declare(std::move(reservoirArrays));
     neighbours = registry.declare(inRtxdi(storage("diNeighbors", Lifetime::External, "DiNeighbors",
                                                   "    vec2 diNeighbors[];", nullptr, true)));

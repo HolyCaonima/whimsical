@@ -1,0 +1,15 @@
+#version 460
+#extension GL_EXT_shader_image_load_formatted : require
+layout(local_size_x=8, local_size_y=8) in;
+layout(set=0, binding=0) uniform readonly image2D sourceImage;
+layout(set=0, binding=1) uniform writeonly image2D targetImage;
+layout(set=0, binding=2, rgba16f) uniform image2D shapeImage;
+vec4 fetchValue(readonly image2D source, ivec2 p) { return imageLoad(source, p); }
+void putValue(writeonly image2D target, ivec2 p, vec4 value) { imageStore(target, p, value); }
+void copyPixel(readonly image2D source, writeonly image2D target, ivec2 p) {
+    putValue(target, p, fetchValue(source, p));
+}
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (all(lessThan(p, imageSize(shapeImage)))) copyPixel(sourceImage, targetImage, p);
+}

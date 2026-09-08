@@ -5,24 +5,29 @@
 #include "render/graph/ShaderAccess.h"
 #include <iostream>
 #include <cstring>
+#include <fstream>
 
 using namespace afterlight;
 static void check(bool value, const char* message) {
     if (!value)
         throw std::runtime_error(message);
 }
-// What a pass declares comes from the module it runs, so the check is that reflecting the
-// real linked SPIR-V says what the shader source does.
-static rg::Usage usageOf(const std::vector<rg::ShaderAccess>& accesses, rg::ResourceRef ref,
-                         rg::Access site, const char* what) {
+// Reflection reports shader operations. Passes separately declare output coverage.
+enum class Operation { Binding, Read, Write, ReadWrite };
+static Operation usageOf(const rg::Registry& registry, const std::vector<rg::ShaderAccess>& accesses,
+                         rg::ResourceRef ref, rg::Access site, const char* what) {
     for (const auto& access : accesses)
-        if (access.ref == ref && access.access == site)
-            return access.usage;
+        if (access.binding == registry.view(ref).binding && access.access == site)
+            return access.writes ? (access.reads ? Operation::ReadWrite : Operation::Write)
+                                 : (access.reads ? Operation::Read : Operation::Binding);
     throw std::runtime_error(std::string("Shader access not derived: ") + what);
 }
-static bool untouched(const std::vector<rg::ShaderAccess>& accesses, rg::ResourceRef ref) {
+static bool untouched(const rg::Registry& registry, const std::vector<rg::ShaderAccess>& accesses,
+                      rg::ResourceRef ref) {
+    if (!registry.view(ref))
+        return true;
     for (const auto& access : accesses)
-        if (access.ref == ref)
+        if (access.binding == registry.view(ref).binding)
             return false;
     return true;
 }
@@ -34,8 +39,41 @@ template <class F> static void rejects(F&& f, const char* message) {
     }
     throw std::runtime_error(message);
 }
+// Compile ordinary, non-inlined GLSL function wrappers. Both argument directions and
+// the size-only binding must survive reflection through nested function calls.
+static void functionResources() {
+    rg::Registry registry;
+    rg::ResourceId ids[3];
+    for (int i = 0; i < 3; ++i) {
+        rg::Declaration d;
+        d.name = "argument" + std::to_string(i);
+        d.view.type = rg::BindingType::StorageImage;
+        ids[i] = registry.declare(d);
+    }
+    std::ifstream file(CONTRACT_SPIRV, std::ios::binary | std::ios::ate);
+    check(bool(file), "Missing function reflection fixture");
+    std::vector<uint32_t> code(size_t(file.tellg()) / 4);
+    file.seekg(0);
+    file.read(reinterpret_cast<char*>(code.data()), std::streamsize(code.size() * 4));
+    auto accesses = rg::reflect(registry, code.data(), code.size());
+    check(usageOf(registry, accesses, ids[0], rg::Access::Compute, "wrapped input") == Operation::Read &&
+              usageOf(registry, accesses, ids[1], rg::Access::Compute, "wrapped output") ==
+                  Operation::Write &&
+              usageOf(registry, accesses, ids[2], rg::Access::Compute, "size only") == Operation::Binding,
+          "Functions must retain resource provenance and distinguish shape from contents");
+    // An extension access outside the analyser's vocabulary must fail, not disappear.
+    for (size_t at = 5; at < code.size(); at += code[at] >> 16)
+        if ((code[at] & 0xffff) == 99) {
+            code[at] = (code[at] & 0xffff0000) | 65000;
+            break;
+        }
+    rejects([&] { rg::reflect(registry, code.data(), code.size()); },
+            "Unknown resource operations must be diagnosed");
+}
+
 int main() {
     try {
+        functionResources();
         auto& assets = testAssets();
         ShaderCompiler::ShaderSet shaders;
         for (const auto* name : {"Standard", "Paving", "Foliage"})
@@ -98,7 +136,7 @@ int main() {
         }
         for (const auto* pass : ShaderCompiler::surfacePasses)
             check(!compiler.compile(pass, shaders).empty(), "Linked ray-query passes must compile");
-        // What each pass declares to the render graph is read out of the module it will run,
+        // The operations used to validate each pass come from the module it will run,
         // against the registry that assigned the binding numbers it was compiled with.
         RenderResources r(false, 0);
         auto reflected = [&](const char* pass, const ShaderCompiler::ShaderSet& set) {
@@ -106,37 +144,49 @@ int main() {
             return rg::reflect(r.registry, code.data(), code.size());
         };
         auto lighting = reflected("lighting.comp", shaders);
-        using rg::Access, rg::Usage, rg::previous;
+        using rg::Access, rg::previous;
         // Initial sampling only ever stores reservoirs, but a pass writes two of the four
         // rotating layers, so the contents that reach it have to survive.
-        check(usageOf(lighting, r.di.reservoirs, Access::Compute, "lighting reservoirs") == Usage::Modify,
-              "A write that does not replace a whole resource must be a Modify");
-        check(usageOf(lighting, r.shading.rawDiffuse, Access::Compute, "lighting diffuse") == Usage::Overwrite &&
-                  usageOf(lighting, r.gi.candidate, Access::Compute, "lighting GI") == Usage::Overwrite,
-              "A shader that only stores must overwrite");
-        check(usageOf(lighting, r.gbuffer.position, Access::Compute, "lighting surface") == Usage::Read &&
-                  usageOf(lighting, r.scene.tlas, Access::Trace, "lighting rays") == Usage::Read,
+        check(usageOf(r.registry, lighting, r.di.reservoirs, Access::Compute, "lighting reservoirs") ==
+                  Operation::Write,
+              "Reflection reports writes without inventing coverage");
+        check(usageOf(r.registry, lighting, r.shading.rawDiffuse, Access::Compute, "lighting diffuse") ==
+                      Operation::Write &&
+                  usageOf(r.registry, lighting, r.gi.candidate, Access::Compute, "lighting GI") ==
+                      Operation::Write,
+              "A shader that only stores has write access");
+        check(usageOf(r.registry, lighting, r.gbuffer.position, Access::Compute, "lighting surface") ==
+                      Operation::Read &&
+                  usageOf(r.registry, lighting, r.scene.tlas, Access::Trace, "lighting rays") ==
+                      Operation::Read,
               "Reads reached through linked library code must be derived");
-        check(untouched(lighting, r.di.gradient) && untouched(lighting, r.output.swapchain),
+        check(untouched(r.registry, lighting, r.di.gradient) &&
+                  untouched(r.registry, lighting, r.output.swapchain),
               "Only the resources a shader reaches may be declared");
         auto gradient = reflected("di_gradient.comp", shaders);
         // The gradient is measured per stratum and asks the image its own size; querying a
         // resource's shape is not consuming its contents.
-        check(usageOf(gradient, r.di.gradient, Access::Compute, "gradient") == Usage::Overwrite,
-              "A size query must not turn an overwrite into a modify");
+        check(usageOf(r.registry, gradient, r.di.gradient, Access::Compute, "gradient") == Operation::Write,
+              "A size query must not imply a content read");
         // The replay reads last frame's surface, and the bridge it goes through reads this
         // frame's on the way, so both halves are named and both have to be declared.
-        check(usageOf(gradient, previous(r.di.luminance), Access::Compute, "replayed luminance") == Usage::Read &&
-                  usageOf(gradient, previous(r.gbuffer.position), Access::Compute, "replayed surface") == Usage::Read &&
-                  usageOf(gradient, r.gbuffer.position, Access::Compute, "current surface") == Usage::Read,
+        check(usageOf(r.registry, gradient, previous(r.di.luminance), Access::Compute,
+                      "replayed luminance") == Operation::Read &&
+                  usageOf(r.registry, gradient, previous(r.gbuffer.position), Access::Compute,
+                          "replayed surface") == Operation::Read &&
+                  usageOf(r.registry, gradient, r.gbuffer.position, Access::Compute, "current surface") ==
+                      Operation::Read,
               "Which half of a history pair a shader names must be derived");
         auto raster = reflected("gbuffer.frag", {shaders[0]});
-        check(usageOf(raster, r.scene.materials, Access::Graphics, "material parameters") == Usage::Read,
+        check(usageOf(r.registry, raster, r.scene.materials, Access::Graphics, "material parameters") ==
+                  Operation::Read,
               "A raster shader's reads must be declared at the graphics stage");
         // A pass binds several modules and unions what they do.
         rg::merge(raster, lighting);
-        check(usageOf(raster, r.scene.materials, Access::Graphics, "merged parameters") == Usage::Read &&
-                  usageOf(raster, r.shading.rawDiffuse, Access::Compute, "merged diffuse") == Usage::Overwrite,
+        check(usageOf(r.registry, raster, r.scene.materials, Access::Graphics, "merged parameters") ==
+                      Operation::Read &&
+                  usageOf(r.registry, raster, r.shading.rawDiffuse, Access::Compute, "merged diffuse") ==
+                      Operation::Write,
               "Merging modules must keep each stage's accesses");
         auto count = compiler.compilationCount();
         second.properties[1].x = .2f;

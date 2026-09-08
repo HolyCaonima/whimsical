@@ -62,7 +62,6 @@ ResourcePool::ResourcePool(VulkanContext& vk, const Registry& registry) : vk_(vk
     root_.resize(slots_.size());
     for (uint16_t i = 0; i < root_.size(); ++i)
         root_[i] = i;
-    bound_.assign(size_t(registry_.bindingCount()) * 2, {});
     createLayout();
 }
 
@@ -71,17 +70,16 @@ ResourcePool::~ResourcePool() {
         release(slot);
     if (pipelineLayout_)
         vkDestroyPipelineLayout(vk_.device, pipelineLayout_, nullptr);
-    if (descriptorPool_)
-        vkDestroyDescriptorPool(vk_.device, descriptorPool_, nullptr);
+    for (auto& batch : descriptors_)
+        if (batch.pool)
+            vkDestroyDescriptorPool(vk_.device, batch.pool, nullptr);
     if (setLayout_)
         vkDestroyDescriptorSetLayout(vk_.device, setLayout_, nullptr);
 }
 
-// One descriptor set per history parity. Both are written together; flipping picks the
-// one whose "previous" bindings point at the half the last frame wrote.
+// All pass sets share the registry layout. Allocation of sets follows actual pass use.
 void ResourcePool::createLayout() {
     std::vector<VkDescriptorSetLayoutBinding> bindings;
-    std::map<VkDescriptorType, uint32_t> counts;
     auto add = [&](const Declaration& declaration, const ShaderView& view) {
         if (!view)
             return;
@@ -90,7 +88,6 @@ void ResourcePool::createLayout() {
                           ? VkShaderStageFlags(VK_SHADER_STAGE_ALL)
                           : VkShaderStageFlags(VK_SHADER_STAGE_COMPUTE_BIT);
         bindings.push_back({view.binding, type, view.count, stages, nullptr});
-        counts[type] += view.count * 2;
     };
     for (uint16_t i = 0; i < registry_.size(); ++i) {
         const auto& declaration = registry_[{i}];
@@ -105,6 +102,15 @@ void ResourcePool::createLayout() {
     pl.setLayoutCount = 1;
     pl.pSetLayouts = &setLayout_;
     VK_CHECK(vkCreatePipelineLayout(vk_.device, &pl, nullptr, &pipelineLayout_));
+}
+
+void ResourcePool::allocateDescriptors(DescriptorBatch& batch) {
+    std::map<VkDescriptorType, uint32_t> counts;
+    for (uint32_t binding = 0; binding < registry_.bindingCount(); ++binding) {
+        const auto& view = registry_.view(registry_.binding(binding));
+        counts[descriptorType(view.type)] += view.count * 2;
+    }
+    batch.bound.resize(size_t(registry_.bindingCount()) * 2);
     std::vector<VkDescriptorPoolSize> sizes;
     for (auto [type, count] : counts)
         sizes.push_back({type, count});
@@ -112,13 +118,13 @@ void ResourcePool::createLayout() {
     dp.maxSets = 2;
     dp.poolSizeCount = uint32_t(sizes.size());
     dp.pPoolSizes = sizes.data();
-    VK_CHECK(vkCreateDescriptorPool(vk_.device, &dp, nullptr, &descriptorPool_));
+    VK_CHECK(vkCreateDescriptorPool(vk_.device, &dp, nullptr, &batch.pool));
     VkDescriptorSetLayout layouts[2]{setLayout_, setLayout_};
     VkDescriptorSetAllocateInfo da{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-    da.descriptorPool = descriptorPool_;
+    da.descriptorPool = batch.pool;
     da.descriptorSetCount = 2;
     da.pSetLayouts = layouts;
-    VK_CHECK(vkAllocateDescriptorSets(vk_.device, &da, sets_));
+    VK_CHECK(vkAllocateDescriptorSets(vk_.device, &da, batch.sets));
 }
 
 void ResourcePool::release(Physical& slot) {
@@ -139,8 +145,9 @@ void ResourcePool::importBuffer(ResourceId id, Buffer& buffer) {
     slots_[base(id)].host = &buffer;
 }
 
-void ResourcePool::importTlas(ResourceId id, VkAccelerationStructureKHR handle) {
+void ResourcePool::importTlas(ResourceId id, VkAccelerationStructureKHR handle, uint64_t generation) {
     slots_[base(id)].tlas = handle;
+    slots_[base(id)].generation = generation;
 }
 
 // A descriptor array is the one binding with no single object to compare, so its identity
@@ -223,92 +230,122 @@ void ResourcePool::realize(uint32_t width, uint32_t height, const std::vector<Re
     }
 }
 
-// Every binding of both parities is resolved to the object it must point at and compared
-// with what was last written there. Nothing else decides whether a descriptor is stale, so
-// there is no path by which a resource can be replaced and its binding left behind.
-VkDescriptorSet ResourcePool::descriptors() {
-    const size_t capacity = size_t(registry_.bindingCount()) * 2;
+uint64_t ResourcePool::generation(const Physical& slot) const {
+    if (slot.external)
+        return slot.external->generation;
+    if (slot.host)
+        return slot.host->generation;
+    if (slot.image.handle)
+        return slot.image.generation;
+    if (slot.buffer.handle)
+        return slot.buffer.generation;
+    return slot.generation;
+}
+
+AccessState& ResourcePool::state(uint32_t index) {
+    auto& slot = slots_[index];
+    const auto current = generation(slot);
+    if (current != slot.stateGeneration) {
+        slot.state = {};
+        slot.stateGeneration = current;
+    }
+    return slot.state;
+}
+
+VkDescriptorSet ResourcePool::descriptors(uint32_t pass, const std::vector<ShaderBinding>& bindings) {
+    if (descriptors_.size() <= pass)
+        descriptors_.resize(size_t(pass) + 1);
+    auto& batch = descriptors_[pass];
+    if (!batch.pool)
+        allocateDescriptors(batch);
+    const size_t capacity = bindings.size();
     std::vector<VkDescriptorBufferInfo> buffers;
     std::vector<VkDescriptorImageInfo> images;
     std::vector<VkWriteDescriptorSetAccelerationStructureKHR> structures;
     std::vector<VkWriteDescriptorSet> writes;
+    std::vector<std::pair<Bound*, Bound>> updates;
     buffers.reserve(capacity);
     images.reserve(capacity);
     structures.reserve(capacity);
     writes.reserve(capacity);
-    for (uint32_t parity = 0; parity < 2; ++parity)
-        for (uint16_t i = 0; i < registry_.size(); ++i) {
-            const auto& declaration = registry_[{i}];
-            for (auto half : {Slot::Current, Slot::Previous}) {
-                const auto& view = half == Slot::Previous ? declaration.previous : declaration.view;
-                if (!view)
-                    continue;
-                uint32_t index = bases_[i];
-                if (declaration.lifetime == Lifetime::History)
-                    index += half == Slot::Previous ? (parity ^ 1) : parity;
-                auto& slot = slots_[root_[index]];
-                const auto& buffer = slot.host ? *slot.host : slot.buffer;
-                const VkImageView image = slot.external ? slot.external->view : slot.image.view;
-                Bound target;
-                switch (view.type) {
-                case BindingType::Uniform:
-                case BindingType::Storage:
-                    target = {uint64_t(buffer.handle), buffer.size};
-                    break;
-                case BindingType::StorageImage:
-                    target = {uint64_t(image), 0};
-                    break;
-                case BindingType::SamplerArray:
-                    target = {slot.samplerRevision, view.count};
-                    break;
-                case BindingType::Tlas:
-                    target = {uint64_t(slot.tlas), 0};
-                    break;
-                case BindingType::None:
-                    break;
-                }
-                auto& last = bound_[size_t(parity) * registry_.bindingCount() + view.binding];
-                // No object means nothing has been imported or allocated here: the run does
-                // not use this resource, and a binding with nothing behind it stays unwritten.
-                if (!target.object || target == last)
-                    continue;
-                last = target;
-                VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-                write.dstSet = sets_[parity];
-                write.dstBinding = view.binding;
-                write.descriptorCount = 1;
-                write.descriptorType = descriptorType(view.type);
-                switch (view.type) {
-                case BindingType::Uniform:
-                case BindingType::Storage:
-                    buffers.push_back({buffer.handle, 0, buffer.size});
-                    write.pBufferInfo = &buffers.back();
-                    break;
-                case BindingType::StorageImage:
-                    images.push_back({VK_NULL_HANDLE, image, VK_IMAGE_LAYOUT_GENERAL});
-                    write.pImageInfo = &images.back();
-                    break;
-                case BindingType::SamplerArray:
-                    write.descriptorCount = view.count;
-                    write.pImageInfo = slot.samplers.data();
-                    break;
-                case BindingType::Tlas:
-                    structures.push_back(
-                        {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR});
-                    structures.back().accelerationStructureCount = 1;
-                    structures.back().pAccelerationStructures = &slot.tlas;
-                    write.pNext = &structures.back();
-                    break;
-                case BindingType::None:
-                    break;
-                }
-                writes.push_back(write);
-            }
+    updates.reserve(capacity);
+    for (const auto& binding : bindings) {
+        const auto& view = registry_.view(registry_.binding(binding.binding));
+        auto& slot = slots_[physical(binding.resource)];
+        const auto& buffer = slot.host ? *slot.host : slot.buffer;
+        const VkImageView image = slot.external ? slot.external->view : slot.image.view;
+        Bound target;
+        target.generation = generation(slot);
+        switch (view.type) {
+        case BindingType::Uniform:
+        case BindingType::Storage:
+            target.object = uint64_t(buffer.handle);
+            target.extent = buffer.size;
+            break;
+        case BindingType::StorageImage:
+            target.object = uint64_t(image);
+            break;
+        case BindingType::SamplerArray:
+            target.object = slot.samplerRevision;
+            target.extent = view.count;
+            if (slot.samplers.size() != view.count || std::any_of(slot.samplers.begin(), slot.samplers.end(),
+                                                                  [](const VkDescriptorImageInfo& image) {
+                                                                      return !image.imageView ||
+                                                                             !image.sampler;
+                                                                  }))
+                throw std::runtime_error("Incomplete shader sampler array");
+            break;
+        case BindingType::Tlas:
+            target.object = uint64_t(slot.tlas);
+            break;
+        case BindingType::None:
+            break;
         }
+        auto& last = batch.bound[size_t(parity_) * registry_.bindingCount() + binding.binding];
+        if (!target.object) {
+            last = {};
+            throw std::runtime_error("Missing required shader binding: " +
+                                     registry_[binding.resource.id].name);
+        }
+        if (target == last)
+            continue;
+        updates.push_back({&last, target});
+        VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        write.dstSet = batch.sets[parity_];
+        write.dstBinding = binding.binding;
+        write.descriptorCount = 1;
+        write.descriptorType = descriptorType(view.type);
+        switch (view.type) {
+        case BindingType::Uniform:
+        case BindingType::Storage:
+            buffers.push_back({buffer.handle, 0, buffer.size});
+            write.pBufferInfo = &buffers.back();
+            break;
+        case BindingType::StorageImage:
+            images.push_back({VK_NULL_HANDLE, image, VK_IMAGE_LAYOUT_GENERAL});
+            write.pImageInfo = &images.back();
+            break;
+        case BindingType::SamplerArray:
+            write.descriptorCount = view.count;
+            write.pImageInfo = slot.samplers.data();
+            break;
+        case BindingType::Tlas:
+            structures.push_back({VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR});
+            structures.back().accelerationStructureCount = 1;
+            structures.back().pAccelerationStructures = &slot.tlas;
+            write.pNext = &structures.back();
+            break;
+        case BindingType::None:
+            break;
+        }
+        writes.push_back(write);
+    }
     if (!writes.empty())
         vkUpdateDescriptorSets(vk_.device, uint32_t(writes.size()), writes.data(), 0, nullptr);
+    for (const auto& update : updates)
+        *update.first = update.second;
     descriptorWrites_ += writes.size();
-    return sets_[parity_];
+    return batch.sets[parity_];
 }
 
 uint64_t ResourcePool::ownedBytes() const {

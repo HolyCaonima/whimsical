@@ -53,10 +53,9 @@ void GpuScene::bind(rg::ResourcePool& pool, const SceneResources& ids) {
     rebind();
 }
 
-// Handles never change identity here, only value: the pool holds references to these
-// Buffer objects and compares what a binding points at against what it wrote, so a grown
-// geometry buffer or a rebuilt structure is picked up without anyone asking. Textures are
-// the exception; they are a descriptor array, not a handle.
+// Buffer wrappers carry allocation generations, so growing them in place invalidates
+// bindings even when Vulkan recycles a handle. TLAS imports carry their storage generation;
+// sampler arrays have an import revision because they contain several separate objects.
 void GpuScene::rebind() {
     if (!pool_)
         return;
@@ -67,7 +66,7 @@ void GpuScene::rebind() {
     pool_->importBuffer(ids_->vertices, vertexData);
     pool_->importBuffer(ids_->indices, indexData);
     pool_->importBuffer(ids_->buildInstances, tlasInstances);
-    pool_->importTlas(ids_->tlas, tlas.handle);
+    pool_->importTlas(ids_->tlas, tlas.handle, tlas.storage.generation);
     std::vector<VkDescriptorImageInfo> sampled(MaxTextures);
     for (uint32_t i = 0; i < MaxTextures; ++i)
         sampled[i] = {materialSampler,

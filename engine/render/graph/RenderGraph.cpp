@@ -87,6 +87,10 @@ RenderGraph::Builder RenderGraph::add(const char* name) {
         passes_.emplace_back();
     auto& pass = passes_[declared_];
     pass.uses.clear();
+    pass.resolvedUses.clear();
+    pass.shaders.clear();
+    pass.mappings.clear();
+    pass.bindings.clear();
     pass.colors.clear();
     pass.edges.clear();
     pass.name = name;
@@ -106,8 +110,9 @@ RenderGraph::Builder& RenderGraph::Builder::use(ResourceRef ref, Access access, 
     // Contents the pass reaches through this resource without having a name for them. The
     // declaration says so once, so being ordered against whatever produced them is not a
     // rule every ray query and every build has to remember.
-    for (auto reached : graph_->registry_[ref.id].reaches)
-        graph_->passes_[pass_].uses.push_back({reached, access, Usage::Read});
+    if (usage != Usage::Binding)
+        for (auto reached : graph_->registry_[ref.id].reaches)
+            graph_->passes_[pass_].uses.push_back({reached, access, Usage::Read});
     return *this;
 }
 RenderGraph::Builder& RenderGraph::Builder::read(ResourceRef ref, Access access) {
@@ -157,10 +162,74 @@ RenderGraph::Builder& RenderGraph::Builder::depth(ResourceId id, float clear) {
     return overwrite(id, Access::Depth);
 }
 RenderGraph::Builder& RenderGraph::Builder::shader(const std::vector<ShaderAccess>& accesses) {
-    for (const auto& access : accesses)
-        use(access.ref, access.access, access.usage);
+    merge(graph_->passes_[pass_].shaders, accesses);
     return *this;
 }
+RenderGraph::Builder& RenderGraph::Builder::bind(ResourceRef shaderSlot, ResourceRef resource) {
+    const auto& view = graph_->registry_.view(shaderSlot);
+    if (!view)
+        throw std::runtime_error("Shader slot has no descriptor view");
+    auto& mappings = graph_->passes_[pass_].mappings;
+    for (const auto& mapping : mappings)
+        if (mapping.binding == view.binding)
+            throw std::runtime_error("Shader slot mapped twice");
+    mappings.push_back({view.binding, resource});
+    return *this;
+}
+
+void RenderGraph::resolveShaders() {
+    for (uint32_t p = 0; p < declared_; ++p) {
+        auto& pass = passes_[p];
+        pass.resolvedUses = pass.uses;
+        pass.bindings.clear();
+        for (const auto& shader : pass.shaders) {
+            if (shader.binding >= registry_.bindingCount())
+                throw std::runtime_error("Shader binding outside registry");
+            const auto slot = registry_.binding(shader.binding);
+            auto ref = slot;
+            for (const auto& mapping : pass.mappings)
+                if (mapping.binding == shader.binding)
+                    ref = mapping.resource;
+            if (!ref.id.valid() || ref.id.index >= registry_.size() ||
+                (ref.slot == Slot::Previous && registry_[ref.id].lifetime != Lifetime::History))
+                throw std::runtime_error("Invalid pass resource binding");
+            const auto& expected = registry_.view(slot);
+            const auto& actual = registry_.view(ref);
+            if (registry_[slot.id].kind != registry_[ref.id].kind ||
+                (actual && (expected.type != actual.type || expected.count != actual.count)) ||
+                (expected.type == BindingType::StorageImage &&
+                 registry_[slot.id].format != registry_[ref.id].format) ||
+                (shader.writes && actual.readOnly))
+                throw std::runtime_error(std::string(pass.name) +
+                                         " has incompatible shader binding: " + registry_[ref.id].name);
+            if (std::none_of(pass.bindings.begin(), pass.bindings.end(),
+                             [&](const ShaderBinding& b) { return b.binding == shader.binding; }))
+                pass.bindings.push_back({shader.binding, ref});
+            bool declaredWrite = false;
+            for (const auto& use : pass.uses) {
+                if (!(use.ref == ref) || use.access != shader.access)
+                    continue;
+                if (produces(use.usage))
+                    declaredWrite = true;
+                if ((shader.writes && !produces(use.usage)) || (shader.reads && !consumes(use.usage)))
+                    throw std::runtime_error(std::string(pass.name) +
+                                             " contradicts shader access: " + registry_[ref.id].name);
+            }
+            if (shader.writes && !declaredWrite)
+                throw std::runtime_error(std::string(pass.name) +
+                                         " must declare overwrite or modify: " + registry_[ref.id].name);
+            pass.resolvedUses.push_back({ref, shader.access, shader.reads ? Usage::Read : Usage::Binding});
+            if (shader.reads || shader.writes)
+                for (auto reached : registry_[ref.id].reaches)
+                    pass.resolvedUses.push_back({reached, shader.access, Usage::Read});
+        }
+        for (const auto& mapping : pass.mappings)
+            if (std::none_of(pass.bindings.begin(), pass.bindings.end(),
+                             [&](const ShaderBinding& b) { return b.binding == mapping.binding; }))
+                throw std::runtime_error(std::string(pass.name) + " maps a slot unused by its shaders");
+    }
+}
+
 RenderGraph::Builder& RenderGraph::Builder::dispatch(const Program& program, uint16_t divisor) {
     graph_->passes_[pass_].pipeline = program.pipeline;
     graph_->passes_[pass_].divisor = divisor;
@@ -185,13 +254,13 @@ void RenderGraph::analyse() {
     for (uint32_t p = 0; p < declared_; ++p) {
         auto& pass = passes_[p];
         pass.edges.clear();
-        for (auto& use : pass.uses) {
+        for (auto& use : pass.resolvedUses) {
             use.source = consumes(use.usage) ? producer_[content(use.ref)] : NoPass;
             if (use.source != NoPass &&
                 std::find(pass.edges.begin(), pass.edges.end(), use.source) == pass.edges.end())
                 pass.edges.push_back(use.source);
         }
-        for (const auto& use : pass.uses)
+        for (const auto& use : pass.resolvedUses)
             if (produces(use.usage))
                 producer_[content(use.ref)] = p;
     }
@@ -227,7 +296,7 @@ void RenderGraph::validate() const {
         const auto& pass = passes_[p];
         if (!pass.alive)
             continue;
-        for (const auto& use : pass.uses) {
+        for (const auto& use : pass.resolvedUses) {
             const auto& declaration = registry_[use.ref.id];
             if (consumes(use.usage) && use.source == NoPass && !crossesFrames(declaration.lifetime))
                 throw std::runtime_error(std::string(pass.name) + " consumes '" + declaration.name +
@@ -249,24 +318,20 @@ void RenderGraph::liveness() {
         auto& pass = passes_[p];
         if (!pass.alive)
             continue;
-        for (auto& use : pass.uses)
+        for (auto& use : pass.resolvedUses)
             if (produces(use.usage))
                 use.consumedLater = consumed[content(use.ref)] != 0;
-        for (const auto& use : pass.uses)
+        for (const auto& use : pass.resolvedUses)
             if (produces(use.usage) && !consumes(use.usage))
                 consumed[content(use.ref)] = 0;
-        for (const auto& use : pass.uses)
+        for (const auto& use : pass.resolvedUses)
             if (consumes(use.usage))
                 consumed[content(use.ref)] = 1;
     }
 }
 
-// Storage follows liveness. A graph-owned resource needs memory when its contents cross the
-// frame boundary, when a live pass names it, or when a shader could reach it: the pipeline
-// binds one descriptor set, so any resource with a view is reachable from any dispatch and
-// that is a real consumer the graph cannot see the far end of. Everything else holds
-// nothing this frame. Transients whose live ranges do not overlap then share one
-// allocation, which is a property of the frame rather than a hand-written table.
+// Storage follows live content and binding uses. Merely declaring a shader view does
+// not make a resource reachable; reflection identifies the slots each live pass uses.
 void RenderGraph::plan(uint32_t width, uint32_t height) {
     struct Range {
         ResourceId id;
@@ -278,7 +343,7 @@ void RenderGraph::plan(uint32_t width, uint32_t height) {
     for (uint32_t p = 0; p < declared_; ++p) {
         if (!passes_[p].alive)
             continue;
-        for (const auto& use : passes_[p].uses) {
+        for (const auto& use : passes_[p].resolvedUses) {
             auto& range = ranges[use.ref.id.index];
             range.first = std::min(range.first, p);
             range.last = std::max(range.last, p);
@@ -290,8 +355,8 @@ void RenderGraph::plan(uint32_t width, uint32_t height) {
         const auto& declaration = registry_[{i}];
         touched_[i] = ranges[i].first != NoPass;
         residency_[i].root = ResourceId{i};
-        residency_[i].needed = graphOwned(declaration.lifetime) &&
-                               (crossesFrames(declaration.lifetime) || touched_[i] || declaration.view);
+        residency_[i].needed =
+            graphOwned(declaration.lifetime) && (crossesFrames(declaration.lifetime) || touched_[i]);
     }
     aliased_ = 0;
     // One tenant list per storage signature; a transient joins the first tenant that is
@@ -325,6 +390,7 @@ void RenderGraph::plan(uint32_t width, uint32_t height) {
 
 void RenderGraph::compile(uint32_t width, uint32_t height) {
     CpuScope scope("Graph / Compile");
+    resolveShaders();
     analyse();
     cull();
     validate();
@@ -336,7 +402,7 @@ void RenderGraph::compile(uint32_t width, uint32_t height) {
 
 void RenderGraph::checkDeclared(uint32_t pass, ResourceRef ref) const {
     const auto& declaring = passes_[pass];
-    for (const auto& use : declaring.uses)
+    for (const auto& use : declaring.resolvedUses)
         if (use.ref == ref)
             return;
     throw std::runtime_error(std::string(declaring.name) + " touched '" + registry_[ref.id].name +
@@ -487,7 +553,6 @@ void RenderGraph::handover(VkCommandBuffer command) {
 void RenderGraph::execute(VkCommandBuffer command, GpuProfiler& profiler) {
     PassContext context;
     context.command = command;
-    context.descriptors = pool_->descriptors();
     context.layout = pool_->pipelineLayout();
     context.pool = pool_;
     context.graph = this;
@@ -498,7 +563,8 @@ void RenderGraph::execute(VkCommandBuffer command, GpuProfiler& profiler) {
             continue;
         CpuScope cpuScope(pass.name);
         GpuScope gpuScope(profiler, command, pass.name);
-        synchronise(command, pass.uses.data(), uint32_t(pass.uses.size()));
+        context.descriptors = pass.bindings.empty() ? VK_NULL_HANDLE : pool_->descriptors(p, pass.bindings);
+        synchronise(command, pass.resolvedUses.data(), uint32_t(pass.resolvedUses.size()));
         const bool renders = !pass.colors.empty() || pass.depth.valid();
         uint32_t width = pool_->width(), height = pool_->height();
         if (renders) {
@@ -518,8 +584,9 @@ void RenderGraph::execute(VkCommandBuffer command, GpuProfiler& profiler) {
                 info.imageView = pool_->image(attachment.id).view;
                 info.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
                 info.loadOp = attachment.clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
-                info.storeOp = pass.uses[attachment.use].consumedLater ? VK_ATTACHMENT_STORE_OP_STORE
-                                                                       : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+                info.storeOp = pass.resolvedUses[attachment.use].consumedLater
+                                   ? VK_ATTACHMENT_STORE_OP_STORE
+                                   : VK_ATTACHMENT_STORE_OP_DONT_CARE;
                 info.clearValue = attachment.value;
                 attachments.push_back(info);
             }
@@ -532,7 +599,7 @@ void RenderGraph::execute(VkCommandBuffer command, GpuProfiler& profiler) {
                 depthAttachment.imageView = pool_->image(pass.depth).view;
                 depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
                 depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-                depthAttachment.storeOp = pass.uses[pass.depthUse].consumedLater
+                depthAttachment.storeOp = pass.resolvedUses[pass.depthUse].consumedLater
                                               ? VK_ATTACHMENT_STORE_OP_STORE
                                               : VK_ATTACHMENT_STORE_OP_DONT_CARE;
                 depthAttachment.clearValue.depthStencil = {pass.depthClear, 0};

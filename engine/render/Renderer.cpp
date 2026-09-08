@@ -227,6 +227,7 @@ struct Renderer::Impl {
         VkSemaphoreCreateInfo semaphoreInfo{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
         for (auto handle : handles) {
             Image i;
+            i.generation = nextResourceGeneration();
             i.handle = handle;
             i.format = format.format;
             i.width = width;

@@ -218,6 +218,7 @@ uint32_t VulkanContext::memoryType(uint32_t mask, VkMemoryPropertyFlags required
 Buffer VulkanContext::buffer(VkDeviceSize size, VkBufferUsageFlags usage, BufferMemory memory) {
     const bool host = memory != BufferMemory::Device;
     Buffer b;
+    b.generation = nextResourceGeneration();
     b.size = size;
     VkBufferCreateInfo bc{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     bc.size = size;
@@ -259,6 +260,7 @@ void VulkanContext::destroy(Buffer& b) {
 Image VulkanContext::image(uint32_t w, uint32_t h, VkFormat format, VkImageUsageFlags usage,
                            uint32_t mipLevels) {
     Image i;
+    i.generation = nextResourceGeneration();
     i.width = w;
     i.height = h;
     i.format = format;

@@ -241,18 +241,35 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
             gpuScene->recordDraws(c.command, frame, programs);
         });
 
-    // Every screen-space pass below declares itself out of the program it dispatches, so
-    // the order they appear in is the only thing stated here. The gradient replays last
-    // frame's selected sample against the current scene, which is why it comes ahead of
-    // everything that rewrites the reservoirs it reads.
-    graph.add("RTXDI Same Sample Gradient").dispatch(*compute_[DiGradient], GradientDivisor);
-    graph.add("RTXDI Gradient Filter").dispatch(*compute_[DiGradientFilter], GradientDivisor);
-    graph.add("RTXDI History Confidence").dispatch(*compute_[DiConfidence]);
-    graph.add("RTXDI Initial + Secondary GI + Specular").dispatch(*compute_[Lighting]);
-    graph.add("RTXDI Temporal Resampling").dispatch(*compute_[DiTemporal]);
-    graph.add("RTXDI Spatial Resampling").dispatch(*compute_[DiSpatial]);
-    graph.add("ReSTIR GI Reconnection").dispatch(*compute_[GiReuse]);
-    graph.add("Visibility + Radiance Resolve").dispatch(*compute_[Resolve]);
+    // Dispatch extents cover these outputs. Reservoir passes update rotating layers,
+    // so each explicitly preserves the rest of that buffer.
+    graph.add("RTXDI Same Sample Gradient")
+        .dispatch(*compute_[DiGradient], GradientDivisor)
+        .overwrite(di.gradient, Access::Compute);
+    graph.add("RTXDI Gradient Filter")
+        .dispatch(*compute_[DiGradientFilter], GradientDivisor)
+        .overwrite(di.filteredGradient, Access::Compute);
+    graph.add("RTXDI History Confidence")
+        .dispatch(*compute_[DiConfidence])
+        .overwrite({di.diffuseConfidence, di.specularConfidence}, Access::Compute);
+    graph.add("RTXDI Initial + Secondary GI + Specular")
+        .dispatch(*compute_[Lighting])
+        .modify(di.reservoirs, Access::Compute)
+        .overwrite({shade.rawDiffuse, shade.rawSpecular, r_.gi.candidate}, Access::Compute);
+    graph.add("RTXDI Temporal Resampling")
+        .dispatch(*compute_[DiTemporal])
+        .modify(di.reservoirs, Access::Compute);
+    graph.add("RTXDI Spatial Resampling")
+        .dispatch(*compute_[DiSpatial])
+        .modify(di.reservoirs, Access::Compute);
+    graph.add("ReSTIR GI Reconnection")
+        .dispatch(*compute_[GiReuse])
+        .overwrite(r_.gi.reservoirs, Access::Compute);
+    graph.add("Visibility + Radiance Resolve")
+        .dispatch(*compute_[Resolve])
+        .modify({di.reservoirs, shade.rawDiffuse, shade.rawSpecular}, Access::Compute)
+        .overwrite({di.confidenceHistory, di.luminance, shade.directDebug, shade.indirectDebug},
+                   Access::Compute);
 
     auto* denoiser = setup.denoiser;
     const auto& camera = frame.camera;
@@ -289,7 +306,9 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
             denoiser->dispatch(c.command, resources, camera, index, reset, ms, *profiler);
         });
 
-    graph.add("Composition + Tone Map + HUD").dispatch(*compute_[Composite]);
+    graph.add("Composition + Tone Map + HUD")
+        .dispatch(*compute_[Composite])
+        .overwrite(shade.display, Access::Compute);
 
     // The readback buffers declare a Host handover, so the CPU is a consumer the graph can
     // see: it keeps these passes alive and ends the frame with the barrier that makes the

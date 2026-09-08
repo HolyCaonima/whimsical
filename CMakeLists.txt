@@ -171,7 +171,7 @@ add_test(NAME render_audit COMMAND render_audit_tests)
 # dependencies, culling, validation, liveness and storage reuse — is checked without a GPU.
 add_executable(render_graph_tests tests/RenderGraphTests.cpp
   engine/render/graph/RenderGraph.cpp engine/render/graph/Registry.cpp
-  engine/render/graph/ResourcePool.cpp engine/render/VulkanContext.cpp engine/render/GpuProfiler.cpp)
+  engine/render/graph/ResourcePool.cpp engine/render/graph/ShaderAccess.cpp engine/render/VulkanContext.cpp engine/render/GpuProfiler.cpp)
 target_link_libraries(render_graph_tests PRIVATE afterlight_core volk user32 gdi32)
 target_compile_options(render_graph_tests PRIVATE /W4 /permissive- /utf-8)
 afterlight_copy_onnx(render_graph_tests)
@@ -182,7 +182,15 @@ add_executable(shader_tests tests/ShaderTests.cpp engine/render/graph/ShaderAcce
   engine/render/graph/Registry.cpp engine/render/RenderResources.cpp)
 target_link_libraries(shader_tests PRIVATE afterlight_shader_runtime volk)
 target_include_directories(shader_tests PRIVATE "${DEPS}/rtxdi/Include")
-add_dependencies(shader_tests afterlight_shader_bindings)
+set(CONTRACT_SPIRV "${CMAKE_BINARY_DIR}/shaders/resource_functions.comp.spv")
+add_custom_command(OUTPUT "${CONTRACT_SPIRV}"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+  COMMAND "${DEPS}/glslang/bin/glslang.exe" --target-env vulkan1.2 -V
+    "${CMAKE_SOURCE_DIR}/tests/shaders/resource_functions.comp" -o "${CONTRACT_SPIRV}"
+  DEPENDS tests/shaders/resource_functions.comp VERBATIM)
+add_custom_target(resource_contract_shader DEPENDS "${CONTRACT_SPIRV}")
+target_compile_definitions(shader_tests PRIVATE CONTRACT_SPIRV="${CONTRACT_SPIRV}")
+add_dependencies(shader_tests afterlight_shader_bindings resource_contract_shader)
 target_compile_options(shader_tests PRIVATE /W4 /permissive- /utf-8)
 afterlight_copy_onnx(shader_tests)
 add_test(NAME shader_assets_and_compilation COMMAND shader_tests)

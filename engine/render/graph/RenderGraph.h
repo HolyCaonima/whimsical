@@ -53,6 +53,9 @@ class RenderGraph {
         // Everything the pass's shaders touch, read out of the compiled module. A pass
         // that binds several programs — one per material, say — states each of them.
         Builder& shader(const std::vector<ShaderAccess>&);
+        // Omitted mappings use the registry's default. Outputs require overwrite() or
+        // modify() on the actual resource; reflection validates that contract.
+        Builder& bind(ResourceRef shaderSlot, ResourceRef resource);
         // The common case: declare what the shader touches, bind the pipeline and the
         // descriptor set, dispatch over the resource extent. divisor matches the declared
         // divisor of the pass output.
@@ -93,6 +96,9 @@ class RenderGraph {
     const std::vector<Residency>& residency() const {
         return residency_;
     }
+    const std::vector<ShaderBinding>& bindings(uint32_t pass) const {
+        return passes_[pass].bindings;
+    }
     // Throws unless the pass declared this reference. PassContext is its only caller.
     void checkDeclared(uint32_t pass, ResourceRef) const;
 
@@ -121,6 +127,9 @@ class RenderGraph {
     struct Pass {
         const char* name = "";
         std::vector<Use> uses;
+        std::vector<Use> resolvedUses;
+        std::vector<ShaderAccess> shaders;
+        std::vector<ShaderBinding> mappings, bindings;
         std::vector<Attachment> colors;
         std::vector<uint32_t> edges; // producing passes, in declaration order
         ResourceId depth;
@@ -160,6 +169,7 @@ class RenderGraph {
     uint32_t content(ResourceRef ref) const {
         return uint32_t(ref.id.index) * 2 + (ref.slot == Slot::Previous);
     }
+    void resolveShaders();
     void analyse();
     void cull();
     void validate() const;

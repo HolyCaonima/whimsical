@@ -62,15 +62,16 @@ enum class Access : uint8_t {
 // dependency edges, culling, liveness, storage reuse, attachment load/store ops and
 // barriers are all functions of it and of nothing else.
 enum class Usage : uint8_t {
+    Binding,   // needs a valid object/layout, but does not consume or produce contents
     Read,      // consumes the contents that reached this pass and produces none
     Overwrite, // produces every element; whatever was there is dead
     Modify,    // consumes and produces, so the old contents must reach this pass intact
 };
 inline bool produces(Usage usage) {
-    return usage != Usage::Read;
+    return usage == Usage::Overwrite || usage == Usage::Modify;
 }
 inline bool consumes(Usage usage) {
-    return usage != Usage::Overwrite;
+    return usage == Usage::Read || usage == Usage::Modify;
 }
 
 // Where the generated declaration lands in the shader sources, which also fixes the
@@ -79,8 +80,8 @@ enum class Section : uint8_t { Shared, Compute, Rtxdi };
 
 enum class BindingType : uint8_t { None, Uniform, Storage, StorageImage, SamplerArray, Tlas };
 
-// One shader-visible view of a resource. A history resource has two of these, and the two
-// halves swap physical resources every frame without either shader knowing.
+// A shader interface slot with a default resource. Pass bindings may substitute another
+// compatible resource. History views default to the corresponding physical half.
 struct ShaderView {
     BindingType type = BindingType::None;
     bool readOnly = false;
@@ -125,6 +126,12 @@ inline ResourceRef previous(ResourceId id) {
 }
 using ResourceList = std::vector<ResourceRef>;
 
+// A shader binding is a slot in the program interface, not a fixed graph resource.
+struct ShaderBinding {
+    uint32_t binding;
+    ResourceRef resource;
+};
+
 struct Declaration {
     std::string name;
     Kind kind = Kind::Image;
@@ -144,12 +151,6 @@ struct Declaration {
     // too, but neither has a name for it. Stated once here, so declaring the structure a
     // pass does touch is enough to be ordered against whatever fed it.
     std::vector<ResourceId> reaches;
-    // Whether one pass writing this resource replaces all of its contents. A screen-sized
-    // image or one element per pixel is covered by the dispatch that writes it; the DI
-    // reservoir buffer holds four rotating layers and a pass writes some of them, leaving
-    // the rest standing. This is what decides whether a shader's write is an Overwrite or
-    // a Modify, so no pass has to restate it.
-    bool wholeWrites = true;
 };
 
 // A buffer the host reads after the frame fence. It lives in readback memory and the frame
@@ -163,7 +164,7 @@ inline bool hostRead(const Declaration& declaration) {
 // registry is then the only thing that knows binding numbers exist.
 class Registry {
     std::vector<Declaration> declarations_;
-    ResourceList bindings_; // binding number -> the half a shader reaches through it
+    ResourceList bindings_; // binding number -> default resource and history half
 
   public:
     ResourceId declare(Declaration);

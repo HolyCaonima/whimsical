@@ -11,12 +11,19 @@ inline void vkCheck(VkResult r, const char* operation) {
         throw std::runtime_error(std::string(operation) + " failed: " + std::to_string(r));
 }
 #define VK_CHECK(x) ::afterlight::vkCheck((x), #x)
+// Allocation identity survives handle reuse. Owners that create raw Vulkan objects use
+// this same source of identities when constructing their wrappers.
+inline uint64_t nextResourceGeneration() {
+    static std::atomic<uint64_t> next{0};
+    return ++next;
+}
 struct Buffer {
     VkBuffer handle = VK_NULL_HANDLE;
     VkDeviceMemory memory = VK_NULL_HANDLE;
     VkDeviceSize size = 0;
     void* mapped = nullptr;
     VkDeviceAddress address = 0;
+    uint64_t generation = 0;
 };
 struct Image {
     VkImage handle = VK_NULL_HANDLE;
@@ -26,6 +33,7 @@ struct Image {
     uint32_t width = 0, height = 0;
     uint32_t mipLevels = 1;
     VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    uint64_t generation = 0;
 };
 enum class BufferMemory { Device, Upload, Readback };
 class VulkanContext {
