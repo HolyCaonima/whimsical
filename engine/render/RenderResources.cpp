@@ -80,6 +80,15 @@ SceneResources::SceneResources(Registry& registry) {
     indices = registry.declare(
         storage("indices", Lifetime::External, "Indices", "    uint indices[];", nullptr, true));
 
+    // The transforms and bottom-level references a top-level build reads. No shader sees
+    // it, and it is nothing like the instance data a shader does see, which is why naming
+    // the wrong one used to go unnoticed.
+    Declaration buildInput;
+    buildInput.name = "tlasInstances";
+    buildInput.kind = Kind::Buffer;
+    buildInput.lifetime = Lifetime::External;
+    buildInstances = registry.declare(std::move(buildInput));
+
     Declaration bottom;
     bottom.name = "blas";
     bottom.kind = Kind::AccelerationStructure;
@@ -91,17 +100,15 @@ SceneResources::SceneResources(Registry& registry) {
     top.kind = Kind::AccelerationStructure;
     top.lifetime = Lifetime::Imported;
     top.view = {BindingType::Tlas, true, "scene"};
+    // Traversal walks the top level into the bottom level, and a top-level build reads the
+    // structures it references. Naming only the top one would leave both ordered against
+    // the top-level build but not against the refit that fed it.
+    top.reaches = {blas};
     tlas = registry.declare(std::move(top));
 }
 
-ResourceList SceneResources::shared() const {
-    return {globals, instances, materials, lights, textures};
-}
 ResourceList SceneResources::geometry() const {
     return {vertices, indices};
-}
-ResourceList SceneResources::structures() const {
-    return {blas, tlas};
 }
 
 GBufferResources::GBufferResources(Registry& registry) {
@@ -118,26 +125,20 @@ GBufferResources::GBufferResources(Registry& registry) {
     depth = registry.declare(image("gDepth", Format::D32, Lifetime::Transient, nullptr));
 }
 
-ResourceList GBufferResources::attachments() const {
-    return {albedo, normal, position, motion, viewZ, emission};
-}
-ResourceList GBufferResources::surface() const {
-    return {albedo, normal, position, viewZ, emission};
-}
-ResourceList GBufferResources::previousSurface() const {
-    return {previous(albedo), previous(normal), previous(position), previous(viewZ)};
-}
-
 RestirDiResources::RestirDiResources(Registry& registry) {
     // Four block-linear arrays. They rotate in pairs across frames rather than being
     // copied, so the buffer as a whole carries its own history: Persistent, not History.
-    reservoirs = registry.declare(inRtxdi(storage(
+    Declaration reservoirArrays = inRtxdi(storage(
         "diReservoirs", Lifetime::Persistent, "DiReservoirs", "    RTXDI_PackedDIReservoir diReservoirs[];",
         [](uint32_t w, uint32_t h) {
             constexpr uint32_t block = RTXDI_RESERVOIR_BLOCK_SIZE;
             return uint64_t((w + block - 1) / block) * ((h + block - 1) / block) * block * block *
                    sizeof(RTXDI_PackedDIReservoir) * 4;
-        })));
+        }));
+    // A pass writes the layers playing the roles it produces and leaves the others
+    // standing, so writing this buffer preserves it rather than replacing it.
+    reservoirArrays.wholeWrites = false;
+    reservoirs = registry.declare(std::move(reservoirArrays));
     neighbours = registry.declare(inRtxdi(storage("diNeighbors", Lifetime::External, "DiNeighbors",
                                                   "    vec2 diNeighbors[];", nullptr, true)));
     lightSamples = registry.declare(inRtxdi(
@@ -161,10 +162,6 @@ RestirDiResources::RestirDiResources(Registry& registry) {
         image("diLuminance", Format::RGBA16F, Lifetime::History, "diLuminance", "previousDiLuminance"));
     confidenceHistory = registry.declare(
         image("diConfidenceHistory", Format::RG16F, Lifetime::Persistent, "diConfidenceHistory"));
-}
-
-ResourceList RestirDiResources::sdk() const {
-    return {reservoirs, neighbours, lightSamples};
 }
 
 RestirGiResources::RestirGiResources(Registry& registry) {

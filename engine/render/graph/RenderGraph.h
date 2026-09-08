@@ -1,5 +1,6 @@
 #pragma once
 #include "ResourcePool.h"
+#include "ShaderAccess.h"
 #include "render/GpuProfiler.h"
 #include <functional>
 
@@ -49,9 +50,13 @@ class RenderGraph {
         Builder& color(ResourceId);
         Builder& color(ResourceId, VkClearColorValue clear);
         Builder& depth(ResourceId, float clear = 1.f);
-        // The common case: bind the pipeline and the descriptor set, dispatch over the
-        // resource extent. divisor matches the declared divisor of the pass output.
-        Builder& dispatch(VkPipeline, uint16_t divisor = 1);
+        // Everything the pass's shaders touch, read out of the compiled module. A pass
+        // that binds several programs — one per material, say — states each of them.
+        Builder& shader(const std::vector<ShaderAccess>&);
+        // The common case: declare what the shader touches, bind the pipeline and the
+        // descriptor set, dispatch over the resource extent. divisor matches the declared
+        // divisor of the pass output.
+        Builder& dispatch(const Program&, uint16_t divisor = 1);
         Builder& record(std::function<void(const PassContext&)>);
         // The pass changes state the graph does not own — a denoiser's own accumulation,
         // for instance — so it survives culling on its own account. It is not a way to
@@ -71,7 +76,7 @@ class RenderGraph {
     void execute(VkCommandBuffer, GpuProfiler&);
 
     uint32_t passCount() const {
-        return uint32_t(passes_.size());
+        return declared_;
     }
     uint32_t livePasses() const {
         return live_;
@@ -105,15 +110,19 @@ class RenderGraph {
     };
     struct Attachment {
         ResourceId id;
-        uint32_t use = 0;
+        uint32_t use = 0; // index into the pass's own declarations
         bool clear = false;
         VkClearValue value{};
     };
+    // A pass owns its declarations. They used to be a slice of one shared array, which
+    // made the slice correct only while nothing else was declared in between — declaring
+    // one pass while another builder was still open silently handed its resources to the
+    // wrong pass. Ownership is what removes that ordering rule.
     struct Pass {
         const char* name = "";
-        uint32_t first = 0, count = 0; // slice of uses_
-        uint32_t firstColor = 0, colorCount = 0;
-        uint32_t firstEdge = 0, edgeCount = 0; // slice of edges_
+        std::vector<Use> uses;
+        std::vector<Attachment> colors;
+        std::vector<uint32_t> edges; // producing passes, in declaration order
         ResourceId depth;
         uint32_t depthUse = 0;
         float depthClear = 1.f;
@@ -133,10 +142,10 @@ class RenderGraph {
     };
     const Registry& registry_;
     ResourcePool* pool_ = nullptr;
+    // Passes outlive reset() so that a frame reuses the storage its declarations needed
+    // last time; declared_ is how many of them this frame has.
     std::vector<Pass> passes_;
-    std::vector<Use> uses_;
-    std::vector<Attachment> colors_;
-    std::vector<uint32_t> edges_;    // consumer -> producing pass, in pass order
+    uint32_t declared_ = 0;
     std::vector<uint32_t> producer_; // content slot -> pass that produced the live version
     std::vector<uint8_t> touched_;   // resource -> a live pass names it this frame
     std::vector<Residency> residency_;

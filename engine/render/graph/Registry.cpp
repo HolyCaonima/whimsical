@@ -24,15 +24,19 @@ FormatInfo formatInfo(Format format) {
 }
 
 ResourceId Registry::declare(Declaration declaration) {
-    if (declaration.view)
-        declaration.view.binding = bindings_++;
+    const ResourceId id{uint16_t(declarations_.size())};
+    if (declaration.view) {
+        declaration.view.binding = uint32_t(bindings_.size());
+        bindings_.push_back(id);
+    }
     if (declaration.previous) {
         if (declaration.lifetime != Lifetime::History)
             throw std::runtime_error("Only a history resource has a previous view: " + declaration.name);
-        declaration.previous.binding = bindings_++;
+        declaration.previous.binding = uint32_t(bindings_.size());
+        bindings_.push_back(previous(id));
     }
     declarations_.push_back(std::move(declaration));
-    return {uint16_t(declarations_.size() - 1)};
+    return id;
 }
 
 uint32_t Registry::physicalCount() const {

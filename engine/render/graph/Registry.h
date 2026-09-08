@@ -94,29 +94,6 @@ struct ShaderView {
     }
 };
 
-struct Declaration {
-    std::string name;
-    Kind kind = Kind::Image;
-    Lifetime lifetime = Lifetime::Transient;
-    Section section = Section::Compute;
-    Format format = Format::RGBA16F;
-    uint16_t divisor = 1; // screen size / divisor, rounded up
-    // The state the frame hands this resource to its consumer in: the swapchain to the
-    // presentation engine, a readback buffer to the host. The graph emits that transition
-    // itself after the last pass, so nothing has to exist purely in order to make one.
-    std::optional<Access> handover;
-    std::function<uint64_t(uint32_t width, uint32_t height)> bytes; // buffers
-    ShaderView view;
-    ShaderView previous; // Lifetime::History only
-};
-
-// A buffer the host reads after the frame fence. It lives in readback memory and the frame
-// ends with the barrier that makes the last write visible, which is a real dependency
-// rather than something the fence is assumed to cover.
-inline bool hostRead(const Declaration& declaration) {
-    return declaration.handover == Access::Host;
-}
-
 enum class Slot : uint8_t { Current, Previous };
 
 struct ResourceId {
@@ -148,11 +125,45 @@ inline ResourceRef previous(ResourceId id) {
 }
 using ResourceList = std::vector<ResourceRef>;
 
+struct Declaration {
+    std::string name;
+    Kind kind = Kind::Image;
+    Lifetime lifetime = Lifetime::Transient;
+    Section section = Section::Compute;
+    Format format = Format::RGBA16F;
+    uint16_t divisor = 1; // screen size / divisor, rounded up
+    // The state the frame hands this resource to its consumer in: the swapchain to the
+    // presentation engine, a readback buffer to the host. The graph emits that transition
+    // itself after the last pass, so nothing has to exist purely in order to make one.
+    std::optional<Access> handover;
+    std::function<uint64_t(uint32_t width, uint32_t height)> bytes; // buffers
+    ShaderView view;
+    ShaderView previous; // Lifetime::History only
+    // Contents a pass reaches through this resource rather than by naming it. A ray query
+    // walks the top-level structure into the bottom level, and a top-level build reads it
+    // too, but neither has a name for it. Stated once here, so declaring the structure a
+    // pass does touch is enough to be ordered against whatever fed it.
+    std::vector<ResourceId> reaches;
+    // Whether one pass writing this resource replaces all of its contents. A screen-sized
+    // image or one element per pixel is covered by the dispatch that writes it; the DI
+    // reservoir buffer holds four rotating layers and a pass writes some of them, leaving
+    // the rest standing. This is what decides whether a shader's write is an Overwrite or
+    // a Modify, so no pass has to restate it.
+    bool wholeWrites = true;
+};
+
+// A buffer the host reads after the frame fence. It lives in readback memory and the frame
+// ends with the barrier that makes the last write visible, which is a real dependency
+// rather than something the fence is assumed to cover.
+inline bool hostRead(const Declaration& declaration) {
+    return declaration.handover == Access::Host;
+}
+
 // Declaration order is binding order. Features register into one registry at startup; the
 // registry is then the only thing that knows binding numbers exist.
 class Registry {
     std::vector<Declaration> declarations_;
-    uint32_t bindings_ = 0;
+    ResourceList bindings_; // binding number -> the half a shader reaches through it
 
   public:
     ResourceId declare(Declaration);
@@ -163,7 +174,12 @@ class Registry {
         return declarations_.size();
     }
     uint32_t bindingCount() const {
-        return bindings_;
+        return uint32_t(bindings_.size());
+    }
+    // The registry hands out binding numbers, so it is also the only thing that can read
+    // one back. Reflecting a compiled shader is what needs that direction.
+    ResourceRef binding(uint32_t number) const {
+        return bindings_[number];
     }
     // Physical slots: a history resource owns two, everything else one.
     uint32_t physicalCount() const;

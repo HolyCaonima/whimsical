@@ -321,6 +321,7 @@ struct Renderer::Impl {
                << graph->barrierCount() << ", \"graphAliasedResources\": " << graph->aliasedResources()
                << ",\n  \"graphResourceBytes\": " << pool->ownedBytes()
                << ", \"graphDeclaredBytes\": " << pool->declaredBytes()
+               << ", \"graphDescriptorWrites\": " << pool->descriptorWrites()
                << ",\n  \"meanRgb\": " << double(sum) / (double(width) * height * 3) << ",\n  \"redRange\": ["
                << int(minimum) << "," << int(maximum) << "]\n}\n";
         std::cout << "Capture: " << (dir / "frame.bmp").string() << " | " << statistics.fps << " FPS | Frame "

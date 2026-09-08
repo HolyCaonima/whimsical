@@ -25,14 +25,14 @@ struct alignas(16) GpuGlobals {
 // than with the screen, so they are External: the graph binds them and never allocates or
 // synchronises them. Both levels of the acceleration structure are Imported instead — the
 // scene allocates them, the graph orders the refits, the top-level build and the ray
-// queries against each other. The bottom level has no descriptor of its own; a ray query
-// reaches it through the top level, which is exactly why it has to be named to be ordered.
+// queries against each other. The bottom level has no descriptor of its own, so the
+// top-level declaration is what reaches it; buildInstances has no descriptor either, and
+// is what a top-level build actually reads.
 struct SceneResources {
-    rg::ResourceId globals, instances, materials, lights, vertices, indices, textures, blas, tlas;
+    rg::ResourceId globals, instances, materials, lights, vertices, indices, textures,
+        buildInstances, blas, tlas;
     explicit SceneResources(rg::Registry&);
-    rg::ResourceList shared() const;   // visible to raster and compute
-    rg::ResourceList geometry() const;   // vertex/index buffers, compute only
-    rg::ResourceList structures() const; // both levels, as a ray query walks them
+    rg::ResourceList geometry() const; // vertex/index buffers, as a structure build reads them
 };
 
 // The four halves that the next frame reads back are History; the graph gives each of them
@@ -40,16 +40,12 @@ struct SceneResources {
 struct GBufferResources {
     rg::ResourceId albedo, normal, position, motion, viewZ, emission, depth;
     explicit GBufferResources(rg::Registry&);
-    rg::ResourceList attachments() const; // in fragment output location order
-    rg::ResourceList surface() const;     // what surfaceAt() and RAB_GetGBufferSurface read
-    rg::ResourceList previousSurface() const;
 };
 
 struct RestirDiResources {
     rg::ResourceId reservoirs, neighbours, lightSamples, gradient, filteredGradient,
         diffuseConfidence, specularConfidence, luminance, confidenceHistory;
     explicit RestirDiResources(rg::Registry&);
-    rg::ResourceList sdk() const; // the three SDK-facing buffers
 };
 
 struct RestirGiResources {

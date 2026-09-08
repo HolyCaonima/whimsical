@@ -29,8 +29,8 @@ struct FrameSetup {
 };
 
 // Owns the programs and declares the frame. This is the only file that knows which pass
-// exists, in what order, and what each one reads and writes; the graph turns that into
-// dependencies, barriers, layouts and storage reuse.
+// exists and in what order; what each one reads and writes comes from the compiled shader
+// it runs, and the graph turns both into dependencies, barriers, layouts and storage reuse.
 class RenderPipeline {
   public:
     RenderPipeline(VulkanContext&, ShaderCompiler&, rg::ResourcePool&, const RenderResources&);
@@ -45,6 +45,8 @@ class RenderPipeline {
     void build(rg::RenderGraph&, const FrameSetup&);
 
   private:
+    // The passes linked against the live Shader set come first, in the order
+    // ShaderCompiler::surfacePasses names them; the rest have no material in them.
     enum Pass {
         Lighting,
         GiReuse,
@@ -57,18 +59,27 @@ class RenderPipeline {
         DiGradientFilter,
         PassCount
     };
+    using SurfacePrograms = std::array<rg::Program, ShaderCompiler::surfacePasses.size()>;
+    static constexpr std::array screenSpacePasses = {"composite.comp", "di_confidence.comp",
+                                                     "di_gradient_filter.comp"};
+    static_assert(Composite == ShaderCompiler::surfacePasses.size() &&
+                  Composite + screenSpacePasses.size() == PassCount);
     VulkanContext& vk_;
     ShaderCompiler& shaders_;
     rg::ResourcePool& pool_;
     const RenderResources& r_;
-    std::array<VkPipeline, PassCount> compute_{};
+    // The programs the frame declares itself with. The screen-space ones exist for the
+    // whole run; the surface ones are relinked whenever the live Shader set changes, so a
+    // pass points at whichever program is current rather than owning it.
+    std::array<const rg::Program*, PassCount> compute_{};
+    std::array<rg::Program, screenSpacePasses.size()> screenSpace_;
     std::map<std::shared_ptr<const ShaderAsset>, VkPipeline> rasterPrograms_;
-    std::map<ShaderCompiler::ShaderSet, std::array<VkPipeline, ShaderCompiler::surfacePasses.size()>>
-        computePrograms_;
+    std::map<ShaderCompiler::ShaderSet, SurfacePrograms> computePrograms_;
+    // The G-buffer pass binds one pipeline per material, so what it touches is the union
+    // over them plus the vertex stage they share.
+    std::vector<rg::ShaderAccess> rasterAccess_;
 
-    VkPipeline createCompute(VkShaderModule);
+    rg::Program createCompute(const std::vector<uint32_t>& code);
     VkPipeline createRaster(const std::shared_ptr<const ShaderAsset>&);
-    // Bound by every ray-query pass: the scene it traces and the surfaces it shades.
-    void traceInputs(rg::RenderGraph::Builder&) const;
 };
 } // namespace afterlight

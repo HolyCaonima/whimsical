@@ -79,24 +79,35 @@ RenderGraph::RenderGraph(ResourcePool& pool) : registry_(pool.registry()), pool_
 RenderGraph::RenderGraph(const Registry& registry) : registry_(registry) {}
 
 void RenderGraph::reset() {
-    passes_.clear();
-    uses_.clear();
-    colors_.clear();
-    edges_.clear();
+    declared_ = 0;
 }
 
 RenderGraph::Builder RenderGraph::add(const char* name) {
-    Pass pass;
+    if (declared_ == passes_.size())
+        passes_.emplace_back();
+    auto& pass = passes_[declared_];
+    pass.uses.clear();
+    pass.colors.clear();
+    pass.edges.clear();
     pass.name = name;
-    pass.first = uint32_t(uses_.size());
-    pass.firstColor = uint32_t(colors_.size());
-    passes_.push_back(std::move(pass));
-    return {this, uint32_t(passes_.size() - 1)};
+    pass.depth = {};
+    pass.depthUse = 0;
+    pass.depthClear = 1.f;
+    pass.pipeline = VK_NULL_HANDLE;
+    pass.divisor = 1;
+    pass.sideEffect = false;
+    pass.alive = true;
+    pass.record = nullptr;
+    return {this, declared_++};
 }
 
 RenderGraph::Builder& RenderGraph::Builder::use(ResourceRef ref, Access access, Usage usage) {
-    graph_->uses_.push_back({ref, access, usage});
-    graph_->passes_[pass_].count++;
+    graph_->passes_[pass_].uses.push_back({ref, access, usage});
+    // Contents the pass reaches through this resource without having a name for them. The
+    // declaration says so once, so being ordered against whatever produced them is not a
+    // rule every ray query and every build has to remember.
+    for (auto reached : graph_->registry_[ref.id].reaches)
+        graph_->passes_[pass_].uses.push_back({reached, access, Usage::Read});
     return *this;
 }
 RenderGraph::Builder& RenderGraph::Builder::read(ResourceRef ref, Access access) {
@@ -124,30 +135,36 @@ RenderGraph::Builder& RenderGraph::Builder::modify(const ResourceList& list, Acc
     return *this;
 }
 RenderGraph::Builder& RenderGraph::Builder::color(ResourceId id) {
-    graph_->colors_.push_back({id, uint32_t(graph_->uses_.size()), false, {}});
-    graph_->passes_[pass_].colorCount++;
+    auto& pass = graph_->passes_[pass_];
+    pass.colors.push_back({id, uint32_t(pass.uses.size()), false, {}});
     return modify(id, Access::Color);
 }
 RenderGraph::Builder& RenderGraph::Builder::color(ResourceId id, VkClearColorValue clear) {
+    auto& pass = graph_->passes_[pass_];
     Attachment attachment;
     attachment.id = id;
-    attachment.use = uint32_t(graph_->uses_.size());
+    attachment.use = uint32_t(pass.uses.size());
     attachment.clear = true;
     attachment.value.color = clear;
-    graph_->colors_.push_back(attachment);
-    graph_->passes_[pass_].colorCount++;
+    pass.colors.push_back(attachment);
     return overwrite(id, Access::Color);
 }
 RenderGraph::Builder& RenderGraph::Builder::depth(ResourceId id, float clear) {
-    graph_->passes_[pass_].depth = id;
-    graph_->passes_[pass_].depthClear = clear;
-    graph_->passes_[pass_].depthUse = uint32_t(graph_->uses_.size());
+    auto& pass = graph_->passes_[pass_];
+    pass.depth = id;
+    pass.depthClear = clear;
+    pass.depthUse = uint32_t(pass.uses.size());
     return overwrite(id, Access::Depth);
 }
-RenderGraph::Builder& RenderGraph::Builder::dispatch(VkPipeline pipeline, uint16_t divisor) {
-    graph_->passes_[pass_].pipeline = pipeline;
-    graph_->passes_[pass_].divisor = divisor;
+RenderGraph::Builder& RenderGraph::Builder::shader(const std::vector<ShaderAccess>& accesses) {
+    for (const auto& access : accesses)
+        use(access.ref, access.access, access.usage);
     return *this;
+}
+RenderGraph::Builder& RenderGraph::Builder::dispatch(const Program& program, uint16_t divisor) {
+    graph_->passes_[pass_].pipeline = program.pipeline;
+    graph_->passes_[pass_].divisor = divisor;
+    return shader(program.accesses);
 }
 RenderGraph::Builder& RenderGraph::Builder::record(std::function<void(const PassContext&)> body) {
     graph_->passes_[pass_].record = std::move(body);
@@ -165,21 +182,18 @@ RenderGraph::Builder& RenderGraph::Builder::sideEffect() {
 // consumes. This is the whole of the dependency analysis.
 void RenderGraph::analyse() {
     producer_.assign(registry_.size() * 2, NoPass);
-    edges_.clear();
-    for (uint32_t p = 0; p < passes_.size(); ++p) {
+    for (uint32_t p = 0; p < declared_; ++p) {
         auto& pass = passes_[p];
-        pass.firstEdge = uint32_t(edges_.size());
-        for (uint32_t i = 0; i < pass.count; ++i) {
-            auto& use = uses_[pass.first + i];
+        pass.edges.clear();
+        for (auto& use : pass.uses) {
             use.source = consumes(use.usage) ? producer_[content(use.ref)] : NoPass;
             if (use.source != NoPass &&
-                std::find(edges_.begin() + pass.firstEdge, edges_.end(), use.source) == edges_.end())
-                edges_.push_back(use.source);
+                std::find(pass.edges.begin(), pass.edges.end(), use.source) == pass.edges.end())
+                pass.edges.push_back(use.source);
         }
-        pass.edgeCount = uint32_t(edges_.size()) - pass.firstEdge;
-        for (uint32_t i = 0; i < pass.count; ++i)
-            if (produces(uses_[pass.first + i].usage))
-                producer_[content(uses_[pass.first + i].ref)] = p;
+        for (const auto& use : pass.uses)
+            if (produces(use.usage))
+                producer_[content(use.ref)] = p;
     }
 }
 
@@ -189,18 +203,18 @@ void RenderGraph::analyse() {
 // reachability. Conditional features therefore cost nothing when their consumer is absent,
 // and a version that is replaced before anyone reads it takes its producer with it.
 void RenderGraph::cull() {
-    for (auto& pass : passes_)
-        pass.alive = pass.sideEffect;
+    for (uint32_t p = 0; p < declared_; ++p)
+        passes_[p].alive = passes_[p].sideEffect;
     for (uint32_t slot = 0; slot < producer_.size(); ++slot)
         if (producer_[slot] != NoPass && crossesFrames(registry_[ResourceId{uint16_t(slot / 2)}].lifetime))
             passes_[producer_[slot]].alive = true;
     live_ = 0;
-    for (uint32_t p = uint32_t(passes_.size()); p-- > 0;) {
+    for (uint32_t p = declared_; p-- > 0;) {
         if (!passes_[p].alive)
             continue;
         ++live_;
-        for (uint32_t e = 0; e < passes_[p].edgeCount; ++e)
-            passes_[edges_[passes_[p].firstEdge + e]].alive = true;
+        for (auto edge : passes_[p].edges)
+            passes_[edge].alive = true;
     }
 }
 
@@ -209,11 +223,11 @@ void RenderGraph::cull() {
 // or a loaded attachment with no producer would be reading whatever the storage it now
 // shares was last used for.
 void RenderGraph::validate() const {
-    for (const auto& pass : passes_) {
+    for (uint32_t p = 0; p < declared_; ++p) {
+        const auto& pass = passes_[p];
         if (!pass.alive)
             continue;
-        for (uint32_t i = 0; i < pass.count; ++i) {
-            const auto& use = uses_[pass.first + i];
+        for (const auto& use : pass.uses) {
             const auto& declaration = registry_[use.ref.id];
             if (consumes(use.usage) && use.source == NoPass && !crossesFrames(declaration.lifetime))
                 throw std::runtime_error(std::string(pass.name) + " consumes '" + declaration.name +
@@ -231,25 +245,19 @@ void RenderGraph::liveness() {
     for (uint16_t i = 0; i < registry_.size(); ++i)
         if (crossesFrames(registry_[{i}].lifetime))
             consumed[i * 2] = consumed[i * 2 + 1] = 1;
-    for (uint32_t p = uint32_t(passes_.size()); p-- > 0;) {
-        const auto& pass = passes_[p];
+    for (uint32_t p = declared_; p-- > 0;) {
+        auto& pass = passes_[p];
         if (!pass.alive)
             continue;
-        for (uint32_t i = 0; i < pass.count; ++i) {
-            auto& use = uses_[pass.first + i];
+        for (auto& use : pass.uses)
             if (produces(use.usage))
                 use.consumedLater = consumed[content(use.ref)] != 0;
-        }
-        for (uint32_t i = 0; i < pass.count; ++i) {
-            const auto& use = uses_[pass.first + i];
+        for (const auto& use : pass.uses)
             if (produces(use.usage) && !consumes(use.usage))
                 consumed[content(use.ref)] = 0;
-        }
-        for (uint32_t i = 0; i < pass.count; ++i) {
-            const auto& use = uses_[pass.first + i];
+        for (const auto& use : pass.uses)
             if (consumes(use.usage))
                 consumed[content(use.ref)] = 1;
-        }
     }
 }
 
@@ -267,11 +275,11 @@ void RenderGraph::plan(uint32_t width, uint32_t height) {
     std::vector<Range> ranges(registry_.size());
     for (uint16_t i = 0; i < registry_.size(); ++i)
         ranges[i].id = ResourceId{i};
-    for (uint32_t p = 0; p < passes_.size(); ++p) {
+    for (uint32_t p = 0; p < declared_; ++p) {
         if (!passes_[p].alive)
             continue;
-        for (uint32_t i = 0; i < passes_[p].count; ++i) {
-            auto& range = ranges[uses_[passes_[p].first + i].ref.id.index];
+        for (const auto& use : passes_[p].uses) {
+            auto& range = ranges[use.ref.id.index];
             range.first = std::min(range.first, p);
             range.last = std::max(range.last, p);
         }
@@ -328,8 +336,8 @@ void RenderGraph::compile(uint32_t width, uint32_t height) {
 
 void RenderGraph::checkDeclared(uint32_t pass, ResourceRef ref) const {
     const auto& declaring = passes_[pass];
-    for (uint32_t i = 0; i < declaring.count; ++i)
-        if (uses_[declaring.first + i].ref == ref)
+    for (const auto& use : declaring.uses)
+        if (use.ref == ref)
             return;
     throw std::runtime_error(std::string(declaring.name) + " touched '" + registry_[ref.id].name +
                              "' without declaring it");
@@ -484,16 +492,17 @@ void RenderGraph::execute(VkCommandBuffer command, GpuProfiler& profiler) {
     context.pool = pool_;
     context.graph = this;
     barriers_ = 0;
-    for (uint32_t p = 0; p < passes_.size(); ++p) {
+    for (uint32_t p = 0; p < declared_; ++p) {
         const auto& pass = passes_[p];
         if (!pass.alive)
             continue;
         CpuScope cpuScope(pass.name);
         GpuScope gpuScope(profiler, command, pass.name);
-        synchronise(command, uses_.data() + pass.first, pass.count);
+        synchronise(command, pass.uses.data(), uint32_t(pass.uses.size()));
+        const bool renders = !pass.colors.empty() || pass.depth.valid();
         uint32_t width = pool_->width(), height = pool_->height();
-        if (pass.colorCount || pass.depth.valid()) {
-            const auto& reference = pass.colorCount ? colors_[pass.firstColor].id : pass.depth;
+        if (renders) {
+            const auto& reference = pass.colors.empty() ? pass.depth : pass.colors.front().id;
             width = pool_->extentWidth(reference);
             height = pool_->extentHeight(reference);
         }
@@ -502,16 +511,15 @@ void RenderGraph::execute(VkCommandBuffer command, GpuProfiler& profiler) {
         context.pass = p;
         auto& attachments = attachments_;
         VkRenderingAttachmentInfo depthAttachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-        if (pass.colorCount || pass.depth.valid()) {
+        if (renders) {
             attachments.clear();
-            for (uint32_t i = 0; i < pass.colorCount; ++i) {
-                const auto& attachment = colors_[pass.firstColor + i];
+            for (const auto& attachment : pass.colors) {
                 VkRenderingAttachmentInfo info{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
                 info.imageView = pool_->image(attachment.id).view;
                 info.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
                 info.loadOp = attachment.clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
-                info.storeOp = uses_[attachment.use].consumedLater ? VK_ATTACHMENT_STORE_OP_STORE
-                                                                   : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+                info.storeOp = pass.uses[attachment.use].consumedLater ? VK_ATTACHMENT_STORE_OP_STORE
+                                                                       : VK_ATTACHMENT_STORE_OP_DONT_CARE;
                 info.clearValue = attachment.value;
                 attachments.push_back(info);
             }
@@ -524,7 +532,7 @@ void RenderGraph::execute(VkCommandBuffer command, GpuProfiler& profiler) {
                 depthAttachment.imageView = pool_->image(pass.depth).view;
                 depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
                 depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-                depthAttachment.storeOp = uses_[pass.depthUse].consumedLater
+                depthAttachment.storeOp = pass.uses[pass.depthUse].consumedLater
                                               ? VK_ATTACHMENT_STORE_OP_STORE
                                               : VK_ATTACHMENT_STORE_OP_DONT_CARE;
                 depthAttachment.clearValue.depthStencil = {pass.depthClear, 0};
@@ -546,7 +554,7 @@ void RenderGraph::execute(VkCommandBuffer command, GpuProfiler& profiler) {
         }
         if (pass.record)
             pass.record(context);
-        if (pass.colorCount || pass.depth.valid())
+        if (renders)
             vkCmdEndRendering(command);
     }
     handover(command);

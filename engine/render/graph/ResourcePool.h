@@ -26,7 +26,8 @@ class ResourcePool {
     ~ResourcePool();
 
     // Owner-allocated resources. The pool keeps a reference rather than a copy, so the
-    // owner's image layout and the graph's barriers stay one fact.
+    // owner's image layout and the graph's barriers stay one fact, and an owner that grows
+    // or rebuilds its resource in place does not have to say so twice.
     void importImage(ResourceId, Image&);
     void importBuffer(ResourceId, Buffer&);
     void importTlas(ResourceId, VkAccelerationStructureKHR);
@@ -79,10 +80,15 @@ class ResourcePool {
     VkPipelineLayout pipelineLayout() const {
         return pipelineLayout_;
     }
+    // The set for this frame's parity, with every binding pointing at the object the
+    // resource currently resolves to.
     VkDescriptorSet descriptors();
 
     uint64_t ownedBytes() const;    // what the transient reuse actually allocated
     uint64_t declaredBytes() const; // what the same declarations would cost without reuse
+    uint64_t descriptorWrites() const {
+        return descriptorWrites_;
+    }
 
   private:
     // One physical resource. A history declaration owns two of these and swaps which one
@@ -94,18 +100,31 @@ class ResourcePool {
         Buffer* host = nullptr;    // Lifetime::External
         VkAccelerationStructureKHR tlas = VK_NULL_HANDLE;
         std::vector<VkDescriptorImageInfo> samplers;
+        uint64_t samplerRevision = 0; // a descriptor array has no single handle to compare
         AccessState state;
         uint64_t signature = 0; // storage shape; unchanged means keep the allocation
         uint64_t bytes = 0;
+    };
+    // What the last update actually wrote into one binding. A descriptor is rewritten when
+    // this differs from the object the resource now resolves to, which is the only rule
+    // that cannot be forgotten: an owner replacing a buffer, a resize reallocating an
+    // image and a transient moving onto another tenant's storage all change the object
+    // itself, so none of them needs a flag saying it happened.
+    struct Bound {
+        uint64_t object = 0; // VkBuffer, VkImageView or VkAccelerationStructureKHR
+        uint64_t extent = 0; // buffer range, or the revision of a sampler array
+        bool operator==(const Bound& other) const {
+            return object == other.object && extent == other.extent;
+        }
     };
     VulkanContext& vk_;
     const Registry& registry_;
     std::vector<Physical> slots_;
     std::vector<uint16_t> root_; // physical slot -> slot that owns the storage
     std::vector<uint32_t> bases_;
+    std::vector<Bound> bound_; // parity * bindingCount + binding
     uint32_t parity_ = 0, width_ = 0, height_ = 0;
-    uint64_t declaredBytes_ = 0;
-    bool descriptorsDirty_ = true;
+    uint64_t declaredBytes_ = 0, descriptorWrites_ = 0, samplerRevisions_ = 0;
     VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;

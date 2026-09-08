@@ -129,7 +129,8 @@ add_custom_target(afterlight_shader_bindings DEPENDS ${GENERATED_GLSL})
 add_executable(Afterlight engine/main.cpp engine/platform/Window.cpp engine/render/Renderer.cpp engine/render/VulkanContext.cpp engine/render/NrdDenoiser.cpp engine/render/GpuProfiler.cpp engine/render/UiRenderer.cpp)
 target_sources(Afterlight PRIVATE engine/render/RenderAuditWorker.cpp engine/render/GpuScene.cpp
   engine/render/RenderPipeline.cpp engine/render/RenderResources.cpp
-  engine/render/graph/Registry.cpp engine/render/graph/ResourcePool.cpp engine/render/graph/RenderGraph.cpp)
+  engine/render/graph/Registry.cpp engine/render/graph/ResourcePool.cpp engine/render/graph/RenderGraph.cpp
+  engine/render/graph/ShaderAccess.cpp)
 target_link_libraries(Afterlight PRIVATE afterlight_shader_runtime volk NRD user32 gdi32 winmm)
 target_include_directories(Afterlight PRIVATE "${DEPS}/rtxdi/Include")
 afterlight_copy_onnx(Afterlight)
@@ -175,8 +176,12 @@ target_link_libraries(render_graph_tests PRIVATE afterlight_core volk user32 gdi
 target_compile_options(render_graph_tests PRIVATE /W4 /permissive- /utf-8)
 afterlight_copy_onnx(render_graph_tests)
 add_test(NAME render_graph_contract COMMAND render_graph_tests)
-add_executable(shader_tests tests/ShaderTests.cpp)
-target_link_libraries(shader_tests PRIVATE afterlight_shader_runtime)
+# A pass's resource declarations are read out of the SPIR-V it will run, so this checks the
+# real linked modules against the registry the graph compiles.
+add_executable(shader_tests tests/ShaderTests.cpp engine/render/graph/ShaderAccess.cpp
+  engine/render/graph/Registry.cpp engine/render/RenderResources.cpp)
+target_link_libraries(shader_tests PRIVATE afterlight_shader_runtime volk)
+target_include_directories(shader_tests PRIVATE "${DEPS}/rtxdi/Include")
 add_dependencies(shader_tests afterlight_shader_bindings)
 target_compile_options(shader_tests PRIVATE /W4 /permissive- /utf-8)
 afterlight_copy_onnx(shader_tests)

@@ -7,15 +7,17 @@ namespace afterlight {
 using namespace rg;
 
 namespace {
-VkShaderModule createModule(VulkanContext& vk, const uint32_t* code, size_t bytes) {
+VkShaderModule createModule(VulkanContext& vk, const std::vector<uint32_t>& code) {
     VkShaderModuleCreateInfo info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-    info.codeSize = bytes;
-    info.pCode = code;
+    info.codeSize = code.size() * sizeof(uint32_t);
+    info.pCode = code.data();
     VkShaderModule shader;
     VK_CHECK(vkCreateShaderModule(vk.device, &info, nullptr, &shader));
     return shader;
 }
-VkShaderModule loadShader(VulkanContext& vk, const char* name) {
+// The SPIR-V is both what runs and what says which resources the pass touches, so it is
+// read rather than handed straight to the driver.
+std::vector<uint32_t> loadSpirv(const char* name) {
     std::string path = std::string(AFTERLIGHT_SHADERS) + "/" + name + ".spv";
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file)
@@ -24,7 +26,7 @@ VkShaderModule loadShader(VulkanContext& vk, const char* name) {
     std::vector<uint32_t> data((size + 3) / 4);
     file.seekg(0);
     file.read(reinterpret_cast<char*>(data.data()), std::streamsize(size));
-    return createModule(vk, data.data(), size);
+    return data;
 }
 VkClearColorValue black() {
     return {};
@@ -34,40 +36,45 @@ VkClearColorValue black() {
 RenderPipeline::RenderPipeline(VulkanContext& vk, ShaderCompiler& shaders, ResourcePool& pool,
                                const RenderResources& resources)
     : vk_(vk), shaders_(shaders), pool_(pool), r_(resources) {
-    compute_[Composite] = createCompute(loadShader(vk_, "composite.comp"));
-    compute_[DiGradientFilter] = createCompute(loadShader(vk_, "di_gradient_filter.comp"));
-    compute_[DiConfidence] = createCompute(loadShader(vk_, "di_confidence.comp"));
+    for (uint32_t i = 0; i < screenSpacePasses.size(); ++i) {
+        screenSpace_[i] = createCompute(loadSpirv(screenSpacePasses[i]));
+        compute_[Composite + i] = &screenSpace_[i];
+    }
 }
 
 RenderPipeline::~RenderPipeline() {
-    for (auto pass : {Composite, DiConfidence, DiGradientFilter})
-        if (compute_[pass])
-            vkDestroyPipeline(vk_.device, compute_[pass], nullptr);
+    for (const auto& program : screenSpace_)
+        if (program.pipeline)
+            vkDestroyPipeline(vk_.device, program.pipeline, nullptr);
     for (const auto& programs : computePrograms_)
-        for (auto p : programs.second)
-            vkDestroyPipeline(vk_.device, p, nullptr);
+        for (const auto& program : programs.second)
+            vkDestroyPipeline(vk_.device, program.pipeline, nullptr);
     for (const auto& program : rasterPrograms_)
         vkDestroyPipeline(vk_.device, program.second, nullptr);
 }
 
-VkPipeline RenderPipeline::createCompute(VkShaderModule module) {
+Program RenderPipeline::createCompute(const std::vector<uint32_t>& code) {
+    Program program;
+    program.accesses = reflect(pool_.registry(), code.data(), code.size());
+    VkShaderModule module = createModule(vk_, code);
     VkComputePipelineCreateInfo cp{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
     cp.layout = pool_.pipelineLayout();
     cp.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
     cp.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
     cp.stage.module = module;
     cp.stage.pName = "main";
-    VkPipeline pipeline;
-    auto result = vkCreateComputePipelines(vk_.device, VK_NULL_HANDLE, 1, &cp, nullptr, &pipeline);
+    auto result = vkCreateComputePipelines(vk_.device, VK_NULL_HANDLE, 1, &cp, nullptr, &program.pipeline);
     vkDestroyShaderModule(vk_.device, module, nullptr);
     VK_CHECK(result);
-    return pipeline;
+    return program;
 }
 
 VkPipeline RenderPipeline::createRaster(const std::shared_ptr<const ShaderAsset>& shader) {
     const auto& code = shaders_.compile("gbuffer.frag", {shader});
-    VkShaderModule vertex = loadShader(vk_, "gbuffer.vert"),
-                   fragment = createModule(vk_, code.data(), code.size() * sizeof(uint32_t));
+    const auto vertexCode = loadSpirv("gbuffer.vert");
+    merge(rasterAccess_, reflect(pool_.registry(), vertexCode.data(), vertexCode.size()));
+    merge(rasterAccess_, reflect(pool_.registry(), code.data(), code.size()));
+    VkShaderModule vertex = createModule(vk_, vertexCode), fragment = createModule(vk_, code);
     VkPipelineShaderStageCreateInfo stages[2]{};
     for (int i = 0; i < 2; i++) {
         stages[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -145,38 +152,27 @@ void RenderPipeline::ensurePrograms(const MaterialBindings& bindings) {
             rasterPrograms_.emplace(shader, createRaster(shader));
     auto programs = computePrograms_.find(bindings.shaders);
     if (programs == computePrograms_.end()) {
-        std::array<VkPipeline, ShaderCompiler::surfacePasses.size()> pipelines{};
+        SurfacePrograms linked;
         const auto& names = ShaderCompiler::surfacePasses;
         try {
-            for (uint32_t i = 0; i < pipelines.size(); ++i) {
-                const auto& code = shaders_.compile(names[i], bindings.shaders);
-                pipelines[i] = createCompute(createModule(vk_, code.data(), code.size() * sizeof(uint32_t)));
-            }
+            for (uint32_t i = 0; i < linked.size(); ++i)
+                linked[i] = createCompute(shaders_.compile(names[i], bindings.shaders));
         } catch (...) {
-            for (auto pipeline : pipelines)
-                if (pipeline)
-                    vkDestroyPipeline(vk_.device, pipeline, nullptr);
+            for (const auto& program : linked)
+                if (program.pipeline)
+                    vkDestroyPipeline(vk_.device, program.pipeline, nullptr);
             throw;
         }
-        programs = computePrograms_.emplace(bindings.shaders, pipelines).first;
+        programs = computePrograms_.emplace(bindings.shaders, std::move(linked)).first;
     }
-    std::copy(programs->second.begin(), programs->second.end(), compute_.begin());
-}
-
-void RenderPipeline::traceInputs(RenderGraph::Builder& pass) const {
-    pass.read(r_.scene.shared(), Access::Compute)
-        .read(r_.scene.geometry(), Access::Compute)
-        // Traversal walks both levels. Naming only the top one would leave a ray query
-        // ordered against the top-level build but not against the refit that fed it.
-        .read(r_.scene.structures(), Access::Trace)
-        .read(r_.gbuffer.surface(), Access::Compute);
+    for (uint32_t i = 0; i < programs->second.size(); ++i)
+        compute_[i] = &programs->second[i];
 }
 
 void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
     const auto& scene = r_.scene;
     const auto& g = r_.gbuffer;
     const auto& di = r_.di;
-    const auto& gi = r_.gi;
     const auto& shade = r_.shading;
     const Frame& frame = *setup.frame;
     graph.reset();
@@ -215,16 +211,19 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
 
     auto* profiler = setup.profiler;
     // A refit keeps the structure it updates; a rebuild replaces it. The scene has already
-    // decided which, so the graph is told rather than assuming the conservative one.
+    // decided which, so the graph is told rather than assuming the conservative one. The
+    // bottom level comes with the top one, which is what orders this against the refit.
     graph.add("Acceleration Structures")
-        .read(scene.instances, Access::Build)
-        .read(scene.blas, Access::Build)
+        .read(scene.buildInstances, Access::Build)
         .use(scene.tlas, Access::Build, gpuScene->tlasRefits() ? Usage::Modify : Usage::Overwrite)
         .record([gpuScene, profiler](const PassContext& c) { gpuScene->recordTlas(c.command, *profiler); });
 
     VkClearColorValue farViewZ{};
     farViewZ.float32[0] = 10000;
     const auto& programs = rasterPrograms_;
+    // Attachments and the vertex and index fetch are the pass's own: they are the only
+    // things a compiled shader has nothing to say about. Everything the vertex and
+    // fragment stages read comes from the modules themselves.
     graph.add("GBuffer Raster")
         .color(g.albedo, black())
         .color(g.normal, black())
@@ -233,7 +232,7 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
         .color(g.viewZ, farViewZ)
         .color(g.emission, black())
         .depth(g.depth)
-        .read(scene.shared(), Access::Graphics)
+        .shader(rasterAccess_)
         .read(scene.vertices, Access::Vertex)
         .read(scene.indices, Access::Index)
         .record([gpuScene, &frame, &programs](const PassContext& c) {
@@ -242,86 +241,18 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
             gpuScene->recordDraws(c.command, frame, programs);
         });
 
-    // The gradient replays last frame's selected sample against the current scene, so it
-    // reads the previous G-buffer and the reservoirs while they still hold last frame's
-    // contents, which is why it is declared ahead of everything that rewrites them.
-    auto gradient = graph.add("RTXDI Same Sample Gradient");
-    traceInputs(gradient);
-    gradient.read(g.previousSurface(), Access::Compute)
-        .read(previous(di.luminance), Access::Compute)
-        .read(di.reservoirs, Access::Compute)
-        .read(di.lightSamples, Access::Compute)
-        .overwrite(di.gradient, Access::Compute)
-        .dispatch(compute_[DiGradient], GradientDivisor);
-
-    graph.add("RTXDI Gradient Filter")
-        .read(previous(g.normal), Access::Compute)
-        .read(previous(g.viewZ), Access::Compute)
-        .read(di.gradient, Access::Compute)
-        .overwrite(di.filteredGradient, Access::Compute)
-        .dispatch(compute_[DiGradientFilter], GradientDivisor);
-
-    graph.add("RTXDI History Confidence")
-        .read(di.filteredGradient, Access::Compute)
-        .read(di.confidenceHistory, Access::Compute)
-        .overwrite(di.diffuseConfidence, Access::Compute)
-        .overwrite(di.specularConfidence, Access::Compute)
-        .dispatch(compute_[DiConfidence]);
-
-    // The reservoir arrays rotate roles inside one allocation instead of being copied, so
-    // every DI pass leaves most of the buffer standing: they modify it, and the chain from
-    // the initial samples through to the resolve is a chain of real versions.
-    auto lighting = graph.add("RTXDI Initial + Secondary GI + Specular");
-    traceInputs(lighting);
-    lighting.read(di.lightSamples, Access::Compute)
-        .modify(di.reservoirs, Access::Compute)
-        .overwrite(gi.candidate, Access::Compute)
-        .overwrite(shade.rawDiffuse, Access::Compute)
-        .overwrite(shade.rawSpecular, Access::Compute)
-        .dispatch(compute_[Lighting]);
-
-    auto temporal = graph.add("RTXDI Temporal Resampling");
-    traceInputs(temporal);
-    temporal.read(g.previousSurface(), Access::Compute)
-        .read(g.motion, Access::Compute)
-        .read(di.diffuseConfidence, Access::Compute)
-        .read(di.specularConfidence, Access::Compute)
-        .read(di.lightSamples, Access::Compute)
-        .modify(di.reservoirs, Access::Compute)
-        .dispatch(compute_[DiTemporal]);
-
-    auto spatial = graph.add("RTXDI Spatial Resampling");
-    traceInputs(spatial);
-    spatial.read(di.neighbours, Access::Compute)
-        .read(di.lightSamples, Access::Compute)
-        .modify(di.reservoirs, Access::Compute)
-        .dispatch(compute_[DiSpatial]);
-
-    auto reuse = graph.add("ReSTIR GI Reconnection");
-    traceInputs(reuse);
-    reuse.read(g.motion, Access::Compute)
-        .read(previous(g.position), Access::Compute)
-        .read(previous(g.normal), Access::Compute)
-        .read(gi.candidate, Access::Compute)
-        .read(previous(gi.reservoirs), Access::Compute)
-        .overwrite(gi.reservoirs, Access::Compute)
-        .dispatch(compute_[GiReuse]);
-
-    auto resolve = graph.add("Visibility + Radiance Resolve");
-    traceInputs(resolve);
-    resolve.read(g.motion, Access::Compute)
-        .read(di.diffuseConfidence, Access::Compute)
-        .read(di.specularConfidence, Access::Compute)
-        .read(di.lightSamples, Access::Compute)
-        .read(gi.reservoirs, Access::Compute)
-        .modify(di.reservoirs, Access::Compute)
-        .overwrite(di.confidenceHistory, Access::Compute)
-        .overwrite(di.luminance, Access::Compute)
-        .modify(shade.rawDiffuse, Access::Compute)
-        .modify(shade.rawSpecular, Access::Compute)
-        .overwrite(shade.directDebug, Access::Compute)
-        .overwrite(shade.indirectDebug, Access::Compute)
-        .dispatch(compute_[Resolve]);
+    // Every screen-space pass below declares itself out of the program it dispatches, so
+    // the order they appear in is the only thing stated here. The gradient replays last
+    // frame's selected sample against the current scene, which is why it comes ahead of
+    // everything that rewrites the reservoirs it reads.
+    graph.add("RTXDI Same Sample Gradient").dispatch(*compute_[DiGradient], GradientDivisor);
+    graph.add("RTXDI Gradient Filter").dispatch(*compute_[DiGradientFilter], GradientDivisor);
+    graph.add("RTXDI History Confidence").dispatch(*compute_[DiConfidence]);
+    graph.add("RTXDI Initial + Secondary GI + Specular").dispatch(*compute_[Lighting]);
+    graph.add("RTXDI Temporal Resampling").dispatch(*compute_[DiTemporal]);
+    graph.add("RTXDI Spatial Resampling").dispatch(*compute_[DiSpatial]);
+    graph.add("ReSTIR GI Reconnection").dispatch(*compute_[GiReuse]);
+    graph.add("Visibility + Radiance Resolve").dispatch(*compute_[Resolve]);
 
     auto* denoiser = setup.denoiser;
     const auto& camera = frame.camera;
@@ -358,19 +289,7 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
             denoiser->dispatch(c.command, resources, camera, index, reset, ms, *profiler);
         });
 
-    graph.add("Composition + Tone Map + HUD")
-        .read(scene.globals, Access::Compute)
-        .read(g.surface(), Access::Compute)
-        .read(g.motion, Access::Compute)
-        .read(shade.denoisedDiffuse, Access::Compute)
-        .read(shade.denoisedSpecular, Access::Compute)
-        .read(shade.rawDiffuse, Access::Compute)
-        .read(shade.rawSpecular, Access::Compute)
-        .read(shade.directDebug, Access::Compute)
-        .read(shade.indirectDebug, Access::Compute)
-        .read(shade.hud, Access::Compute)
-        .overwrite(shade.display, Access::Compute)
-        .dispatch(compute_[Composite]);
+    graph.add("Composition + Tone Map + HUD").dispatch(*compute_[Composite]);
 
     // The readback buffers declare a Host handover, so the CPU is a consumer the graph can
     // see: it keeps these passes alive and ends the frame with the barrier that makes the

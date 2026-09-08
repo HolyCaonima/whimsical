@@ -108,6 +108,58 @@ static void storage() {
           "Contents that cross the frame boundary always need their own storage");
 }
 
+// A pass's declarations are its own. Two builders open at once used to interleave into one
+// shared array, so each pass ended up holding whichever declarations happened to land in
+// its slice — the wrong resources synchronised, and the wrong pass allowed to touch them.
+static void ownership() {
+    Registry registry;
+    auto early = image(registry, "early", Lifetime::Transient);
+    auto late = image(registry, "late", Lifetime::Transient);
+    auto carried = image(registry, "carried", Lifetime::Persistent);
+    RenderGraph graph(registry);
+    auto producer = graph.add("produce early");
+    auto consumer = graph.add("consume early");
+    // Declared out of order on purpose: the second pass is named first.
+    consumer.read(early, Access::Compute).overwrite(late, Access::Compute);
+    producer.overwrite(early, Access::Compute);
+    graph.add("finish").read(late, Access::Compute).overwrite(carried, Access::Compute);
+    graph.compile(64, 64);
+    check(graph.livePasses() == 3, "A pass declared while another builder is open must still be linked");
+    graph.checkDeclared(0, early);
+    graph.checkDeclared(1, late);
+    rejects([&] { graph.checkDeclared(0, late); },
+            "A pass must not inherit the declarations of another");
+    rejects([&] { graph.checkDeclared(1, carried); },
+            "A pass must not inherit the declarations of another");
+}
+
+// Contents a pass reaches through a resource it does name. A ray query walks the top-level
+// structure into the bottom level and has no name for it, so the resource says so once
+// instead of every pass repeating it — and forgetting leaves the query unordered against
+// the refit that fed it.
+static void reached() {
+    Registry registry;
+    Declaration bottom;
+    bottom.name = "blas";
+    bottom.kind = Kind::AccelerationStructure;
+    bottom.lifetime = Lifetime::Imported;
+    auto blas = registry.declare(std::move(bottom));
+    Declaration top;
+    top.name = "tlas";
+    top.kind = Kind::AccelerationStructure;
+    top.lifetime = Lifetime::Imported;
+    top.reaches = {blas};
+    auto tlas = registry.declare(std::move(top));
+    auto shaded = image(registry, "shaded", Lifetime::Persistent);
+    RenderGraph graph(registry);
+    graph.add("refit").modify(blas, Access::Build);
+    graph.add("build").overwrite(tlas, Access::Build);
+    graph.add("trace").read(tlas, Access::Trace).overwrite(shaded, Access::Compute);
+    graph.compile(64, 64);
+    check(graph.livePasses() == 3, "Naming the structure a pass walks must reach the level below it");
+    graph.checkDeclared(2, blas);
+}
+
 // A resource the frame hands to a consumer outside the graph keeps its producer without
 // anything pretending to be a side effect.
 static void handover() {
@@ -134,6 +186,8 @@ int main() {
         modifyChain();
         undefinedContents();
         storage();
+        ownership();
+        reached();
         handover();
         std::cout << "Render graph contract verified\n";
         return 0;

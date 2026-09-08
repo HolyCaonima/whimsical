@@ -54,8 +54,9 @@ void GpuScene::bind(rg::ResourcePool& pool, const SceneResources& ids) {
 }
 
 // Handles never change identity here, only value: the pool holds references to these
-// Buffer objects, so a grown geometry buffer or a rebuilt structure is picked up without
-// anyone asking. Textures are the exception; they are a descriptor array, not a handle.
+// Buffer objects and compares what a binding points at against what it wrote, so a grown
+// geometry buffer or a rebuilt structure is picked up without anyone asking. Textures are
+// the exception; they are a descriptor array, not a handle.
 void GpuScene::rebind() {
     if (!pool_)
         return;
@@ -65,6 +66,7 @@ void GpuScene::rebind() {
     pool_->importBuffer(ids_->lights, lightData);
     pool_->importBuffer(ids_->vertices, vertexData);
     pool_->importBuffer(ids_->indices, indexData);
+    pool_->importBuffer(ids_->buildInstances, tlasInstances);
     pool_->importTlas(ids_->tlas, tlas.handle);
     std::vector<VkDescriptorImageInfo> sampled(MaxTextures);
     for (uint32_t i = 0; i < MaxTextures; ++i)

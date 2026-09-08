@@ -62,6 +62,7 @@ ResourcePool::ResourcePool(VulkanContext& vk, const Registry& registry) : vk_(vk
     root_.resize(slots_.size());
     for (uint16_t i = 0; i < root_.size(); ++i)
         root_[i] = i;
+    bound_.assign(size_t(registry_.bindingCount()) * 2, {});
     createLayout();
 }
 
@@ -128,31 +129,26 @@ void ResourcePool::release(Physical& slot) {
     slot.state = {};
     slot.signature = 0;
     slot.bytes = 0;
-    descriptorsDirty_ = true;
 }
 
 void ResourcePool::importImage(ResourceId id, Image& image) {
-    auto& slot = slots_[base(id)];
-    descriptorsDirty_ = descriptorsDirty_ || !slot.external || slot.external->view != image.view;
-    slot.external = &image;
+    slots_[base(id)].external = &image;
 }
 
 void ResourcePool::importBuffer(ResourceId id, Buffer& buffer) {
-    auto& slot = slots_[base(id)];
-    descriptorsDirty_ = descriptorsDirty_ || !slot.host || slot.host->handle != buffer.handle ||
-                        slot.host->size != buffer.size;
-    slot.host = &buffer;
+    slots_[base(id)].host = &buffer;
 }
 
 void ResourcePool::importTlas(ResourceId id, VkAccelerationStructureKHR handle) {
-    auto& slot = slots_[base(id)];
-    descriptorsDirty_ = descriptorsDirty_ || slot.tlas != handle;
-    slot.tlas = handle;
+    slots_[base(id)].tlas = handle;
 }
 
+// A descriptor array is the one binding with no single object to compare, so its identity
+// is the update that produced it.
 void ResourcePool::importSamplers(ResourceId id, std::vector<VkDescriptorImageInfo> samplers) {
-    slots_[base(id)].samplers = std::move(samplers);
-    descriptorsDirty_ = true;
+    auto& slot = slots_[base(id)];
+    slot.samplers = std::move(samplers);
+    slot.samplerRevision = ++samplerRevisions_;
 }
 
 uint32_t ResourcePool::extentWidth(ResourceId id) const {
@@ -223,15 +219,14 @@ void ResourcePool::realize(uint32_t width, uint32_t height, const std::vector<Re
                                                     VK_BUFFER_USAGE_TRANSFER_DST_BIT);
             slot.signature = signature;
             slot.bytes = bytes;
-            descriptorsDirty_ = true;
         }
     }
 }
 
+// Every binding of both parities is resolved to the object it must point at and compared
+// with what was last written there. Nothing else decides whether a descriptor is stale, so
+// there is no path by which a resource can be replaced and its binding left behind.
 VkDescriptorSet ResourcePool::descriptors() {
-    if (!descriptorsDirty_)
-        return sets_[parity_];
-    descriptorsDirty_ = false;
     const size_t capacity = size_t(registry_.bindingCount()) * 2;
     std::vector<VkDescriptorBufferInfo> buffers;
     std::vector<VkDescriptorImageInfo> images;
@@ -252,6 +247,32 @@ VkDescriptorSet ResourcePool::descriptors() {
                 if (declaration.lifetime == Lifetime::History)
                     index += half == Slot::Previous ? (parity ^ 1) : parity;
                 auto& slot = slots_[root_[index]];
+                const auto& buffer = slot.host ? *slot.host : slot.buffer;
+                const VkImageView image = slot.external ? slot.external->view : slot.image.view;
+                Bound target;
+                switch (view.type) {
+                case BindingType::Uniform:
+                case BindingType::Storage:
+                    target = {uint64_t(buffer.handle), buffer.size};
+                    break;
+                case BindingType::StorageImage:
+                    target = {uint64_t(image), 0};
+                    break;
+                case BindingType::SamplerArray:
+                    target = {slot.samplerRevision, view.count};
+                    break;
+                case BindingType::Tlas:
+                    target = {uint64_t(slot.tlas), 0};
+                    break;
+                case BindingType::None:
+                    break;
+                }
+                auto& last = bound_[size_t(parity) * registry_.bindingCount() + view.binding];
+                // No object means nothing has been imported or allocated here: the run does
+                // not use this resource, and a binding with nothing behind it stays unwritten.
+                if (!target.object || target == last)
+                    continue;
+                last = target;
                 VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
                 write.dstSet = sets_[parity];
                 write.dstBinding = view.binding;
@@ -259,16 +280,12 @@ VkDescriptorSet ResourcePool::descriptors() {
                 write.descriptorType = descriptorType(view.type);
                 switch (view.type) {
                 case BindingType::Uniform:
-                case BindingType::Storage: {
-                    const auto& buffer = slot.host ? *slot.host : slot.buffer;
+                case BindingType::Storage:
                     buffers.push_back({buffer.handle, 0, buffer.size});
                     write.pBufferInfo = &buffers.back();
                     break;
-                }
                 case BindingType::StorageImage:
-                    images.push_back({VK_NULL_HANDLE,
-                                      slot.external ? slot.external->view : slot.image.view,
-                                      VK_IMAGE_LAYOUT_GENERAL});
+                    images.push_back({VK_NULL_HANDLE, image, VK_IMAGE_LAYOUT_GENERAL});
                     write.pImageInfo = &images.back();
                     break;
                 case BindingType::SamplerArray:
@@ -288,7 +305,9 @@ VkDescriptorSet ResourcePool::descriptors() {
                 writes.push_back(write);
             }
         }
-    vkUpdateDescriptorSets(vk_.device, uint32_t(writes.size()), writes.data(), 0, nullptr);
+    if (!writes.empty())
+        vkUpdateDescriptorSets(vk_.device, uint32_t(writes.size()), writes.data(), 0, nullptr);
+    descriptorWrites_ += writes.size();
     return sets_[parity_];
 }
 

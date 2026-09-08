@@ -1,6 +1,8 @@
 #include "TestProject.h"
 #include "assets/MaterialAsset.h"
 #include "render/MaterialBindings.h"
+#include "render/RenderResources.h"
+#include "render/graph/ShaderAccess.h"
 #include <iostream>
 #include <cstring>
 
@@ -8,6 +10,21 @@ using namespace afterlight;
 static void check(bool value, const char* message) {
     if (!value)
         throw std::runtime_error(message);
+}
+// What a pass declares comes from the module it runs, so the check is that reflecting the
+// real linked SPIR-V says what the shader source does.
+static rg::Usage usageOf(const std::vector<rg::ShaderAccess>& accesses, rg::ResourceRef ref,
+                         rg::Access site, const char* what) {
+    for (const auto& access : accesses)
+        if (access.ref == ref && access.access == site)
+            return access.usage;
+    throw std::runtime_error(std::string("Shader access not derived: ") + what);
+}
+static bool untouched(const std::vector<rg::ShaderAccess>& accesses, rg::ResourceRef ref) {
+    for (const auto& access : accesses)
+        if (access.ref == ref)
+            return false;
+    return true;
 }
 template <class F> static void rejects(F&& f, const char* message) {
     try {
@@ -81,6 +98,46 @@ int main() {
         }
         for (const auto* pass : ShaderCompiler::surfacePasses)
             check(!compiler.compile(pass, shaders).empty(), "Linked ray-query passes must compile");
+        // What each pass declares to the render graph is read out of the module it will run,
+        // against the registry that assigned the binding numbers it was compiled with.
+        RenderResources r(false, 0);
+        auto reflected = [&](const char* pass, const ShaderCompiler::ShaderSet& set) {
+            const auto& code = compiler.compile(pass, set);
+            return rg::reflect(r.registry, code.data(), code.size());
+        };
+        auto lighting = reflected("lighting.comp", shaders);
+        using rg::Access, rg::Usage, rg::previous;
+        // Initial sampling only ever stores reservoirs, but a pass writes two of the four
+        // rotating layers, so the contents that reach it have to survive.
+        check(usageOf(lighting, r.di.reservoirs, Access::Compute, "lighting reservoirs") == Usage::Modify,
+              "A write that does not replace a whole resource must be a Modify");
+        check(usageOf(lighting, r.shading.rawDiffuse, Access::Compute, "lighting diffuse") == Usage::Overwrite &&
+                  usageOf(lighting, r.gi.candidate, Access::Compute, "lighting GI") == Usage::Overwrite,
+              "A shader that only stores must overwrite");
+        check(usageOf(lighting, r.gbuffer.position, Access::Compute, "lighting surface") == Usage::Read &&
+                  usageOf(lighting, r.scene.tlas, Access::Trace, "lighting rays") == Usage::Read,
+              "Reads reached through linked library code must be derived");
+        check(untouched(lighting, r.di.gradient) && untouched(lighting, r.output.swapchain),
+              "Only the resources a shader reaches may be declared");
+        auto gradient = reflected("di_gradient.comp", shaders);
+        // The gradient is measured per stratum and asks the image its own size; querying a
+        // resource's shape is not consuming its contents.
+        check(usageOf(gradient, r.di.gradient, Access::Compute, "gradient") == Usage::Overwrite,
+              "A size query must not turn an overwrite into a modify");
+        // The replay reads last frame's surface, and the bridge it goes through reads this
+        // frame's on the way, so both halves are named and both have to be declared.
+        check(usageOf(gradient, previous(r.di.luminance), Access::Compute, "replayed luminance") == Usage::Read &&
+                  usageOf(gradient, previous(r.gbuffer.position), Access::Compute, "replayed surface") == Usage::Read &&
+                  usageOf(gradient, r.gbuffer.position, Access::Compute, "current surface") == Usage::Read,
+              "Which half of a history pair a shader names must be derived");
+        auto raster = reflected("gbuffer.frag", {shaders[0]});
+        check(usageOf(raster, r.scene.materials, Access::Graphics, "material parameters") == Usage::Read,
+              "A raster shader's reads must be declared at the graphics stage");
+        // A pass binds several modules and unions what they do.
+        rg::merge(raster, lighting);
+        check(usageOf(raster, r.scene.materials, Access::Graphics, "merged parameters") == Usage::Read &&
+                  usageOf(raster, r.shading.rawDiffuse, Access::Compute, "merged diffuse") == Usage::Overwrite,
+              "Merging modules must keep each stage's accesses");
         auto count = compiler.compilationCount();
         second.properties[1].x = .2f;
         for (const auto& material : {first, second})
