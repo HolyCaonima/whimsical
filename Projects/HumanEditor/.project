@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "id": "16b8ba91b2684f519e9fbd556537ac15",
+  "name": "HumanEditor",
+  "startupMap": "/Game/Maps/Workbench",
+  "startupMode": "load",
+  "scripts": [],
+  "hostScripts": ["/Game/scripts/editor", "/Game/scripts/viewport", "/Game/scripts/panels", "/Game/scripts/main"]
+}

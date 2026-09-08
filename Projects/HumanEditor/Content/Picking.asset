@@ -1,0 +1,7 @@
+ALAS1
+{"id":"9f80a603f66016d1244c764bab6b0ba4","type":"RenderTarget","name":"Picking","version":1,"storage":"embedded","metadata":{}}
+{
+  "width": 0,
+  "height": 0,
+  "format": "R32Uint"
+}
