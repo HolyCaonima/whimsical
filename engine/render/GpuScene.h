@@ -46,7 +46,8 @@ class GpuScene {
     }
     void recordSkinnedBlas(VkCommandBuffer);
     void recordTlas(VkCommandBuffer, GpuProfiler&);
-    void recordDraws(VkCommandBuffer, const Frame&, const std::map<std::shared_ptr<const ShaderAsset>, VkPipeline>&);
+    void recordDraws(VkCommandBuffer, const Frame&, const std::map<std::shared_ptr<const ShaderAsset>, VkPipeline>&,
+                     bool overlay = false, VkPipeline overrideProgram = VK_NULL_HANDLE);
 
     // A new texture set replaces images the temporal history was accumulated against.
     bool takeHistoryInvalidation() {

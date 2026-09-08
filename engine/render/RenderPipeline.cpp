@@ -45,6 +45,8 @@ RenderPipeline::RenderPipeline(VulkanContext& vk, ShaderCompiler& shaders, Resou
 }
 
 RenderPipeline::~RenderPipeline() {
+    vkDestroyPipeline(vk_.device, overlayProgram_, nullptr);
+    vkDestroyPipeline(vk_.device, overlayIDProgram_, nullptr);
     for (const auto& program : screenSpace_)
         if (program.pipeline)
             vkDestroyPipeline(vk_.device, program.pipeline, nullptr);
@@ -73,10 +75,11 @@ Program RenderPipeline::createCompute(const std::vector<uint32_t>& code) {
     return program;
 }
 
-VkPipeline RenderPipeline::createRaster(const std::shared_ptr<const ShaderAsset>& shader, bool entityID) {
-    const auto& code = shaders_.compile(entityID ? "entity_id.frag" : "gbuffer.frag", {shader});
+VkPipeline RenderPipeline::createRaster(const std::shared_ptr<const ShaderAsset>& shader, bool entityID, bool overlay) {
+    const auto code = overlay ? loadSpirv(entityID ? "overlay_id.frag" : "overlay.frag")
+                              : shaders_.compile(entityID ? "entity_id.frag" : "gbuffer.frag", {shader});
     const auto vertexCode = loadSpirv("gbuffer.vert");
-    auto& accesses = entityID ? entityIDAccess_ : rasterAccess_;
+    auto& accesses = overlay ? (entityID ? overlayIDAccess_ : overlayAccess_) : (entityID ? entityIDAccess_ : rasterAccess_);
     merge(accesses, reflect(pool_.registry(), vertexCode.data(), vertexCode.size()));
     merge(accesses, reflect(pool_.registry(), code.data(), code.size()));
     VkShaderModule vertex = createModule(vk_, vertexCode), fragment = createModule(vk_, code);
@@ -103,7 +106,7 @@ VkPipeline RenderPipeline::createRaster(const std::shared_ptr<const ShaderAsset>
     viewport.viewportCount = viewport.scissorCount = 1;
     VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
     rs.polygonMode = VK_POLYGON_MODE_FILL;
-    rs.cullMode = shader->renderState.cull == SurfaceCull::Back    ? VK_CULL_MODE_BACK_BIT
+    rs.cullMode = overlay ? VK_CULL_MODE_NONE : shader->renderState.cull == SurfaceCull::Back    ? VK_CULL_MODE_BACK_BIT
                   : shader->renderState.cull == SurfaceCull::Front ? VK_CULL_MODE_FRONT_BIT
                                                                    : VK_CULL_MODE_NONE;
     rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
@@ -117,7 +120,7 @@ VkPipeline RenderPipeline::createRaster(const std::shared_ptr<const ShaderAsset>
     for (auto& a : attachments)
         a.colorWriteMask = 15;
     VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-    blend.attachmentCount = entityID ? 1 : uint32_t(attachments.size());
+    blend.attachmentCount = entityID || overlay ? 1 : uint32_t(attachments.size());
     blend.pAttachments = attachments.data();
     VkDynamicState states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
     VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
@@ -129,7 +132,7 @@ VkPipeline RenderPipeline::createRaster(const std::shared_ptr<const ShaderAsset>
     VkPipelineRenderingCreateInfo rendering{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
     if (entityID)
         formats[0] = VK_FORMAT_R32_UINT;
-    rendering.colorAttachmentCount = entityID ? 1 : 6;
+    rendering.colorAttachmentCount = entityID || overlay ? 1 : 6;
     rendering.pColorAttachmentFormats = formats;
     rendering.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
     VkGraphicsPipelineCreateInfo gp{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
@@ -201,6 +204,13 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
     }
 
     auto* gpuScene = setup.scene;
+    const bool hasOverlays = std::any_of(frame.proxies.begin(), frame.proxies.end(), [](const RenderProxy& p) {
+        return p.live && p.attributes.visible && p.attributes.overlay;
+    });
+    if (hasOverlays && !overlayProgram_) {
+        overlayProgram_ = createRaster(nullptr, false, true);
+        overlayIDProgram_ = createRaster(nullptr, true, true);
+    }
     if (gpuScene->skinsDirty())
         // A refit rewrites the bottom-level structures of the meshes that moved and leaves
         // the rest standing, which is what Modify says and why the top-level build below
@@ -262,6 +272,18 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
                                             &c.descriptors, 0, nullptr);
                     gpuScene->recordDraws(c.command, frame, entityIDPrograms_);
                 });
+            if (hasOverlays)
+                graph.add("Overlay EntityID Raster")
+                    .color(output.color)
+                    .depth(output.depth)
+                    .shader(overlayIDAccess_)
+                    .read(scene.vertices, Access::Vertex)
+                    .read(scene.indices, Access::Index)
+                    .record([this, gpuScene, &frame](const PassContext& c) {
+                        vkCmdBindDescriptorSets(c.command, VK_PIPELINE_BIND_POINT_GRAPHICS, c.layout, 0, 1,
+                                                &c.descriptors, 0, nullptr);
+                        gpuScene->recordDraws(c.command, frame, {}, true, overlayIDProgram_);
+                    });
         }
         setup.targets->addReadbacks(graph);
     }
@@ -334,6 +356,21 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
     graph.add("Scene Composition + Tone Map")
         .dispatch(*compute_[Composite])
         .overwrite(shade.display, Access::Compute);
+
+    // Helpers use the same entity/mesh transforms and depth ordering in colour and ID.
+    // A fresh depth attachment keeps them in front of the scene without changing its G-buffer.
+    if (hasOverlays)
+        graph.add("Entity Overlay Raster")
+            .color(shade.display)
+            .depth(g.depth)
+            .shader(overlayAccess_)
+            .read(scene.vertices, Access::Vertex)
+            .read(scene.indices, Access::Index)
+            .record([this, gpuScene, &frame](const PassContext& c) {
+                vkCmdBindDescriptorSets(c.command, VK_PIPELINE_BIND_POINT_GRAPHICS, c.layout, 0, 1,
+                                        &c.descriptors, 0, nullptr);
+                gpuScene->recordDraws(c.command, frame, {}, true, overlayProgram_);
+            });
 
     // The readback buffers declare a Host handover, so the CPU is a consumer the graph can
     // see: it keeps these passes alive and ends the frame with the barrier that makes the

@@ -494,14 +494,16 @@ void GpuScene::settleMotion(uint32_t slot) {
 // Attribute path: the instance's trailing uvec4 plus the whole acceleration structure
 // instance, which is where the visibility mask and geometry binding live.
 void GpuScene::writeAttributes(uint32_t slot, const RenderProxy& p) {
+    auto color = glm::uvec3(glm::clamp(p.attributes.overlayColor, vec3(0), vec3(1)) * 255.f + .5f);
     static_cast<GpuInstance*>(instanceData.mapped)[slot].info = {
         p.attributes.material, meshes[meshFor(slot, p)].firstIndex, p.attributes.entity,
-        p.attributes.interactable ? 1u : 0u};
+        (p.attributes.interactable ? 1u : 0u) | (color.r << 8) | (color.g << 16) | (color.b << 24)};
     VkAccelerationStructureInstanceKHR a{};
     a.transform = rowMajor(shadowModel[slot]);
     a.instanceCustomIndex = slot;
     // Bit 0 is shadow visibility; the other bits retain material/reflective rays.
-    a.mask = p.live && p.attributes.visible ? (p.attributes.castShadow ? 0xffu : 0xfeu) : 0u;
+    a.mask = p.live && p.attributes.visible && !p.attributes.overlay
+                 ? (p.attributes.castShadow ? 0xffu : 0xfeu) : 0u;
     a.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
     if (p.live) {
         auto shaderIndex = bindings.materials[p.attributes.material].info.x;
@@ -664,16 +666,17 @@ void GpuScene::recordTlas(VkCommandBuffer c, GpuProfiler& profiler) {
 // The slot is the draw's instance index, so gl_InstanceIndex, the acceleration
 // structure's custom index and the GPU instance entry all stay the same number.
 void GpuScene::recordDraws(VkCommandBuffer c, const Frame& frame,
-                           const std::map<std::shared_ptr<const ShaderAsset>, VkPipeline>& programs) {
+                           const std::map<std::shared_ptr<const ShaderAsset>, VkPipeline>& programs,
+                           bool overlay, VkPipeline overrideProgram) {
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(c, 0, 1, &vertexData.handle, &offset);
     vkCmdBindIndexBuffer(c, indexData.handle, 0, VK_INDEX_TYPE_UINT32);
     VkPipeline bound = VK_NULL_HANDLE;
     for (uint32_t slot = 0; slot < frame.proxies.size(); slot++) {
         const auto& p = frame.proxies[slot];
-        if (!p.live || !p.attributes.visible)
+        if (!p.live || !p.attributes.visible || p.attributes.overlay != overlay)
             continue;
-        auto pipeline = programs.at(frame.materials[p.attributes.material].shader);
+        auto pipeline = overrideProgram ? overrideProgram : programs.at(frame.materials[p.attributes.material].shader);
         if (pipeline != bound) {
             vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             bound = pipeline;

@@ -29,6 +29,8 @@ struct RenderComponent {
     uint32_t material = 0;
     bool visible = true;
     bool castShadow = true;
+    bool overlay = false; // Unlit, vertex-coloured helper geometry, outside scene lighting.
+    vec3 overlayColor{1};
 };
 // A renderable occupies a stable slot for its whole lifetime. Transform and attributes
 // are separate because a transform changes orders of magnitude more often, and the two
@@ -51,9 +53,12 @@ struct ProxyAttributes {
     bool visible = true;
     bool interactable = false;
     bool castShadow = true;
+    bool overlay = false;
+    vec3 overlayColor{1};
     bool operator==(const ProxyAttributes& o) const {
         return entity == o.entity && material == o.material && shape == o.shape && visible == o.visible &&
-               interactable == o.interactable && castShadow == o.castShadow;
+               interactable == o.interactable && castShadow == o.castShadow && overlay == o.overlay &&
+               overlayColor == o.overlayColor;
     }
     bool operator!=(const ProxyAttributes& o) const {
         return !(*this == o);

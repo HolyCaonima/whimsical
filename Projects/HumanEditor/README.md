@@ -1,6 +1,6 @@
 # HumanEditor
 
-使用现有 Afterlight 引擎的项目级场景编辑器。所有编辑器行为由本项目的 JavaScript 实现，界面使用引擎已有的 RmlUi。无需重新编译，不修改 `engine/`、构建配置或其他项目源码。
+使用 Afterlight 引擎的项目级场景编辑器。编辑器行为由本项目的 JavaScript 实现，界面使用 RmlUi；变换 gizmo 使用临时网格实体和通用 `render.overlay` 渲染。首次使用此版本需重新构建引擎，后续编辑器脚本修改只需重启。
 
 ## 启动
 
@@ -27,8 +27,9 @@
 | --- | --- |
 | 选中 / 多选 | 点击视口中的可见表面；Ctrl+点击增减选择；也可点击 Outliner |
 | 父子对象树 | 点击 `+ / -` 展开折叠；输入框搜索；双击对象聚焦 |
-| 移动 / 旋转 / 缩放 | W / E / R；拖拽选中对象处的 X / Y / Z 轴手柄 |
-| 世界 / 本地坐标 | 视口工具栏 World / Local |
+| 移动 / 旋转 / 缩放 | W / E / R 直接切换选中对象处的箭头 / 半圆环 / 方块网格实体；红 X、绿 Y、蓝 Z，悬停及拖拽轴显示黄色。旋转时固定参考平面并显示角度，侧视轴使用屏幕切线拖动；拖拽期间固定当前模式 |
+| 世界 / 本地坐标 | 视口工具栏 World / Local 控制移动和旋转；缩放始终使用物体本地坐标轴 |
+| 双轴移动 / 缩放 | 拖动 XY / XZ / YZ 平面小方块，同时调整两个轴；悬停高亮方块及对应轴，第三轴不变。接近侧视的平面自动隐藏 |
 | 吸附 | 视口 Snap 开关；Settings 设置位置、旋转、缩放步长，默认 0.25 米 / 10 度 / 0.1 |
 | 对象右键菜单 | 视口右键单击对象或右键 Outliner 条目；包含聚焦、复制粘贴、副本、删除、启停和父级操作；右键已选对象保留多选，Esc 或点击菜单外关闭 |
 | 相机 | 右键拖动环绕，右键按住配合 WASD / Q / E 移动，Shift 加速；中键平移；滚轮缩放 |
@@ -83,6 +84,8 @@ Content Browser 获得焦点时，Delete / Ctrl+D 等演员快捷键不会操作
 - `.project`：常驻 `hostScripts`，`startupMode: load`。
 - `Content/scripts/editor.js`：文档状态、命令、历史、层级、Content 与模拟生命周期。
 - `Content/scripts/viewport.js`：UI 输入、相机、ID 回读、投影与轴向变换。
+- `Content/scripts/gizmo.js`：临时实体 gizmo、屏幕尺寸、半圆朝向、悬停、旋转与变换事务；颜色及选轴共用 GPU 网格和深度排序。
+- `tools/gizmo-meshes.mjs`：生成普通 STM1 格式的箭头、缩放手柄、平面方块、半圆环与整圆环网格；运行 `node Projects/HumanEditor/tools/gizmo-meshes.mjs` 可重新生成。
 - `Content/scripts/panels.js`：对象树、组件面板、对象右键菜单与通用对话框。
 - `Content/scripts/browser.js`：Content 目录索引、导航历史、搜索、网格 / 列表及资产打开操作。
 - `Content/scripts/main.js`：UI 绑定及宿主生命周期。

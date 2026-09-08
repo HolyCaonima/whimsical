@@ -83,8 +83,10 @@ class RenderPipeline {
     // over them plus the vertex stage they share.
     std::vector<rg::ShaderAccess> rasterAccess_;
     std::vector<rg::ShaderAccess> entityIDAccess_;
+    std::vector<rg::ShaderAccess> overlayAccess_, overlayIDAccess_;
+    VkPipeline overlayProgram_ = VK_NULL_HANDLE, overlayIDProgram_ = VK_NULL_HANDLE;
 
     rg::Program createCompute(const std::vector<uint32_t>& code);
-    VkPipeline createRaster(const std::shared_ptr<const ShaderAsset>&, bool entityID = false);
+    VkPipeline createRaster(const std::shared_ptr<const ShaderAsset>&, bool entityID = false, bool overlay = false);
 };
 } // namespace afterlight

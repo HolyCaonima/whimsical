@@ -17,7 +17,7 @@ HE.parentDialog=function(){
 };
 HE.help=function(){HE.modal('HumanEditor controls',
     '<p>Click visible geometry to select using the GPU Entity ID image. Ctrl+click adds or removes actors. Select lights and non-rendering entities in the Outliner.</p>'+
-    '<p>W / E / R: move, rotate, scale. Drag the red X, green Y or blue Z handle at the selected actor. World / Local changes axis orientation. Scale changes render dimensions; collider dimensions remain independent.</p>'+
+    '<p>W / E / R switches the gizmo at the selected actor: move arrows, rotation rings, or scale boxes. Drag the red X, green Y or blue Z axis; drag along a ring to rotate. The small XY / XZ / YZ squares move or scale two axes together. World / Local changes move and rotation axis orientation. Scale always uses local axes and changes render dimensions; collider dimensions remain independent.</p>'+
     '<p>Right click an actor or Outliner row for actor commands. Right drag: orbit, with WASD and Q/E for camera travel. Middle mouse: pan. Wheel: zoom. F: focus.</p>'+
     '<p>Drag panel dividers to resize the workspace. Maximize / Restore expands the viewport. Ctrl+Space toggles the Content Drawer. Viewport Settings adjusts snapping increments and camera speed; Window resets the layout.</p>'+
     '<p>Ctrl+S save; Ctrl+Z / Y undo / redo; Ctrl+D duplicate subtree; Ctrl+C / V copy / paste; Delete removes selected subtrees. Escape cancels a transform drag.</p>'+
@@ -44,7 +44,6 @@ function initialize(){
         'window-menu':function(){HE.modal('Window','<p>Drag the panel dividers to resize your workspace. Ctrl+Space toggles the Content Drawer.</p>',[{label:'Content Browser',run:bindings['hide-log']},{label:'Output Log',run:bindings['show-log']},{label:'Maximize / Restore viewport',run:HE.toggleViewport},{label:'Reset layout',run:function(){HE.layout={left:250,right:360,bottom:270,details:0.43,content:true,maximized:false};HE.resize(HE.width,HE.height,true);}},{label:'Close'}]);}
     };
     Object.keys(bindings).forEach(function(id){HE.bind(id,bindings[id]);});
-    ['move','rotate','scale'].forEach(function(mode){HE.bind('tool-'+mode,function(){HE.setMode(mode);});});
     HE.bind('tree-search',HE.refreshTree,'change');HE.bind('asset-search',HE.refreshAssets,'change');
     HE.bind('place-search',HE.refreshPalette,'change');HE.bind('details-search',HE.filterDetails,'change');HE.bind('asset-filter',HE.refreshAssets,'change');
     HE.bind('folder-search',HE.refreshFolders,'change');HE.bind('asset-sort',HE.refreshAssets,'change');
@@ -61,7 +60,6 @@ function initialize(){
     HE.doc.on('keyup',function(ev){HE.keyEvent(ev,false);},true);
     HE.doc.on('focus',function(ev){HE.browserFocused=false;var id=ev.target.getAttribute('id')||'';HE.editingText=/^(field-|entity-name|tree-search|asset-search|folder-search|place-search|details-search|log-text|asset-filter|asset-sort)/.test(id);},true);
     HE.doc.on('mouseup',HE.guard(HE.pointerUp),true);
-    ['x','y','z'].forEach(function(axis){HE.bind('axis-'+axis,function(ev){if(ev.parameters.button!==0)return;ev.stopPropagation();HE.beginDrag(axis,ev.parameters.mouse_x,ev.parameters.mouse_y);},'mousedown');});
     HE.source=Engine.scene.info().source;HE.camera=HE.copy(Engine.scene.resources().camera);
     HE.createTools();HE.applyCamera();HE.refreshTree();HE.refreshDetails();HE.refreshStatus();
     if(HE.settings.content){

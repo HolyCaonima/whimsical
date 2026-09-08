@@ -190,6 +190,10 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
                     a.visible = j.at("visible").boolean();
                 if (j.contains("castShadow"))
                     a.castShadow = j.at("castShadow").boolean();
+                if (j.contains("overlay"))
+                    a.overlay = j.at("overlay").boolean();
+                if (j.contains("overlayColor"))
+                    a.overlayColor = vector3(j.at("overlayColor"));
                 if (j.contains("mesh"))
                     v.mesh = AssetRef::fromJson(j.at("mesh"));
                 validateRenderAppearance(a);
@@ -203,6 +207,10 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
                        {"animationScale", vector(a.animationScale)},
                        {"material", a.material},
                        {"visible", a.visible}, {"castShadow", a.castShadow}};
+                if (a.overlay)
+                    j["overlay"] = true;
+                if (a.overlay || a.overlayColor != vec3(1))
+                    j["overlayColor"] = vector(a.overlayColor);
                 if (v.mesh)
                     j["mesh"] = v.mesh->json();
                 return j;

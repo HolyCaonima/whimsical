@@ -27,7 +27,7 @@ void RenderSystem::add(Entity e, RenderComponent appearance, std::shared_ptr<con
     r.slot = s.renderScene.create(proxyTransform(t, r),
                                   {e, appearance.material, appearance.shape,
                                    s.enabled(e) && appearance.visible, s.registry.has<Interactable>(e),
-                                   appearance.castShadow});
+                                   appearance.castShadow, appearance.overlay, appearance.overlayColor});
     if (r.mesh)
         s.changes.mark<GeometryChanged>(e);
     s.changes.mark<Renderable>(e);
@@ -59,7 +59,7 @@ void RenderSystem::publishAttributes(Entity e) {
         s.renderScene.setAttributes(r->slot,
                                     {e, r->appearance.material, r->appearance.shape,
                                      s.enabled(e) && r->appearance.visible, s.registry.has<Interactable>(e),
-                                     r->appearance.castShadow});
+                                     r->appearance.castShadow, r->appearance.overlay, r->appearance.overlayColor});
 }
 void RenderSystem::setStaticMesh(Entity e, std::shared_ptr<const StaticMesh> mesh) {
     auto batch = Changes::Batch(s.changes);

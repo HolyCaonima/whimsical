@@ -11,7 +11,7 @@ function asset(name,type,payload,extra={}){
   const header={id:id(name),type,name:path.basename(name),version:1,storage:'embedded',metadata:{},...extra};
   fs.writeFileSync(file,'ALAS1\n'+JSON.stringify(header)+'\n'+(header.storage==='external'?'':(typeof payload==='string'?payload:JSON.stringify(payload,null,2))+'\n'));
 }
-for(const name of ['editor','viewport','panels','browser','main'])asset('scripts/'+name,'Script','',{storage:'external',source:name+'.js'});
+for(const name of ['editor','viewport','gizmo','panels','browser','main'])asset('scripts/'+name,'Script','',{storage:'external',source:name+'.js'});
 asset('Picking','RenderTarget',{width:0,height:0,format:'R32Uint'});
 asset('shaders/Standard','Shader',`SurfaceData s = DefaultSurface(ctx);
 s.albedo = properties.baseColor;

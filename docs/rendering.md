@@ -159,3 +159,16 @@ GPU fence 完成后再更新 CPU-visible 常量／实例／灯光数据；NRD de
 - [NRD 源码和集成说明](https://github.com/NVIDIA-RTX/NRD)
 
 RTXDI DI shader SDK 与 NRD 都是实际构建和执行的固定版本依赖。RTXDI 的 GLSL 补丁只处理 bool／uint 语法兼容，不改重采样算法。
+
+## Entity overlays
+
+`render.overlay: true` draws an entity's ordinary mesh as an unlit overlay, tinted by
+`render.overlayColor` (RGB in `[0, 1]`, default white) and its vertex colours. The pass runs
+after scene composition with fresh depth, so overlay entities occlude each other while
+remaining in front of the scene. The Entity ID target repeats that same overlay draw and
+depth ordering. Overlay instances are excluded from the G-buffer and ray queries, and
+therefore from shadows, reflections and indirect light. This path uses no helper materials.
+
+Overlay visibility does not imply persistence: applications create editor helpers with
+`persistent:false` and hide them during simulation. HumanEditor uses this for its transform
+gizmo entities; transient helpers are excluded by the normal scene capture contract.

@@ -30,10 +30,7 @@ select { height:28px; }
 #viewport { position:absolute; pointer-events:auto; }
 #viewhint { position:absolute; background-color:#151515bb; color:#bdbdbd; line-height:26px; font-size:11px; text-align:center; }
 #gizmo { position:absolute; display:none; pointer-events:none; }
-#gizmo-mode { position:absolute; left:-40px; top:25px; width:100px; background-color:#141414b0; font-size:10px; padding:3px; }
-.axis { position:absolute; width:21px; padding:4px 0; margin:0; text-align:center; font-weight:bold; border:1px #dddddd; }
-.axis-line { position:absolute; left:0; top:0; height:3px; transform-origin:0px 1px; pointer-events:none; }
-.x { background-color:#a23c3c; }.y { background-color:#468747; }.z { background-color:#376ba8; }
+#gizmo-mode { position:absolute; left:-66px; top:98px; width:132px; text-align:center; background-color:#141414b0; font-size:10px; padding:3px; }
 .search { display:block; width:90%; margin:8px 3%; }
 .tree-header { background-color:#303030; padding:4px 9px; font-size:11px; }.tree-header span { float:right; }
 #tree { position:absolute; left:0; top:95px; bottom:27px; width:100%; overflow:auto; }

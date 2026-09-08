@@ -19,7 +19,49 @@ HE.smokeTick=function(dt,input){
         var first=HE.el('asset-folder-0').getBounds(),second=HE.el('asset-folder-1').getBounds();
         if(first.width<500||second.y<=first.y||second.x!==first.x)throw Error('Browser list layout is not a full-width column');
         Engine.log('HumanEditor browser PASS: nested folders, history, search, asset open, keyboard focus, scrolling grid and list view');
-    }return;}
+    }
+    if(s.wait===50){
+        HE.camera.yaw=0.65;HE.camera.pitch=0.45;HE.applyCamera();HE.setMode('rotate');s.gizmoIndex=0;s.gizmoNext=70;
+        s.gizmoCases=[['rotate','x'],['rotate','y'],['rotate','z'],['move','xy'],['move','xz'],['move','yz'],['scale','xy'],['scale','xz'],['scale','yz']];
+    }
+    if(s.gizmoCases&&s.gizmoIndex<s.gizmoCases.length&&s.wait>=s.gizmoNext&&!HE.pending){
+        if(!s.gizmoCheck){
+            var mode=s.gizmoCases[s.gizmoIndex][0],axis=s.gizmoCases[s.gizmoIndex][1],frame=HE.gizmo.frame,plane=frame.axes[axis];
+            function planePoint(u,v){return HE.project(frame.position.map(function(p,i){return p+frame.radius*(plane.u[i]*u+plane.v[i]*v);}));}
+            var start=mode==='rotate'?planePoint(Math.cos(0.2),Math.sin(0.2)):planePoint(0.35,0.35);
+            s.gizmoCheck={axis:axis,mode:mode,frame:frame,end:mode==='rotate'?planePoint(Math.cos(0.7),Math.sin(0.7)):planePoint(0.66,0.54),
+                before:HE.copy(Engine.position(HE.selected[0])),scale:HE.copy(Engine.component(HE.selected[0],'render').scale)};
+            HE.pointerDown({parameters:{button:0,mouse_x:start.x,mouse_y:start.y}});
+        }else if(s.gizmoCheck.undo){
+            if(JSON.stringify(Engine.position(HE.selected[0]))!==JSON.stringify(s.gizmoCheck.before))throw Error('Gizmo undo did not restore the actor');
+            if(JSON.stringify(Engine.component(HE.selected[0],'render').scale)!==JSON.stringify(s.gizmoCheck.scale))throw Error('Gizmo undo did not restore scale');
+            s.gizmoIndex++;s.gizmoCheck=null;s.gizmoNext=s.wait+15;
+            if(s.gizmoIndex===s.gizmoCases.length){
+                if(Engine.scene.capture().document.entities.some(function(e){return e.name.indexOf('Gizmo ')===0||e.name==='Transform gizmo';}))throw Error('Gizmo entity leaked into scene capture');
+                Engine.log('HumanEditor gizmo PASS: GPU picks and drags rotation axes plus XY/XZ/YZ move and local scale planes; snapping, unchanged third axis, undo, transient capture');
+            }else HE.setMode(s.gizmoCases[s.gizmoIndex][0]);
+        }else if(!HE.pickTicket){
+            var probe=s.gizmoCheck;
+            if(!HE.drag||HE.axis!==probe.axis||HE.lastPick.entity!==HE.gizmo.handles[probe.axis].entity)throw Error('GPU pick did not start the '+probe.axis+' mesh handle');
+            HE.pointerMove({parameters:{mouse_x:probe.end.x,mouse_y:probe.end.y}});
+            if(probe.mode==='rotate'){
+                if(Math.abs(HE.drag.angle-Math.PI/6)>0.001)throw Error('Mesh ring rotation did not follow the pointer');
+            }else{
+                var before=probe.before,actual=Engine.position(HE.selected[0]),scale=Engine.component(HE.selected[0],'render').scale;
+                var expectedPosition=[before.x,before.y,before.z],expectedScale=probe.scale.slice();
+                probe.axis.split('').forEach(function(a,i){
+                    if(probe.mode==='move'){
+                        var amount=Math.round([0.31,0.19][i]*probe.frame.radius/HE.snap)*HE.snap;
+                        expectedPosition=expectedPosition.map(function(v,k){return v+probe.frame.axes[a].normal[k]*amount;});
+                    }else expectedScale[HE.gizmoAxes.indexOf(a)]+=[0.3,0.2][i];
+                });
+                [actual.x,actual.y,actual.z].forEach(function(v,i){if(Math.abs(v-expectedPosition[i])>0.001||Math.abs(scale[i]-expectedScale[i])>0.001)throw Error(probe.mode+' '+probe.axis+' plane changed the wrong dimensions');});
+            }
+            HE.pointerUp({parameters:{button:0,mouse_x:probe.end.x,mouse_y:probe.end.y}});
+            probe.undo=true;HE.history(false);
+        }
+    }
+    return;}
     function check(ok,message){if(!ok)throw Error('HumanEditor smoke: '+message);}
     function find(name){return HE.entities().filter(function(e){return Engine.entity(e).name===name;})[0];}
     if(HE.pending)return;
@@ -58,6 +100,19 @@ HE.smokeTick=function(dt,input){
     if(s.phase===4){
         check(!Engine.findEntity(s.copyIds[0]),'redo deletes copied subtree');
         s.cube=Engine.findEntity(s.id);HE.select(s.cube);
+        check(!HE.el('tool-move')&&!HE.el('tool-rotate')&&!HE.el('tool-scale'),'transform toolbar buttons removed');
+        HE.setMode('rotate');
+        var frame=HE.gizmo.frame,plane=frame.axes.z;
+        var start=HE.project(frame.position.map(function(v,i){return v+frame.radius*plane.u[i];}));
+        var end=HE.project(frame.position.map(function(v,i){return v+frame.radius*plane.v[i];}));
+        HE.beginDrag('z',start.x,start.y);
+        HE.setMode('scale');check(HE.mode==='rotate','active drag keeps its transform mode');
+        HE.dragTo(end.x,end.y);HE.endDrag(false);
+        check(Math.abs(Engine.position(s.cube).rotation.z-Math.sin(Math.PI/4))<0.001,'rotation follows the projected ring and snaps to 90 degrees');
+        HE.setMode('scale');var scale=Engine.component(s.cube,'render').scale[0];
+        check(HE.space==='world'&&Math.abs(HE.gizmo.frame.axes.x.normal[1]-1)<0.001,'scale gizmo uses the rotated local X axis despite World mode');
+        HE.beginDrag('x',500,350);HE.dragTo(500,350-HE.gizmoRadius*0.3);HE.endDrag(false);
+        check(Math.abs(Engine.component(s.cube,'render').scale[0]-scale-0.3)<0.001,'scale follows its projected axis and snapping');
         HE.setMode('move');HE.beginDrag('x',500,350);HE.dragTo(580,350);HE.endDrag(false);
         check(Engine.position(s.cube).x!==1.25,'axis drag moves selected actor');
         HE.history(false);s.phase=5;return;
@@ -110,8 +165,11 @@ HE.smokeTick=function(dt,input){
         var distance=HE.camera.distance;
         HE.pointerWheel({parameters:{wheel_delta_y:-1},stopPropagation:function(){}});HE.input(dt,inputForUi);
         check(HE.camera.distance<distance,'UI wheel zoom');
-        HE.keyEvent({parameters:{key_identifier:16,ctrl_key:0,shift_key:0}},true);HE.input(dt,inputForUi);
-        check(HE.mode==='rotate','UI keyboard shortcut');HE.keyEvent({parameters:{key_identifier:16,ctrl_key:0,shift_key:0}},false);
+        [[16,'rotate'],[29,'scale'],[34,'move']].forEach(function(shortcut){
+            HE.keyEvent({parameters:{key_identifier:shortcut[0],ctrl_key:0,shift_key:0}},true);HE.input(dt,inputForUi);
+            check(HE.mode===shortcut[1]&&HE.el('gizmo').hasClass(shortcut[1]),'keyboard shortcut updates the visible '+shortcut[1]+' gizmo');
+            HE.keyEvent({parameters:{key_identifier:shortcut[0],ctrl_key:0,shift_key:0}},false);
+        });
         HE.setMode('move');HE.scan();
         var undoCount=HE.undoStack.length,rect=HE.copy(HE.rect);
         HE.toggleViewport();check(HE.rect.width>rect.width,'maximize expands viewport');
