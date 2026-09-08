@@ -3,9 +3,13 @@
 #include "animation/SkinnedMesh.h"
 #include "scene/SceneAsset.h"
 #include "MaterialAsset.h"
+#include "RenderTargetAsset.h"
 #include <sstream>
 namespace afterlight {
 void registerEngineAssets(AssetManager& manager) {
+    manager.registerLoader("RenderTarget", [](AssetManager&, const AssetHeader&, const std::string& bytes) {
+        return RenderTargetAsset::decode(bytes);
+    });
     manager.registerLoader("StaticMesh", [](AssetManager&, const AssetHeader&, const std::string& bytes) {
         return StaticMesh::decode(bytes);
     });

@@ -1,6 +1,8 @@
 #include "RenderPipeline.h"
 #include "NrdDenoiser.h"
 #include "UiRenderer.h"
+#include "GpuRenderTargets.h"
+#include "graph/ImageReadback.h"
 #include <fstream>
 
 namespace afterlight {
@@ -51,6 +53,8 @@ RenderPipeline::~RenderPipeline() {
             vkDestroyPipeline(vk_.device, program.pipeline, nullptr);
     for (const auto& program : rasterPrograms_)
         vkDestroyPipeline(vk_.device, program.second, nullptr);
+    for (const auto& program : entityIDPrograms_)
+        vkDestroyPipeline(vk_.device, program.second, nullptr);
 }
 
 Program RenderPipeline::createCompute(const std::vector<uint32_t>& code) {
@@ -69,11 +73,12 @@ Program RenderPipeline::createCompute(const std::vector<uint32_t>& code) {
     return program;
 }
 
-VkPipeline RenderPipeline::createRaster(const std::shared_ptr<const ShaderAsset>& shader) {
-    const auto& code = shaders_.compile("gbuffer.frag", {shader});
+VkPipeline RenderPipeline::createRaster(const std::shared_ptr<const ShaderAsset>& shader, bool entityID) {
+    const auto& code = shaders_.compile(entityID ? "entity_id.frag" : "gbuffer.frag", {shader});
     const auto vertexCode = loadSpirv("gbuffer.vert");
-    merge(rasterAccess_, reflect(pool_.registry(), vertexCode.data(), vertexCode.size()));
-    merge(rasterAccess_, reflect(pool_.registry(), code.data(), code.size()));
+    auto& accesses = entityID ? entityIDAccess_ : rasterAccess_;
+    merge(accesses, reflect(pool_.registry(), vertexCode.data(), vertexCode.size()));
+    merge(accesses, reflect(pool_.registry(), code.data(), code.size()));
     VkShaderModule vertex = createModule(vk_, vertexCode), fragment = createModule(vk_, code);
     VkPipelineShaderStageCreateInfo stages[2]{};
     for (int i = 0; i < 2; i++) {
@@ -112,7 +117,7 @@ VkPipeline RenderPipeline::createRaster(const std::shared_ptr<const ShaderAsset>
     for (auto& a : attachments)
         a.colorWriteMask = 15;
     VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-    blend.attachmentCount = uint32_t(attachments.size());
+    blend.attachmentCount = entityID ? 1 : uint32_t(attachments.size());
     blend.pAttachments = attachments.data();
     VkDynamicState states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
     VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
@@ -122,7 +127,9 @@ VkPipeline RenderPipeline::createRaster(const std::shared_ptr<const ShaderAsset>
                           VK_FORMAT_R32G32B32A32_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT,
                           VK_FORMAT_R32_SFLOAT,          VK_FORMAT_R16G16B16A16_SFLOAT};
     VkPipelineRenderingCreateInfo rendering{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
-    rendering.colorAttachmentCount = 6;
+    if (entityID)
+        formats[0] = VK_FORMAT_R32_UINT;
+    rendering.colorAttachmentCount = entityID ? 1 : 6;
     rendering.pColorAttachmentFormats = formats;
     rendering.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
     VkGraphicsPipelineCreateInfo gp{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
@@ -236,10 +243,34 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
         .read(scene.vertices, Access::Vertex)
         .read(scene.indices, Access::Index)
         .record([gpuScene, &frame, &programs](const PassContext& c) {
+            if (frame.materials.empty())
+                return; // An empty scene still clears the attachments; it has no raster programs to bind.
             vkCmdBindDescriptorSets(c.command, VK_PIPELINE_BIND_POINT_GRAPHICS, c.layout, 0, 1,
                                     &c.descriptors, 0, nullptr);
             gpuScene->recordDraws(c.command, frame, programs);
         });
+
+    if (setup.targets) {
+        for (const auto& output : setup.targets->rasterOutputs()) {
+            for (const auto& material : frame.materials)
+                if (!entityIDPrograms_.count(material.shader))
+                    entityIDPrograms_.emplace(material.shader, createRaster(material.shader, true));
+            graph.add("EntityID Raster")
+                .color(output.color, black())
+                .depth(output.depth)
+                .shader(entityIDAccess_)
+                .read(scene.vertices, Access::Vertex)
+                .read(scene.indices, Access::Index)
+                .record([this, gpuScene, &frame](const PassContext& c) {
+                    if (frame.materials.empty())
+                        return;
+                    vkCmdBindDescriptorSets(c.command, VK_PIPELINE_BIND_POINT_GRAPHICS, c.layout, 0, 1,
+                                            &c.descriptors, 0, nullptr);
+                    gpuScene->recordDraws(c.command, frame, entityIDPrograms_);
+                });
+        }
+        setup.targets->addReadbacks(graph);
+    }
 
     // Dispatch extents cover these outputs. Reservoir passes update rotating layers,
     // so each explicitly preserves the rest of that buffer.
@@ -314,22 +345,10 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
     // see: it keeps these passes alive and ends the frame with the barrier that makes the
     // copy visible. Waiting on the fence alone would not.
     if (setup.audit) {
-        auto signals = setup.auditSignals;
-        auto readback = r_.output.audit;
-        graph.add("Audit Readback")
-            .read(signals, Access::Transfer)
-            .overwrite(readback, Access::Transfer)
-            .record([signals, readback](const PassContext& c) {
-                for (uint32_t s = 0; s < signals.size(); ++s) {
-                    auto& image = c.image(signals[s]);
-                    VkBufferImageCopy copy{};
-                    copy.bufferOffset = VkDeviceSize(s) * c.width * c.height * 8;
-                    copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-                    copy.imageExtent = {c.width, c.height, 1};
-                    vkCmdCopyImageToBuffer(c.command, image.handle, image.layout,
-                                           c.buffer(readback).handle, 1, &copy);
-                }
-            });
+        std::vector<ImageReadback> copies;
+        for (auto signal : setup.auditSignals)
+            copies.push_back({signal});
+        addImageReadback(graph, "Audit Readback", r_.output.audit, std::move(copies));
     }
 
     // The display image is half float; the screenshot buffer is not. The blit is what
@@ -347,16 +366,7 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
                 vkCmdBlitImage(c.command, c.image(display).handle, c.image(display).layout,
                                c.image(image).handle, c.image(image).layout, 1, &region, VK_FILTER_NEAREST);
             });
-        graph.add("Screenshot Readback")
-            .read(image, Access::Transfer)
-            .overwrite(buffer, Access::Transfer)
-            .record([image, buffer](const PassContext& c) {
-                VkBufferImageCopy copy{};
-                copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-                copy.imageExtent = {c.width, c.height, 1};
-                vkCmdCopyImageToBuffer(c.command, c.image(image).handle, c.image(image).layout,
-                                       c.buffer(buffer).handle, 1, &copy);
-            });
+        addImageReadback(graph, "Screenshot Readback", buffer, {{image}});
     }
 
     // The swapchain declares a Present handover, so the frame ends in PRESENT_SRC without a

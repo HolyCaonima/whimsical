@@ -81,6 +81,34 @@ std::vector<ComponentDependency> rootDependencies(const RootMotionBinding& b) {
 void registerBuiltinComponents(ComponentCatalog& catalog) {
     const auto cascade = OnDependencyRemoval::Cascade;
     {
+        auto c = component<DrawEntityID, SceneDrawEntityID>("drawEntityID");
+        codec<SceneDrawEntityID>(c,
+            [](const Json& j) { return SceneDrawEntityID{AssetRef::fromJson(j.at("target"))}; },
+            [](const SceneDrawEntityID& v) { return Json{{"target", v.target.json()}}; });
+        binding<SceneDrawEntityID>(c,
+            [](const World&, Entity e, const SceneDrawEntityID& v, AssetManager& assets) {
+                auto rt = assets.load<RenderTargetAsset>(v.target);
+                if (rt->format != PixelFormat::R32Uint)
+                    throw std::invalid_argument("DrawEntityID requires an R32Uint RenderTarget");
+                return [e, rt](ComponentAccess& access) {
+                    auto& r = access.storage.registry;
+                    if (r.has<DrawEntityID>(e))
+                        r.get<DrawEntityID>(e).target = rt;
+                    else
+                        r.emplace<DrawEntityID>(e, DrawEntityID{rt});
+                };
+            },
+            [](const World& w, Entity e) {
+                return SceneDrawEntityID{w.get<DrawEntityID>(e).target->reference()};
+            });
+        c.resolveReferences = [](std::any& value, const AssetManager& assets) {
+            auto& v = std::any_cast<SceneDrawEntityID&>(value);
+            v.target = assets.resolve(v.target);
+        };
+        c.erase = [](ComponentAccess& access, Entity e) { access.storage.registry.remove<DrawEntityID>(e); };
+        catalog.add(std::move(c));
+    }
+    {
         auto c = component<Transform, SceneTransform>("transform");
         c.validateValue = [](const std::any& value) {
             validateRigidPose(std::any_cast<const SceneTransform&>(value).local);

@@ -34,7 +34,7 @@ class RenderSystem {
     void setMaterial(Entity, uint32_t);
     void setVisible(Entity, bool);
     void setStaticMesh(Entity, std::shared_ptr<const StaticMesh>);
-    void extract(Frame&, bool debug);
+    void extract(Frame&, bool debug, RenderTargetAccess&);
 };
 class TransformSystem {
     SceneStorage& s;

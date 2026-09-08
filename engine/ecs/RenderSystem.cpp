@@ -111,8 +111,14 @@ void RenderSystem::setVisible(Entity e, bool visible) {
     s.changes.mark<Renderable>(e);
     batch.commit();
 }
-void RenderSystem::extract(Frame& f, bool debug) {
+void RenderSystem::extract(Frame& f, bool debug, RenderTargetAccess& targets) {
     s.changes.requireCommitted();
+    for (auto e : s.registry.view<DrawEntityID>())
+        if (s.enabled(e)) {
+            auto rt = targets.acquire(s.registry.get<DrawEntityID>(e).target);
+            if (std::find(f.entityIDOutputs.begin(), f.entityIDOutputs.end(), rt) == f.entityIDOutputs.end())
+                f.entityIDOutputs.push_back(std::move(rt));
+        }
     for (auto e : s.registry.view<Transform, LightComponent>()) {
         if (!s.enabled(e))
             continue;

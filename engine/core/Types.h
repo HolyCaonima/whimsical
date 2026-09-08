@@ -1,5 +1,6 @@
 #pragma once
 #include "ConsoleTypes.h"
+#include "RenderTarget.h"
 #include "Input.h"
 #include "Math.h"
 #include "Light.h"
@@ -110,6 +111,8 @@ struct AnimationInspection {
     animation::AttributeValues values;
 };
 struct Frame {
+    std::vector<std::shared_ptr<RenderTargetResource>> entityIDOutputs;
+    std::vector<std::shared_ptr<PixelReadRequest>> pixelReads;
     std::shared_ptr<const ui::UiFrame> ui;
     uint64_t gpuProfileRequest = 0;
     std::shared_ptr<const CpuProfile> cpuProfile;

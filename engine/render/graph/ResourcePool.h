@@ -29,7 +29,10 @@ class ResourcePool {
     // owner's image layout and the graph's barriers stay one fact, and an owner that grows
     // or rebuilds its resource in place does not have to say so twice.
     void importImage(ResourceId, Image&);
+    void importImage(ResourceId, Image&, AccessState&);
     void importBuffer(ResourceId, Buffer&);
+    // Called after replacing the unbound frame imports, with the previous GPU frame finished.
+    void syncImports();
     void importTlas(ResourceId, VkAccelerationStructureKHR, uint64_t generation);
     void importSamplers(ResourceId, std::vector<VkDescriptorImageInfo>);
 
@@ -95,6 +98,7 @@ class ResourcePool {
         Image image;
         Buffer buffer;
         Image* external = nullptr; // Lifetime::Imported
+        AccessState* importedState = nullptr; // Owner-carried state when frame import slots move.
         Buffer* host = nullptr;    // Lifetime::External
         VkAccelerationStructureKHR tlas = VK_NULL_HANDLE;
         std::vector<VkDescriptorImageInfo> samplers;
@@ -127,6 +131,7 @@ class ResourcePool {
     std::vector<uint32_t> bases_;
     uint32_t parity_ = 0, width_ = 0, height_ = 0;
     uint64_t declaredBytes_ = 0, descriptorWrites_ = 0, samplerRevisions_ = 0;
+    size_t fixedResources_ = 0;
     VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
 

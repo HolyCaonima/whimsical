@@ -48,6 +48,7 @@ class World {
         storage_.changes.observe<T>(std::forward<F>(f));
     }
     SceneResources resources;
+    RenderTargetAccess renderTargets;
     GameplayState gameplay;
     bool resetHistory = true;
     RenderSystem render{storage_, resources.materials};

@@ -12,7 +12,7 @@
 // binding block and the physical allocation are derived. Nothing else in the engine names
 // a binding number.
 namespace afterlight::rg {
-enum class Format : uint8_t { RGBA16F, RGBA32F, RG16F, R16F, R32F, RGBA8, D32 };
+enum class Format : uint8_t { RGBA16F, RGBA32F, RG16F, R16F, R32F, RGBA8, D32, R32Uint };
 struct FormatInfo {
     const char* glsl; // storage image qualifier
     uint32_t bytes;
@@ -168,6 +168,8 @@ class Registry {
 
   public:
     ResourceId declare(Declaration);
+    // Discard a frame's unbound imports. Shader interface declarations remain immutable.
+    void truncateImports(size_t first);
     const Declaration& operator[](ResourceId id) const {
         return declarations_[id.index];
     }

@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "id": "8b46cfa7492646e7b6cfb39e1d3d7e0f",
+  "name": "EntityID readback example",
+  "startupMap": null,
+  "scripts": [
+    "/Game/Example"
+  ]
+}

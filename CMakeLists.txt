@@ -89,6 +89,7 @@ function(afterlight_copy_onnx TARGET)
     VERBATIM)
 endfunction()
 add_library(afterlight_core
+  engine/assets/RenderTargetAsset.cpp engine/core/RenderTarget.cpp
   engine/core/ConsoleRegistry.cpp engine/core/EngineSettings.cpp engine/core/GpuProfile.cpp engine/core/CpuProfile.cpp engine/ui/Console.cpp
   engine/assets/StaticMesh.cpp
   engine/assets/ShaderAsset.cpp engine/assets/Material.cpp
@@ -128,6 +129,7 @@ add_custom_command(OUTPUT ${GENERATED_GLSL}
 add_custom_target(afterlight_shader_bindings DEPENDS ${GENERATED_GLSL})
 add_executable(Afterlight engine/main.cpp engine/platform/Window.cpp engine/render/Renderer.cpp engine/render/VulkanContext.cpp engine/render/NrdDenoiser.cpp engine/render/GpuProfiler.cpp engine/render/UiRenderer.cpp)
 target_sources(Afterlight PRIVATE engine/render/RenderAuditWorker.cpp engine/render/GpuScene.cpp
+  engine/render/GpuRenderTargets.cpp
   engine/render/RenderPipeline.cpp engine/render/RenderResources.cpp
   engine/render/graph/Registry.cpp engine/render/graph/ResourcePool.cpp engine/render/graph/RenderGraph.cpp
   engine/render/graph/ShaderAccess.cpp)
@@ -152,6 +154,11 @@ add_dependencies(afterlight_shaders afterlight_shader_bindings)
 add_dependencies(Afterlight afterlight_shaders)
 target_compile_definitions(Afterlight PRIVATE AFTERLIGHT_SHADERS="${CMAKE_BINARY_DIR}/shaders")
 enable_testing()
+add_executable(render_target_tests tests/RenderTargetTests.cpp)
+target_link_libraries(render_target_tests PRIVATE afterlight_core)
+target_compile_options(render_target_tests PRIVATE /W4 /permissive- /utf-8)
+afterlight_copy_onnx(render_target_tests)
+add_test(NAME render_target_contracts COMMAND render_target_tests)
 add_executable(light_tests tests/LightTests.cpp)
 target_link_libraries(light_tests PRIVATE afterlight_core)
 target_compile_options(light_tests PRIVATE /W4 /permissive- /utf-8)

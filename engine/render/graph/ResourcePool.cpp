@@ -20,6 +20,8 @@ VkFormat vulkanFormat(Format format) {
         return VK_FORMAT_R8G8B8A8_UNORM;
     case Format::D32:
         return VK_FORMAT_D32_SFLOAT;
+    case Format::R32Uint:
+        return VK_FORMAT_R32_UINT;
     }
     throw std::runtime_error("Unknown render graph format");
 }
@@ -55,6 +57,7 @@ uint64_t storageSignature(const Declaration& declaration, uint32_t width, uint32
 }
 
 ResourcePool::ResourcePool(VulkanContext& vk, const Registry& registry) : vk_(vk), registry_(registry) {
+    fixedResources_ = registry_.size();
     bases_.resize(registry_.size());
     for (uint16_t i = 0; i < registry_.size(); ++i)
         bases_[i] = registry_.physicalBase({i});
@@ -139,6 +142,28 @@ void ResourcePool::release(Physical& slot) {
 
 void ResourcePool::importImage(ResourceId id, Image& image) {
     slots_[base(id)].external = &image;
+    slots_[base(id)].importedState = nullptr;
+}
+void ResourcePool::importImage(ResourceId id, Image& image, AccessState& state) {
+    importImage(id, image);
+    slots_[base(id)].importedState = &state;
+}
+
+void ResourcePool::syncImports() {
+    for (uint16_t i = uint16_t(fixedResources_); i < registry_.size(); ++i) {
+        const auto& d = registry_[{i}];
+        if (d.lifetime != Lifetime::Imported || d.view || d.previous)
+            throw std::logic_error("Runtime graph resources must be unbound imports");
+    }
+    bases_.resize(registry_.size());
+    slots_.resize(registry_.physicalCount());
+    root_.resize(slots_.size());
+    for (uint16_t i = uint16_t(fixedResources_); i < registry_.size(); ++i) {
+        bases_[i] = registry_.physicalBase({i});
+        const auto slot = bases_[i];
+        slots_[slot] = {};
+        root_[slot] = uint16_t(slot);
+    }
 }
 
 void ResourcePool::importBuffer(ResourceId id, Buffer& buffer) {
@@ -159,9 +184,13 @@ void ResourcePool::importSamplers(ResourceId id, std::vector<VkDescriptorImageIn
 }
 
 uint32_t ResourcePool::extentWidth(ResourceId id) const {
+    if (auto image = slots_[base(id)].external)
+        return image->width;
     return divide(width_, registry_[id].divisor);
 }
 uint32_t ResourcePool::extentHeight(ResourceId id) const {
+    if (auto image = slots_[base(id)].external)
+        return image->height;
     return divide(height_, registry_[id].divisor);
 }
 
@@ -244,6 +273,8 @@ uint64_t ResourcePool::generation(const Physical& slot) const {
 
 AccessState& ResourcePool::state(uint32_t index) {
     auto& slot = slots_[index];
+    if (slot.importedState)
+        return *slot.importedState;
     const auto current = generation(slot);
     if (current != slot.stateGeneration) {
         slot.state = {};

@@ -72,6 +72,7 @@ void World::destroy(Entity e) {
     batch.commit();
 }
 void World::clearScene() {
+    renderTargets.reset();
     auto batch = changes();
     for (auto e : registry().entities())
         if (registry().contains(e))
@@ -108,7 +109,8 @@ Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug,
     storage_.changes.requireCommitted();
     CpuScope scope("ECS Render Extraction");
     Frame f;
-    render.extract(f, physicsDebug);
+    render.extract(f, physicsDebug, renderTargets);
+    f.pixelReads = renderTargets.snapshot(tick);
     f.proxies = storage_.renderScene.proxies();
     f.delta = storage_.renderScene.publish();
     f.materials = resources.materials;

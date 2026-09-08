@@ -110,7 +110,8 @@ std::string ShaderCompiler::passSource(const std::filesystem::path& directory, c
                                        const ShaderSet& shaders) {
     auto common = read(directory / "common.glsl");
     replace(common, "#include \"surface.glsl\"", read(directory / "surface.glsl"));
-    replace(common, "#include \"surface_link.glsl\"", surfaceLibrary(shaders, pass == "gbuffer.frag"));
+    replace(common, "#include \"surface_link.glsl\"",
+            surfaceLibrary(shaders, std::filesystem::path(pass).extension() == ".frag"));
     auto source = read(directory / pass);
     replace(source, "#include \"common.glsl\"", common);
     return expandIncludes(source, directory);

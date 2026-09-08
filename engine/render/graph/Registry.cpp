@@ -19,11 +19,15 @@ FormatInfo formatInfo(Format format) {
         return {"rgba8", 4};
     case Format::D32:
         return {"", 4};
+    case Format::R32Uint:
+        return {"r32ui", 4};
     }
     throw std::runtime_error("Unknown render graph format");
 }
 
 ResourceId Registry::declare(Declaration declaration) {
+    if (declarations_.size() >= 0xffff)
+        throw std::runtime_error("Render graph resource capacity exceeded");
     const ResourceId id{uint16_t(declarations_.size())};
     if (declaration.view) {
         declaration.view.binding = uint32_t(bindings_.size());
@@ -37,6 +41,15 @@ ResourceId Registry::declare(Declaration declaration) {
     }
     declarations_.push_back(std::move(declaration));
     return id;
+}
+
+void Registry::truncateImports(size_t first) {
+    for (size_t i = first; i < declarations_.size(); ++i) {
+        const auto& d = declarations_[i];
+        if (d.lifetime != Lifetime::Imported || d.view || d.previous)
+            throw std::logic_error("Only unbound frame imports may be removed");
+    }
+    declarations_.resize(first);
 }
 
 uint32_t Registry::physicalCount() const {
@@ -85,7 +98,8 @@ static void emit(std::ostringstream& out, const Declaration& declaration, const 
         break;
     case BindingType::StorageImage:
         out << "layout(set=0,binding=" << view.binding << "," << formatInfo(declaration.format).glsl
-            << ") uniform image2D " << view.name << ";\n";
+            << ") uniform " << (declaration.format == Format::R32Uint ? "uimage2D " : "image2D ")
+            << view.name << ";\n";
         break;
     case BindingType::SamplerArray:
         out << "layout(set=0,binding=" << view.binding << ") uniform sampler2D " << view.name << "["

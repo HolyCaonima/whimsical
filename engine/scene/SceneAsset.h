@@ -15,6 +15,9 @@ struct SceneRender {
     RenderComponent appearance;
     std::optional<AssetRef> mesh;
 };
+struct SceneDrawEntityID {
+    AssetRef target;
+};
 using SceneCollider = ColliderSettings;
 struct SceneAnimation {
     AssetRef asset;

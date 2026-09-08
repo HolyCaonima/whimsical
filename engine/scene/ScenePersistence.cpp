@@ -105,6 +105,7 @@ void ScenePersistence::load(World& world, AssetManager& assets, const AssetPath&
     // Transfer the validated scene once. Systems/subscriptions remain attached to
     // their World; only owned state and backend bindings cross this boundary.
     world.storage_.registry.exchangeScene(staged.storage_.registry);
+    world.renderTargets.reset();
     world.storage_.physics.exchangeScene(staged.storage_.physics);
     world.storage_.renderScene.exchangeScene(staged.storage_.renderScene);
     world.storage_.jointColliders.exchangeBindings(staged.storage_.jointColliders);

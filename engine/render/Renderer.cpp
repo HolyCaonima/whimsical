@@ -1,5 +1,6 @@
 #include "Renderer.h"
 #include "GpuScene.h"
+#include "GpuRenderTargets.h"
 #include "NrdDenoiser.h"
 #include "RenderAuditWorker.h"
 #include "RenderPipeline.h"
@@ -49,6 +50,7 @@ struct Renderer::Impl {
     std::unique_ptr<rg::RenderGraph> graph;
     std::unique_ptr<GpuScene> scene;
     std::unique_ptr<RenderPipeline> pipeline;
+    std::unique_ptr<GpuRenderTargets> renderTargets;
     std::unique_ptr<NrdDenoiser> denoiser;
     std::unique_ptr<UiRenderer> uiRenderer;
     std::unique_ptr<RenderAuditWorker> audit;
@@ -69,7 +71,9 @@ struct Renderer::Impl {
     ~Impl() {
         if (!vk.device)
             return;
-        vkDeviceWaitIdle(vk.device);
+        if (vkDeviceWaitIdle(vk.device) != VK_SUCCESS && renderTargets)
+            renderTargets->failed();
+        renderTargets.reset();
         profiler.reset();
         pipeline.reset();
         denoiser.reset();
@@ -91,6 +95,7 @@ struct Renderer::Impl {
         vk.initialize(window, options.validation);
         pool = std::make_unique<rg::ResourcePool>(vk, resources.registry);
         graph = std::make_unique<rg::RenderGraph>(*pool);
+        renderTargets = std::make_unique<GpuRenderTargets>(vk, resources.registry, *pool);
         scene = std::make_unique<GpuScene>(vk, options);
         scene->bind(*pool, resources.scene);
         // RTXDI's spatial neighbour offsets are a fixed Vandercorput-style disc, written
@@ -385,8 +390,6 @@ struct Renderer::Impl {
             frameRef = std::make_shared<const Frame>(std::move(diagnostic));
         }
         const Frame& frame = *frameRef;
-        if (!frame.input.width || !frame.input.height)
-            return true;
         if (frame.proxies.size() > MaxInstances || frame.materials.size() > MaxMaterials ||
             frame.lights.size() > MaxLights)
             throw std::runtime_error("Scene capacity exceeded");
@@ -395,6 +398,9 @@ struct Renderer::Impl {
             VK_CHECK(vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX));
         }
         collectAuditReadback();
+        renderTargets->collect();
+        if (!frame.input.width || !frame.input.height)
+            return true;
         {
             CpuScope scope("Resolve GPU Timestamps");
             profiler->resolve();
@@ -502,6 +508,8 @@ struct Renderer::Impl {
         setup.audit = auditFrame;
         setup.capture = captureFrame;
         setup.auditSignals = auditSignals;
+        setup.targets = renderTargets.get();
+        renderTargets->prepare(frame.entityIDOutputs, frame.pixelReads, width, height, frameNumber + 1, frame.tick);
         {
             CpuScope scope("Graph / Declare");
             pipeline->build(*graph, setup);
@@ -534,6 +542,7 @@ struct Renderer::Impl {
         submit.pSignalSemaphores = &finished[swapIndex];
         VK_CHECK(vkResetFences(vk.device, 1, &fence));
         VK_CHECK(vkQueueSubmit(vk.queue, 1, &submit, fence));
+        renderTargets->submitted();
         submitScope.finish();
         prepareScope.finish();
         // Measure CPU preparation/recording/submission directly, never Frame minus GPU.
@@ -567,6 +576,7 @@ struct Renderer::Impl {
             CpuScope scope("Final Frame / Wait and Capture");
             VK_CHECK(vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX));
             collectAuditReadback();
+            renderTargets->collect();
             if (audit) {
                 CpuScope auditScope("Audit / Drain Worker and Save");
                 const auto output = std::filesystem::path(AFTERLIGHT_ROOT) / "captures" / options.audit;

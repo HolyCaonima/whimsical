@@ -133,6 +133,8 @@ int main() {
         for (const auto& shader : shaders) {
             auto& code = compiler.compile("gbuffer.frag", {shader});
             check(!code.empty() && code[0] == 0x07230203, "Raster Shader must compile to SPIR-V");
+            check(!compiler.compile("entity_id.frag", {shader}).empty(),
+                  "Integer output must compile with the same opaque and masked materials");
         }
         for (const auto* pass : ShaderCompiler::surfacePasses)
             check(!compiler.compile(pass, shaders).empty(), "Linked ray-query passes must compile");

@@ -3,6 +3,7 @@
 #include "core/Types.h"
 #include "physics/PhysicsScene.h"
 #include "animation/SkinnedMesh.h"
+#include "assets/RenderTargetAsset.h"
 #include <optional>
 
 namespace afterlight {
@@ -38,6 +39,10 @@ struct Renderable {
     RenderComponent appearance;
     std::shared_ptr<const StaticMesh> mesh;
     uint32_t slot = UINT32_MAX; // Derived render-scene binding; never serialized.
+};
+struct DrawEntityID {
+    using Ownership = SystemComponent;
+    std::shared_ptr<const RenderTargetAsset> target;
 };
 // PhysicsScene owns shape/material/query state. This is the sole ECS binding to it;
 // its pose is a derived spatial index of Transform, not another editable transform.

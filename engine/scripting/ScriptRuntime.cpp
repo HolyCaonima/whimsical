@@ -6,6 +6,7 @@
 #include "uiCore/UiCore.h"
 #include <iostream>
 #include <stdexcept>
+#include <cstring>
 namespace afterlight {
 void ScriptRuntime::log(const std::string& text) {
     std::cout << "[JS] " << text << "\n";
@@ -157,6 +158,13 @@ static bool hasComponent(const World& w, Entity e, const std::string& type) {
     return componentCatalog().get(type).present(w.registry(), e);
 }
 enum Op {
+    AssetReference,
+    AcquireRenderTarget,
+    RenderTargetInfo,
+    ReleaseRenderTarget,
+    ReadPixels,
+    PollPixels,
+    CancelPixels,
     SceneLoad,
     SceneSave,
     SceneData,
@@ -225,6 +233,86 @@ static duk_ret_t callNative(duk_context* c) {
     auto& w = world(c);
     try {
         switch (duk_get_current_magic(c)) {
+        case AssetReference:
+            pushJson(c, assets(c).reference(AssetPath(duk_require_string(c, 0))).json());
+            return 1;
+        case AcquireRenderTarget: {
+            AssetRef ref;
+            if (duk_is_string(c, 0))
+                ref = assets(c).reference(AssetPath(duk_require_string(c, 0)));
+            else {
+                duk_dup(c, 0);
+                duk_json_encode(c, -1);
+                ref = AssetRef::fromJson(Json::parse(duk_require_string(c, -1)));
+            }
+            auto rt = w.renderTargets.acquire(assets(c).load<RenderTargetAsset>(ref));
+            duk_push_string(c, rt->handle.c_str());
+            return 1;
+        }
+        case RenderTargetInfo:
+            pushJson(c, w.renderTargets.target(duk_require_string(c, 0))->info());
+            return 1;
+        case ReleaseRenderTarget:
+            w.renderTargets.release(duk_require_string(c, 0));
+            return 0;
+        case ReadPixels: {
+            PixelRegion region;
+            std::string version;
+            if (!duk_is_undefined(c, 1)) {
+                duk_dup(c, 1);
+                duk_json_encode(c, -1);
+                auto j = Json::parse(duk_require_string(c, -1));
+                if (j.contains("x")) region.x = j.at("x").uint();
+                if (j.contains("y")) region.y = j.at("y").uint();
+                if (j.contains("width")) region.width = j.at("width").uint();
+                if (j.contains("height")) region.height = j.at("height").uint();
+                if (j.contains("rtVersion")) version = j.at("rtVersion").string();
+            }
+            auto request = w.renderTargets.read(duk_require_string(c, 0), region, version);
+            duk_push_string(c, request.c_str());
+            return 1;
+        }
+        case PollPixels: {
+            auto request = w.renderTargets.request(duk_require_string(c, 0));
+            auto result = request->take();
+            if (!result) {
+                duk_push_null(c);
+                return 1;
+            }
+            auto j = textureContentsJson(result->contents);
+            j["status"] = result->status;
+            j["request"] = request->handle;
+            j["target"] = request->target->handle;
+            j["asset"] = request->target->asset->reference().json();
+            j["assetGeneration"] = std::to_string(request->target->asset->generation);
+            j["requestedTick"] = std::to_string(request->requestedTick);
+            j["format"] = pixelFormatName(request->target->asset->format);
+            j["region"] = Json{{"x", result->region.x}, {"y", result->region.y},
+                                {"width", result->region.width}, {"height", result->region.height}};
+            j["rowBytes"] = result->status == "ready"
+                                ? result->region.width * pixelBytes(request->target->asset->format) : 0u;
+            pushJson(c, j);
+            if (result->status == "ready") {
+                const auto bytes = result->bytes.size();
+                auto* buffer = duk_push_fixed_buffer(c, bytes);
+                std::memcpy(buffer, result->bytes.data(), bytes);
+                const auto format = request->target->asset->format;
+                duk_uint_t type = format == PixelFormat::R32Uint ? DUK_BUFOBJ_UINT32ARRAY
+                                   : format == PixelFormat::RGBA8 ? DUK_BUFOBJ_UINT8ARRAY
+                                                                 : DUK_BUFOBJ_FLOAT32ARRAY;
+                duk_push_buffer_object(c, -1, 0, bytes, type);
+                duk_put_prop_string(c, -3, "data");
+                duk_pop(c);
+            }
+            w.renderTargets.consumed(request->handle);
+            return 1;
+        }
+        case CancelPixels: {
+            std::string id = duk_require_string(c, 0);
+            w.renderTargets.request(id)->cancel("cancelled");
+            w.renderTargets.consumed(id);
+            return 0;
+        }
         case Log:
             runtime(c).log(duk_safe_to_string(c, 0));
             return 0;
@@ -750,6 +838,13 @@ void ScriptRuntime::createContext() {
         int nargs;
     };
     const Binding bindings[] = {{"loadScene", SceneLoad, 1},
+                                {"asset", AssetReference, 1},
+                                {"renderTarget", AcquireRenderTarget, 1},
+                                {"renderTargetInfo", RenderTargetInfo, 1},
+                                {"releaseRenderTarget", ReleaseRenderTarget, 1},
+                                {"readPixels", ReadPixels, 2},
+                                {"pollPixels", PollPixels, 1},
+                                {"cancelPixels", CancelPixels, 1},
                                 {"saveScene", SceneSave, 2},
                                 {"sceneData", SceneData, 0},
                                 {"setSceneData", SetSceneData, 1},

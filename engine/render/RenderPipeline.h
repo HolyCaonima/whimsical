@@ -10,6 +10,7 @@
 namespace afterlight {
 class NrdDenoiser;
 class UiRenderer;
+class GpuRenderTargets;
 
 // What the frame needs from outside the pipeline. Everything else a pass touches it
 // declares to the graph.
@@ -19,6 +20,7 @@ struct FrameSetup {
     NrdDenoiser* denoiser = nullptr;
     UiRenderer* ui = nullptr;
     GpuProfiler* profiler = nullptr;
+    GpuRenderTargets* targets = nullptr;
     uint64_t frameNumber = 0;
     float frameMs = 16.7f;
     bool reset = false;        // temporal accumulation restarts this frame
@@ -74,12 +76,14 @@ class RenderPipeline {
     std::array<const rg::Program*, PassCount> compute_{};
     std::array<rg::Program, screenSpacePasses.size()> screenSpace_;
     std::map<std::shared_ptr<const ShaderAsset>, VkPipeline> rasterPrograms_;
+    std::map<std::shared_ptr<const ShaderAsset>, VkPipeline> entityIDPrograms_;
     std::map<ShaderCompiler::ShaderSet, SurfacePrograms> computePrograms_;
     // The G-buffer pass binds one pipeline per material, so what it touches is the union
     // over them plus the vertex stage they share.
     std::vector<rg::ShaderAccess> rasterAccess_;
+    std::vector<rg::ShaderAccess> entityIDAccess_;
 
     rg::Program createCompute(const std::vector<uint32_t>& code);
-    VkPipeline createRaster(const std::shared_ptr<const ShaderAsset>&);
+    VkPipeline createRaster(const std::shared_ptr<const ShaderAsset>&, bool entityID = false);
 };
 } // namespace afterlight
