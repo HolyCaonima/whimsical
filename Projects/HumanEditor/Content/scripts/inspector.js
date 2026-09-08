@@ -13,21 +13,79 @@ HE.defaultMaterial=function(){
     if(!choices.length)throw Error('Create a Material asset in this project before adding geometry.');
     return choices[0].ref;
 };
+HE.assetMatchScore=function(text,query){
+    text=text.toLowerCase();
+    var at=text.indexOf(query);
+    if(at>=0)return at+(text===query?0:10);
+    var previous=-1,score=40;
+    for(var i=0;i<query.length;i++){
+        var next=text.indexOf(query[i],previous+1);
+        if(next<0)return -1;
+        score+=next-previous-1;previous=next;
+    }
+    return score;
+};
 HE.pickDetailAsset=function(f){
+    HE.closeContext();HE.cancelPick();HE.keys={};HE.pressed={};HE.navigation=null;
     var current=Engine.content.describe(f.raw),choices=HE.assetChoices(current.header.type);
     if(!choices.some(function(a){return a.ref.id===current.ref.id&&a.ref.source===current.ref.source;}))choices.unshift(current);
-    var selected=0;
-    choices.forEach(function(a,i){if(a.ref.id===current.ref.id&&a.ref.source===current.ref.source)selected=i;});
-    HE.modal('Choose '+current.header.type,'<select id="detail-asset-choice" style="width:100%;height:30px;">'+choices.map(function(a,i){
-        return '<option value="'+i+'">'+HE.escape(a.header.name+' — '+a.ref.path)+'</option>';
-    }).join('')+'</select><p id="detail-asset-path"/>',[
-        {label:'Choose',run:function(d){f.raw=choices[Number(d.getElementById('detail-asset-choice').getValue())].ref;HE.paintDetailField(f);HE.updateDetailDraft(f.component);}},
-        {label:'Cancel'}
-    ],function(d){
-        var select=d.getElementById('detail-asset-choice');select.setValue(String(selected));
-        function show(){d.getElementById('detail-asset-path').setText(choices[Number(select.getValue())].ref.path);}
-        select.on('change',show);show();
+    var anchor=HE.el(f.id).getBounds(),width=Math.min(380,HE.width-16),below=HE.height-anchor.y-anchor.height-12,above=anchor.y-12;
+    var rows=Math.min(6,Math.max(1,choices.length),Math.max(1,Math.floor((Math.max(below,above)-78)/42)));
+    var height=rows*42+78,left=Math.max(8,Math.min(anchor.x+anchor.width-width,HE.width-width-8));
+    var top=below>=height?anchor.y+anchor.height+4:Math.max(8,anchor.y-height-4);
+    var html='<rml><head><link type="text/rcss" href="editor.rcss"/></head><body id="context-overlay"><div id="detail-asset-picker" style="left:'+left+'px;top:'+top+'px;width:'+width+'px;">'+
+        '<input id="asset-picker-search" type="text" placeholder="Search '+HE.escape(current.header.type.toLowerCase())+' name or path..."/>'+
+        '<div id="asset-picker-results" style="height:'+(rows*42)+'px;"/><div id="asset-picker-count"/></div></body></rml>';
+    var doc=Engine.ui.createDocument(html,'/Game/UI/asset-picker.rml').show(true);HE.contextDoc=doc;
+    var search=doc.getElementById('asset-picker-search'),results=doc.getElementById('asset-picker-results'),matches=[],active=0,first=0;
+    function close(){HE.closeContext();HE.el(f.id).focus();}
+    function choose(index){f.raw=matches[index].ref;HE.paintDetailField(f);HE.updateDetailDraft(f.component);close();}
+    function paint(){
+        var visible=matches.slice(first,first+rows);
+        results.setInnerRML(visible.length?visible.map(function(a,i){
+            var selected=a.ref.id===current.ref.id&&a.ref.source===current.ref.source;
+            return '<button class="asset-picker-item '+(first+i===active?'active ':'')+(selected?'current':'')+'" id="asset-choice-'+i+'" title="'+HE.escape(a.ref.path)+'">'+
+                '<span class="asset-picker-name">'+HE.escape(a.header.name)+(selected?'  *':'')+'</span><span class="asset-picker-path">'+HE.escape(a.ref.path)+'</span></button>';
+        }).join(''):'<div class="asset-picker-empty">No matching assets</div>');
+        visible.forEach(function(a,i){doc.getElementById('asset-choice-'+i).on('click',HE.guard(function(){choose(first+i);}));});
+        doc.getElementById('asset-picker-count').setText((matches.length?(first+1)+'–'+(first+visible.length)+' / '+matches.length:'0 results')+'   ·   Scroll / ↑ ↓   Enter to choose');
+    }
+    function filter(){
+        var query=search.getValue().toLowerCase().replace(/^\s+|\s+$/g,''),terms=query?query.split(/\s+/):[];
+        matches=choices.map(function(a){
+            var score=0;
+            for(var i=0;i<terms.length;i++){
+                var name=HE.assetMatchScore(a.header.name,terms[i]),path=HE.assetMatchScore(a.ref.path,terms[i]);
+                if(name<0&&path<0)return null;
+                score+=name>=0?name:path+100;
+            }
+            return {asset:a,score:score};
+        }).filter(function(a){return a!==null;}).sort(function(a,b){return a.score-b.score||a.asset.header.name.localeCompare(b.asset.header.name)||a.asset.ref.path.localeCompare(b.asset.ref.path);})
+            .map(function(a){return a.asset;});
+        active=0;
+        if(!query)matches.forEach(function(a,i){if(a.ref.id===current.ref.id&&a.ref.source===current.ref.source)active=i;});
+        first=Math.max(0,Math.min(active,matches.length-rows));paint();
+    }
+    doc.getElementById('detail-asset-picker').on('mousedown',function(ev){ev.stopPropagation();});
+    doc.on('mousedown',HE.closeContext);
+    doc.on('keydown',HE.guard(function(ev){
+        var key=ev.parameters.key_identifier;
+        if(key===81){ev.stopPropagation();close();}
+        else if(key===72){ev.stopPropagation();if(matches.length)choose(active);}
+        else if(key===91||key===93){
+            ev.stopPropagation();if(!matches.length)return;
+            active=Math.max(0,Math.min(matches.length-1,active+(key===91?-1:1)));
+            first=Math.max(0,Math.min(first,active));if(active>=first+rows)first=active-rows+1;
+            paint();search.focus();
+        }
+    }),true);
+    results.on('mousescroll',function(ev){
+        ev.stopPropagation();var delta=ev.parameters.wheel_delta_y;
+        if(!delta)return;
+        first=Math.max(0,Math.min(Math.max(0,matches.length-rows),first+(delta>0?1:-1)));
+        active=Math.max(first,Math.min(active,first+rows-1));paint();
     });
+    search.on('change',HE.guard(filter));filter();search.focus();
 };
 HE.detailLabel=function(key){return key.replace(/([a-z0-9])([A-Z])/g,'$1 $2').replace(/_/g,' ').replace(/^./,function(c){return c.toUpperCase();});};
 HE.detailOrder=function(value,component){
