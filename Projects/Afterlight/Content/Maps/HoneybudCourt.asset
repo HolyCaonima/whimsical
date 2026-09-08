@@ -1,7 +1,7 @@
 ALAS1
 {"id": "d3ba56b8cba6483c84816c14b8f4d738", "name": "HoneybudCourt", "type": "Map", "version": 1, "storage": "embedded", "metadata": {"authoring": "Blender MCP", "description": "Original warm miniature garden kit; see SourceArt/Honeybud."}}
 {
-  "version": 7,
+  "version": 8,
   "materials": [
     {
       "shader": {
@@ -1304,7 +1304,6 @@ ALAS1
     "cellSize": 0.25,
     "planeTolerance": 0.03
   },
-  "player": "525c9440cd3f5c4bae3cc806190f7ccd",
   "references": {
     "player": "525c9440cd3f5c4bae3cc806190f7ccd",
     "companion": "7ee632590ab357aabd00abfd1ae9b5e2"

@@ -7,7 +7,7 @@ function fixedUpdate(dt, input) {
     Locomotion.tick(dt, input);
     Companion.tick(dt);
     CameraRig.tick(dt, input);
-    Engine.status(Locomotion.state, Controller.message);
+    GameplayPresentation.tick(dt, input);
     GameplayHud.input = input;
 }
 function updateUI(dt) { GameplayHud.tick(dt); }

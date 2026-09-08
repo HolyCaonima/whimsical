@@ -73,8 +73,8 @@ def upgrade_v6(scene):
     return scene
 
 
-def upgrade(scene):
-    if scene['version'] == 7:
+def upgrade_v7(scene):
+    if scene['version'] >= 7:
         return scene
     scene = upgrade_v6(scene)
     for entity in scene['entities']:
@@ -83,6 +83,15 @@ def upgrade(scene):
             light['type'] = 'point'
             light['intensity'] = light.get('intensity', 1)*4*math.pi*sum(light.get('color', [1,1,1]))
     scene['version'] = 7
+    return scene
+
+
+def upgrade(scene):
+    scene = upgrade_v7(scene)
+    player = scene.pop('player', '')
+    if player:
+        scene['references'].setdefault('player', player)
+    scene['version'] = 8
     return scene
 
 

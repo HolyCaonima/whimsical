@@ -17,7 +17,7 @@
 
 namespace afterlight {
 namespace {
-static_assert(sizeof(GpuGlobals) == 368, "Globals ABI mismatch");
+static_assert(sizeof(GpuGlobals) == 336, "Globals ABI mismatch");
 } // namespace
 
 struct Renderer::Impl {
@@ -489,9 +489,8 @@ struct Renderer::Impl {
         data.inverseVp = glm::inverse(data.vp);
         data.eyeTime = vec4(frame.camera.eye(), float(frame.time));
         data.previousEye = vec4(reset ? frame.camera.eye() : previous->camera.eye(), 0);
-        data.resolution = {float(viewWidth), float(viewHeight), float(frame.debugView), float(frame.hovered)};
-        data.player = vec4(frame.player, float(frame.selected));
-        data.destination = vec4(frame.destination, frame.hasDestination ? 1.f : 0.f);
+        data.resolution = {float(viewWidth), float(viewHeight), float(frame.debugView), 0.f};
+        scene->writeOutlines(frame.outlines);
         // The last component tells the DI bridge which half of the reservoir arrays is
         // playing which role this frame; it replaces the end-of-frame history copy.
         data.renderSettings = {frame.exposure, frame.diHistoryConfidence ? 1.f : 0.f,

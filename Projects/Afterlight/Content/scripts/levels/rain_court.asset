@@ -7,8 +7,8 @@ var RainCourt = {
         var player = Engine.sceneObject('player'), dog = Engine.sceneObject('companion');
         var beacon = Engine.sceneObject('beacon'), door = Engine.sceneObject('door');
         var cache = Engine.sceneObject('cache');
-        Engine.setPlayer(player);
         Locomotion.init(player);
+        GameplayPresentation.initialize();
         CameraRig.init(Engine.cameraState());
         Companion.init(dog, player);
         Interactions.register(beacon, 'Power console', {x : -6, y : 0, z : -1.7}, function() {

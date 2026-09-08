@@ -1,0 +1,37 @@
+ALAS1
+{"id": "b58cee0a79a64dc7b70f39ce6d770f0a", "name": "presentation", "type": "Script", "version": 1, "storage": "embedded", "metadata": {}}
+// Project-owned feedback. The renderer only receives geometry and explicit outline styles.
+var GameplayPresentation = {
+    time: 0,
+    initialize: function() {
+        this.ring = this.marker('Active character', [0.38,0.94,0.79], '/Game/models/Feedback/Ring');
+        Engine.parent(this.ring, Locomotion.id, false);
+        this.destination = this.marker('Move destination', [0.95,0.77,0.36], '/Game/models/Feedback/Destination');
+        this.tick(0, {picked:0});
+    },
+    marker: function(name, color, mesh) {
+        var material = Engine.scene.addMaterial({shader:Engine.asset('/Game/shaders/Standard'),
+            properties:{baseColor:[0,0,0],emission:color},textures:{}}, false);
+        return Engine.create({name:name,persistent:false,enabled:false,components:{
+            transform:{},render:{mesh:Engine.asset(mesh),material:material,castShadow:false}
+        }});
+    },
+    tick: function(dt, input) {
+        this.time += dt;
+        var selected = Controller.selected, outlines = [];
+        if (selected) outlines.push({entity:Locomotion.id,color:[0.55,1,0.86,1]});
+        if (input.picked === Locomotion.id || Interactions.objects[input.picked])
+            outlines.push({entity:input.picked,color:[1,0.8,0.38,1]});
+        Engine.view.outlines(outlines);
+        Engine.enabled(this.ring, selected);
+        var height = Engine.component(Locomotion.id,'collider').shape.height;
+        Engine.localTransform(this.ring,{position:{x:0,y:-height/2+0.02,z:0}});
+        var path = Locomotion.path;
+        Engine.enabled(this.destination, path.length > 0);
+        if (path.length) {
+            var p = path[path.length-1], scale = 0.32+0.07*Math.sin(this.time*5);
+            Engine.transform(this.destination,{position:{x:p.x,y:p.y+0.02,z:p.z}});
+            Engine.renderScale(this.destination,{x:scale,y:1,z:scale});
+        }
+    }
+};

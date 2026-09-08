@@ -27,7 +27,7 @@ function game() {
         visualPose(id, offset, scale){objects.get(id).scale=clone(scale);},
         moveBody(id, delta, rotation){const o=objects.get(id);o.position.x+=delta.x;o.position.y+=delta.y;o.position.z+=delta.z;
             o.rotation=clone(rotation);return {position:clone(o.position),rotation:clone(rotation),applied:clone(delta),blocked:false,contacts:[]};},
-        camera(){},setPlayer(){},select(){},log:text=>logs.push(text),
+        camera(){},log:text=>logs.push(text),
         ui:{loadDocument:()=>({show(){},getElementById:node})}
     }});
     for(const script of ['track','vehicle','race','hud','main']) vm.runInContext(

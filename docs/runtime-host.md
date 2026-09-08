@@ -113,7 +113,7 @@ var output = Engine.create({
 
 `persistent:false` 是实体生命周期元数据，默认 true。临时实体继续参与 ECS、渲染和查询，其 Transform 子树继承“不保存”；不会把该属性作为 Map 的新组件写入磁盘。`Engine.persistent(entity,bool)` 修改本地标记。
 
-capture 在解析资产引用前排除临时实体，因此目标地图不会依赖宿主的 ID RT。临时材质通过 `scene.addMaterial(value,false)` 声明；保存时排除并重排剩余材质索引，创作实体的材质引用同步重映射。创作实体引用临时材质、玩家或命名引用指向被排除的实体时，保存明确失败。
+capture 在解析资产引用前排除临时实体，因此目标地图不会依赖宿主的 ID RT。临时材质通过 `scene.addMaterial(value,false)` 声明；保存时排除并重排剩余材质索引，创作实体的材质引用同步重映射。创作实体引用临时材质、命名引用指向被排除的实体时，保存明确失败。
 
 完整场景替换会移除临时对象，宿主在 `sceneChanged()` 中重建。临时对象也不进入 Play 检查点。保存不会修改它们当前的运行时索引或身份。
 
@@ -154,6 +154,21 @@ if (pixel) ticket = Engine.readPixels(rt, {x:pixel.x, y:pixel.y, width:1, height
 ```
 
 `pixel` 在视口外返回 null，省略目标尺寸时使用裁切后的视图尺寸；原点为左上角。结果的 `rtVersion/sourceTick/renderFrame` 仍代表实际生成图像的帧，调用方按既有票据契约处理尺寸变化与场景失效。
+
+## 显式轮廓与项目表现
+
+```js
+Engine.view.outlines([{entity:actor, color:[0.55,1,0.86,1]}]);
+Engine.view.outlines([]); // 只清空当前 realm 的请求
+```
+
+一次调用替换当前脚本 realm 的整份轮廓列表，支持任意数量实体；颜色为显示空间 RGBA [0,1]。请求不修改组件或资产，不进入保存、撤销和 Play 检查点。realm 退出时请求自动释放；常驻应用与场景各自提交，应用层在重复实体上优先，同一列表内后者优先。相机/矩形 reset 不清空其他 realm 的表现请求。
+
+宿主通过 `renderView()` 合并请求，World 快照排除失效、禁用、不可见和 overlay 实体，按实体排序后送往独立 GPU buffer；像素边界用二分查找样式。轮廓仅应用于正常显示模式，不参与光照、阴影、实体 ID 和时域历史。请求量决定 buffer 大小，没有玩家专用槽或固定选中数量。
+
+引擎不持有玩家、选择、hover、路径或状态文案，不提供 `setPlayer/select/showPath/status`。物理 `input.picked` 返回命中的 pickable 实体；哪些对象可交互由项目决定，不会自动触发轮廓。项目使用已有命名引用与脚本状态表达角色和玩法，使用普通临时网格/材质表达角色圆圈、移动目标等效果。数据加载不执行项目表现脚本，因此不会自动出现这些效果。
+
+Afterlight 的 `gameplay/presentation` 创建并更新圆圈与目的地网格，圆圈相对角色脚部定位、目的地使用路径点高度；它们遵循普通几何深度和材质规则。HumanEditor 只提交自己的多选轮廓，Play 时清空自身请求，Stop/场景切换后按恢复的实体重新提交。
 
 ## 验证入口
 

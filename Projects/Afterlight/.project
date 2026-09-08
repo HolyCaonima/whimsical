@@ -12,6 +12,7 @@
     "/Game/scripts/ui/animation_panel",
     "/Game/scripts/ui/minimap",
     "/Game/scripts/gameplay/hud",
+    "/Game/scripts/gameplay/presentation",
     "/Game/scripts/bootstrap"
   ]
 }

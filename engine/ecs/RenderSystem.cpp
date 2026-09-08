@@ -7,7 +7,6 @@ RenderSystem::RenderSystem(SceneStorage& storage, const std::vector<Material>& m
     s.changes.subscribe<RenderTransformChanged>([this](Entity e) { publishTransform(e); });
     s.changes.subscribe<EffectiveEnabledChanged>([this](Entity e) { publishAttributes(e); });
     s.changes.subscribe<RenderAttributesChanged>([this](Entity e) { publishAttributes(e); });
-    s.changes.subscribe<Interactable>([this](Entity e) { publishAttributes(e); });
     s.changes.subscribe<GeometryChanged>([this](Entity e) {
         if (auto r = s.registry.tryGet<Renderable>(e))
             s.renderScene.geometryChanged(r->slot);
@@ -26,7 +25,7 @@ void RenderSystem::add(Entity e, RenderComponent appearance, std::shared_ptr<con
     auto& r = s.registry.emplace<Renderable>(e, Renderable{appearance, std::move(mesh)});
     r.slot = s.renderScene.create(proxyTransform(t, r),
                                   {e, appearance.material, appearance.shape,
-                                   s.enabled(e) && appearance.visible, s.registry.has<Interactable>(e),
+                                   s.enabled(e) && appearance.visible,
                                    appearance.castShadow, appearance.overlay, appearance.overlayColor});
     if (r.mesh)
         s.changes.mark<GeometryChanged>(e);
@@ -58,7 +57,7 @@ void RenderSystem::publishAttributes(Entity e) {
     if (auto r = s.registry.tryGet<Renderable>(e))
         s.renderScene.setAttributes(r->slot,
                                     {e, r->appearance.material, r->appearance.shape,
-                                     s.enabled(e) && r->appearance.visible, s.registry.has<Interactable>(e),
+                                     s.enabled(e) && r->appearance.visible,
                                      r->appearance.castShadow, r->appearance.overlay, r->appearance.overlayColor});
 }
 void RenderSystem::setStaticMesh(Entity e, std::shared_ptr<const StaticMesh> mesh) {

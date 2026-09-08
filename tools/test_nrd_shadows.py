@@ -30,7 +30,7 @@ def create_project(tag):
     shader = dict(id=header["id"], path="/Game/shaders/Standard")
     _, scene = read_asset(ROOT / "Projects/Afterlight/Content/Maps/RainCourt.asset")
     template = copy.deepcopy(scene["entities"][0])
-    scene.update(scripts=[], entities=[], materials=[], materialAssets=[], player="", references={}, data={})
+    scene.update(scripts=[], entities=[], materials=[], materialAssets=[], references={}, data={})
     scene["camera"].update(target=[0, 0, 0], yaw=.6, pitch=.9, distance=13, fov=.62)
     for color in ([.5, .5, .5], [.2, .1, .05]):
         scene["materials"].append(dict(shader=shader,

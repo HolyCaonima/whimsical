@@ -81,15 +81,6 @@ void World::destroy(Entity e) {
         else
             ++it;
     storage_.registry.destroy(e);
-    if (gameplay.selected == e)
-        gameplay.selected = 0;
-    if (gameplay.hovered == e)
-        gameplay.hovered = 0;
-    if (gameplay.playerId == e) {
-        gameplay.playerId = 0;
-        gameplay.path.clear();
-        gameplay.hasDestination = false;
-    }
     batch.commit();
 }
 void World::clearScene() {
@@ -99,7 +90,6 @@ void World::clearScene() {
         if (registry().contains(e))
             destroy(e);
     resources = {};
-    gameplay = {};
     resetHistory = true;
     batch.commit();
 }
@@ -125,7 +115,7 @@ Entity World::pick(float x, float y, const Input& input, const Camera* cameraOve
     auto hit = physics().raycast(camera.eye(), rayDirection(camera, x, y, input), 160, filter);
     if (!hit || !registry().contains(hit->owner))
         return 0;
-    return has<Interactable>(hit->owner) || hit->owner == gameplay.playerId ? hit->owner : 0;
+    return hit->owner;
 }
 Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug, bool physicsDebug,
                       const RenderView* view) {
@@ -140,12 +130,16 @@ Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug,
     f.camera = view && view->camera ? *view->camera : resources.camera;
     f.viewport = (view ? view->rectangle : ViewRect{}).fit(input.width, input.height);
     f.input = input;
-    if (auto t = registry().tryGet<Transform>(gameplay.playerId))
-        f.player = t->world.position;
-    f.selected = gameplay.selected;
-    f.hovered = gameplay.hovered;
-    f.destination = gameplay.destination;
-    f.hasDestination = gameplay.hasDestination;
+    // Presentation requests never become authored components or gameplay state.
+    // Sorting and coalescing here gives GPU lookup logarithmic cost; later layers win.
+    std::map<uint32_t, vec4> outlines;
+    if (view)
+        for (const auto& outline : view->outlines)
+            if (auto r = registry().tryGet<Renderable>(outline.entity);
+                r && enabled(outline.entity) && r->appearance.visible && !r->appearance.overlay)
+                outlines[outline.entity] = outline.color;
+    for (const auto& [entity, color] : outlines)
+        f.outlines.push_back({entity, color});
     f.tick = tick;
     f.time = time;
     f.resetHistory = resetHistory;

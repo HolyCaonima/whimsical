@@ -127,7 +127,7 @@ function sceneChanged(){
         HE.camera=HE.copy(Engine.scene.resources().camera);
     }
     HE.playSelection=null;
-    HE.createTools();Engine.select(HE.selected.length?HE.selected[HE.selected.length-1]:0);
+    HE.createTools();HE.syncOutlines();
     HE.applyCamera();HE.refreshTree();HE.refreshDetails();HE.refreshStatus();
 }
 function fixedUpdate(dt,input){

@@ -34,6 +34,8 @@ class ScriptRuntime {
   public:
     ScriptRuntime(World&, AssetManager&, ui::UiCore* ui = nullptr, RuntimeHost* host = nullptr);
     RuntimeHost& host() const;
+    // Owned by this realm, retired with it. No global selection singleton.
+    std::vector<EntityOutline> outlines;
     void trackPixelRead(const std::string& id) {
         pixelReads_.insert(id);
     }

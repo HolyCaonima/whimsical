@@ -67,7 +67,6 @@ Json SceneResourceDescription::json() const {
              {"max", vector(navigation.max)},
              {"cellSize", navigation.cellSize},
              {"planeTolerance", navigation.planeTolerance}}},
-           {"player", player},
            {"references", Json::object()},
            {"data", data}};
     for (const auto& script : scripts)
@@ -84,7 +83,7 @@ Json SceneResourceDescription::json() const {
 Json SceneDocument::json() const {
     validate();
     auto j = SceneResourceDescription::json();
-    j["version"] = 7;
+    j["version"] = 8;
     j["entities"] = Json::array();
     for (const auto& e : entities)
         j["entities"].push(e.json());
@@ -110,7 +109,6 @@ SceneResourceDescription SceneResourceDescription::fromJson(const Json& j) {
     s.navigation.max = vector3(nav.at("max"));
     s.navigation.cellSize = float(nav.at("cellSize").number());
     s.navigation.planeTolerance = float(nav.at("planeTolerance").number());
-    s.player = j.at("player").string();
     s.data = j.at("data");
     for (const auto& r : j.at("references").members())
         s.references[r.first] = r.second.string();
@@ -119,10 +117,12 @@ SceneResourceDescription SceneResourceDescription::fromJson(const Json& j) {
 }
 SceneDocument SceneDocument::fromJson(const Json& j) {
     auto version = j.at("version").uint();
-    if (version < 3 || version > 7)
+    if (version < 3 || version > 8)
         throw std::invalid_argument("Unsupported Map version");
     SceneDocument s;
     static_cast<SceneResourceDescription&>(s) = SceneResourceDescription::fromJson(j);
+    if (version < 8 && j.contains("player") && !j.at("player").string().empty())
+        s.references.emplace("player", j.at("player").string());
     // Older maps import global lights as ordinary entities. New saves only use components.
     if (version < 6)
         for (const auto& l : j.at("lights").elements()) {
@@ -190,8 +190,6 @@ void SceneDocument::validate() const {
             t = p->second->components.find<SceneTransform>();
         }
     }
-    if (!player.empty() && !ids.count(player))
-        throw std::invalid_argument("Map player references missing Object");
     for (const auto& r : references)
         if (!ids.count(r.second))
             throw std::invalid_argument("Map reference targets missing Object: " + r.first);

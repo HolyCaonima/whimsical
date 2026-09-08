@@ -4,8 +4,6 @@ function initialize() {
     Race.initialize(data);
     Effects.initialize(data);
     CameraRig.reset(Race.cars[0]);
-    Engine.setPlayer(Race.cars[0].id);
-    Engine.select(0);
     Hud.initialize();
     Engine.log('MAPLE_READY: four cars, ' + Track.length.toFixed(1) + ' m circuit, 3 laps; opaque smoke.');
 }

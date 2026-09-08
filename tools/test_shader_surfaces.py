@@ -33,7 +33,7 @@ def write_asset(path, kind, payload, identity=None):
 
 def set_point_lights(scene, lights):
     """Migrate old diagnostic W/sr fixtures to v7 ECS radiant-power components."""
-    scene["version"] = 7
+    scene["version"] = 8
     scene.pop("lights", None)
     scene["entities"] = [e for e in scene["entities"] if "light" not in e["components"]]
     for l in lights:
@@ -70,7 +70,7 @@ def run():
     quad = write_asset(content / "Quad.asset", "StaticMesh", mesh)
     _, scene = read_asset(ROOT / "Projects/Afterlight/Content/Maps/RainCourt.asset")
     template = copy.deepcopy(scene["entities"][0])
-    scene.update(scripts=[], entities=[], materials=[], materialAssets=[], player="", references={}, data={})
+    scene.update(scripts=[], entities=[], materials=[], materialAssets=[], references={}, data={})
     scene["camera"].update(target=[0, 0, 0], yaw=.6, pitch=.9, distance=13, fov=.62)
     for name, color in (("Paving", [.65, .65, .65]), ("Standard", [.8, .2, .1]), ("Foliage", [.1, .8, .2])):
         scene["materials"].append(dict(shader=refs[name], properties=dict(baseColor=color), textures={}))

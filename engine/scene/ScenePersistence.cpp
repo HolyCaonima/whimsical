@@ -23,8 +23,6 @@ SceneDocument ScenePersistence::capture(const World& world, const AssetManager& 
         s.scripts.push_back(assets.resolve(script));
     s.data = r.data;
     s.references = r.references;
-    if (world.gameplay.playerId)
-        s.player = world.get<Identity>(world.gameplay.playerId).persistentId;
     for (auto e : world.registry().entities()) {
         if (!world.persistent(e))
             continue;
@@ -108,8 +106,6 @@ void ScenePersistence::instantiate(World& world, const SceneDocument& s, AssetMa
     };
     for (const auto& o : s.entities)
         install(o);
-    world.gameplay.playerId = s.player.empty() ? 0 : world.findObject(s.player);
-    world.gameplay.selected = world.gameplay.playerId;
     world.resetHistory = true;
 }
 void ScenePersistence::load(World& world, AssetManager& assets, const AssetPath& path) {
@@ -130,7 +126,6 @@ void ScenePersistence::restore(World& world, AssetManager& assets, const SceneDo
         auto header = assets.descriptor(ref.path);
         if (header.type != "Map")
             throw std::invalid_argument("Scene source must be a Map asset");
-        staged.gameplay.message = header.name;
     }
     replace(world, staged, ref);
 }
@@ -147,7 +142,6 @@ void ScenePersistence::replace(World& world, World& staged, const AssetRef& sour
     world.storage_.jointColliders.exchangeBindings(staged.storage_.jointColliders);
     world.objectIds_.swap(staged.objectIds_);
     std::swap(world.resources, staged.resources);
-    std::swap(world.gameplay, staged.gameplay);
     world.resources.mapAsset = source;
     world.resetHistory = true;
     for (auto e : oldEntities) {
@@ -199,8 +193,6 @@ static SceneResourceDescription resourceDocument(const World& world, const Asset
     document.scripts = r.scripts;
     document.references = r.references;
     document.data = r.data;
-    document.player =
-        world.gameplay.playerId ? world.get<Identity>(world.gameplay.playerId).persistentId : "";
     return document;
 }
 Json ScenePersistence::resources(const World& world, const AssetManager& assets) {
@@ -218,8 +210,6 @@ void ScenePersistence::setResources(World& world, AssetManager& assets, const Js
     for (auto e : world.registry().view<Renderable>())
         if (world.get<Renderable>(e).appearance.material >= document.materials.size())
             throw std::invalid_argument("Live entity references a material outside the new table");
-    if (!document.player.empty() && !world.findObject(document.player))
-        throw std::invalid_argument("Scene player references a missing entity");
     for (const auto& ref : document.references)
         if (!world.findObject(ref.second))
             throw std::invalid_argument("Scene reference targets a missing entity: " + ref.first);
@@ -230,7 +220,6 @@ void ScenePersistence::setResources(World& world, AssetManager& assets, const Js
         if (i < next.materials.size())
             next.transientMaterials.insert(i);
     r = std::move(next);
-    world.gameplay.playerId = document.player.empty() ? 0 : world.findObject(document.player);
     world.resetHistory = true;
 }
 AssetRef ScenePersistence::save(World& world, AssetManager& assets, const AssetPath& path,

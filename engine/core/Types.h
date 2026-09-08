@@ -51,13 +51,12 @@ struct ProxyAttributes {
     uint32_t material = 0;
     Shape shape = Shape::Box;
     bool visible = true;
-    bool interactable = false;
     bool castShadow = true;
     bool overlay = false;
     vec3 overlayColor{1};
     bool operator==(const ProxyAttributes& o) const {
         return entity == o.entity && material == o.material && shape == o.shape && visible == o.visible &&
-               interactable == o.interactable && castShadow == o.castShadow && overlay == o.overlay &&
+               castShadow == o.castShadow && overlay == o.overlay &&
                overlayColor == o.overlayColor;
     }
     bool operator!=(const ProxyAttributes& o) const {
@@ -79,7 +78,7 @@ struct SceneDelta {
     // Appeared, disappeared, or reused: rewrite the instance whole, geometry included.
     std::vector<uint32_t> structural;
     std::vector<uint32_t> moved;      // transform only, the fast path
-    std::vector<uint32_t> attributes; // mesh, material, visibility, interactable
+    std::vector<uint32_t> attributes; // mesh, material, visibility
     // Bumped when the slot count grows or a slot rebinds to different geometry, the one
     // kind of change an incremental acceleration structure update cannot absorb. It is a
     // running count rather than a per-delta flag so that it survives snapshots a consumer
@@ -128,9 +127,14 @@ struct ViewRect {
 };
 // A host-owned observation of a scene. Neither the rectangle nor an override camera is
 // authored scene data. The initial single-view host follows the map camera by default.
+struct EntityOutline {
+    uint32_t entity = 0;
+    vec4 color{1}; // Display-space RGBA; application chooses all visual policy.
+};
 struct RenderView {
     ViewRect rectangle;
     std::optional<Camera> camera;
+    std::vector<EntityOutline> outlines;
 };
 struct AnimationInspection {
     uint32_t entity = 0;
@@ -182,11 +186,10 @@ struct Frame {
     Camera camera;
     ViewRect viewport;
     Input input;
-    vec3 player{0}, destination{0};
-    uint32_t selected = 0, hovered = 0;
+    std::vector<EntityOutline> outlines; // Sorted by entity, unique, visible scene geometry only.
     uint64_t tick = 0;
     double time = 0;
-    bool resetHistory = false, hasDestination = false;
+    bool resetHistory = false;
     int debugView = 0;
 };
 // Snapshots are immutable once published and shared by reference count, so neither

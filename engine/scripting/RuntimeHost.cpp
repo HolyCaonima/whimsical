@@ -8,6 +8,14 @@ RuntimeHost::RuntimeHost(World& world, AssetManager& assets, ui::UiCore* ui)
     simulation_ = realm();
 }
 RuntimeHost::~RuntimeHost() = default;
+RenderView RuntimeHost::renderView() const {
+    auto result = view;
+    if (simulation_)
+        result.outlines.insert(result.outlines.end(), simulation_->outlines.begin(), simulation_->outlines.end());
+    if (application_)
+        result.outlines.insert(result.outlines.end(), application_->outlines.begin(), application_->outlines.end());
+    return result;
+}
 std::optional<std::string> RuntimeHost::openFileDialog(const OpenFileDialogOptions& options) const {
     if (!openFileDialog_)
         throw std::runtime_error("File selection is unavailable in this host");

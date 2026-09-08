@@ -13,14 +13,12 @@ var Controller = {
         }
         if (input.pressed[9]) {
             this.selected = !this.selected;
-            Engine.select(this.selected ? Locomotion.id : 0);
             if (!this.selected)
                 Locomotion.stop();
         }
         if (input.leftPressed || input.rightPressed) {
             if (input.picked === Locomotion.id) {
                 this.selected = true;
-                Engine.select(Locomotion.id);
             } else if (this.selected) {
                 this.pending = 0;
                 if (input.picked && Interactions.objects[input.picked])
@@ -51,7 +49,6 @@ var Controller = {
                 }
             }
         }
-        Engine.status(Locomotion.state, this.message);
     },
     interact : function(id) {
         var item = Interactions.objects[id];

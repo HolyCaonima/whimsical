@@ -76,7 +76,7 @@ var doc=Engine.ui.createDocument('<rml><head><style>body{font-family:LatoLatin;w
 var button=doc.getElementById('action');
 var token=button.on('click',function(e){
     if(e.target.getAttribute('id')!=='action')throw Error('event target');
-    clicks++; Engine.status('UI','clicked'); button.setText('Clicked');
+    clicks++; Engine.setSceneData({state:'UI',message:'clicked'}); button.setText('Clicked');
 });
 doc.getElementById('edit').on('change',function(e){changes++;});
 if(doc.querySelectorAll('button').length!==1)throw Error('selector list');
@@ -106,7 +106,7 @@ var stale=false;try{child.setText('gone');}catch(e){stale=true;}if(!stale)throw 
         scripts.processUiInput(click);
         check(click.pointerCaptured && !click.leftPressed && click.wheel == 0,
               "UI click/wheel must not reach gameplay");
-        check(world.gameplay.state == "UI" && world.gameplay.message == "clicked",
+        check(world.resources.data.at("state").string() == "UI" && world.resources.data.at("message").string() == "clicked",
               "JS UI callback must mutate actual gameplay");
         scripts.execute("if(clicks!==1)throw Error('click count'); button.off(token);");
         Input again;

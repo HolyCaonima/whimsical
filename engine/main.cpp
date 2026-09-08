@@ -451,8 +451,9 @@ int main(int argc, char** argv) {
             Frame frame;
             {
                 CpuScope scope("Build Snapshot / Console View");
+                auto view = scripts.renderView();
                 frame = world.snapshot(window.input(), tick, scripts.simulationTime(), settings.debugView(),
-                                       settings.physicsDebug(), &scripts.view);
+                                       settings.physicsDebug(), &view);
                 settings.decorate(frame);
                 frame.gpuProfileRequest = gpuProfileRequest;
                 frame.console = console.view();
@@ -581,7 +582,7 @@ int main(int argc, char** argv) {
                     publish();
                 if (now - lastTitle > std::chrono::milliseconds(500)) {
                     std::ostringstream title;
-                    title << "AFTERLIGHT | The Rain Court | " << world.gameplay.state << " | ";
+                    title << project.name() << " | ";
                     const double fps = renderFps.load();
                     if (!window.input().width || !window.input().height)
                         title << "Paused (minimized)";

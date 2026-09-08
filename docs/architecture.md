@@ -24,7 +24,7 @@ uiCore 在主线程拥有 RmlUi Context、文档、DOM 和输入。EngineUi 只�
 
 `RenderScene` 是常驻的、按槽位寻址的可绘制物描述，`World` 之外的渲染状态只经它流转。只有 `Renderable` 组件持有派生的 `slot` 槽位；槽位在对象销毁后进入自由列表待复用，单张运行场景内 `proxies_` 只增不减（整张地图替换会接收新场景的槽表），因此**槽位在所属 proxy 生命周期内稳定，销毁后可以复用**，可以直接当作 GPU instance buffer、TLAS instance 和 `gl_InstanceIndex` 的下标，三者天然对齐，无需任何映射表。
 
-proxy 拆成两半，因为它们的变化频率相差一到两个数量级：`ProxyTransform`（位置、朝向、缩放）几乎每帧都动，`ProxyAttributes`（网格、材质、可见性、可交互）很少动。这个划分对应到 `GpuInstance` 的内存布局上——前 128 字节是 `model` 与 `previousModel`，后 16 字节是 `info`——所以变换更新是一条**只写前 128 字节的快速路径**，不碰属性、不重建 proxy、不需要改动 shader。
+proxy 拆成两半，因为它们的变化频率相差一到两个数量级：`ProxyTransform`（位置、朝向、缩放）几乎每帧都动，`ProxyAttributes`（网格、材质、可见性、叠加颜色）很少动。这个划分对应到 `GpuInstance` 的内存布局上——前 128 字节是 `model` 与 `previousModel`，后 16 字节是 `info`——所以变换更新是一条**只写前 128 字节的快速路径**，不碰属性、不重建 proxy、不需要改动 shader。
 
 `RenderSystem` 的每一处渲染可见改动都收口到 `publishTransform` / `publishAttributes` 两个函数，`RenderScene` 逐槽做值比较后才记脏，因此"设置成原值"不会产生事件。`publish()` 交出一个 `SceneDelta`：结构变化、移动、属性三张槽位表，外加 `base`／`revision` 构成的链，消费者镜像正好落在 `base` 上才能应用增量，否则重扫。
 
@@ -75,9 +75,8 @@ proxy 拆成两半，因为它们的变化频率相差一到两个数量级：`P
 | `Engine.parent(id,parent,keepWorld)` / `renderScale(id,scale)` | 设置刚体层级／独立修改显示尺寸 |
 | `Engine.move(id,dx,dz)` | 执行碰撞扫掠和滑移，返回实际位置 |
 | `Engine.findPath(id,target)` | 用角色物理胶囊尺寸、实际地面与净空执行 A* 和路径平滑 |
-| `Engine.setPlayer(id)` / `select(id)` | 指定控制角色与选择状态 |
+| `Engine.view.outlines([{entity,color}])` | 当前脚本 realm 显式提交实体轮廓；color 为显示空间 RGBA |
 | `Engine.camera(x,y,z,yaw,pitch,distance)` | 提交相机状态 |
-| `Engine.showPath(points)` / `status(state,message)` | 提交指令反馈 |
 | `Engine.solid(id,bool)` / `setMaterial(id,index)` | 玩法引起的碰撞／外观变化 |
 | `Engine.lightIntensity(id,value)` | 修改光源组件强度 |
 | `Engine.readJson(path)` | 经 AssetManager 从虚拟路径读取 Data 资产 |

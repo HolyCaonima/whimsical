@@ -1,4 +1,4 @@
-#include "TestProject.h"
+#include "TestGameplay.h"
 #include "core/World.h"
 #include "ecs/DataComponent.h"
 #include "core/FrameMailbox.h"
@@ -125,13 +125,11 @@ static void hierarchy() {
     w.transforms.setParent(child, 0);
     check(near(w.get<Transform>(child).world.position, worldPose.position), "Unparent keeps world transform");
     w.transforms.setParent(child, parent);
-    w.gameplay.playerId = w.gameplay.selected = w.gameplay.hovered = child;
     w.resources.references["child"] = w.get<Identity>(child).persistentId;
     w.destroy(parent);
     check(!w.registry().contains(child) && !w.physics().contains(joint) && w.registry().contains(unrelated),
           "Subtree destruction releases children and attachments only");
-    check(!w.gameplay.playerId && !w.gameplay.selected && !w.gameplay.hovered &&
-              w.resources.references.empty(),
+    check(w.resources.references.empty(),
           "Destruction clears persistent references and selection");
 }
 class RestSolver : public animation::Solver {
@@ -157,7 +155,7 @@ static void animationLifetime() {
     check(!w.has<JointPose>(e), "Animator removal releases derived pose");
     RuntimeHost scripts(w, testAssets());
     scripts.initialize(testProject());
-    auto player = w.gameplay.playerId;
+    auto player = testPlayer(w);
     auto before = w.snapshot({}, 1, 0, 0);
     w.motion.setCharacterHeight(player, 1.2f);
     auto crouched = w.snapshot({}, 1, 0, 0);
@@ -649,12 +647,16 @@ static void legacyImport() {
                 {"joints", Json::array()},
                 {"jointColliders", Json::array()}};
     legacy["objects"] = Json::array({object});
+    legacy["player"] = object.at("id");
     auto migrated = SceneDocument::fromJson(legacy);
+    check(migrated.references.at("player") == object.at("id").string() &&
+              !migrated.json().contains("player"),
+          "Legacy player imports as an ordinary named reference only");
     check(migrated.entities.size() == 1 && migrated.entities[0].components.find<SceneTransform>() &&
               migrated.entities[0].components.find<SceneRender>() &&
               migrated.entities[0].components.find<SceneCollider>() &&
               !migrated.entities[0].components.find<SceneJoints>() &&
-              migrated.json().at("version").uint() == 7,
+              migrated.json().at("version").uint() == 8,
           "Legacy import preserves authored collider semantics while saving optional v6 components");
 }
 int main() {

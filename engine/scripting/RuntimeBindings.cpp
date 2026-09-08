@@ -51,6 +51,7 @@ enum Op {
     ViewSet,
     ViewReset,
     ViewPixel,
+    ViewOutlines,
     EntityInfo,
     Rename,
     Persistent,
@@ -215,6 +216,26 @@ duk_ret_t dispatch(duk_context* c) {
     case SimulationState:
         push(c, {{"running", host.running()}, {"paused", host.paused()}, {"time", host.simulationTime()}});
         return 1;
+    case ViewOutlines: {
+        std::vector<EntityOutline> next;
+        auto request = json(c, 0);
+        for (const auto& item : request.elements()) {
+            auto entity = item.at("entity").uint();
+            world.registry().require(entity);
+            const auto& rgba = item.at("color").elements();
+            if (rgba.size() != 4)
+                throw std::invalid_argument("Outline color requires RGBA");
+            vec4 color;
+            for (int i = 0; i < 4; ++i) {
+                color[i] = float(rgba[i].number());
+                if (!std::isfinite(color[i]) || color[i] < 0 || color[i] > 1)
+                    throw std::invalid_argument("Outline color must be in [0,1]");
+            }
+            next.push_back({entity, color});
+        }
+        stored<ScriptRuntime>(c, "runtime").outlines = std::move(next);
+        return 0;
+    }
     case ViewSet: {
         auto value = json(c, 0);
         auto next = host.view;
@@ -310,6 +331,7 @@ void installRuntimeBindings(duk_context* c) {
     duk_push_object(c);
     bind(c, "get", ViewGet);
     bind(c, "set", ViewSet);
+    bind(c, "outlines", ViewOutlines);
     bind(c, "reset", ViewReset);
     bind(c, "pixel", ViewPixel);
     duk_put_prop_string(c, -2, "view");

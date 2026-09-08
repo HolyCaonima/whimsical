@@ -19,6 +19,11 @@ HE.editable = function () {
 };
 HE.entities = function () { return Engine.entities([]).filter(function (e) { return Engine.entity(e).effectivePersistent; }); };
 HE.ids = function () { return HE.selected.filter(Engine.alive).map(function (e) { return Engine.entity(e).id; }); };
+HE.syncOutlines = function () {
+    Engine.view.outlines(Engine.simulation.state().running ? [] : HE.selected.filter(Engine.alive).map(function(e) {
+        return {entity:e, color:[0.55,1,0.86,1]};
+    }));
+};
 HE.select = function (e, additive) {
     HE.cancelPick();
     if (!additive) HE.selected = [];
@@ -26,7 +31,7 @@ HE.select = function (e, additive) {
         var i = HE.selected.indexOf(e);
         if (i >= 0) HE.selected.splice(i, 1); else HE.selected.push(e);
     }
-    Engine.select(HE.selected.length ? HE.selected[HE.selected.length - 1] : 0);
+    HE.syncOutlines();
     HE.paintSelection(); HE.refreshDetails();
 };
 HE.checkpoint = function () { return {snapshot: Engine.scene.capture(), selection: HE.ids(), revision: HE.revision}; };
@@ -92,7 +97,7 @@ HE.openProject = function (project) {
         }else{
             var snapshot=Engine.scene.capture(),document=snapshot.document;
             snapshot.source=null;document.entities=[];document.materials=[];document.materialAssets=[];
-            document.scripts=[];document.player='';document.references={};document.data={};
+            document.scripts=[];document.references={};document.data={};
             HE.pending={kind:'new'};Engine.scene.restore(snapshot);
         }
         HE.refreshStatus();
@@ -113,7 +118,7 @@ HE.newLevel = function () {
     HE.unsaved(function () {
         // Preserve the target Content's material library so new objects stay source-local.
         var snap = Engine.scene.capture();
-        snap.document.entities = []; snap.document.player = ''; snap.document.references = {};
+        snap.document.entities = []; snap.document.references = {};
         snap.document.scripts = []; snap.document.data = {};
         HE.pending = {kind:'new'}; Engine.scene.restore(snap);
     });
@@ -156,7 +161,7 @@ HE.paste = function () {
             }
             selected.push(Engine.create({id:mapping[row.id], name:row.name + ' Copy', enabled:row.enabled, components:c}));
         });
-        HE.selected = selected; Engine.select(selected[selected.length - 1]);
+        HE.selected = selected; HE.syncOutlines();
     });
 };
 HE.duplicate = function () { HE.copySelection(); HE.paste(); };
@@ -164,7 +169,7 @@ HE.remove = function () {
     if (!HE.selected.length) return;
     HE.command('Delete entities', function () {
         HE.subtree(HE.roots(HE.selected)).reverse().forEach(function(r){Engine.destroy(r.entity);});
-        HE.selected = []; Engine.select(0);
+        HE.selected = []; HE.syncOutlines();
     });
 };
 HE.add = function (kind, asset) {
@@ -178,7 +183,7 @@ HE.add = function (kind, asset) {
             if (kind === 'Rect') { c.light.width = 2; c.light.height = 1; }
             if (kind === 'CapsuleLight') c.light = {type:'capsule', color:[1,1,1], intensity:500,radius:0.2,length:1};
         }
-        HE.selected = [Engine.create({name:kind, components:c})]; Engine.select(HE.selected[0]);
+        HE.selected = [Engine.create({name:kind, components:c})]; HE.syncOutlines();
     });
 };
 HE.setParent = function (parent) {
@@ -194,6 +199,7 @@ HE.play = function () {
     if (Engine.simulation.state().running) return;
     HE.playSelection = HE.ids();
     HE.playSaveTarget = HE.source;
+    Engine.view.outlines([]);
     Engine.view.set({camera:null});
     var source=Engine.scene.info().source;
     Engine.simulation.play({scripts:source?(HE.programs[source.source]||[]):HE.publicScripts}); HE.log('Play — Stop restores the authored scene');

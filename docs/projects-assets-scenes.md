@@ -166,15 +166,15 @@ clearCache、重扫、保存不销毁 World、Solver 或 Frame 持有的旧资�
 
 ## Scene Save/Load
 
-SceneDocument 保存：对象 ID/显示名/位置/旋转/启用/交互；RenderComponent 的 primitive、scale/offset/animationScale、材质索引和可见性；主碰撞体 shape/motion/layer/查询属性；关节碰撞体 joint/local/shape/blocking；动画与 mesh 引用、root-motion 选项、rootOffset 和实例属性；材质值表、灯表、相机、导航（含 planeTolerance）；player Object ID、命名 Object 引用、Map 脚本引用和显式 gameplay JSON data。
+SceneDocument 保存：对象 ID/显示名/位置/旋转/启用/交互；RenderComponent 的 primitive、scale/offset/animationScale、材质索引和可见性；主碰撞体 shape/motion/layer/查询属性；关节碰撞体 joint/local/shape/blocking；动画与 mesh 引用、root-motion 选项、rootOffset 和实例属性；材质值表、灯表、相机、导航（含 planeTolerance）；命名 Object 引用、Map 脚本引用和显式 gameplay JSON data。
 
-Map 现写入 `version: 7`，以 `entities[].components` 保存实际存在的能力与父级持久 ID，变换保存 local。版本 3–6 在读取边界转换，1/2 仍被拒绝；ALAS1 资产信封版本仍为 1。六张现有地图、生成器及验证脚本已同步迁移，详细字段、组件依赖和脚本入口见 [ECS 架构](ecs.md)。
+Map 现写入 `version: 8`，以 `entities[].components` 保存实际存在的能力与父级持久 ID，变换保存 local。版本 3–7 在读取边界转换；旧版 player 字段仅在导入时转为 references.player，1/2 仍被拒绝；ALAS1 资产信封版本仍为 1。现有地图、生成器及验证脚本已同步迁移，详细字段、组件依赖和脚本入口见 [ECS 架构](ecs.md)。
 
 材质可作为 Map 内嵌值；复用的材质是注册的 Material 资产。Shader 与 Texture 按持久 ID 解析。CPU 材质不保存 descriptor index，World 和 Frame 仅持有参数值与不可变资产引用，纹理绑定由 renderer 分配。
 
 capture 跳过已删除对象，删除对象也移除其命名引用。未注册的自定义 Solver/mesh 无法重建，保存明确报错。save 始终把 SceneDocument 写成 inline payload；对同一 Map 保留 ID，Save As 创建新 Map ID，保留 Object ID。无 Solver 的手动关节姿态可保存；有 Solver 的姿态重新求解。选择、悬停、路径命令、计时器、推理序列、IK 历史、RenderDelta、GPU 句柄、物理缓存与 JS 闭包不序列化。
 
-load 先在临时 World 检查全部依赖、骨架绑定、动画属性、关节碰撞体和物理形状；成功后建立身份和层级，再经各系统挂接实际组件，恢复 player 与命名引用。内容预检失败保留原场景。加载只在隔离 World 中准备一次组件及后端，再交换场景存储；内存耗尽等分配失败不承诺事务回滚。
+load 先在临时 World 检查全部依赖、骨架绑定、动画属性、关节碰撞体和物理形状；成功后建立身份和层级，再经各系统挂接实际组件，恢复命名引用。内容预检失败保留原场景。加载只在隔离 World 中准备一次组件及后端，再交换场景存储；内存耗尽等分配失败不承诺事务回滚。
 
 显式调用 `RuntimeHost::initialize(project, mount)` 或游戏导航 `loadScene` 才启动场景程序。宿主在场景装载后创建场景 realm，依次载入同源 Project 公共脚本、Map 脚本，调用可选 initialize。数据入口 `Engine.scene.load` 不启动程序；常驻 `hostScripts` 和它的 UI 在场景替换时保留。Rain Court 的 initialize 只绑定控制、同伴、相机与交互。供电状态由 setSceneData 显式更新，门位置／碰撞和缓存材质随组件保存，因此加载后能继续交互。脚本初始化错误向调用方报告，此时 Map 已加载，不回滚整个 VM。
 

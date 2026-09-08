@@ -7,6 +7,15 @@ layout(local_size_x = 8, local_size_y = 8) in;
 vec3 aces(vec3 c) {
     return clamp((c * (2.51 * c + .03)) / (c * (2.43 * c + .59) + .14), 0, 1);
 }
+vec4 outlineColor(uint entity) {
+    uint lo = 0, hi = outlineCount.x;
+    while (lo < hi) {
+        uint mid = lo + (hi - lo) / 2;
+        if (outlines[mid].identity.x < entity) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo < outlineCount.x && outlines[lo].identity.x == entity ? outlines[lo].color : vec4(0);
+}
 void main() {
     ivec2 p = ivec2(gl_GlobalInvocationID.xy);
     if (!inBounds(p))
@@ -42,18 +51,8 @@ void main() {
         float fog = 1 - exp(-length(g.eyeTime.xyz - s.p) * .007);
         color = mix(color, vec3(.12, .17, .18), fog * .4);
     }
-    if (s.id != 0 && s.n.y > .8 && s.p.y < .12) {
-        float ring = abs(length(s.p.xz - g.player.xz) - .68);
-        if (g.player.w > 0 && ring < .035)
-            color = mix(color, vec3(.38, .94, .79), .9);
-        if (g.destination.w > 0) {
-            float d = length(s.p.xz - g.destination.xz), r = .32 + .07 * sin(g.eyeTime.w * 5);
-            if (abs(d - r) < .025 || d < .055)
-                color = vec3(.95, .77, .36);
-        }
-    }
-    // Selected and interactable silhouettes, computed from the G-buffer entity IDs.
-    if (debug == 0) {
+    // Explicit presentation requests; geometry IDs carry no gameplay meaning.
+    if (debug == 0 && outlineCount.x > 0) {
         for (int i = 0; i < 4; i++) {
             ivec2 q = clamp(p + ivec2(i == 0   ? 1
                                       : i == 1 ? -1
@@ -63,10 +62,13 @@ void main() {
                                                : 0),
                             ivec2(0), ivec2(g.resolution.xy) - 1);
             uint id = uint(imageLoad(gPosition, q).w + .5);
-            if (g.player.w > 0 && id == uint(g.player.w) && s.id != id)
-                color = vec3(.55, 1, .86);
-            if (g.resolution.w > 0 && id == uint(g.resolution.w) && s.id != id)
-                color = vec3(1, .8, .38);
+            if (id != 0 && s.id != id) {
+                vec4 outline = outlineColor(id);
+                if (outline.a > 0) {
+                    color = mix(color, outline.rgb, outline.a);
+                    break;
+                }
+            }
         }
     }
     color *= 1 - .18 * pow(length((uv - .5) * 1.2), 2);

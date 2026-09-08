@@ -1,5 +1,5 @@
 #include "TestEntities.h"
-#include "TestProject.h"
+#include "TestGameplay.h"
 #include "scene/ScenePersistence.h"
 #include "scripting/RuntimeHost.h"
 #include "core/FrameMailbox.h"
@@ -222,7 +222,7 @@ static void scene(const fs::path& directory) {
     scripts.initialize(Project(directory));
     check(ScenePersistence::capture(world, assets).json() == original->scene.json(),
           "Load/capture must round-trip the authored Map exactly");
-    auto oldPlayer = world.gameplay.playerId;
+    auto oldPlayer = testPlayer(world);
     auto oldBody = world.get<Collider>(oldPlayer).body;
     auto objectPath = world.objectPath(oldPlayer);
     check(ObjectPath(objectPath.string()).object == world.get<Identity>(oldPlayer).persistentId,
@@ -267,11 +267,11 @@ static void scene(const fs::path& directory) {
     mailbox.acquire(delivered, cursor);
     auto mesh = delivered->skins[0].mesh;
     scripts.loadScene(saved);
-    check(world.gameplay.playerId != oldPlayer && !world.physics().contains(oldBody),
+    check(testPlayer(world) != oldPlayer && !world.physics().contains(oldBody),
           "Reload must invalidate old Entity and physics identities");
     rejects([&] { world.registry().require(oldPlayer); },
             "A stale Entity must never target a newly loaded Object");
-    check(world.resolveObject(savedObjectPath) == world.gameplay.playerId && !world.findObject(deletedId),
+    check(world.resolveObject(savedObjectPath) == testPlayer(world) && !world.findObject(deletedId),
           "Object identity must survive while deleted objects stay absent");
     check(ScenePersistence::capture(world, assets).json() == expected,
           "All persistent components and gameplay data must round-trip");
@@ -296,7 +296,7 @@ static void scene(const fs::path& directory) {
     bad.entities[0].id = bad.entities[1].id;
     rejects([&] { bad.json(); }, "Duplicate Object IDs must be rejected");
     bad = original->scene;
-    bad.player = newPersistentId();
+    bad.references["player"] = newPersistentId();
     rejects([&] { bad.json(); }, "Dangling persistent references must be rejected");
     bad = original->scene;
     for (auto& o : bad.entities)
@@ -308,10 +308,10 @@ static void scene(const fs::path& directory) {
     fixture(directory / "Content/Maps/Broken.asset", badHeader, bad.json().dump());
     assets.scan();
     auto stateBefore = ScenePersistence::capture(world, assets).json();
-    auto entityBefore = world.gameplay.playerId;
+    auto entityBefore = testPlayer(world);
     rejects([&] { scripts.loadScene(AssetPath("/Game/Maps/Broken")); },
             "Missing dependency must reject scene loading");
-    check(world.gameplay.playerId == entityBefore &&
+    check(testPlayer(world) == entityBefore &&
               ScenePersistence::capture(world, assets).json() == stateBefore,
           "Dependency failure must leave live scene untouched");
     bool failNotification = true;
@@ -330,7 +330,7 @@ static void scene(const fs::path& directory) {
     scripts.execute(
         "if(typeof oldRealmSentinel !== 'undefined')throw Error('old realm survived committed scene');"
         "if(Locomotion.id !== Engine.sceneObject('player'))throw Error('new realm not initialized');");
-    check(world.gameplay.playerId != entityBefore,
+    check(testPlayer(world) != entityBefore,
           "Publication failure cannot mix the old realm with the new World");
     // Reopen the copied project and load the saved asset using a different registry/World.
     AssetManager reopened{Project(directory / ".project").content()};
@@ -346,7 +346,7 @@ static void scene(const fs::path& directory) {
     check(Json::parse(reopenedDocument) == expected,
           "Scene must load independently from a relocated project directory");
     world.clearScene();
-    check(world.physics().size() == 0 && world.gameplay.playerId == 0,
+    check(world.physics().size() == 0 && testPlayer(world) == 0,
           "Unload must release all bodies and animation attachments");
     SceneDocument empty;
     auto emptyHeader = header("Map");
@@ -447,7 +447,7 @@ static void gardenNavigation() {
     auto frame = world.snapshot({}, 0, 0, 0);
     check(frame.staticMeshes.size() > 400 && !frame.materials.empty(),
           "Garden must instantiate the authored kit and texture channels");
-    auto path = world.motion.findPath(world.gameplay.playerId, vec3(-3.5f, 0, -2));
+    auto path = world.motion.findPath(testPlayer(world), vec3(-3.5f, 0, -2));
     check(path.size() > 1, "Garden player must find a route around the fountain to the pergola");
     auto scene = ScenePersistence::capture(world, assets);
     check(SceneDocument::fromJson(scene.json()).json() == scene.json(),

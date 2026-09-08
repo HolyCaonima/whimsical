@@ -55,12 +55,12 @@ SceneResources::SceneResources(Registry& registry) {
     mat4 inverseViewProjection;
     vec4 eyeTime;
     vec4 resolution;
-    vec4 player;
-    vec4 destination;
     vec4 renderSettings;
     vec4 previousEye;
     uvec4 counts;)"};
     globals = registry.declare(inShared(std::move(globalBlock)));
+    outlines = registry.declare(storage("outlines", Lifetime::External, "Outlines",
+        "    uvec4 outlineCount;\n    OutlineEntry outlines[];", nullptr, true));
     instances = registry.declare(inShared(
         storage("instances", Lifetime::External, "Instances", "    Instance instances[];", nullptr, true)));
     materials = registry.declare(inShared(

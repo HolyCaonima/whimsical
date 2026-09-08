@@ -1,7 +1,7 @@
 ALAS1
 {"id": "4bc789063fa75b0098d737284a1c7a53", "name": "PhysicalLights", "version": 1, "type": "Map", "storage": "embedded", "metadata": {}}
 {
-  "version": 7,
+  "version": 8,
   "entities": [
     {
       "id": "839c3ebbc2c95f49a01b0fa8c0bc027c",
@@ -408,7 +408,6 @@ ALAS1
     "cellSize": 0.5,
     "planeTolerance": 0.03
   },
-  "player": "",
   "references": {},
   "data": {}
 }

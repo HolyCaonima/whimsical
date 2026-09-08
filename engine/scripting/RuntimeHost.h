@@ -42,6 +42,7 @@ class RuntimeHost {
 
   public:
     RenderView view;
+    RenderView renderView() const;
     RuntimeHost(World&, AssetManager&, ui::UiCore* = nullptr);
     ~RuntimeHost();
     RuntimeHost(const RuntimeHost&) = delete;

@@ -46,7 +46,6 @@ struct SceneResourceDescription {
     std::map<uint32_t, AssetRef> materialAssets;
     Camera camera;
     NavigationSettings navigation;
-    std::string player;
     std::map<std::string, std::string> references;
     Json data = Json::object();
     Json json() const;

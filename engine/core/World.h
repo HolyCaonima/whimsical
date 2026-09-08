@@ -17,13 +17,6 @@ struct SceneResources {
     Camera camera;
     NavigationSettings navigation;
 };
-struct GameplayState {
-    Entity playerId = 0, selected = 0, hovered = 0;
-    std::string state = "Idle", message = "The Rain Court";
-    vec3 destination{0};
-    bool hasDestination = false;
-    std::vector<vec3> path;
-};
 // Composition root and scene lifecycle. Domain operations belong to systems.
 class World {
     friend class ScenePersistence;
@@ -50,7 +43,6 @@ class World {
     }
     SceneResources resources;
     RenderTargetAccess renderTargets;
-    GameplayState gameplay;
     bool resetHistory = true;
     RenderSystem render{storage_, resources.materials};
     TransformSystem transforms{storage_};

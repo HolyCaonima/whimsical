@@ -22,13 +22,11 @@ var Locomotion = {
             return false;
         }
         this.path = route;
-        Engine.showPath(route);
         this.interactionTime = 0;
         return true;
     },
     stop : function() {
         this.path = [];
-        Engine.showPath([]);
         this.interactionTime = 0;
         this.facing = null;
     },
@@ -67,7 +65,6 @@ var Locomotion = {
                 this.path = [];
                 Controller.pending = 0;
                 this.facing = null;
-                Engine.showPath([]);
                 dx = x * Math.cos(CameraRig.yaw) + z * Math.sin(CameraRig.yaw);
                 dz = -x * Math.sin(CameraRig.yaw) + z * Math.cos(CameraRig.yaw);
             }
@@ -78,7 +75,6 @@ var Locomotion = {
             distance = Math.sqrt(dx * dx + dz * dz);
             if (distance < s.arrivalRadius) {
                 this.path.shift();
-                Engine.showPath(this.path);
                 if (this.path.length) {
                     dx = this.path[0].x - p.x;
                     dz = this.path[0].z - p.z;

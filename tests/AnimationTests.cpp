@@ -1,5 +1,5 @@
 #include "TestEntities.h"
-#include "TestProject.h"
+#include "TestGameplay.h"
 #include "animation/Animation.h"
 #include "animation/ai4animation/Controller.h"
 #include "core/World.h"
@@ -116,7 +116,7 @@ static void scriptIntegration() {
     World world;
     RuntimeHost script(world, testAssets());
     script.initialize(testProject());
-    auto id = world.gameplay.playerId;
+    auto id = testPlayer(world);
     script.execute("Engine.animationDetach(" + std::to_string(id) + ");Engine.animation(" +
                    std::to_string(id) +
                    ", '/Game/animations/ai4animation/biped/controller', {rootOffset:{y:-1}});"

@@ -1,7 +1,7 @@
 ALAS1
 {"id":"c5e7e5dfae9d7ce5df60c9c0f61feead","type":"Map","name":"Workbench","version":1,"storage":"embedded","metadata":{}}
 {
-  "version": 7,
+  "version": 8,
   "entities": [
     {
       "id": "a1a9d015d50c94e31328aa30268ba5b5",
@@ -213,7 +213,6 @@ ALAS1
     "planeTolerance": 0.2
   },
   "scripts": [],
-  "player": "",
   "references": {},
   "data": {}
 }

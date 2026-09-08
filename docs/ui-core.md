@@ -42,7 +42,7 @@ var amount = 0;
 var subscription = inventory.getElementById('add').on('click', function(event) {
     amount += 1;
     count.setText('Items: ' + amount);
-    Engine.status('Inventory', 'Picked up ' + amount + ' items');
+    Engine.log('Picked up ' + amount + ' items');
     event.stopPropagation();
 });
 

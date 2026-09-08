@@ -2,6 +2,10 @@
 #define AFTERLIGHT_COMMON
 #extension GL_EXT_nonuniform_qualifier : require
 const float PI = 3.14159265359;
+struct OutlineEntry {
+    uvec4 identity;
+    vec4 color;
+};
 struct Instance {
     mat4 model;
     mat4 previousModel;

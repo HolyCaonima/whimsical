@@ -57,7 +57,7 @@ RootMotionBinding 可选 `transform`、`kinematic` 或 `grounded`。前者直接
 
 `preserveAnchor` 是显式策略。角色高度变化时 MotionSystem 发布世界空间中心位移，AnimationSystem 转回实体局部空间，仅为选择该策略的实体补偿根偏移和关节缓存。MotionSystem 不再直接改写 Animator 或 JointPose。
 
-材质、相机、导航参数和场景数据属于 SceneResources；灯光是独立实体能力；选择、玩家与 UI 反馈属于 GameplayState；车辆规则继续由项目脚本拥有。
+材质、相机、导航参数和场景数据属于 SceneResources；灯光是独立实体能力；玩家、选择、移动路径和 UI 反馈完全由项目脚本拥有，不存在引擎 GameplayState。角色通过通用命名引用绑定；轮廓通过 realm 所有的视图请求提交，角色和目的地标记使用项目的临时网格。
 
 ## 接入、移除与提交
 

@@ -16,6 +16,7 @@ static_assert(sizeof(GpuInstance) == 144 && sizeof(GpuMaterial) == 176 && sizeof
 
 GpuScene::GpuScene(VulkanContext& context, const RenderOptions& opts) : vk(context), options(opts) {
     globals = vk.buffer(sizeof(GpuGlobals), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, BufferMemory::Upload);
+    outlineData = vk.buffer(16, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, BufferMemory::Upload);
     instanceData = vk.buffer(sizeof(GpuInstance) * MaxInstances, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                              BufferMemory::Upload);
     materialData = vk.buffer(sizeof(GpuMaterial) * MaxMaterials, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -37,7 +38,7 @@ GpuScene::~GpuScene() {
         vk.destroy(texture);
     if (materialSampler)
         vkDestroySampler(vk.device, materialSampler, nullptr);
-    for (auto* b : {&globals, &instanceData, &materialData, &lightData, &vertexData, &indexData,
+    for (auto* b : {&globals, &outlineData, &instanceData, &materialData, &lightData, &vertexData, &indexData,
                     &lightDistribution, &tlasInstances, &tlasScratch})
         vk.destroy(*b);
     for (auto& a : blas)
@@ -60,6 +61,7 @@ void GpuScene::rebind() {
     if (!pool_)
         return;
     pool_->importBuffer(ids_->globals, globals);
+    pool_->importBuffer(ids_->outlines, outlineData);
     pool_->importBuffer(ids_->instances, instanceData);
     pool_->importBuffer(ids_->materials, materialData);
     pool_->importBuffer(ids_->lights, lightData);
@@ -434,6 +436,24 @@ void GpuScene::writeGlobals(const void* data, size_t bytes) {
     std::memcpy(globals.mapped, data, bytes);
 }
 
+void GpuScene::writeOutlines(const std::vector<EntityOutline>& outlines) {
+    struct alignas(16) Entry { glm::uvec4 identity; vec4 color; };
+    const auto bytes = sizeof(glm::uvec4) + outlines.size() * sizeof(Entry);
+    if (outlineData.size < bytes) {
+        vk.destroy(outlineData);
+        outlineData = vk.buffer((bytes + 255) & ~size_t(255), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                BufferMemory::Upload);
+        rebind();
+    }
+    const glm::uvec4 count{uint32_t(outlines.size()), 0, 0, 0};
+    std::memcpy(outlineData.mapped, &count, sizeof(count));
+    auto* output = static_cast<char*>(outlineData.mapped) + sizeof(count);
+    for (const auto& outline : outlines) {
+        Entry entry{{outline.entity, 0, 0, 0}, outline.color};
+        std::memcpy(output, &entry, sizeof(entry));
+        output += sizeof(entry);
+    }
+}
 void GpuScene::writeLights(const std::vector<Light>& lights) {
     std::memcpy(lightData.mapped, lights.data(), lights.size() * sizeof(Light));
 }
@@ -497,7 +517,7 @@ void GpuScene::writeAttributes(uint32_t slot, const RenderProxy& p) {
     auto color = glm::uvec3(glm::clamp(p.attributes.overlayColor, vec3(0), vec3(1)) * 255.f + .5f);
     static_cast<GpuInstance*>(instanceData.mapped)[slot].info = {
         p.attributes.material, meshes[meshFor(slot, p)].firstIndex, p.attributes.entity,
-        (p.attributes.interactable ? 1u : 0u) | (color.r << 8) | (color.g << 16) | (color.b << 24)};
+        (color.r << 8) | (color.g << 16) | (color.b << 24)};
     VkAccelerationStructureInstanceKHR a{};
     a.transform = rowMajor(shadowModel[slot]);
     a.instanceCustomIndex = slot;

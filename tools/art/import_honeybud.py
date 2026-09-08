@@ -64,8 +64,8 @@ for role,p in [('player',(2,1,4.7)),('companion',(3.4,.55,5.4))]:
 
 script='''function initialize() {
     var player = Engine.sceneObject('player');
-    Engine.setPlayer(player);
     Locomotion.init(player);
+    GameplayPresentation.initialize();
     Companion.init(Engine.sceneObject('companion'), player);
     CameraRig.init(Engine.cameraState());
     CameraRig.follow = false;
@@ -77,10 +77,10 @@ script_path=CONTENT/'scripts/levels/honeybud_court.asset'
 write_asset(script_path,'Script',script.encode())
 lighting=json.loads((ROOT/'Projects/Afterlight/SourceArt/lighting.json').read_text())['HoneybudCourt']
 objects.extend(copy.deepcopy(lighting['lights']))
-scene={'version':7,'entities':objects,'materials':materials,'materialAssets':material_assets,
+scene={'version':8,'entities':objects,'materials':materials,'materialAssets':material_assets,
        'camera':{'target':[0,.5,-.8],'yaw':.32,'pitch':.57,'distance':27.5,'fov':.72},
        'navigation':{'min':[-10.6,0,-8.7],'max':[10.6,8,8.7],'cellSize':.25,'planeTolerance':.03},
-       'player':references['player'],'references':references,'data':{'theme':'Honeybud Court'},
+       'references':references,'data':{'theme':'Honeybud Court'},
        'scripts':[asset_reference(script_path)]}
 path=CONTENT/'Maps/HoneybudCourt.asset'
 write_asset(path,'Map',json.dumps(scene,indent=2).encode(),metadata={'authoring':'Blender MCP','description':'Original warm miniature garden kit; see SourceArt/Honeybud.'})

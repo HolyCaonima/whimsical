@@ -29,6 +29,7 @@ class GpuScene {
     void updateMaterials(const MaterialBindings&);
     void updateSkins(const Frame&);
     void writeGlobals(const void* data, size_t bytes);
+    void writeOutlines(const std::vector<EntityOutline>&);
     void writeLights(const std::vector<Light>&);
     void writeLightDistribution(const std::vector<Light>& current, const std::vector<Light>& previous);
     void apply(const Frame&, bool reset);
@@ -67,7 +68,7 @@ class GpuScene {
         return textureBindings.size();
     }
 
-    Buffer globals, instanceData, materialData, lightData, vertexData, indexData, lightDistribution;
+    Buffer globals, outlineData, instanceData, materialData, lightData, vertexData, indexData, lightDistribution;
 
   private:
     struct AccelerationStructure {

@@ -17,7 +17,7 @@ constexpr uint32_t DiLayerRotation = 2;
 
 struct alignas(16) GpuGlobals {
     mat4 vp, previousVp, view, inverseVp;
-    vec4 eyeTime, resolution, player, destination, renderSettings, previousEye;
+    vec4 eyeTime, resolution, renderSettings, previousEye;
     glm::uvec4 counts;
 };
 
@@ -29,7 +29,7 @@ struct alignas(16) GpuGlobals {
 // top-level declaration is what reaches it; buildInstances has no descriptor either, and
 // is what a top-level build actually reads.
 struct SceneResources {
-    rg::ResourceId globals, instances, materials, lights, vertices, indices, textures, buildInstances, blas,
+    rg::ResourceId globals, outlines, instances, materials, lights, vertices, indices, textures, buildInstances, blas,
         tlas;
     explicit SceneResources(rg::Registry&);
     rg::ResourceList geometry() const; // vertex/index buffers, as a structure build reads them

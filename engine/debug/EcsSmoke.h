@@ -28,7 +28,7 @@ class EcsSmoke {
     void advance(World& w, uint32_t rendered) {
         if (complete() || rendered < nextFrame_)
             return;
-        auto player = w.gameplay.playerId;
+        auto player = w.findObject(w.resources.references.at("player"));
         switch (stage_) {
         case 0:
             skin_ = w.get<Skin>(player).mesh;

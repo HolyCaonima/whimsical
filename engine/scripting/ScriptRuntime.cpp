@@ -295,11 +295,7 @@ enum Op {
     ShapeOverlap,
     Move,
     FindPath,
-    SetPlayer,
     SetCamera,
-    Status,
-    Select,
-    SetPath,
     SetSolid,
     SetMaterial,
     ReadJson,
@@ -613,42 +609,12 @@ static duk_ret_t callNative(duk_context* c) {
             }
             return 1;
         }
-        case SetPlayer: {
-            auto e = duk_require_uint(c, 0);
-            w.registry().require(e);
-            w.gameplay.playerId = w.gameplay.selected = e;
-            return 0;
-        }
         case SetCamera:
             w.resources.camera.target = {num(c, 0), num(c, 1), num(c, 2)};
             w.resources.camera.yaw = num(c, 3);
             w.resources.camera.pitch = num(c, 4);
             w.resources.camera.distance = num(c, 5);
             return 0;
-        case Status:
-            w.gameplay.state = duk_require_string(c, 0);
-            w.gameplay.message = duk_require_string(c, 1);
-            return 0;
-        case Select: {
-            auto e = duk_require_uint(c, 0);
-            if (e)
-                w.registry().require(e);
-            w.gameplay.selected = e;
-            return 0;
-        }
-        case SetPath: {
-            w.gameplay.path.clear();
-            auto n = duk_get_length(c, 0);
-            for (duk_uarridx_t i = 0; i < n; i++) {
-                duk_get_prop_index(c, 0, i);
-                w.gameplay.path.push_back(readVec(c, -1));
-                duk_pop(c);
-            }
-            w.gameplay.hasDestination = !w.gameplay.path.empty();
-            if (w.gameplay.hasDestination)
-                w.gameplay.destination = w.gameplay.path.back();
-            return 0;
-        }
         case SetSolid:
             w.motion.setSolid(duk_require_uint(c, 0), duk_get_boolean(c, 1) != 0);
             return 0;
@@ -998,11 +964,7 @@ void ScriptRuntime::createContext() {
                                 {"physicsShapeOverlap", ShapeOverlap, 2},
                                 {"move", Move, 3},
                                 {"findPath", FindPath, 2},
-                                {"setPlayer", SetPlayer, 1},
                                 {"camera", SetCamera, 6},
-                                {"status", Status, 2},
-                                {"select", Select, 1},
-                                {"showPath", SetPath, 1},
                                 {"solid", SetSolid, 2},
                                 {"setMaterial", SetMaterial, 2},
                                 {"readJson", ReadJson, 1},
@@ -1142,8 +1104,7 @@ void ScriptRuntime::tick(float dt, const Input& rawInput, bool gameplayInput) {
     const Input& input = rawInput;
     bool captured = input.pointerCaptured;
     const auto* camera = host_ && host_->view.camera ? &*host_->view.camera : nullptr;
-    if (gameplayInput)
-        world_.gameplay.hovered = captured ? 0 : world_.pick(input.mouseX, input.mouseY, input, camera);
+    auto picked = gameplayInput && !captured ? world_.pick(input.mouseX, input.mouseY, input, camera) : 0;
     auto ground =
         gameplayInput ? world_.groundAt(input.mouseX, input.mouseY, input, camera) : std::optional<vec3>{};
     duk_get_global_string(context_, "fixedUpdate");
@@ -1179,7 +1140,7 @@ void ScriptRuntime::tick(float dt, const Input& rawInput, bool gameplayInput) {
     value(context_, "groundZ", ground ? ground->z : 0);
     duk_push_boolean(context_, ground.has_value());
     duk_put_prop_string(context_, -2, "groundValid");
-    value(context_, "picked", gameplayInput ? world_.gameplay.hovered : 0);
+    value(context_, "picked", picked);
     for (auto b : {std::pair<const char*, bool>{"leftPressed", input.leftPressed},
                    {"rightPressed", input.rightPressed},
                    {"middle", input.middle},
