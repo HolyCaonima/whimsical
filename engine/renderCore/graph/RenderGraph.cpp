@@ -1,4 +1,5 @@
 #include "RenderGraph.h"
+#include "renderCore/vulkan/GraphState.h"
 #include "core/CpuProfile.h"
 #include <algorithm>
 
@@ -75,17 +76,17 @@ AccessInfo accessInfo(Access access, Usage usage) {
     throw std::runtime_error("Unknown render graph access");
 }
 
-RenderGraph::RenderGraph(ResourcePool& pool) : registry_(pool.registry()), pool_(&pool) {}
-RenderGraph::RenderGraph(const Registry& registry) : registry_(registry) {}
+RenderGraph::RenderGraph(ResourcePool& pool) : impl_(std::make_unique<Impl>(*this, pool.registry(), &pool)) {}
+RenderGraph::RenderGraph(const Registry& registry) : impl_(std::make_unique<Impl>(*this, registry, nullptr)) {}
 
-void RenderGraph::reset() {
+void RenderGraph::Impl::reset() {
     declared_ = 0;
 }
 
 RenderGraph::Builder RenderGraph::add(std::string name) {
-    if (declared_ == passes_.size())
-        passes_.emplace_back();
-    auto& pass = passes_[declared_];
+    if (impl_->declared_ == impl_->passes_.size())
+        impl_->passes_.emplace_back();
+    auto& pass = impl_->passes_[impl_->declared_];
     pass.uses.clear();
     pass.resolvedUses.clear();
     pass.shaders.clear();
@@ -98,22 +99,23 @@ RenderGraph::Builder RenderGraph::add(std::string name) {
     pass.depthUse = 0;
     pass.depthClear = 1.f;
     pass.depthLoad = false;
-    pass.pipeline = VK_NULL_HANDLE;
-    pass.divisor = 1;
+    pass.program.reset();
+    pass.elements = pass.localSize = {};
+    pass.dispatchExtent = {};
     pass.sideEffect = false;
     pass.alive = true;
     pass.record = nullptr;
-    return {this, declared_++};
+    return {this, impl_->declared_++};
 }
 
 RenderGraph::Builder& RenderGraph::Builder::use(ResourceRef ref, Access access, Usage usage) {
-    graph_->passes_[pass_].uses.push_back({ref, access, usage});
+    graph_->impl_->passes_[pass_].uses.push_back({ref, access, usage});
     // Contents the pass reaches through this resource without having a name for them. The
     // declaration says so once, so being ordered against whatever produced them is not a
     // rule every ray query and every build has to remember.
     if (usage != Usage::Binding)
-        for (auto reached : graph_->registry_[ref.id].reaches)
-            graph_->passes_[pass_].uses.push_back({reached, access, Usage::Read});
+        for (auto reached : graph_->impl_->registry_[ref.id].reaches)
+            graph_->impl_->passes_[pass_].uses.push_back({reached, access, Usage::Read});
     return *this;
 }
 RenderGraph::Builder& RenderGraph::Builder::read(ResourceRef ref, Access access) {
@@ -141,22 +143,22 @@ RenderGraph::Builder& RenderGraph::Builder::modify(const ResourceList& list, Acc
     return *this;
 }
 RenderGraph::Builder& RenderGraph::Builder::color(ResourceId id) {
-    auto& pass = graph_->passes_[pass_];
+    auto& pass = graph_->impl_->passes_[pass_];
     pass.colors.push_back({id, uint32_t(pass.uses.size()), false, {}});
     return modify(id, Access::Color);
 }
-RenderGraph::Builder& RenderGraph::Builder::color(ResourceId id, VkClearColorValue clear) {
-    auto& pass = graph_->passes_[pass_];
-    Attachment attachment;
+RenderGraph::Builder& RenderGraph::Builder::color(ResourceId id, ClearColor clear) {
+    auto& pass = graph_->impl_->passes_[pass_];
+    Impl::Attachment attachment;
     attachment.id = id;
     attachment.use = uint32_t(pass.uses.size());
     attachment.clear = true;
-    attachment.value.color = clear;
+    std::copy(clear.begin(), clear.end(), attachment.value.color.float32);
     pass.colors.push_back(attachment);
     return overwrite(id, Access::Color);
 }
 RenderGraph::Builder& RenderGraph::Builder::depth(ResourceId id, std::optional<float> clear) {
-    auto& pass = graph_->passes_[pass_];
+    auto& pass = graph_->impl_->passes_[pass_];
     pass.depth = id;
     pass.depthClear = clear.value_or(1.f);
     pass.depthLoad = !clear.has_value();
@@ -164,14 +166,14 @@ RenderGraph::Builder& RenderGraph::Builder::depth(ResourceId id, std::optional<f
     return clear ? overwrite(id, Access::Depth) : modify(id, Access::Depth);
 }
 RenderGraph::Builder& RenderGraph::Builder::shader(const std::vector<ShaderAccess>& accesses) {
-    merge(graph_->passes_[pass_].shaders, accesses);
+    merge(graph_->impl_->passes_[pass_].shaders, accesses);
     return *this;
 }
 RenderGraph::Builder& RenderGraph::Builder::bind(ResourceRef shaderSlot, ResourceRef resource) {
-    const auto& view = graph_->registry_.view(shaderSlot);
+    const auto& view = graph_->impl_->registry_.view(shaderSlot);
     if (!view)
         throw std::runtime_error("Shader slot has no descriptor view");
-    auto& mappings = graph_->passes_[pass_].mappings;
+    auto& mappings = graph_->impl_->passes_[pass_].mappings;
     for (const auto& mapping : mappings)
         if (mapping.binding == view.binding)
             throw std::runtime_error("Shader slot mapped twice");
@@ -179,7 +181,7 @@ RenderGraph::Builder& RenderGraph::Builder::bind(ResourceRef shaderSlot, Resourc
     return *this;
 }
 
-void RenderGraph::resolveShaders() {
+void RenderGraph::Impl::resolveShaders() {
     for (uint32_t p = 0; p < declared_; ++p) {
         auto& pass = passes_[p];
         pass.resolvedUses = pass.uses;
@@ -232,17 +234,27 @@ void RenderGraph::resolveShaders() {
     }
 }
 
-RenderGraph::Builder& RenderGraph::Builder::dispatch(const Program& program, uint16_t divisor) {
-    graph_->passes_[pass_].pipeline = program.pipeline;
-    graph_->passes_[pass_].divisor = divisor;
+RenderGraph::Builder& RenderGraph::Builder::dispatch(const Program& program, Extent3D elements) {
+    graph_->impl_->passes_[pass_].program = program.storage;
+    graph_->impl_->passes_[pass_].elements = elements;
+    graph_->impl_->passes_[pass_].localSize = program.localSize;
+    graph_->impl_->passes_[pass_].dispatchExtent = {};
     return shader(program.accesses);
 }
+RenderGraph::Builder& RenderGraph::Builder::dispatch(const Program& program, ResourceId extentOf) {
+    dispatch(program, Extent3D{});
+    if (!extentOf.valid() || extentOf.index >= graph_->impl_->registry_.size() ||
+        graph_->impl_->registry_[extentOf].kind != Kind::Image)
+        throw std::invalid_argument("Dispatch extent must name an image resource");
+    graph_->impl_->passes_[pass_].dispatchExtent = extentOf;
+    return *this;
+}
 RenderGraph::Builder& RenderGraph::Builder::record(std::function<void(const PassContext&)> body) {
-    graph_->passes_[pass_].record = std::move(body);
+    graph_->impl_->passes_[pass_].record = std::move(body);
     return *this;
 }
 RenderGraph::Builder& RenderGraph::Builder::sideEffect() {
-    graph_->passes_[pass_].sideEffect = true;
+    graph_->impl_->passes_[pass_].sideEffect = true;
     return *this;
 }
 
@@ -251,7 +263,7 @@ RenderGraph::Builder& RenderGraph::Builder::sideEffect() {
 // the declarations forward turns each consuming use into an edge to the pass that produced
 // the version it sees; a producing use then becomes the version the rest of the frame
 // consumes. This is the whole of the dependency analysis.
-void RenderGraph::analyse() {
+void RenderGraph::Impl::analyse() {
     producer_.assign(registry_.size() * 2, NoPass);
     for (uint32_t p = 0; p < declared_; ++p) {
         auto& pass = passes_[p];
@@ -273,12 +285,14 @@ void RenderGraph::analyse() {
 // the graph cannot see. Edges only ever point backwards, so one reverse sweep is the whole
 // reachability. Conditional features therefore cost nothing when their consumer is absent,
 // and a version that is replaced before anyone reads it takes its producer with it.
-void RenderGraph::cull() {
+void RenderGraph::Impl::cull() {
     for (uint32_t p = 0; p < declared_; ++p)
         passes_[p].alive = passes_[p].sideEffect;
-    for (uint32_t slot = 0; slot < producer_.size(); ++slot)
-        if (producer_[slot] != NoPass && crossesFrames(registry_[ResourceId{uint16_t(slot / 2)}].lifetime))
+    for (uint32_t slot = 0; slot < producer_.size(); ++slot) {
+        const auto& resource = registry_[ResourceId{uint16_t(slot / 2)}];
+        if (producer_[slot] != NoPass && (crossesFrames(resource.lifetime) || resource.handover))
             passes_[producer_[slot]].alive = true;
+    }
     live_ = 0;
     for (uint32_t p = declared_; p-- > 0;) {
         if (!passes_[p].alive)
@@ -293,7 +307,7 @@ void RenderGraph::cull() {
 // consuming contents that do not exist. A transient starts every frame undefined, so a read
 // or a loaded attachment with no producer would be reading whatever the storage it now
 // shares was last used for.
-void RenderGraph::validate() const {
+void RenderGraph::Impl::validate() const {
     for (uint32_t p = 0; p < declared_; ++p) {
         const auto& pass = passes_[p];
         if (!pass.alive)
@@ -311,10 +325,10 @@ void RenderGraph::validate() const {
 // consumes it before it is replaced. Contents that cross the frame boundary start out
 // consumed because the next frame is the reader. Attachment store ops come straight from
 // this, so "nobody reads it" is stated once instead of hand-written per pass.
-void RenderGraph::liveness() {
+void RenderGraph::Impl::liveness() {
     std::vector<uint8_t> consumed(registry_.size() * 2, 0);
     for (uint16_t i = 0; i < registry_.size(); ++i)
-        if (crossesFrames(registry_[{i}].lifetime))
+        if (crossesFrames(registry_[{i}].lifetime) || registry_[{i}].handover)
             consumed[i * 2] = consumed[i * 2 + 1] = 1;
     for (uint32_t p = declared_; p-- > 0;) {
         auto& pass = passes_[p];
@@ -334,7 +348,7 @@ void RenderGraph::liveness() {
 
 // Storage follows live content and binding uses. Merely declaring a shader view does
 // not make a resource reachable; reflection identifies the slots each live pass uses.
-void RenderGraph::plan(uint32_t width, uint32_t height) {
+void RenderGraph::Impl::plan(uint32_t width, uint32_t height) {
     struct Range {
         ResourceId id;
         uint32_t first = NoPass, last = 0;
@@ -351,6 +365,11 @@ void RenderGraph::plan(uint32_t width, uint32_t height) {
             range.last = std::max(range.last, p);
         }
     }
+    // A host/presentation handover is a consumer after all passes. Its output must
+    // neither be culled nor have its storage recycled before that consumer sees it.
+    for (auto& range : ranges)
+        if (registry_[range.id].handover)
+            range.last = declared_;
     touched_.assign(registry_.size(), 0);
     residency_.assign(registry_.size(), {});
     for (uint16_t i = 0; i < registry_.size(); ++i) {
@@ -390,7 +409,7 @@ void RenderGraph::plan(uint32_t width, uint32_t height) {
     }
 }
 
-void RenderGraph::compile(uint32_t width, uint32_t height) {
+void RenderGraph::Impl::compile(uint32_t width, uint32_t height) {
     CpuScope scope("Graph / Compile");
     resolveShaders();
     analyse();
@@ -402,7 +421,7 @@ void RenderGraph::compile(uint32_t width, uint32_t height) {
         pool_->realize(width, height, residency_);
 }
 
-void RenderGraph::checkDeclared(uint32_t pass, ResourceRef ref) const {
+void RenderGraph::Impl::checkDeclared(uint32_t pass, ResourceRef ref) const {
     const auto& declaring = passes_[pass];
     for (const auto& use : declaring.resolvedUses)
         if (use.ref == ref)
@@ -423,7 +442,7 @@ Buffer& PassContext::buffer(ResourceRef ref) const {
 // One barrier batch, derived from what every physical slot was last used for. The state
 // lives in the pool and survives the frame boundary, so the first access of a ping-ponged
 // history half is ordered against last frame's reads without any extra rule.
-void RenderGraph::synchronise(VkCommandBuffer command, const Use* uses, uint32_t count) {
+void RenderGraph::Impl::synchronise(VkCommandBuffer command, const Use* uses, uint32_t count) {
     merged_.clear();
     for (uint32_t i = 0; i < count; ++i) {
         const auto& use = uses[i];
@@ -541,7 +560,7 @@ void RenderGraph::synchronise(VkCommandBuffer command, const Use* uses, uint32_t
 // for the presentation engine, a readback buffer made visible to the host, whose fence wait
 // is an execution dependency and not a memory one. Deriving that from the declaration is
 // what removes the pass that used to exist only to make the transition.
-void RenderGraph::handover(VkCommandBuffer command) {
+void RenderGraph::Impl::handover(VkCommandBuffer command) {
     handover_.clear();
     for (uint16_t i = 0; i < registry_.size(); ++i) {
         const auto& declaration = registry_[{i}];
@@ -552,12 +571,12 @@ void RenderGraph::handover(VkCommandBuffer command) {
         synchronise(command, handover_.data(), uint32_t(handover_.size()));
 }
 
-void RenderGraph::execute(VkCommandBuffer command, GpuProfiler& profiler) {
+void RenderGraph::Impl::execute(VkCommandBuffer command, GpuProfiler& profiler) {
     PassContext context;
     context.command = command;
     context.layout = pool_->pipelineLayout();
     context.pool = pool_;
-    context.graph = this;
+    context.graph = &owner;
     barriers_ = 0;
     for (uint32_t p = 0; p < declared_; ++p) {
         const auto& pass = passes_[p];
@@ -614,13 +633,17 @@ void RenderGraph::execute(VkCommandBuffer command, GpuProfiler& profiler) {
             vkCmdSetViewport(command, 0, 1, &viewport);
             vkCmdSetScissor(command, 0, 1, &scissor);
         }
-        if (pass.pipeline) {
-            vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pass.pipeline);
-            vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, context.layout, 0, 1,
-                                    &context.descriptors, 0, nullptr);
-            const uint32_t w = (pool_->width() + pass.divisor - 1) / pass.divisor;
-            const uint32_t h = (pool_->height() + pass.divisor - 1) / pass.divisor;
-            vkCmdDispatch(command, (w + 7) / 8, (h + 7) / 8, 1);
+        if (pass.program) {
+            vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pass.program->pipeline);
+            if (!pass.bindings.empty())
+                vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, context.layout, 0, 1,
+                                        &context.descriptors, 0, nullptr);
+            auto size = pass.elements;
+            if (pass.dispatchExtent.valid())
+                size = {pool_->extentWidth(pass.dispatchExtent), pool_->extentHeight(pass.dispatchExtent), 1};
+            const auto& local = pass.localSize;
+            vkCmdDispatch(command, (size.x + local.x - 1) / local.x,
+                          (size.y + local.y - 1) / local.y, (size.z + local.z - 1) / local.z);
         }
         if (pass.record)
             pass.record(context);
@@ -628,5 +651,22 @@ void RenderGraph::execute(VkCommandBuffer command, GpuProfiler& profiler) {
             vkCmdEndRendering(command);
     }
     handover(command);
+}
+} // namespace whimsical::rg
+
+namespace whimsical::rg {
+RenderGraph::~RenderGraph() = default;
+void RenderGraph::reset() { impl_->reset(); }
+void RenderGraph::compile(uint32_t width, uint32_t height) { impl_->compile(width, height); }
+uint32_t RenderGraph::passCount() const { return impl_->declared_; }
+uint32_t RenderGraph::livePasses() const { return impl_->live_; }
+uint32_t RenderGraph::barrierCount() const { return impl_->barriers_; }
+uint32_t RenderGraph::aliasedResources() const { return impl_->aliased_; }
+bool RenderGraph::alive(uint32_t pass) const { return impl_->passes_[pass].alive; }
+const std::vector<Residency>& RenderGraph::residency() const { return impl_->residency_; }
+const std::vector<ShaderBinding>& RenderGraph::bindings(uint32_t pass) const { return impl_->passes_[pass].bindings; }
+void RenderGraph::checkDeclared(uint32_t pass, ResourceRef ref) const { impl_->checkDeclared(pass, ref); }
+void GraphAccess::execute(RenderGraph& graph, VkCommandBuffer command, GpuProfiler& profiler) {
+    graph.impl_->execute(command, profiler);
 }
 } // namespace whimsical::rg

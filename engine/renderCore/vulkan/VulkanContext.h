@@ -53,7 +53,8 @@ class VulkanContext {
     std::atomic<uint32_t> validationErrors{0};
     bool validationActive = false;
     bool debugLabels = false;
-    void initialize(HWND, bool validation);
+    // Presentation and ray queries are caller requirements, not prerequisites for compute.
+    void initialize(HWND, bool validation, bool rayQueries);
     ~VulkanContext();
     Buffer buffer(VkDeviceSize, VkBufferUsageFlags, BufferMemory memory = BufferMemory::Device);
     void destroy(Buffer&);

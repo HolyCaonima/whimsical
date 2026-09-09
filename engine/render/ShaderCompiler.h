@@ -1,5 +1,6 @@
 #pragma once
 #include "assets/ShaderAsset.h"
+#include "renderCore/ShaderCompiler.h"
 #include <filesystem>
 #include <map>
 #include <array>
@@ -18,11 +19,10 @@ class ShaderCompiler {
                                   const ShaderSet&);
     const std::vector<uint32_t>& compile(const std::string& pass, const ShaderSet&);
     size_t compilationCount() const {
-        return programs_.size();
+        return compiler_.compilationCount();
     }
 
   private:
-    std::map<std::string, std::vector<uint32_t>> programs_;
-    std::filesystem::path directory_;
+    rc::ShaderCompiler compiler_;
 };
 } // namespace whimsical

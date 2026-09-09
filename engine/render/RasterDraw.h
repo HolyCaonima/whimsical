@@ -1,6 +1,6 @@
 #pragma once
 #include "assets/Material.h"
-#include "VulkanContext.h"
+#include "renderCore/vulkan/VulkanContext.h"
 
 namespace whimsical {
 // Pipeline identity contains only fixed-function state and the output contract.

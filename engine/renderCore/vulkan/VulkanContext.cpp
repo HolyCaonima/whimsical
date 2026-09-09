@@ -1,4 +1,4 @@
-#include "VulkanContext.h"
+#include "renderCore/vulkan/VulkanContext.h"
 #include <iostream>
 #include <cstring>
 #include <algorithm>
@@ -12,7 +12,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL callback(VkDebugUtilsMessageSeverityFlagBi
         std::cerr << "[Vulkan] " << data->pMessage << "\n";
     return VK_FALSE;
 }
-void VulkanContext::initialize(HWND hwnd, bool validation) {
+void VulkanContext::initialize(HWND hwnd, bool validation, bool rayQueries) {
     const std::string bundledLayers = std::string(WHIMSICAL_ROOT) + "/third_party/validation";
     if (GetEnvironmentVariableA("VK_LAYER_PATH", nullptr, 0) == 0 &&
         GetFileAttributesA((bundledLayers + "/VkLayer_khronos_validation.json").c_str()) !=
@@ -26,7 +26,9 @@ void VulkanContext::initialize(HWND hwnd, bool validation) {
     validationActive = validation && std::any_of(layers.begin(), layers.end(), [](auto& l) {
                            return !strcmp(l.layerName, "VK_LAYER_KHRONOS_validation");
                        });
-    std::vector<const char*> extensions{VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
+    std::vector<const char*> extensions;
+    if (hwnd)
+        extensions = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
     uint32_t extensionCount = 0;
     VK_CHECK(vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr));
     std::vector<VkExtensionProperties> instanceExtensions(extensionCount);
@@ -76,16 +78,23 @@ void VulkanContext::initialize(HWND hwnd, bool validation) {
                   : validation     ? "not installed (runtime checks still active)"
                                    : "off by default in Release (pass --validation)")
               << "\n";
-    VkWin32SurfaceCreateInfoKHR surf{VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR};
-    surf.hinstance = GetModuleHandleW(nullptr);
-    surf.hwnd = hwnd;
-    VK_CHECK(vkCreateWin32SurfaceKHR(instance, &surf, nullptr, &surface));
+    if (hwnd) {
+        VkWin32SurfaceCreateInfoKHR surf{VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR};
+        surf.hinstance = GetModuleHandleW(nullptr);
+        surf.hwnd = hwnd;
+        VK_CHECK(vkCreateWin32SurfaceKHR(instance, &surf, nullptr, &surface));
+    }
     VK_CHECK(vkEnumeratePhysicalDevices(instance, &n, nullptr));
     std::vector<VkPhysicalDevice> devices(n);
     VK_CHECK(vkEnumeratePhysicalDevices(instance, &n, devices.data()));
-    const std::vector<const char*> required{
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-        VK_KHR_RAY_QUERY_EXTENSION_NAME, VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME};
+    std::vector<const char*> required;
+    if (hwnd)
+        required.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    if (rayQueries) {
+        required.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+        required.push_back(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+        required.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+    }
     for (auto gpu : devices) {
         uint32_t ec = 0;
         VK_CHECK(vkEnumerateDeviceExtensionProperties(gpu, nullptr, &ec, nullptr));
@@ -108,12 +117,13 @@ void VulkanContext::initialize(HWND hwnd, bool validation) {
         VkPhysicalDeviceFeatures2 features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
         features.pNext = &f12;
         f12.pNext = &f13;
-        f13.pNext = &af;
+        f13.pNext = rayQueries ? &af : nullptr;
         af.pNext = &rq;
         vkGetPhysicalDeviceFeatures2(gpu, &features);
         if (!f12.bufferDeviceAddress || !f12.shaderSampledImageArrayNonUniformIndexing ||
             !features.features.samplerAnisotropy || !f13.dynamicRendering || !f13.synchronization2 ||
-            !af.accelerationStructure || !rq.rayQuery || !features.features.shaderStorageImageExtendedFormats)
+            (rayQueries && (!af.accelerationStructure || !rq.rayQuery)) ||
+            !features.features.shaderStorageImageExtendedFormats)
             continue;
         VkPhysicalDeviceProperties props{};
         vkGetPhysicalDeviceProperties(gpu, &props);
@@ -124,8 +134,9 @@ void VulkanContext::initialize(HWND hwnd, bool validation) {
         std::vector<VkQueueFamilyProperties> queues(qc);
         vkGetPhysicalDeviceQueueFamilyProperties(gpu, &qc, queues.data());
         for (uint32_t q = 0; q < qc; q++) {
-            VkBool32 present;
-            VK_CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(gpu, q, surface, &present));
+            VkBool32 present = VK_TRUE;
+            if (surface)
+                VK_CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(gpu, q, surface, &present));
             if (present && (queues[q].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
                 (queues[q].queueFlags & VK_QUEUE_COMPUTE_BIT)) {
                 physical = gpu;
@@ -137,14 +148,11 @@ void VulkanContext::initialize(HWND hwnd, bool validation) {
             break;
     }
     if (!physical)
-        throw std::runtime_error(
-            "Requires Vulkan 1.3 GPU with accelerationStructure, rayQuery, bufferDeviceAddress, "
-            "dynamicRendering, synchronization2, sampled-image non-uniform indexing and anisotropy. "
-            "No raster-lighting fallback.");
+        throw std::runtime_error("No Vulkan 1.3 graphics/compute device meets the requested capabilities");
     vkGetPhysicalDeviceProperties(physical, &properties);
     vkGetPhysicalDeviceMemoryProperties(physical, &memoryProperties);
     VkPhysicalDeviceProperties2 props2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
-    props2.pNext = &asProperties;
+    props2.pNext = rayQueries ? &asProperties : nullptr;
     vkGetPhysicalDeviceProperties2(physical, &props2);
     std::cout << "GPU: " << properties.deviceName << " | Vulkan " << VK_VERSION_MAJOR(properties.apiVersion)
               << "." << VK_VERSION_MINOR(properties.apiVersion) << "\n";
@@ -163,7 +171,7 @@ void VulkanContext::initialize(HWND hwnd, bool validation) {
     VkPhysicalDeviceAccelerationStructureFeaturesKHR af{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR};
     af.accelerationStructure = VK_TRUE;
-    f13.pNext = &af;
+    f13.pNext = rayQueries ? &af : nullptr;
     VkPhysicalDeviceRayQueryFeaturesKHR rq{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR};
     rq.rayQuery = VK_TRUE;
     af.pNext = &rq;

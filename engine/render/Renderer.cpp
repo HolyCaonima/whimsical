@@ -6,8 +6,9 @@
 #include "RenderPipeline.h"
 #include "RenderResources.h"
 #include "UiRenderer.h"
-#include "VulkanContext.h"
-#include "graph/RenderGraph.h"
+#include "renderCore/vulkan/VulkanContext.h"
+#include "renderCore/vulkan/VulkanAccess.h"
+#include "renderCore/graph/RenderGraph.h"
 #include <algorithm>
 #include <chrono>
 #include <cstring>
@@ -21,9 +22,9 @@ static_assert(sizeof(GpuGlobals) == 336, "Globals ABI mismatch");
 } // namespace
 
 struct Renderer::Impl {
-    VulkanContext vk;
+    rc::RenderCore& core;
+    VulkanContext& vk;
     RenderOptions options;
-    HWND window;
     uint32_t width = 0, height = 0;
     uint32_t viewWidth = 0, viewHeight = 0;
     Image presentation;
@@ -41,16 +42,15 @@ struct Renderer::Impl {
     std::vector<Image> swapImages;
     std::vector<VkSemaphore> finished;
     VkSemaphore acquired = VK_NULL_HANDLE;
-    VkFence fence = VK_NULL_HANDLE;
-    VkCommandBuffer command = VK_NULL_HANDLE;
-    std::unique_ptr<GpuProfiler> profiler;
+    GpuProfiler* profiler = nullptr;
     uint64_t lastProfileRequest = 0;
     ShaderCompiler shaderCompiler;
     MaterialBindings materialBindings;
 
     RenderResources resources;
-    std::unique_ptr<rg::ResourcePool> pool;
-    std::unique_ptr<rg::RenderGraph> graph;
+    std::unique_ptr<rc::GraphContext> execution;
+    rg::ResourcePool* pool = nullptr;
+    rg::RenderGraph* graph = nullptr;
     std::unique_ptr<GpuScene> scene;
     std::unique_ptr<RenderPipeline> pipeline;
     std::unique_ptr<GpuRenderTargets> renderTargets;
@@ -67,22 +67,21 @@ struct Renderer::Impl {
     bool resizePending = false;
     std::chrono::steady_clock::time_point previousRenderTime = std::chrono::steady_clock::now();
 
-    Impl(HWND hwnd, const RenderOptions& opts)
-        : options(opts), window(hwnd),
+    Impl(rc::RenderCore& renderCore, const RenderOptions& opts)
+        : core(renderCore), vk(rc::VulkanAccess::device(core)), options(opts),
           resources(opts.capture, opts.audit.empty() ? 0 : RenderAudit::signalCount) {}
 
     ~Impl() {
         if (!vk.device)
             return;
-        if (vkDeviceWaitIdle(vk.device) != VK_SUCCESS && renderTargets)
-            renderTargets->failed();
+        try { core.waitIdle(); }
+        catch (...) { if (renderTargets) renderTargets->failed(); }
         renderTargets.reset();
-        profiler.reset();
         pipeline.reset();
         denoiser.reset();
         uiRenderer.reset();
         scene.reset();
-        pool.reset();
+        execution.reset();
         vk.destroy(presentation);
         vk.destroy(screenshot);
         vk.destroy(neighbourOffsets);
@@ -92,14 +91,15 @@ struct Renderer::Impl {
             vkDestroySwapchainKHR(vk.device, swapchain, nullptr);
         if (acquired)
             vkDestroySemaphore(vk.device, acquired, nullptr);
-        if (fence)
-            vkDestroyFence(vk.device, fence, nullptr);
     }
 
     void initialize() {
-        vk.initialize(window, options.validation);
-        pool = std::make_unique<rg::ResourcePool>(vk, resources.registry);
-        graph = std::make_unique<rg::RenderGraph>(*pool);
+        if (!vk.surface)
+            throw std::invalid_argument("Rendering presentation requires a RenderCore with a surface");
+        execution = std::make_unique<rc::GraphContext>(core, resources.registry);
+        pool = &rc::VulkanAccess::resources(*execution);
+        graph = &execution->graph();
+        profiler = &rc::VulkanAccess::profiler(*execution);
         renderTargets = std::make_unique<GpuRenderTargets>(vk, resources.registry, *pool);
         scene = std::make_unique<GpuScene>(vk, options);
         scene->bind(*pool, resources.scene);
@@ -114,22 +114,13 @@ struct Renderer::Impl {
         }
         pool->importBuffer(resources.di.neighbours, neighbourOffsets);
         pool->importBuffer(resources.di.lightSamples, scene->lightDistribution);
-        pipeline = std::make_unique<RenderPipeline>(vk, shaderCompiler, *pool, resources);
+        pipeline = std::make_unique<RenderPipeline>(vk, shaderCompiler, *execution, resources);
         denoiser = std::make_unique<NrdDenoiser>(vk);
         uiRenderer = std::make_unique<UiRenderer>(vk);
         for (const char* name : RenderAudit::names)
             auditSignals.push_back(auditSignal(name));
         VkSemaphoreCreateInfo si{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
         VK_CHECK(vkCreateSemaphore(vk.device, &si, nullptr, &acquired));
-        VkFenceCreateInfo fi{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-        fi.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-        VK_CHECK(vkCreateFence(vk.device, &fi, nullptr, &fence));
-        VkCommandBufferAllocateInfo ca{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-        ca.commandPool = vk.commandPool;
-        ca.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        ca.commandBufferCount = 1;
-        VK_CHECK(vkAllocateCommandBuffers(vk.device, &ca, &command));
-        profiler = std::make_unique<GpuProfiler>(vk);
     }
 
     // The audit names signals, not bindings; the graph resolves them to resources.
@@ -179,7 +170,7 @@ struct Renderer::Impl {
     // is minimised between the simulation sampling its size and this query running on the
     // render thread. Sizing resources to that would ask Vulkan for zero-extent images.
     bool resize(uint32_t requestedWidth, uint32_t requestedHeight) {
-        VK_CHECK(vkDeviceWaitIdle(vk.device));
+        core.waitIdle();
         VkSurfaceCapabilitiesKHR caps;
         VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk.physical, vk.surface, &caps));
         if (!(caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT))
@@ -404,17 +395,13 @@ struct Renderer::Impl {
             throw std::runtime_error("Scene capacity exceeded");
         {
             CpuScope scope("Wait / Previous GPU Fence");
-            VK_CHECK(vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX));
+            execution->wait();
         }
         collectAuditReadback();
         renderTargets->collect();
         if (!frame.input.width || !frame.input.height)
             return true;
-        {
-            CpuScope scope("Resolve GPU Timestamps");
-            profiler->resolve();
-        }
-        gpuMs = profiler->frameMs();
+        gpuMs = execution->gpuMilliseconds();
         if (width != frame.input.width || height != frame.input.height || resizePending) {
             CpuScope scope("Swapchain Resize / Resource Rebuild");
             if (!resize(frame.input.width, frame.input.height))
@@ -519,7 +506,7 @@ struct Renderer::Impl {
         setup.scene = scene.get();
         setup.denoiser = denoiser.get();
         setup.ui = uiRenderer.get();
-        setup.profiler = profiler.get();
+        setup.profiler = profiler;
         setup.frameNumber = frameNumber;
         setup.frameMs = frameMs;
         setup.reset = reset;
@@ -535,34 +522,17 @@ struct Renderer::Impl {
             CpuScope scope("Graph / Declare");
             pipeline->build(*graph, setup);
         }
-        graph->compile(viewWidth, viewHeight);
+        execution->compile(viewWidth, viewHeight);
 
         CpuScope recordScope("Record GPU Commands");
-        VK_CHECK(vkResetCommandBuffer(command, 0));
-        VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        VK_CHECK(vkBeginCommandBuffer(command, &begin));
         const auto request = frame.gpuProfileRequest > lastProfileRequest ? frame.gpuProfileRequest : 0;
-        profiler->beginFrame(command, request, frameNumber + 1, width, height);
+        execution->record({request, frameNumber + 1, width, height});
         if (request)
             lastProfileRequest = request;
-        graph->execute(command, *profiler);
-        profiler->endFrame(command);
-        VK_CHECK(vkEndCommandBuffer(command));
         recordScope.finish();
 
         CpuScope submitScope("Queue Submit");
-        VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-        submit.waitSemaphoreCount = 1;
-        submit.pWaitSemaphores = &acquired;
-        submit.pWaitDstStageMask = &waitStage;
-        submit.commandBufferCount = 1;
-        submit.pCommandBuffers = &command;
-        submit.signalSemaphoreCount = 1;
-        submit.pSignalSemaphores = &finished[swapIndex];
-        VK_CHECK(vkResetFences(vk.device, 1, &fence));
-        VK_CHECK(vkQueueSubmit(vk.queue, 1, &submit, fence));
+        rc::VulkanAccess::submit(*execution, {acquired, VK_PIPELINE_STAGE_TRANSFER_BIT, finished[swapIndex]});
         renderTargets->submitted();
         submitScope.finish();
         prepareScope.finish();
@@ -590,12 +560,12 @@ struct Renderer::Impl {
         frameNumber++;
         // Both halves of every history resource change role now, which is the whole of
         // what used to be the end-of-frame copy pass.
-        pool->flip();
+        execution->advanceHistory();
         auditReadbackPending = auditFrame;
         updateStatistics(cpuMs);
         if (last) {
             CpuScope scope("Final Frame / Wait and Capture");
-            VK_CHECK(vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX));
+            execution->wait();
             collectAuditReadback();
             renderTargets->collect();
             if (audit) {
@@ -603,8 +573,7 @@ struct Renderer::Impl {
                 const auto output = std::filesystem::path(WHIMSICAL_ROOT) / "captures" / options.audit;
                 auditSamples = audit->finish(output).samples;
             }
-            profiler->resolve();
-            gpuMs = profiler->frameMs();
+            gpuMs = execution->gpuMilliseconds();
             if (options.capture)
                 saveCapture();
         }
@@ -619,8 +588,8 @@ struct Renderer::Impl {
     }
 };
 
-Renderer::Renderer(HWND window, const RenderOptions& options)
-    : impl_(std::make_unique<Impl>(window, options)) {
+Renderer::Renderer(rc::RenderCore& core, const RenderOptions& options)
+    : impl_(std::make_unique<Impl>(core, options)) {
     impl_->initialize();
 }
 Renderer::~Renderer() = default;
@@ -637,7 +606,7 @@ SceneUpdateStatistics Renderer::sceneStatistics() const {
     return impl_->scene->statistics;
 }
 std::optional<GpuProfile> Renderer::takeGpuProfile() {
-    return impl_->profiler->takeResult();
+    return impl_->execution->takeProfile();
 }
 std::optional<CpuProfile> Renderer::takeCpuProfile() {
     auto result = std::move(impl_->cpuProfileResult);
@@ -645,6 +614,6 @@ std::optional<CpuProfile> Renderer::takeCpuProfile() {
     return result;
 }
 uint32_t Renderer::errors() const {
-    return impl_->vk.validationErrors.load();
+    return impl_->core.errors();
 }
 } // namespace whimsical

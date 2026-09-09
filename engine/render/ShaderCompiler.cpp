@@ -1,10 +1,7 @@
 #include "ShaderCompiler.h"
-#include "assets/Asset.h"
-#include <windows.h>
 #include <fstream>
 #include <sstream>
 #include <iomanip>
-#include <cstring>
 #include <regex>
 
 namespace whimsical {
@@ -98,55 +95,13 @@ std::string ShaderCompiler::passSource(const std::filesystem::path& directory, c
 }
 const std::vector<uint32_t>& ShaderCompiler::compile(const std::string& pass, const ShaderSet& shaders) {
     auto source = passSource(WHIMSICAL_SHADER_SOURCES, pass, shaders);
-    auto key = pass + '\n' + source;
-    auto found = programs_.find(key);
-    if (found != programs_.end())
-        return found->second;
-    if (directory_.empty()) {
-        directory_ = std::filesystem::path(WHIMSICAL_SHADERS) / ("runtime-" + newPersistentId());
-        std::filesystem::create_directories(directory_);
-    }
-    auto input = directory_ / (std::to_string(programs_.size()) + "." + pass);
-    auto output = input;
-    output += ".spv";
-    auto log = input;
-    log += ".log";
-    std::ofstream(input, std::ios::binary) << source;
-    // Launch the compiler directly; asset text never passes through a shell.
-    std::wstring command = L"\"" + std::filesystem::path(WHIMSICAL_GLSLANG).wstring() +
-                           L"\" --target-env vulkan1.2 -V \"" + input.wstring() + L"\" -o \"" +
-                           output.wstring() + L"\"";
-    SECURITY_ATTRIBUTES security{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
-    HANDLE diagnostic = CreateFileW(log.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &security, CREATE_ALWAYS,
-                                    FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (diagnostic == INVALID_HANDLE_VALUE)
-        throw std::runtime_error("Cannot create Shader compiler diagnostics");
-    STARTUPINFOW startup{};
-    startup.cb = sizeof(startup);
-    startup.dwFlags = STARTF_USESTDHANDLES;
-    startup.hStdOutput = startup.hStdError = diagnostic;
-    PROCESS_INFORMATION process{};
-    BOOL launched = CreateProcessW(nullptr, command.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr,
-                                   nullptr, &startup, &process);
-    if (!launched) {
-        CloseHandle(diagnostic);
-        throw std::runtime_error("Cannot launch glslang: " + std::to_string(GetLastError()));
-    }
-    WaitForSingleObject(process.hProcess, INFINITE);
-    DWORD status = 0;
-    GetExitCodeProcess(process.hProcess, &status);
-    CloseHandle(process.hThread);
-    CloseHandle(process.hProcess);
-    CloseHandle(diagnostic);
-    if (status) {
+    try {
+        return compiler_.compile(pass, source);
+    } catch (const std::exception& error) {
         std::string assets;
         for (size_t i = 0; i < shaders.size(); ++i)
             assets += "\nsource " + std::to_string(i + 1) + ": " + shaders[i]->reference().path.string();
-        throw std::runtime_error("Shader compilation failed: " + pass + assets + "\n" + read(log));
+        throw std::runtime_error(std::string(error.what()) + assets);
     }
-    auto bytes = read(output);
-    std::vector<uint32_t> words(bytes.size() / 4);
-    std::memcpy(words.data(), bytes.data(), bytes.size());
-    return programs_.emplace(std::move(key), std::move(words)).first->second;
 }
 } // namespace whimsical

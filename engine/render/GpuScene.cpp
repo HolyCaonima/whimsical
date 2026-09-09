@@ -1,5 +1,5 @@
 #include "GpuScene.h"
-#include "GpuProfiler.h"
+#include "renderCore/GpuProfiler.h"
 #include <algorithm>
 #include <cstring>
 #include <set>

@@ -1,6 +1,6 @@
 #include "NrdDenoiser.h"
 #include "core/CpuProfile.h"
-#include "GpuProfiler.h"
+#include "renderCore/GpuProfiler.h"
 #include <cstring>
 #include <algorithm>
 #include <iostream>

@@ -1,9 +1,9 @@
 #pragma once
-#include "VulkanContext.h"
+#include "renderCore/vulkan/VulkanContext.h"
 #include "core/GpuProfile.h"
 #include <optional>
 namespace whimsical {
-// Owned by the render thread. Resolve only after the submitted frame fence has completed.
+// Owned by one graph execution context. Resolve only after its submission completes.
 class GpuProfiler {
     static constexpr uint32_t MaxScopes = 256;
     VulkanContext& vk_;

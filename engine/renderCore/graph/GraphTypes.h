@@ -1,6 +1,6 @@
 #pragma once
 #include "Registry.h"
-#include "render/VulkanContext.h"
+#include "renderCore/vulkan/VulkanContext.h"
 
 // Vulkan vocabulary of the render graph. A pass names where it touches a resource and what
 // it does to the contents; this file is the only place that turns that pair into the

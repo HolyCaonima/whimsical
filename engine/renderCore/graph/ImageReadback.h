@@ -1,5 +1,5 @@
 #pragma once
-#include "RenderGraph.h"
+#include "renderCore/vulkan/GraphAccess.h"
 
 namespace whimsical::rg {
 struct ImageReadback {
@@ -21,13 +21,18 @@ inline void addImageReadback(RenderGraph& graph, const char* name, ResourceId de
                 auto& image = c.image(copy.source);
                 VkBufferImageCopy region{};
                 region.bufferOffset = copy.offset == VK_WHOLE_SIZE ? nextOffset : copy.offset;
-                region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                const auto format = c.pool->declaration(copy.source.id).format;
+                region.imageSubresource = {
+                    VkImageAspectFlags(format == Format::D32 ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT),
+                    0, 0, 1};
                 region.imageOffset = {int32_t(copy.x), int32_t(copy.y), 0};
                 region.imageExtent = {copy.width ? copy.width : image.width,
                                       copy.height ? copy.height : image.height, 1};
                 nextOffset =
                     region.bufferOffset + VkDeviceSize(region.imageExtent.width) * region.imageExtent.height *
-                                              formatInfo(c.pool->declaration(copy.source.id).format).bytes;
+                                              formatInfo(format).bytes;
+                if (nextOffset > c.buffer(destination).size)
+                    throw std::invalid_argument("Image readback exceeds the destination buffer");
                 vkCmdCopyImageToBuffer(c.command, image.handle, image.layout, c.buffer(destination).handle, 1,
                                        &region);
             }

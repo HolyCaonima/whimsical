@@ -2,13 +2,13 @@
 #include "RasterDraw.h"
 #include "Geometry.h"
 #include "MaterialBindings.h"
-#include "RangeAllocator.h"
+#include "renderCore/RangeAllocator.h"
 #include "RenderResources.h"
 #include "Renderer.h"
-#include "VulkanContext.h"
+#include "renderCore/vulkan/VulkanContext.h"
 #include "animation/SkinnedMesh.h"
 #include "assets/StaticMesh.h"
-#include "graph/ResourcePool.h"
+#include "renderCore/graph/ResourcePool.h"
 #include <map>
 #include <utility>
 #include <memory>

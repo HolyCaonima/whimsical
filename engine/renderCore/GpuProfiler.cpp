@@ -1,4 +1,4 @@
-#include "GpuProfiler.h"
+#include "renderCore/GpuProfiler.h"
 namespace whimsical {
 GpuProfiler::GpuProfiler(VulkanContext& vk) : vk_(vk) {
     uint32_t count = 0;

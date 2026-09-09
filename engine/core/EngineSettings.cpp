@@ -11,7 +11,7 @@ EngineSettings::EngineSettings(ConsoleRegistry& v, bool validationDefault) : var
     v.variable("r.DIHistoryConfidence", true, "RTXDI visibility feedback to reservoir and NRD histories", CVarNone);
     v.variable("r.Present", std::string("fifo"), "Vulkan present mode, applied when creating the renderer",
                CVarArchive | CVarRestart, {}, {"fifo", "mailbox", "immediate"});
-    v.variable("r.Validation", validationDefault, "Vulkan validation at renderer creation", CVarRestart);
+    v.variable("r.Validation", validationDefault, "Vulkan validation at RenderCore device creation", CVarRestart);
     v.variable("p.DebugDraw", false, "Draw physics colliders independently of gameplay HUD", CVarNone);
     v.variable("t.TimeScale", 1.0,
                "Gameplay time multiplier; 0 pauses gameplay while console and rendering continue", CVarNone,

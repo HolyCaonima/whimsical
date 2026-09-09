@@ -3,7 +3,8 @@
 #include "MaterialBindings.h"
 #include "RenderResources.h"
 #include "ShaderCompiler.h"
-#include "graph/RenderGraph.h"
+#include "renderCore/graph/RenderGraph.h"
+#include "renderCore/RenderCore.h"
 #include <array>
 #include <map>
 
@@ -36,7 +37,7 @@ struct FrameSetup {
 // it runs, and the graph turns both into dependencies, barriers, layouts and storage reuse.
 class RenderPipeline {
   public:
-    RenderPipeline(VulkanContext&, ShaderCompiler&, rg::ResourcePool&, const RenderResources&);
+    RenderPipeline(VulkanContext&, ShaderCompiler&, rc::GraphContext&, const RenderResources&);
     ~RenderPipeline();
     void ensurePrograms(const std::vector<Material>&, const ShaderCompiler::ShaderSet&);
     size_t rasterProgramCount() const {
@@ -59,20 +60,20 @@ class RenderPipeline {
         DiGradientFilter,
         PassCount
     };
-    using SurfacePrograms = std::array<rg::Program, ShaderCompiler::surfacePasses.size()>;
+    using SurfacePrograms = std::array<const rg::Program*, ShaderCompiler::surfacePasses.size()>;
     static constexpr std::array screenSpacePasses = {"composite.comp", "di_confidence.comp",
                                                      "di_gradient_filter.comp"};
     static_assert(Composite == ShaderCompiler::surfacePasses.size() &&
                   Composite + screenSpacePasses.size() == PassCount);
     VulkanContext& vk_;
     ShaderCompiler& shaders_;
+    rc::GraphContext& execution_;
     rg::ResourcePool& pool_;
     const RenderResources& r_;
     // The programs the frame declares itself with. The screen-space ones exist for the
     // whole run; the surface ones are relinked whenever the live Shader set changes, so a
     // pass points at whichever program is current rather than owning it.
     std::array<const rg::Program*, PassCount> compute_{};
-    std::array<rg::Program, screenSpacePasses.size()> screenSpace_;
     std::map<RasterKey, VkPipeline> rasterPrograms_;
     std::map<RasterKey, VkPipeline> entityIDPrograms_;
     std::map<ShaderCompiler::ShaderSet, SurfacePrograms> computePrograms_;
@@ -82,7 +83,6 @@ class RenderPipeline {
     std::vector<rg::ShaderAccess> entityIDAccess_;
     std::vector<rg::ShaderAccess> displayAccess_;
 
-    rg::Program createCompute(const std::vector<uint32_t>& code);
     VkPipeline createRaster(const RasterKey&, bool entityID = false);
 };
 } // namespace whimsical

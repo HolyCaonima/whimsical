@@ -90,7 +90,7 @@ function(whimsical_copy_onnx TARGET)
 endfunction()
 add_library(whimsical_core
   engine/assets/RenderTargetAsset.cpp engine/core/RenderTarget.cpp
-  engine/core/ConsoleRegistry.cpp engine/core/EngineSettings.cpp engine/core/GpuProfile.cpp engine/core/CpuProfile.cpp engine/ui/Console.cpp
+  engine/core/ConsoleRegistry.cpp engine/core/EngineSettings.cpp engine/ui/Console.cpp
   engine/assets/StaticMesh.cpp
   engine/assets/ShaderAsset.cpp engine/assets/Material.cpp
   engine/assets/EngineAssets.cpp engine/scene/SceneAsset.cpp engine/scene/ScenePersistence.cpp
@@ -104,20 +104,37 @@ add_library(whimsical_core
 target_include_directories(whimsical_core PUBLIC engine "${DEPS}/glm")
 target_compile_definitions(whimsical_core PUBLIC GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_CTOR_INIT
   NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS WHIMSICAL_ROOT="${CMAKE_SOURCE_DIR}")
-target_link_libraries(whimsical_core PUBLIC duktape whimsical_animation whimsical_uicore)
+add_library(whimsical_diagnostics engine/core/GpuProfile.cpp engine/core/CpuProfile.cpp)
+target_include_directories(whimsical_diagnostics PUBLIC engine)
+target_compile_options(whimsical_diagnostics PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(whimsical_diagnostics PUBLIC whimsical_assets)
+target_link_libraries(whimsical_core PUBLIC duktape whimsical_animation whimsical_uicore whimsical_diagnostics)
+# GPU execution is a foundation shared by systems. It must not link back to World,
+# the rendering pipeline, UI, NRD, RTXDI or the application's scene/material runtime.
+add_library(whimsical_rendercore
+  engine/renderCore/RenderCore.cpp engine/renderCore/ShaderCompiler.cpp engine/renderCore/GpuProfiler.cpp
+  engine/renderCore/vulkan/VulkanContext.cpp
+  engine/renderCore/graph/Registry.cpp engine/renderCore/graph/ResourcePool.cpp
+  engine/renderCore/graph/RenderGraph.cpp engine/renderCore/graph/ShaderAccess.cpp)
+target_include_directories(whimsical_rendercore PUBLIC engine)
+target_link_libraries(whimsical_rendercore PUBLIC whimsical_diagnostics PRIVATE volk)
+target_compile_options(whimsical_rendercore PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(whimsical_rendercore PRIVATE
+  WHIMSICAL_ROOT="${CMAKE_SOURCE_DIR}"
+  WHIMSICAL_GLSLANG="${DEPS}/glslang/bin/glslang.exe"
+  WHIMSICAL_SHADER_CACHE="${CMAKE_BINARY_DIR}/shaders")
 add_library(whimsical_shader_runtime engine/render/ShaderCompiler.cpp engine/render/MaterialBindings.cpp)
-target_link_libraries(whimsical_shader_runtime PUBLIC whimsical_core)
+target_link_libraries(whimsical_shader_runtime PUBLIC whimsical_core whimsical_rendercore)
 target_compile_options(whimsical_shader_runtime PRIVATE /W4 /permissive- /utf-8)
 target_compile_definitions(whimsical_shader_runtime PRIVATE
   WHIMSICAL_RTXDI_INCLUDES="${DEPS}/rtxdi/Include"
   WHIMSICAL_SHADER_SOURCES="${CMAKE_SOURCE_DIR}/engine/render/shaders"
-  WHIMSICAL_GLSLANG="${DEPS}/glslang/bin/glslang.exe"
   WHIMSICAL_SHADERS="${CMAKE_BINARY_DIR}/shaders")
 # The registry is the single source of every binding number. This tool emits the GLSL the
 # shaders include, so the descriptor layout and the shader declarations are one statement.
-add_executable(shader_bindings engine/render/graph/ShaderBindings.cpp engine/render/graph/Registry.cpp
+add_executable(shader_bindings engine/render/ShaderBindings.cpp
   engine/render/RenderResources.cpp)
-target_link_libraries(shader_bindings PRIVATE whimsical_core)
+target_link_libraries(shader_bindings PRIVATE whimsical_core whimsical_rendercore)
 target_include_directories(shader_bindings PRIVATE "${DEPS}/rtxdi/Include")
 target_compile_options(shader_bindings PRIVATE /W4 /permissive- /utf-8)
 set(GENERATED_GLSL
@@ -128,14 +145,16 @@ add_custom_command(OUTPUT ${GENERATED_GLSL}
   COMMAND shader_bindings "${CMAKE_BINARY_DIR}/shaders/generated"
   DEPENDS shader_bindings VERBATIM)
 add_custom_target(whimsical_shader_bindings DEPENDS ${GENERATED_GLSL})
-add_executable(Whimsical engine/main.cpp engine/platform/Window.cpp engine/render/Renderer.cpp engine/render/VulkanContext.cpp engine/render/NrdDenoiser.cpp engine/render/GpuProfiler.cpp engine/render/UiRenderer.cpp)
-target_sources(Whimsical PRIVATE engine/render/RenderAuditWorker.cpp engine/render/GpuScene.cpp
+add_library(whimsical_rendering engine/render/Renderer.cpp engine/render/NrdDenoiser.cpp engine/render/UiRenderer.cpp
+  engine/render/RenderAuditWorker.cpp engine/render/GpuScene.cpp
   engine/render/GpuRenderTargets.cpp
-  engine/render/RenderPipeline.cpp engine/render/RenderResources.cpp
-  engine/render/graph/Registry.cpp engine/render/graph/ResourcePool.cpp engine/render/graph/RenderGraph.cpp
-  engine/render/graph/ShaderAccess.cpp)
-target_link_libraries(Whimsical PRIVATE whimsical_shader_runtime volk NRD user32 gdi32 winmm comdlg32)
-target_include_directories(Whimsical PRIVATE "${DEPS}/rtxdi/Include")
+  engine/render/RenderPipeline.cpp engine/render/RenderResources.cpp)
+target_link_libraries(whimsical_rendering PUBLIC whimsical_shader_runtime whimsical_rendercore PRIVATE volk NRD)
+target_include_directories(whimsical_rendering PRIVATE "${DEPS}/rtxdi/Include")
+target_compile_options(whimsical_rendering PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(whimsical_rendering PRIVATE WHIMSICAL_SHADERS="${CMAKE_BINARY_DIR}/shaders")
+add_executable(Whimsical engine/main.cpp engine/platform/Window.cpp)
+target_link_libraries(Whimsical PRIVATE whimsical_rendering user32 gdi32 winmm comdlg32)
 whimsical_copy_onnx(Whimsical)
 target_compile_options(Whimsical PRIVATE /W4 /permissive- /utf-8)
 target_compile_options(whimsical_core PRIVATE /W4 /permissive- /utf-8)
@@ -153,7 +172,6 @@ endforeach()
 add_custom_target(whimsical_shaders DEPENDS ${SPIRV})
 add_dependencies(whimsical_shaders whimsical_shader_bindings)
 add_dependencies(Whimsical whimsical_shaders)
-target_compile_definitions(Whimsical PRIVATE WHIMSICAL_SHADERS="${CMAKE_BINARY_DIR}/shaders")
 enable_testing()
 add_executable(console_tests tests/ConsoleTests.cpp)
 target_link_libraries(console_tests PRIVATE whimsical_core)

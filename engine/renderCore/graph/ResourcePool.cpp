@@ -42,17 +42,14 @@ VkDescriptorType descriptorType(BindingType type) {
     }
     throw std::runtime_error("Unbound render graph view");
 }
-uint32_t divide(uint32_t value, uint16_t divisor) {
-    return (value + divisor - 1) / divisor;
-}
 } // namespace
 
 uint64_t storageSignature(const Declaration& declaration, uint32_t width, uint32_t height) {
     if (declaration.kind != Kind::Image)
-        return (uint64_t(1) << 63) | (declaration.bytes(width, height) << 1) |
+        return (uint64_t(1) << 63) | (declaration.bufferBytes(width, height) << 1) |
                uint64_t(hostRead(declaration));
-    return (uint64_t(divide(width, declaration.divisor)) << 40) |
-           (uint64_t(divide(height, declaration.divisor)) << 12) |
+    return (uint64_t(declaration.extentWidth(width)) << 40) |
+           (uint64_t(declaration.extentHeight(height)) << 12) |
            (uint64_t(declaration.format) << 1) | 1;
 }
 
@@ -87,9 +84,9 @@ void ResourcePool::createLayout() {
         if (!view)
             return;
         auto type = descriptorType(view.type);
-        auto stages = declaration.section == Section::Shared
-                          ? VkShaderStageFlags(VK_SHADER_STAGE_ALL)
-                          : VkShaderStageFlags(VK_SHADER_STAGE_COMPUTE_BIT);
+        auto stages = declaration.stages == ShaderStages::All ? VkShaderStageFlags(VK_SHADER_STAGE_ALL)
+                    : declaration.stages == ShaderStages::Graphics ? VkShaderStageFlags(VK_SHADER_STAGE_ALL_GRAPHICS)
+                    : VkShaderStageFlags(VK_SHADER_STAGE_COMPUTE_BIT);
         bindings.push_back({view.binding, type, view.count, stages, nullptr});
     };
     for (uint16_t i = 0; i < registry_.size(); ++i) {
@@ -186,12 +183,12 @@ void ResourcePool::importSamplers(ResourceId id, std::vector<VkDescriptorImageIn
 uint32_t ResourcePool::extentWidth(ResourceId id) const {
     if (auto image = slots_[base(id)].external)
         return image->width;
-    return divide(width_, registry_[id].divisor);
+    return registry_[id].extentWidth(width_);
 }
 uint32_t ResourcePool::extentHeight(ResourceId id) const {
     if (auto image = slots_[base(id)].external)
         return image->height;
-    return divide(height_, registry_[id].divisor);
+    return registry_[id].extentHeight(height_);
 }
 
 uint32_t ResourcePool::physical(ResourceRef ref) const {
@@ -218,10 +215,10 @@ void ResourcePool::realize(uint32_t width, uint32_t height, const std::vector<Re
             }
             continue;
         }
-        const uint32_t w = divide(width, declaration.divisor), h = divide(height, declaration.divisor);
+        const uint32_t w = declaration.extentWidth(width), h = declaration.extentHeight(height);
         const uint64_t bytes = declaration.kind == Kind::Image
                                    ? uint64_t(w) * h * formatInfo(declaration.format).bytes
-                                   : declaration.bytes(width, height);
+                                   : declaration.bufferBytes(width, height);
         declaredBytes_ += bytes * halves;
         if (residency[i].root.index != i) {
             release(slots_[bases_[i]]);
@@ -242,17 +239,18 @@ void ResourcePool::realize(uint32_t width, uint32_t height, const std::vector<Re
                 // one storage class per format instead of splitting it by role.
                 VkImageUsageFlags usage =
                     declaration.format == Format::D32
-                        ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+                        ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                              VK_IMAGE_USAGE_TRANSFER_DST_BIT
                         : VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
                               VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                               VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
                 slot.image = vk_.image(w, h, vulkanFormat(declaration.format), usage);
-            } else if (hostRead(declaration))
-                slot.buffer = vk_.buffer(bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, BufferMemory::Readback);
-            else
-                slot.buffer = vk_.buffer(bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-                                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+            } else {
+                auto usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                             VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+                slot.buffer = vk_.buffer(bytes, usage,
+                                         hostRead(declaration) ? BufferMemory::Readback : BufferMemory::Device);
+            }
             slot.signature = signature;
             slot.bytes = bytes;
         }

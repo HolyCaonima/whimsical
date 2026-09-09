@@ -1,5 +1,5 @@
 #include "GpuRenderTargets.h"
-#include "graph/ImageReadback.h"
+#include "renderCore/graph/ImageReadback.h"
 #include <cstring>
 
 namespace whimsical {

@@ -4,6 +4,7 @@
 #include "scripting/RuntimeHost.h"
 #include "platform/Window.h"
 #include "render/Renderer.h"
+#include "renderCore/RenderCore.h"
 #include "ui/EngineUi.h"
 #include "ui/Console.h"
 #include "core/EngineSettings.h"
@@ -24,6 +25,7 @@ int main(int argc, char** argv) {
     std::cout.setf(std::ios::unitbuf);
     try {
         RenderOptions options;
+        rc::DeviceOptions deviceOptions;
         uint32_t width = 1280, height = 800;
         int debugView = 0;
         bool demo = false, smoke = false, ecsSmoke = false;
@@ -78,10 +80,10 @@ int main(int argc, char** argv) {
             else if (arg == "--audit-light")
                 options.auditLight = number();
             else if (arg == "--no-validation") {
-                options.validation = false;
+                deviceOptions.validation = false;
                 startupCommands.push_back("r.Validation false");
             } else if (arg == "--validation") {
-                options.validation = true;
+                deviceOptions.validation = true;
                 startupCommands.push_back("r.Validation true");
             } else if (arg == "--present") {
                 if (i + 1 >= argc)
@@ -155,7 +157,7 @@ int main(int argc, char** argv) {
             options.capture = true;
             // The smoke scenario is the project's correctness gate, so it always pays for
             // validation regardless of the build configuration default.
-            options.validation = true;
+            deviceOptions.validation = true;
         }
         if (consoleSmoke && (smoke || demo || !options.audit.empty()))
             throw std::runtime_error("--console-smoke requires its own run");
@@ -171,7 +173,7 @@ int main(int argc, char** argv) {
         assets.mount("/SystemFonts", std::filesystem::path(windows) / "Fonts", false);
         registerEngineAssets(assets);
         ConsoleRegistry variables;
-        EngineSettings settings(variables, RenderOptions{}.validation);
+        EngineSettings settings(variables, rc::DeviceOptions{}.validation);
         ui::Console console(variables);
         console.open(consoleOpen);
         const auto savedConfig = project.root() / "Saved" / "ConsoleVariables.cfg";
@@ -396,7 +398,7 @@ int main(int argc, char** argv) {
             variables.set("r.Hud", "false", CVarSource::CommandLine);
         options.hud = settings.hud();
         scripts.setHudEnabled(options.hud);
-        options.validation = variables.get<bool>("r.Validation");
+        deviceOptions.validation = variables.get<bool>("r.Validation");
         auto present = variables.get<std::string>("r.Present");
         options.present = present == "fifo"      ? PresentMode::Fifo
                           : present == "mailbox" ? PresentMode::Mailbox
@@ -407,7 +409,10 @@ int main(int argc, char** argv) {
         uint32_t validationErrors = 0;
         std::thread renderThread([&] {
             try {
-                Renderer renderer(window.handle(), options);
+                deviceOptions.presentationWindow = window.handle();
+                deviceOptions.rayQueries = true;
+                rc::RenderCore renderCore(deviceOptions);
+                Renderer renderer(renderCore, options);
                 FrameRef frame;
                 uint64_t seen = 0;
                 for (;;) {

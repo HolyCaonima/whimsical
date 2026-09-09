@@ -68,6 +68,34 @@ struct FunctionInfo {
 };
 } // namespace
 
+Extent3D reflectLocalSize(const uint32_t* words, size_t count) {
+    if (count < 5 || words[0] != 0x07230203)
+        throw std::runtime_error("Not a SPIR-V module");
+    Extent3D size{0, 0, 0};
+    bool ids = false;
+    std::map<uint32_t, uint32_t> constants;
+    for (size_t at = 5; at < count;) {
+        const auto* w = words + at;
+        auto length = w[0] >> 16, op = w[0] & 0xffff;
+        if (!length || at + length > count)
+            throw std::runtime_error("Truncated SPIR-V module");
+        if (op == 16 && length == 6 && w[2] == 17) // OpExecutionMode LocalSize
+            size = {w[3], w[4], w[5]};
+        if (op == 331 && length == 6 && w[2] == 38) { // OpExecutionModeId LocalSizeId
+            size = {w[3], w[4], w[5]};
+            ids = true;
+        }
+        if (op == 43 && length == 4) // OpConstant (specialization needs explicit support)
+            constants[w[2]] = w[3];
+        at += length;
+    }
+    if (ids)
+        size = {constants.at(size.x), constants.at(size.y), constants.at(size.z)};
+    if (!size.x || !size.y || !size.z)
+        throw std::runtime_error("Compute program requires a fixed local workgroup size");
+    return size;
+}
+
 std::vector<ShaderAccess> reflect(const Registry& registry, const uint32_t* words, size_t count) {
     if (count < 5 || words[0] != 0x07230203)
         throw std::runtime_error("Not a SPIR-V module");

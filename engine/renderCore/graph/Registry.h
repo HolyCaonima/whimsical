@@ -74,9 +74,11 @@ inline bool consumes(Usage usage) {
     return usage == Usage::Read || usage == Usage::Modify;
 }
 
-// Where the generated declaration lands in the shader sources, which also fixes the
-// descriptor stage mask: shared declarations are visible to raster, the rest are compute.
-enum class Section : uint8_t { Shared, Compute, Rtxdi };
+enum class ShaderStages : uint8_t { Compute, Graphics, All };
+
+struct Extent3D {
+    uint32_t x = 1, y = 1, z = 1;
+};
 
 enum class BindingType : uint8_t { None, Uniform, Storage, StorageImage, SamplerArray, Tlas };
 
@@ -121,6 +123,11 @@ struct ResourceRef {
         return id == other.id && slot == other.slot;
     }
 };
+// The compiler's physical reuse decision is inspectable without a Vulkan backend.
+struct Residency {
+    ResourceId root;
+    bool needed = false;
+};
 inline ResourceRef previous(ResourceId id) {
     return {id, Slot::Previous};
 }
@@ -136,9 +143,15 @@ struct Declaration {
     std::string name;
     Kind kind = Kind::Image;
     Lifetime lifetime = Lifetime::Transient;
-    Section section = Section::Compute;
+    // Include grouping belongs to the caller (e.g. graph.physics.glsl), not the core.
+    std::string section = "compute";
+    ShaderStages stages = ShaderStages::Compute;
     Format format = Format::RGBA16F;
-    uint16_t divisor = 1; // screen size / divisor, rounded up
+    // Fixed dimensions are independent of any view. Zero selects the caller's compile
+    // extent / divisor, useful for rendering without making it a core assumption.
+    uint32_t width = 0, height = 0;
+    uint16_t divisor = 1;
+    uint64_t byteSize = 0; // fixed-size buffers
     // The state the frame hands this resource to its consumer in: the swapchain to the
     // presentation engine, a readback buffer to the host. The graph emits that transition
     // itself after the last pass, so nothing has to exist purely in order to make one.
@@ -151,6 +164,16 @@ struct Declaration {
     // too, but neither has a name for it. Stated once here, so declaring the structure a
     // pass does touch is enough to be ordered against whatever fed it.
     std::vector<ResourceId> reaches;
+
+    uint32_t extentWidth(uint32_t referenceWidth) const {
+        return width ? width : (referenceWidth + divisor - 1) / divisor;
+    }
+    uint32_t extentHeight(uint32_t referenceHeight) const {
+        return height ? height : (referenceHeight + divisor - 1) / divisor;
+    }
+    uint64_t bufferBytes(uint32_t referenceWidth, uint32_t referenceHeight) const {
+        return bytes ? bytes(referenceWidth, referenceHeight) : byteSize;
+    }
 };
 
 // A buffer the host reads after the frame fence. It lives in readback memory and the frame

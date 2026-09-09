@@ -1,6 +1,6 @@
 #pragma once
 #include "core/Types.h"
-#include "render/graph/Registry.h"
+#include "renderCore/graph/Registry.h"
 
 // Every logical resource of the lighting pipeline, grouped by the feature that owns it.
 // A declaration states what a resource *is* — format, screen fraction, who owns the memory,

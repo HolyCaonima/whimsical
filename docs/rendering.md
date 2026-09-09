@@ -51,13 +51,14 @@ Resize、首帧、大相机跳变、灯数量／材质变化会清理历史。NR
 
 ## 资源依赖驱动的 RenderGraph
 
-渲染系统由三层组成，每层只回答一个问题：
+图与 GPU 执行属于 [RenderCore](render-core.md)，渲染系统是它的使用者。下表区分基础机制与渲染功能：
 
 | 模块 | 回答的问题 | 是否知道 Vulkan |
 | --- | --- | --- |
-| `graph/Registry` | 这个资源**是什么**（格式、尺寸规则、所有权、shader 视图） | 否 |
-| `graph/ResourcePool` | 它这一帧**落在哪块显存和哪个 descriptor 上** | 是 |
-| `graph/RenderGraph` | pass 之间**有什么依赖**，因此需要什么 barrier、什么可以裁掉 | 是 |
+| `renderCore/graph/Registry` | 这个资源**是什么**（格式、尺寸规则、所有权、shader 视图） | 否 |
+| `renderCore/graph/ResourcePool` | 它这次执行**落在哪块显存和哪个 descriptor 上** | 是 |
+| `renderCore/graph/RenderGraph` | pass 之间**有什么依赖**，因此需要什么 barrier、什么可以裁掉 | 公共接口否 |
+| `renderCore/GraphContext` | 程序、录制、提交、完成和读回；不决定 system 更新节奏 | 公共接口否 |
 | `RenderResources` | 本管线声明了哪些资源 | 否 |
 | `RenderPipeline` | 本帧由哪些 pass 组成、各自读写什么 | 是 |
 
@@ -65,10 +66,8 @@ Resize、首帧、大相机跳变、灯数量／材质变化会清理历史。NR
 
 ```cpp
 graph.add("RTXDI Spatial Resampling")
-    .read(r_.gbuffer.surface(), Access::Compute)
-    .read(r_.di.neighbours, Access::Compute)
     .modify(r_.di.reservoirs, Access::Compute)
-    .dispatch(compute_[DiSpatial]);
+    .dispatch(*compute_[DiSpatial], r_.gbuffer.depth);
 ```
 
 ### 资源契约
@@ -96,17 +95,17 @@ graph.add("RTXDI Spatial Resampling")
 | --- | --- | --- |
 | `Transient` | 只在首次写入到最后一次读取之间有意义 | 可被裁剪；生命期不重叠时共享显存 |
 | `Persistent` | 图拥有，内容原地带入下一帧 | 不裁剪、不共享、跨帧排序 |
-| `History` | 图拥有的一对，`previous(id)` 命名上一帧写的那半 | 每帧翻转，两套 descriptor set 各绑一种奇偶 |
+| `History` | 图拥有的一对，`previous(id)` 命名上一轮写的那半 | 所有者显式推进，两套 descriptor set 各绑一种奇偶 |
 | `Imported` | 外部分配、图负责同步（swapchain、BLAS/TLAS） | 只同步不分配 |
 | `External` | 外部分配且外部同步（顶点、实例、灯表） | 只绑定，不参与 barrier |
 
-`History` 是替代"帧末复制"的机制。`ResourcePool` 为它分配两个物理槽位，`flip()` 翻转奇偶，`previous` 视图指向上一帧写入的那半，两半的 descriptor 在两套 set 里各写一次。G-buffer 的 albedo/normal/position/viewZ 和 GI reservoir 都走这条路，帧末不再有拷贝。
+`History` 是替代"帧末复制"的机制。`ResourcePool` 为它分配两个物理槽位；渲染系统在提交后调用 `GraphContext::advanceHistory()`，`previous` 视图指向上一帧写入的那半，两半的 descriptor 在两套 set 里各写一次。其他 system 的执行上下文独立决定何时推进。G-buffer 的 albedo/normal/position/viewZ 和 GI reservoir 都走这条路，帧末不再有拷贝。
 
 DI 的四层 reservoir 不是 `History`，因为四层里两层跨帧、两层帧内复用同一块地址空间。它改成**角色轮转**：shader 说角色，`diLayer(role) = role ^ g.renderSettings.w`，`w` 每帧在 0 和 2 之间翻转，等价于原来的 `final→previous final`、`replay→previous replay` 两次拷贝。
 
 ### 图编译
 
-`compile()` 是声明的纯函数——不需要设备就能跑完，`render_graph_tests` 正是这么测契约的——依次做五件事：
+`compile()` 的依赖与生命周期分析不需要设备，实际资源实现由 RenderCore 的 ResourcePool 完成，依次做五件事：
 
 1. **依赖**：正向解析内容版本，每个消费用法连一条指向产出者的边。边只指向更早的 pass。
 2. **裁剪**：根是跨帧内容的**最后一个**产出者，加上 `sideEffect()` 的 pass；从根反向扫一遍即可。因为根是"最后一个"，**一个还没被人读就被覆盖掉的版本会把它的产出者一起带走**，不管资源是不是 transient；`modify` 链则会把整条链拉活。capture、audit、history 初始化这些条件功能不出现时不花任何代价。

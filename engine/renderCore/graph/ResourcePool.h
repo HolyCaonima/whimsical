@@ -7,15 +7,6 @@ namespace whimsical::rg {
 // and equally the test for whether an existing allocation still fits its declaration.
 uint64_t storageSignature(const Declaration&, uint32_t width, uint32_t height);
 
-// What compiling the frame decided about one logical resource: whether its contents are
-// needed at all, and whose storage it borrows when they are. A transient no live pass
-// touches is not needed, so the pool holds nothing for it — allocation is a consequence of
-// the same liveness that drove culling rather than a separate opinion about the frame.
-struct Residency {
-    ResourceId root;     // itself when the resource owns its storage
-    bool needed = false; // graph-owned resources only; the rest are the owner's business
-};
-
 // Physical side of the registry: one Vulkan object per live slot, per-pass descriptor
 // sets, and the access state the compiler synchronises against. Logical
 // resources reach their memory only through here, so a history pair can swap halves and a

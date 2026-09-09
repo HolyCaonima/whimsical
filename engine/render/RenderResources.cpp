@@ -35,11 +35,12 @@ Declaration storage(const char* name, Lifetime lifetime, const char* block, cons
 }
 
 Declaration inShared(Declaration d) {
-    d.section = Section::Shared;
+    d.section = "shared";
+    d.stages = ShaderStages::All;
     return d;
 }
 Declaration inRtxdi(Declaration d) {
-    d.section = Section::Rtxdi;
+    d.section = "rtxdi";
     return d;
 }
 } // namespace

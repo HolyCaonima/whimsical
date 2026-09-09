@@ -12,7 +12,7 @@
 
 每次模拟完成，把值拷贝到 `Frame`，包成不可变快照经单槽 `FrameMailbox` 发布。槽位已占用时替换旧快照；主线程不等待 GPU。被替换的快照如果从未被取走，它携带的场景事件会**折叠进新快照**（`SceneDelta::prepend`）：渲染线程靠事件链增量更新，链上缺一环就只能重扫整个场景，因此丢帧只应该丢掉延迟，不该丢掉事件。合并与写入在同一把锁内完成——若消费者能在两者之间取走旧快照，它拿到的 delta 会比自己的镜像更靠前，反而触发一次本可避免的重扫。快照按引用计数移交，跨线程不发生深拷贝，渲染线程也因此能零成本保留上一帧。`acquire` **不清空槽位**：只有在首个快照到达前才阻塞，之后没有新快照时返回 `Repeat`，渲染线程重新呈现最新快照而不是空等下一次 60 Hz tick。渲染帧率由显示器和 GPU 决定，不被仿真频率锁死。渲染线程只访问快照，不读取 World 或 JS 对象。上一次**真正渲染**的快照用于物体与相机运动向量，不能拿上一个 simulation tick 代替。
 
-渲染线程创建、使用和销毁 Vulkan 对象，包括 descriptor、swapchain、BLAS/TLAS、NRD pools 和 UI 几何/纹理资源。一个 GPU frame in flight，fence 完成后才能更新 host-visible buffer 或 descriptor pool。present 完成 semaphore 按 swapchain image 分配。呈现模式由 `--present` 选择，默认 FIFO；`mailbox` 与 `immediate` 用于在没有 vblank 量化的情况下测量真实帧成本，设备不支持时回退 FIFO。
+应用在 GPU/渲染线程创建 RenderCore，再将它传给 Renderer。RenderCore 拥有设备，GraphContext 拥有资源池、图、compute 程序、命令与提交 fence；渲染系统拥有 swapchain、场景、NRD pools 和 UI 等具体功能。每个执行上下文一个 submission in flight，完成后才能更新 host-visible buffer 或 descriptor pool。present 完成 semaphore 按 swapchain image 分配。呈现模式由 `--present` 选择，默认 FIFO；`mailbox` 与 `immediate` 用于在没有 vblank 量化的情况下测量真实帧成本，设备不支持时回退 FIFO。
 
 uiCore 在主线程拥有 RmlUi Context、文档、DOM 和输入。EngineUi 只拥有控制台与可选性能统计，不依赖 World；项目 Engine.ui 绑定拥有全部玩法文档、布局和事件。两者复用同一布局/事件系统，显示开关独立。每次发布时记录不可变 UiFrame，完整绘制列表持有几何和纹理的共享引用，跨线程无需传递 RmlUi 或 JS 指针。Vulkan UiRenderer 缓存资源，在 frame fence 后回收失效资源，并以预乘 alpha 绘制到已放置场景视图的窗口目标；不再有 GDI 光栅或整屏 CPU HUD 上传。场景文档及回调跟随场景 realm 重建，常驻应用文档与引擎工具持续存在。详见 [UI Core](ui-core.md)。
 
@@ -38,19 +38,20 @@ proxy 拆成两半，因为它们的变化频率相差一到两个数量级：`P
 
 ## 渲染系统的职责切分
 
-渲染侧按"渲染功能 / 图编译 / GPU 执行"三条职责拆开，每个文件只回答一个问题：
+RenderCore 是 GPU 基础层，渲染系统和其他 GPU system 是它的平级使用者。完整公共接口、所有权与执行约定见 [RenderCore](render-core.md)。
 
 | 文件 | 职责 | 知道 Vulkan |
 | --- | --- | --- |
-| `render/graph/Registry` | 逻辑资源声明：格式、尺寸规则、所有权、shader 视图；binding 号的唯一来源 | 否 |
-| `render/graph/ResourcePool` | 物理实现：显存、descriptor set、history 奇偶、transient 共享 | 是 |
-| `render/graph/RenderGraph` | 图编译与执行：依赖、裁剪、校验、生命期、barrier 推导、pass 分发 | 是 |
+| `renderCore/RenderCore` | 共享设备；GraphContext 管理图执行、程序、上传、读回和完成 | 公共接口否 |
+| `renderCore/graph/Registry` | 逻辑资源声明：格式、尺寸规则、所有权、shader 视图 | 否 |
+| `renderCore/graph/ResourcePool` | 物理实现：显存、descriptor set、history 奇偶、transient 共享 | 是 |
+| `renderCore/graph/RenderGraph` | 公共构图、依赖、裁剪、校验、生命周期；执行实现隐藏在后端 | 公共接口否 |
 | `render/RenderResources` | 本管线声明了哪些资源（按功能分组） | 否 |
 | `render/GpuScene` | GPU 上的场景：几何、加速结构、instance 镜像、材质、纹理 | 是 |
 | `render/RenderPipeline` | pipeline 对象，以及本帧由哪些 pass 组成、各自读写什么 | 是 |
 | `render/Renderer` | 帧循环、swapchain、统计 | 是 |
 
-这条切分线的判据是**尺寸由什么决定**：`GpuScene` 里的东西按内容大小分配（实例数、网格数、灯数），所以它自己拥有并 `import` 给图；图拥有的都是按屏幕尺寸分配的。这也是为什么 `Lifetime::External` 的资源图只绑定不同步——它们的写入发生在渲染线程的 CPU 侧，早于命令录制。
+切分判据是**机制还是算法**，而不是尺寸由屏幕还是场景决定。固定大小 buffer、独立尺寸 image、相对参考范围的图像都可以由 Core 分配。`GpuScene` 仍将自己管理的场景分配导入图；`Lifetime::External` 表示所有者自己同步，`Imported` 表示所有者分配、图负责同步，不能把“CPU 写入”误当作所有外部资源的性质。
 
 接入一个渲染功能只需要两处：在 `RenderResources` 里 `declare` 资源，在 `RenderPipeline::build` 里声明这个 pass 读写什么。binding 号、descriptor layout、GLSL 声明、显存分配、barrier 和裁剪都由此推导，没有中央资源表要改，也没有 barrier 要手补。声明与实际录制的一致性由图自己校验：pass body 只能通过 `PassContext` 取用声明过的资源，消费本帧没人产出的内容会在编译期报错。详见 [RT 渲染接入约定](rendering.md#资源依赖驱动的-rendergraph)。
 

@@ -1,6 +1,6 @@
 #pragma once
 #include "Registry.h"
-#include "render/VulkanContext.h"
+#include <memory>
 
 namespace whimsical::rg {
 // Reflection describes operations, never coverage. Even a write-only shader may update
@@ -11,10 +11,13 @@ struct ShaderAccess {
     bool reads = false;
     bool writes = false;
 };
+struct ProgramStorage;
 struct Program {
-    VkPipeline pipeline = VK_NULL_HANDLE;
+    std::shared_ptr<const ProgramStorage> storage;
     std::vector<ShaderAccess> accesses;
+    Extent3D localSize;
 };
+Extent3D reflectLocalSize(const uint32_t* words, size_t count);
 std::vector<ShaderAccess> reflect(const Registry&, const uint32_t* words, size_t count);
 void merge(std::vector<ShaderAccess>& into, const std::vector<ShaderAccess>& from);
 } // namespace whimsical::rg

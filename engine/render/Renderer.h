@@ -3,20 +3,13 @@
 #include "core/GpuProfile.h"
 #include "core/CpuProfile.h"
 #include <optional>
-#include <windows.h>
 #include <memory>
 namespace whimsical {
+namespace rc { class RenderCore; }
 // Swapchain pacing. FIFO is the shipping default; the uncapped modes exist so frame cost
 // can be measured without the display clamping every result to a vblank multiple.
 enum class PresentMode { Fifo, Mailbox, Immediate };
 struct RenderOptions {
-    // Validation costs roughly a millisecond of CPU per frame, which is enough to push an
-    // otherwise on-budget frame past a vblank. Debug builds pay it; Release opts in.
-#ifdef NDEBUG
-    bool validation = false;
-#else
-    bool validation = true;
-#endif
     bool capture = false;
     uint32_t maxFrames = 0;
     bool hud = true;
@@ -59,7 +52,7 @@ class Renderer {
     std::unique_ptr<Impl> impl_;
 
   public:
-    Renderer(HWND, const RenderOptions&);
+    Renderer(rc::RenderCore&, const RenderOptions&);
     ~Renderer();
     // Takes a reference-counted snapshot so the renderer can retain the previous frame
     // for motion vectors without copying it.

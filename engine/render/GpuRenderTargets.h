@@ -1,6 +1,6 @@
 #pragma once
 #include "core/RenderTarget.h"
-#include "graph/RenderGraph.h"
+#include "renderCore/vulkan/GraphAccess.h"
 
 namespace whimsical {
 // Render-thread owner of runtime texture storage and asynchronous readback staging.

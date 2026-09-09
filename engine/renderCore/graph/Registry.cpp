@@ -115,14 +115,15 @@ static void emit(std::ostringstream& out, const Declaration& declaration, const 
 }
 
 std::map<std::string, std::string> Registry::glsl() const {
-    std::ostringstream sections[3];
+    std::map<std::string, std::ostringstream> sections;
     for (const auto& declaration : declarations_) {
-        auto& out = sections[size_t(declaration.section)];
+        auto& out = sections[declaration.section];
         emit(out, declaration, declaration.view);
         emit(out, declaration, declaration.previous);
     }
-    return {{"graph.shared.glsl", sections[0].str()},
-            {"graph.compute.glsl", sections[1].str()},
-            {"graph.rtxdi.glsl", sections[2].str()}};
+    std::map<std::string, std::string> result;
+    for (auto& section : sections)
+        result.emplace("graph." + section.first + ".glsl", section.second.str());
+    return result;
 }
 } // namespace whimsical::rg
