@@ -16,16 +16,13 @@ function vertex(m,p,normal,color,uv){
     return m.vertices.length/15-1;
 }
 function quad(m,a,b,c,d){m.indices.push(a,b,c,a,c,d);}
-function lineXZ(m,x0,z0,x1,z1,half,color){
-    const dx=x1-x0,dz=z1-z0,len=Math.hypot(dx,dz),px=-dz/len*half,pz=dx/len*half,up=[0,1,0];
-    quad(m,vertex(m,[x0-px,0,z0-pz],up,color),vertex(m,[x1-px,0,z1-pz],up,color),vertex(m,[x1+px,0,z1+pz],up,color),vertex(m,[x0+px,0,z0+pz],up,color));
-}
-const grid=mesh(),extent=40,step=1,major=10;
-for(let i=-extent;i<=extent;i+=step){
-    const axis=!i,heavy=!(i%major),half=axis?0.025:heavy?0.014:0.007;
-    lineXZ(grid,-extent,i,extent,i,half,axis?[0.62,0.24,0.24]:heavy?[0.38,0.38,0.40]:[0.18,0.18,0.19]);
-    lineXZ(grid,i,-extent,i,extent,half,axis?[0.22,0.34,0.62]:heavy?[0.38,0.38,0.40]:[0.18,0.18,0.19]);
-}
+// A camera-following carrier; the material draws filtered lines in world space.
+// UVs retain horizontal distance from the camera for fading before the clip limit.
+const grid=mesh(),extent=512,up=[0,1,0],white=[1,1,1];
+quad(grid,vertex(grid,[-extent,0,-extent],up,white,[-extent,-extent]),
+    vertex(grid,[extent,0,-extent],up,white,[extent,-extent]),
+    vertex(grid,[extent,0,extent],up,white,[extent,extent]),
+    vertex(grid,[-extent,0,extent],up,white,[-extent,extent]));
 // Wires are instanced per edge instead of baked per shape: only a rod scaled along its own
 // axis keeps a two pixel line while the emitter it measures is stretched. Unit rod spans
 // y in [-0.5,0.5] at radius 1; the tip cone stands on y=0 and points at y=1.

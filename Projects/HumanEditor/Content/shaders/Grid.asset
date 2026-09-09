@@ -1,0 +1,38 @@
+ALAS1
+{"id":"617c9cb1b4054d66a4658842ed8f75eb","type":"Shader","name":"Grid","version":1,"storage":"embedded","metadata":{"materialModel":"metallicRoughness","properties":[],"textures":[]}}
+// World-space pattern stays fixed while its two-triangle carrier follows the camera.
+vec2 p = ctx.position.xz;
+// Each family of lines needs its own screen-space gradient. The scalar surface
+// footprint overestimates one axis badly when the plane is viewed edge-on.
+#ifdef FRAGMENT_PASS
+vec2 dx = dFdx(p), dy = dFdy(p);
+vec2 pixel = max(sqrt(dx * dx + dy * dy), vec2(0.00001));
+#else
+// The display material is ray-invisible, but also links into shared compute shaders.
+vec2 pixel = vec2(max(ctx.footprint, 0.00001));
+#endif
+float coverage = 0.0;
+float spacing = 1.0;
+for (int level = 0; level < 8; ++level) {
+    vec2 distanceToLine = abs(fract(p / spacing + 0.5) - 0.5) * spacing;
+    vec2 distanceInPixels = distanceToLine / pixel;
+    // Box-filter a 0.7-pixel line instead of widening geometry to fight aliasing.
+    vec2 line = clamp(0.85 - distanceInPixels, 0.0, 1.0) - clamp(0.15 - distanceInPixels, 0.0, 1.0);
+    vec2 fade = 1.0 - smoothstep(vec2(spacing * 0.10), vec2(spacing * 0.25), pixel);
+    line *= fade;
+    coverage = max(coverage, max(line.x, line.y) * 0.36);
+    // Nested 1/2/4/... metre grids retain every other line during each transition.
+    // Identical weights and max composition keep shared lines from brightening.
+    spacing *= 2.0;
+}
+vec2 axes = clamp(1.0 - abs(p) / pixel, 0.0, 1.0);
+float axis = max(axes.x, axes.y) * 0.6;
+vec3 axisColor = axes.y >= axes.x ? vec3(0.62, 0.24, 0.24) : vec3(0.22, 0.34, 0.62);
+SurfaceData s = DefaultSurface(ctx);
+s.albedo = mix(vec3(0.38, 0.40, 0.43), axisColor, axis / max(coverage + axis, 0.00001));
+// Fade before the view's far clip, and soften the horizon at grazing angles.
+float viewDistance = length(ctx.uv) / max(length(ctx.viewDirection.xz), 0.00001);
+float distanceFade = 1.0 - smoothstep(80.0, 140.0, viewDistance);
+float horizonFade = smoothstep(0.015, 0.10, abs(ctx.viewDirection.y));
+s.opacity = max(coverage, axis) * distanceFade * horizonFade;
+return s;

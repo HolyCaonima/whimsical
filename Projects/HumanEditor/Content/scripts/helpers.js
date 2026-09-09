@@ -263,6 +263,12 @@ HE.updateHelpers=function(){
     var basis=HE.basis(),tanY=Math.tan(HE.camera.fov/2),tanX=tanY*HE.rect.width/HE.rect.height;
     h.view={forward:basis.forward,right:basis.right,up:basis.up,focal:HE.rect.height/(2*tanY),
         tanX:tanX,tanY:tanY,planeX:Math.sqrt(1+tanX*tanX),planeY:Math.sqrt(1+tanY*tanY)};
+    // Only the carrier moves; the material's grid and axes remain world aligned.
+    var gridX=HE.camera.target[0]-basis.forward[0]*HE.camera.distance;
+    var gridZ=HE.camera.target[2]-basis.forward[2]*HE.camera.distance;
+    if(h.gridX!==gridX||h.gridZ!==gridZ){
+        Engine.transform(h.grid,HE.pose([gridX,0.01,gridZ],[0,0,0,1]));h.gridX=gridX;h.gridZ=gridZ;
+    }
     var billboard=HE.billboard(),selected={};
     HE.selected.forEach(function(e){selected[e]=true;});
     HE.wireBegin();
