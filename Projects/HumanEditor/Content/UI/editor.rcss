@@ -2,10 +2,12 @@ body { width:100%; height:100%; margin:0; font-family:LatoLatin; font-size:13px;
 div,p,h2 { display:block; }
 button,input,textarea,select { font-family:LatoLatin; font-size:13px; color:#d3d3d3; pointer-events:auto; }
 button { display:inline-block; background-color:#363636; border:1px #111111; border-radius:3px; padding:5px 10px; margin-right:4px; vertical-align:middle; }
+/* Declared before the state rules so a disabled toggle still reads as active, and unclickable rather than merely dim. */
+button.disabled { color:#696969; background-color:#292929; pointer-events:none; }
 button:hover { background-color:#484848; color:#ffffff; }
 button:active,button.active { background-color:#17649b; color:#ffffff; }
-button:disabled { color:#696969; background-color:#292929; }
 input,textarea,select { background-color:#171717; border:1px #414141; border-radius:3px; padding:5px; }
+input.disabled,textarea.disabled,select.disabled { color:#6f6f6f; background-color:#1f1f1f; border-color:#333333; }
 input:focus,textarea:focus { border-color:#3185be; }
 textarea { display:block; width:94%; height:160px; margin:7px 0; }
 select { height:28px; }
@@ -36,9 +38,9 @@ scrollbarcorner { background-color:#1a1a1a; }
 #main-menu { display:none; position:absolute; width:254px; padding:4px; z-index:101; background-color:#292929; border:1px #535353; border-radius:4px; pointer-events:auto; }
 #main-menu button { display:block; position:relative; box-sizing:border-box; width:254px; height:30px; margin:0; padding:0 10px; line-height:30px; border:0px; border-radius:2px; background-color:#292929; text-align:left; font-size:12px; }
 #main-menu button:hover, #main-menu button:focus { background-color:#3b5365; color:#ffffff; }
-#main-menu button:disabled { background-color:#292929; color:#696969; }
+#main-menu button.disabled { background-color:#292929; color:#696969; }
 #main-menu button span { position:absolute; right:10px; top:0; color:#929292; font-size:11px; }
-#main-menu button:disabled span { color:#606060; }
+#main-menu button.disabled span { color:#606060; }
 .menu-separator { height:1px; margin:4px 6px; background-color:#414141; }
 #doc-title { position:absolute; right:14px; top:6px; height:22px; line-height:22px; padding:0 11px; background-color:#1c1c1c; border:1px #2c2c2c; border-radius:4px; white-space:nowrap; }
 #project-label { color:#8a8a8a; font-size:11px; }
@@ -112,6 +114,11 @@ scrollbarcorner { background-color:#1a1a1a; }
 .parent-link { display:block; width:100%; height:26px; box-sizing:border-box; padding:3px 6px; margin:0; text-align:left; overflow:hidden; font-size:11px; color:#9cbed6; }
 .asset-reference { position:relative; display:block; box-sizing:border-box; width:100%; height:26px; margin:0; padding:3px 24px 3px 6px; text-align:left; overflow:hidden; white-space:nowrap; font-size:11px; line-height:18px; color:#9cbed6; }
 .asset-choose { position:absolute; right:6px; top:3px; pointer-events:none; }
+.asset-field { display:flex; align-items:center; width:100%; }
+.asset-field .asset-reference { flex:1; width:auto; min-width:0; }
+.asset-browse { flex-shrink:0; box-sizing:border-box; width:26px; height:26px; padding:0; margin:0 0 0 4px; text-align:center; line-height:24px; }
+.asset-browse.disabled .folder-tab { background-color:#4d4d4d; }
+.asset-browse.disabled .folder-front { background-color:#5b5b5b; }
 #detail-asset-picker { position:absolute; box-sizing:border-box; padding:8px; background-color:#252525; border:1px #586771; border-radius:4px; pointer-events:auto; }
 #asset-picker-search { display:block; box-sizing:border-box; width:100%; height:30px; padding:5px 7px; margin:0 0 6px; font-size:12px; line-height:18px; }
 #asset-picker-results { overflow:hidden; }
@@ -232,7 +239,7 @@ scrollbarcorner { background-color:#1a1a1a; }
 #actor-menu { position:absolute; width:246px; padding:4px; background-color:#252525; border:1px #555555; pointer-events:auto; }
 #actor-menu button { position:relative; display:block; box-sizing:border-box; width:246px; height:29px; margin:0; padding:5px 10px; border-width:0; border-radius:0px; background-color:#252525; text-align:left; }
 #actor-menu button:hover { background-color:#305c7d; }
-#actor-menu button:disabled { background-color:#252525; color:#696969; }
+#actor-menu button.disabled { background-color:#252525; color:#696969; }
 #actor-menu button span { position:absolute; right:10px; top:6px; color:#909090; font-size:11px; }
 .context-separator { width:238px; height:1px; margin:4px; background-color:#414141; }
 #dialog.project-dialog { width:560px; padding:24px; margin-left:-305px; top:22%; border-color:#4b4b4b; border-radius:6px; }
@@ -254,4 +261,4 @@ scrollbarcorner { background-color:#1a1a1a; }
 #dialog.project-dialog #dialog-actions button { height:34px; box-sizing:border-box; padding:0 16px; margin:0 0 0 8px; line-height:32px; text-align:center; }
 #dialog.project-dialog button.primary { background-color:#356b92; border-color:#477fa6; color:#ffffff; }
 #dialog.project-dialog button.primary:hover { background-color:#417ea9; }
-#dialog.project-dialog button.primary:disabled { background-color:#303030; border-color:#3c3c3c; color:#777777; }
+#dialog.project-dialog button.primary.disabled { background-color:#303030; border-color:#3c3c3c; color:#777777; }

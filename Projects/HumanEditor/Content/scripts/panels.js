@@ -1,12 +1,14 @@
 HE.el = function(id){return HE.doc.getElementById(id);};
 HE.bind = function(id,fn,type){HE.el(id).on(type||'click',HE.guard(fn));};
+// RmlUi maps the disabled attribute to the :disabled pseudo class for form controls only, so the class carries the state for every element.
+HE.enable = function(el,on){el.setClass('disabled',!on);if(on)el.removeAttribute('disabled');else el.setAttribute('disabled','disabled');return el;};
 HE.closeMenu=function(){if(!HE.activeMenu)return;HE.el(HE.activeMenu).setClass('active',false);HE.activeMenu=null;HE.el('main-menu').setProperty('display','none');HE.el('menu-shield').setProperty('display','none');};
 HE.closeContext=function(){HE.closeMenu();if(HE.contextDoc){HE.contextDoc.close();HE.contextDoc=null;}};
 HE.openMenu=function(id){
     HE.closeContext();HE.cancelPick();HE.keys={};HE.pressed={};HE.navigation=null;
     var actions=HE.menus[id](),anchor=HE.el(id).getBounds(),menu=HE.el('main-menu');
     HE.activeMenu=id;HE.menuActions=actions;HE.menuIndex=-1;HE.el(id).setClass('active',true);
-    menu.setInnerRML(actions.map(function(a,i){return (a.separator?'<div class="menu-separator"/>':'')+'<button id="menu-item-'+i+'"'+(a.enabled===false?' disabled="disabled"':'')+'>'+HE.escape(a.label)+'<span>'+(a.key||'')+'</span></button>';}).join(''));
+    menu.setInnerRML(actions.map(function(a,i){return (a.separator?'<div class="menu-separator"/>':'')+'<button id="menu-item-'+i+'"'+(a.enabled===false?' class="disabled" disabled="disabled"':'')+'>'+HE.escape(a.label)+'<span>'+(a.key||'')+'</span></button>';}).join(''));
     var bar=HE.el('menubar').getBounds();
     menu.setProperty('left',Math.max(0,Math.min(anchor.x,HE.width-264))+'px').setProperty('top',(bar.y+bar.height)+'px').setProperty('display','block');
     HE.el('menu-shield').setProperty('display','block');
@@ -42,7 +44,7 @@ HE.actorContext=function(entity,x,y){
     ];
     var left=Math.max(4,Math.min(x,HE.width-256)),top=Math.max(4,Math.min(y,HE.height-258));
     var html='<rml><head><link type="text/rcss" href="editor.rcss"/></head><body id="context-overlay"><div id="actor-menu" style="left:'+left+'px;top:'+top+'px;">';
-    actions.forEach(function(a,i){if(a.separator)html+='<div class="context-separator"/>';html+='<button id="context-'+i+'"'+(a.enabled?'':' disabled="disabled"')+'>'+a.label+'<span>'+(a.key||'')+'</span></button>';});
+    actions.forEach(function(a,i){if(a.separator)html+='<div class="context-separator"/>';html+='<button id="context-'+i+'"'+(a.enabled?'':' class="disabled" disabled="disabled"')+'>'+a.label+'<span>'+(a.key||'')+'</span></button>';});
     var doc=Engine.ui.createDocument(html+'</div></body></rml>','/Game/UI/context.rml').show(true);HE.contextDoc=doc;
     doc.getElementById('actor-menu').on('mousedown',function(ev){ev.stopPropagation();});
     doc.on('mousedown',HE.closeContext);

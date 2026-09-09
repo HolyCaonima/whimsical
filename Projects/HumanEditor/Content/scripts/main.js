@@ -1,21 +1,21 @@
 HE.openProjectDialog=function(){
     var project=null;
     var body='<p class="project-intro">Choose a .project file to open its workspace.</p>'+
-        '<div class="project-file-label">PROJECT FILE</div><div class="project-file-row"><input id="project-file" type="text" disabled="disabled"/><button id="project-browse">Browse...</button></div>'+
+        '<div class="project-file-label">PROJECT FILE</div><div class="project-file-row"><input id="project-file" class="disabled" type="text" disabled="disabled"/><button id="project-browse">Browse...</button></div>'+
         '<div id="project-preview"><div class="project-badge">P</div><div class="project-summary"><div id="project-name">No project selected</div><div id="project-map">Browse to a project to get started.</div></div></div>'+
         '<p class="project-note">The startup level opens in edit mode. Use Play when you are ready to run it.</p>';
     HE.modal('Open Project',body,[{label:'Cancel'},{label:'Open Project',run:function(){HE.openProject(project);}}],function(d){
         d.getElementById('dialog').setClass('project-dialog',true);
-        var open=d.getElementById('dialog-1');open.setClass('primary',true);open.setAttribute('disabled','disabled');
+        var open=d.getElementById('dialog-1');open.setClass('primary',true);HE.enable(open,false);
         function read(path){
-            project=null;open.setAttribute('disabled','disabled');d.getElementById('project-file').setValue(path);
+            project=null;HE.enable(open,false);d.getElementById('project-file').setValue(path);
             d.getElementById('project-name').setText('No project selected');d.getElementById('project-map').setText('Choose a valid .project file.');
             d.getElementById('dialog-error').setText('');
             try{
                 project=Engine.project.read(path);
                 d.getElementById('project-name').setText(project.name);
                 d.getElementById('project-map').setText(project.startupMap?'Startup level: '+project.startupMap.replace('/Game/','Content/'):'No startup level — opens an empty workspace.');
-                open.removeAttribute('disabled');
+                HE.enable(open,true);
             }catch(e){d.getElementById('dialog-error').setText(e.message||e);}
         }
         d.getElementById('project-browse').on('click',function(){
@@ -42,6 +42,7 @@ HE.help=function(){HE.modal('HumanEditor controls',
     '<p>Drag panel dividers to resize the workspace. Maximize / Restore expands the viewport. Ctrl+Space toggles the Content Drawer. Viewport Settings adjusts snapping increments and camera speed; Window resets the layout.</p>'+
     '<p>Ctrl+S save; Ctrl+Z / Y undo / redo; Ctrl+D duplicate subtree; Ctrl+C / V copy / paste; Delete removes selected subtrees. Escape cancels a transform drag.</p>'+
     '<p>Open Project mounts an existing project. Double-click a Map to open it, a StaticMesh to place it, a Material to assign it, or a text / JSON asset to edit it. Save As must stay in a Content containing all scene dependencies.</p>'+
+    '<p>Details asset fields show the asset name; click the field to choose another asset, or the folder button beside it to reveal that asset in the Content Browser. The folder button is dimmed for assets outside this project Content, such as /Engine meshes.</p>'+
     '<p>Play launches the target scripts. Pause suspends simulation. Stop discards play changes and restores the authored level. Asset file writes are separate from scene undo history.</p>',[{label:'Close'}]);};
 function initialize(){
     HE.settings=Engine.readJson('/Game/Settings');
@@ -146,5 +147,5 @@ function updateUI(dt){
     var key=[s.running,s.paused,HE.undoStack.length,HE.redoStack.length].join(':');if(HE.uiState===key)return;HE.uiState=key;
     HE.el('pause').setText(s.paused?'Resume':'Pause');
     HE.el('play').setClass('active',s.running);
-    [['play',s.running],['pause',!s.running],['stop',!s.running],['undo',s.running||!HE.undoStack.length],['redo',s.running||!HE.redoStack.length]].forEach(function(pair){var el=HE.el(pair[0]);if(pair[1])el.setAttribute('disabled','disabled');else el.removeAttribute('disabled');});
+    [['play',s.running],['pause',!s.running],['stop',!s.running],['undo',s.running||!HE.undoStack.length],['redo',s.running||!HE.redoStack.length]].forEach(function(pair){HE.enable(HE.el(pair[0]),!pair[1]);});
 }

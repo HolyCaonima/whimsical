@@ -49,7 +49,7 @@ HE.selectBrowserItem=function(item){
     HE.browser.selected=item;HE.assetSelected=item.kind==='folder'?null:item.ref;
     HE.browser.items.forEach(function(row){HE.el(row.element).setClass('selected',row.path===item.path&&row.kind===item.kind);});
     HE.el('asset-location').setText(item.path.replace(HE.mount,'Content'));
-    HE.el(item.element).focus();
+    HE.el(item.element).focus().scrollIntoView('nearest');
 };
 HE.openBrowserItem=function(item){if(item.kind==='folder')HE.browseFolder(item.path);else HE.openAsset(item.ref);};
 HE.browserKey=function(ev){
@@ -101,7 +101,7 @@ HE.refreshAssets=function(){
     HE.el('asset-count').setText(folders+' folders / '+assets+' assets'+(search||filter!=='All'?' (including subfolders)':''));
     HE.el('asset-location').setText((b.selected?b.selected.path:folder).replace(HE.mount,'Content'));
     HE.el('asset-tiles').setClass('active',!b.list);HE.el('asset-list').setClass('active',b.list);
-    [['asset-up',folder===HE.mount],['asset-back',b.cursor<=0],['asset-forward',b.cursor>=b.history.length-1]].forEach(function(pair){var el=HE.el(pair[0]);if(pair[1])el.setAttribute('disabled','disabled');else el.removeAttribute('disabled');});
+    [['asset-up',folder===HE.mount],['asset-back',b.cursor<=0],['asset-forward',b.cursor>=b.history.length-1]].forEach(function(pair){HE.enable(HE.el(pair[0]),!pair[1]);});
     HE.sizeBrowser();
 };
 HE.sizeBrowser=function(){

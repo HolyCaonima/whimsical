@@ -13,6 +13,18 @@ HE.defaultMaterial=function(){
     if(!choices.length)throw Error('Create a Material asset in this project before adding geometry.');
     return choices[0].ref;
 };
+HE.mountedAsset=function(path){return String(path).indexOf(HE.mount+'/')===0;};
+HE.revealAsset=function(ref){
+    var target=Engine.content.describe(ref).ref;
+    if(!HE.mountedAsset(target.path))throw Error(target.path+' is not part of this project Content.');
+    if(HE.logVisible||!HE.layout.content||HE.layout.maximized)HE.showLog(false);
+    HE.browseFolder(HE.parentFolder(target.path));
+    // Category filters survive navigation, so clear one that would hide the asset we are revealing.
+    if(HE.el('asset-filter').getValue()!=='All'){HE.el('asset-filter').setValue('All');HE.refreshAssets();}
+    var item=HE.browser.items.filter(function(row){return row.kind==='asset'&&row.path===target.path;})[0];
+    if(!item)throw Error(target.path+' is not indexed. Use Refresh in the Content Browser.');
+    HE.selectBrowserItem(item);
+};
 HE.assetMatchScore=function(text,query){
     text=text.toLowerCase();
     var at=text.indexOf(query);
@@ -96,7 +108,11 @@ HE.detailNumber=function(value){return value%1===0?String(value):String(Number(v
 HE.detailRaw=function(value){return HE.isAssetRef(value)?HE.copy(value):Array.isArray(value)?value.map(HE.detailNumber):typeof value==='boolean'?value:typeof value==='number'?HE.detailNumber(value):String(value);};
 HE.detailChanged=function(f){return JSON.stringify(f.raw)!==JSON.stringify(HE.detailRaw(f.value));};
 HE.paintDetailField=function(f){
-    if(f.asset){var asset=Engine.content.describe(f.raw);HE.el(f.id+'-name').setText(asset.header.name);HE.el(f.id).setAttribute('title',asset.ref.path+' — Click to choose '+asset.header.type);}
+    if(f.asset){
+        var asset=Engine.content.describe(f.raw),browse=HE.el(f.id+'-browse'),mounted=HE.mountedAsset(asset.ref.path);
+        HE.el(f.id+'-name').setText(asset.header.name);HE.el(f.id).setAttribute('title',asset.ref.path+' — Click to choose '+asset.header.type);
+        HE.enable(browse,mounted).setAttribute('title',mounted?'Show '+asset.header.name+' in the Content Browser':asset.ref.path+' is outside this project Content');
+    }
     else if(Array.isArray(f.raw))f.raw.forEach(function(v,i){HE.el(f.id+'-'+i).setValue(v);});
     else if(typeof f.raw==='boolean'){HE.el(f.id).setClass('on',f.raw);HE.el(f.id+'-state').setText(f.raw?'On':'Off');}
     else HE.el(f.id).setValue(f.raw);
@@ -115,7 +131,7 @@ HE.updateDetailDraft=function(name){
     else delete HE.detailDrafts[section.draftKey];
     HE.el('actions-'+name).setProperty('display',changed?'flex':'none');
     HE.el('section-'+name).setClass('modified',changed);
-    HE.el('json-'+name)[changed?'setAttribute':'removeAttribute']('disabled','disabled');
+    HE.enable(HE.el('json-'+name),!changed);
     HE.el('json-'+name).setAttribute('title',changed?'Apply or revert field changes before editing JSON':'Edit complete component JSON');
     HE.el('error-'+name).setText('');
 };
@@ -176,7 +192,7 @@ HE.refreshDetails=function(){
             if(!f.readonly){f.raw=draft&&Object.prototype.hasOwnProperty.call(draft.inputs,JSON.stringify(path))?draft.inputs[JSON.stringify(path)]:HE.detailRaw(v);section.fields.push(f);}
             html+='<div class="field" id="'+id+'-row"><span class="field-label" title="'+HE.escape(f.key)+'">'+HE.escape(label)+(name==='transform'&&key==='rotation'?'<span class="field-unit">Quaternion</span>':'')+'</span><div class="field-control">';
             if(parent){var p=v?Engine.findEntity(v):0;html+='<button id="'+id+'" class="parent-link">'+HE.escape(p?Engine.entity(p).name:'None')+'</button>';}
-            else if(asset)html+='<button id="'+id+'" class="asset-reference"><span id="'+id+'-name"/><span class="asset-choose">...</span></button>';
+            else if(asset)html+='<div class="asset-field"><button id="'+id+'" class="asset-reference"><span id="'+id+'-name"/><span class="asset-choose">...</span></button><button id="'+id+'-browse" class="asset-browse">'+HE.folderGlyph()+'</button></div>';
             else if(complex)html+='<span class="field-summary">'+(Array.isArray(v)?v.length+' items':v===null?'None':'Empty object')+' <span class="field-unit">Edit in JSON</span></span>';
             else if(vector){
                 var axes=/color/i.test(key)?['R','G','B','A']:['X','Y','Z','W'];
@@ -212,7 +228,7 @@ HE.refreshDetails=function(){
     fields.forEach(function(f){
         if(f.readonly){if(f.component==='transform'&&f.key==='parent')HE.bind(f.id,function(){HE.parentDialog(e);});return;}
         HE.paintDetailField(f);
-        if(f.asset)HE.bind(f.id,function(){HE.pickDetailAsset(f);});
+        if(f.asset){HE.bind(f.id,function(){HE.pickDetailAsset(f);});HE.bind(f.id+'-browse',function(){HE.revealAsset(f.raw);});}
         else if(typeof f.value==='boolean')HE.bind(f.id,function(){f.raw=!f.raw;HE.paintDetailField(f);HE.updateDetailDraft(f.component);});
         else (Array.isArray(f.value)?f.value.map(function(v,i){return f.id+'-'+i;}):[f.id]).forEach(function(id){
             HE.bind(id,function(){HE.updateDetailField(f);},'change');
@@ -222,7 +238,8 @@ HE.refreshDetails=function(){
             },'keydown');
         });
     });
-    if(locked)HE.el('inspector').querySelectorAll('input,button').forEach(function(el){if(!el.hasClass('component-toggle')&&!el.hasClass('property-group-toggle'))el.setAttribute('disabled','disabled');});
+    // Navigation and folding read the scene; only value editing waits for the simulation to stop.
+    if(locked)HE.el('inspector').querySelectorAll('input,button').forEach(function(el){if(!el.hasClass('component-toggle')&&!el.hasClass('property-group-toggle')&&!el.hasClass('asset-browse'))HE.enable(el,false);});
     HE.filterDetails();
 };
 HE.filterDetails=function(){

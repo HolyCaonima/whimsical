@@ -254,7 +254,18 @@ struct UiBindings::Impl {
             e.Focus();
         else if (op == "blur")
             e.Blur();
-        else if (op == "bounds") {
+        else if (op == "scrollIntoView") {
+            static const std::unordered_map<std::string, Rml::ScrollAlignment> alignments{
+                {"start", Rml::ScrollAlignment::Start},
+                {"center", Rml::ScrollAlignment::Center},
+                {"end", Rml::ScrollAlignment::End},
+                {"nearest", Rml::ScrollAlignment::Nearest}};
+            auto alignment = alignments.find(duk_get_string_default(c, 2, "start"));
+            if (alignment == alignments.end())
+                throw std::invalid_argument("Scroll alignment must be start, center, end or nearest");
+            ui.context().Update(); // Scrolling needs the layout of freshly built contents, like bounds.
+            e.ScrollIntoView({alignment->second, Rml::ScrollAlignment::Nearest});
+        } else if (op == "bounds") {
             ui.context().Update();
             auto offset = e.GetAbsoluteOffset(Rml::BoxArea::Border);
             auto size = e.GetBox().GetSize(Rml::BoxArea::Border);
@@ -309,7 +320,7 @@ struct UiBindings::Impl {
     command('setAttribute','attr'); command('removeAttribute','removeAttr'); command('setClass','class');
     command('setValue','value'); command('show','show'); command('hide','hide'); command('close','close');
     command('remove','remove'); command('focus','focus'); command('blur','blur');
-    command('select','select');
+    command('select','select'); command('scrollIntoView','scrollIntoView');
     getter('getInnerRML','getRml'); getter('getProperty','getStyle'); getter('getAttribute','getAttr');
     getter('hasClass','hasClass'); getter('getValue','getValue'); getter('getBounds','bounds');
     Element.prototype.querySelector = function(s) { return element(native('query',this._id,s)); };

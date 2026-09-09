@@ -81,6 +81,7 @@ popup.show(true); // Modal; blocks gameplay input outside the popup too.
 | `show(modal?)`, `hide()`, `close()` | 文档生命周期；默认非模态 |
 | `focus()`, `blur()` | 焦点 |
 | `select()` | 全选文本输入框或 textarea 的内容；input 支持 text / password 类型 |
+| `scrollIntoView(alignment?)` | 滚动各级祖先容器使元素可见；`alignment` 为 `start`（默认）/ `center` / `end` / `nearest`，横向始终取最小滚动 |
 | `getBounds()` | 当前布局的边框矩形 `{x,y,width,height}` |
 | `on(type, callback, capture?)`, `off(token)` | RmlUi 事件订阅与取消；支持冒泡和捕获 |
 

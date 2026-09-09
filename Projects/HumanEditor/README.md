@@ -40,6 +40,7 @@ Content 路径和公共脚本从项目文件读取，无需手填。启动地图
 | 添加实体 | Place Actors 的 Basic / Shapes / Lights 分类；搜索覆盖全部类别，点击放置在相机观察目标处 |
 | 重命名 / 启停 | Details 的 Rename / Enabled；多选启停使用右键 Toggle enabled |
 | 修改组件 | Details 使用布尔开关、带轴标识的向量和可展开的嵌套属性；修改后显示 Apply / Revert，Enter 应用当前组件，Esc 恢复当前字段；复杂数组及完整数据使用标题栏 JSON |
+| 定位引用资产 | 点击 Details 资产字段右侧的文件夹按钮，在 Content Browser 中跳转到该资产并选中 |
 | 查找 / 折叠组件 | Details 的 Filter 按组件名或属性名筛选到具体字段；组件和嵌套分组可折叠，搜索期间自动展开匹配项，无匹配时显示提示 |
 | 添加 / 删除组件 | + Component 从引擎 ComponentCatalog 枚举；依赖规则由引擎验证 |
 | 设置父级 | 右键 Set parent / Detach from parent，保持世界姿态，拒绝循环层级 |
@@ -63,7 +64,7 @@ Content 路径和公共脚本从项目文件读取，无需手填。启动地图
 
 多选支持成组变换、启停、删除、层级和材质指派；Details 编辑最后选中的活动对象。灯光或没有可见网格的实体通过 Outliner 选中。变换的 rotation 字段遵循引擎的四元数 `[x,y,z,w]`，轴向旋转工具负责生成正确旋转值。
 
-Details 的 Material / mesh 等资产字段显示资产名称，点击选择同类型资产，选择后通过 Apply / Revert 提交或恢复。资产字段整体保存 `{id,path,source}` 引用，不展开成可编辑的 ID/path 文本。Material 选择器按真实资产类型筛选；新建几何默认沿用场景已有材质，空场景使用目标 Content 的现有材质。
+Details 的 Material / mesh 等资产字段显示资产名称，点击选择同类型资产，选择后通过 Apply / Revert 提交或恢复。字段右侧的文件夹按钮在 Content Browser 中定位并选中该资产：展开抽屉、切到所在目录、清除会隐藏它的类别筛选、把卡片滚动进可见区域并高亮；按钮跟随字段当前显示的引用，因此未 Apply 的草稿选择也能定位。目标 Content 之外的资产（例如 `/Engine` 网格）按钮变暗且不可点击，悬停提示说明原因。资产字段整体保存 `{id,path,source}` 引用，不展开成可编辑的 ID/path 文本。Material 选择器按真实资产类型筛选；新建几何默认沿用场景已有材质，空场景使用目标 Content 的现有材质。
 
 Details 内的启停和父级操作同样只作用于活动对象。字段草稿按对象与组件保留，切换选择或应用其他组件不会丢失；组件原值被其他操作改变时丢弃对应旧草稿。Apply 将当前组件的修改记录为一次撤销操作，Revert 放弃该组件草稿；草稿尚未写入场景，保存前需先 Apply。数字以紧凑格式显示，编辑向量某一轴不会舍入其他轴的原始值。模拟期间 Details 属性只读。
 
@@ -72,6 +73,8 @@ Details 内的启停和父级操作同样只作用于活动对象。字段草稿
 布局、折叠状态和视口设置在当前编辑器会话内保留，不写入地图，也不进入场景撤销历史。资源类别沿用项目目录约定（Maps / Materials / Models / textures / scripts）；未按这些目录组织的资源归入 Other，打开时仍以资产头的真实类型执行操作。没有搜索或类别筛选时，内容网格只显示当前目录的直接子项。
 
 Content Browser 获得焦点时，Delete / Ctrl+D 等演员快捷键不会操作场景选择。Enter 打开选中项，Backspace 返回上级，Esc 清空网格搜索和选择；文本框内保留正常输入行为。
+
+控件禁用统一走 `HE.enable`，它同时写 `disabled` 属性和 `disabled` 样式类：RmlUi 只为表单控件把该属性映射成 `:disabled` 伪类，普通 `button` 必须靠类才能变暗，类上的 `pointer-events:none` 让禁用按钮真正不可点击。因此菜单、工具栏、目录导航和模拟期间的 Details 只读状态既有视觉反馈也不再响应点击。
 
 **当前 Content 接口边界：** `Engine.content.browse` 只返回资产引用，目录树由资产路径建立，因此不显示空文件夹或仅含未索引源文件的目录。完整支持空目录需要 Content 层导出按挂载来源枚举目录条目的接口；资产类型与名称可以通过 `Engine.content.describe` 读取而无需加载载荷，Details 选择器已使用它。目录枚举不是 UI Core 缺少导出。目录列表仍按上述边界工作；“..”只是返回上级的导航入口。
 
