@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "id": "36cb5e30aa954854b1ded99e056c21d4",
+  "name": "Constraint Lab",
+  "startupMap": null,
+  "scripts": [
+    "/Game/scripts/model",
+    "/Game/scripts/view",
+    "/Game/scripts/main"
+  ]
+}

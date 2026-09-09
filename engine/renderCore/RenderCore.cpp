@@ -7,11 +7,55 @@
 #include "vulkan/Programs.h"
 #include <cstring>
 #include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <set>
 
 namespace whimsical::rc {
 struct RenderCore::Impl {
     VulkanContext vk;
     ShaderCompiler compiler;
+    using Clock = std::chrono::steady_clock;
+    struct Capture {
+        Clock::time_point start, end;
+        GpuProfile report;
+        uint64_t pending = 0;
+        std::map<std::pair<int, std::string>, int> scopes;
+        int scope(int parent, const std::string& name) {
+            auto key = std::make_pair(parent, name);
+            auto found = scopes.find(key);
+            if (found != scopes.end())
+                return found->second;
+            int index = int(report.scopes.size());
+            report.scopes.push_back({name, parent, 0, 0});
+            scopes.emplace(std::move(key), index);
+            return index;
+        }
+        void append(const std::string& name, const GpuProfile& value) {
+            --pending;
+            ++report.submissions;
+            if (!value.error.empty())
+                report.error += name + ": " + value.error + "\n";
+            if (value.scopes.empty())
+                return;
+            auto root = scope(-1, "RenderCore GPU submissions");
+            report.scopes[root].milliseconds += value.scopes.front().milliseconds;
+            ++report.scopes[root].samples;
+            std::vector<int> mapping;
+            for (const auto& row : value.scopes) {
+                int parent = row.parent < 0 ? root : mapping.at(row.parent);
+                int index = scope(parent, row.parent < 0 ? name : row.name);
+                mapping.push_back(index);
+                report.scopes[index].milliseconds += row.milliseconds;
+                report.scopes[index].samples += row.samples;
+            }
+        }
+    };
+    std::optional<Capture> capture;
+    std::set<GraphContext*> contexts;
+    uint64_t profileRequest() const {
+        return capture && Clock::now() < capture->end ? capture->report.request : 0;
+    }
 };
 RenderCore::RenderCore(const DeviceOptions& options) : impl_(std::make_unique<Impl>()) {
     impl_->vk.initialize(static_cast<HWND>(options.presentationWindow), options.validation,
@@ -24,11 +68,67 @@ void RenderCore::waitIdle() {
 uint32_t RenderCore::errors() const {
     return impl_->vk.validationErrors.load();
 }
+void RenderCore::requestProfile(uint64_t request, double windowMilliseconds) {
+    if (impl_->capture)
+        throw std::logic_error("A RenderCore GPU capture is already pending");
+    if (!request || !std::isfinite(windowMilliseconds) || windowMilliseconds <= 0)
+        throw std::invalid_argument("GPU capture needs a request id and positive sampling window");
+    auto& capture = impl_->capture.emplace();
+    capture.start = Impl::Clock::now();
+    capture.end = capture.start + std::chrono::duration_cast<Impl::Clock::duration>(
+                                         std::chrono::duration<double, std::milli>(windowMilliseconds));
+    capture.report.request = request;
+    capture.report.windowMilliseconds = windowMilliseconds;
+    capture.report.device = impl_->vk.properties.deviceName;
+}
+void RenderCore::endProfile() {
+    if (!impl_->capture)
+        return;
+    auto& capture = *impl_->capture;
+    capture.end = std::min(capture.end, Impl::Clock::now());
+    capture.report.windowMilliseconds =
+        std::chrono::duration<double, std::milli>(capture.end - capture.start).count();
+}
+std::optional<GpuProfile> RenderCore::takeProfile() {
+    if (!impl_->capture)
+        return {};
+    // Completion belongs to RenderCore: an idle subsystem need not poll to publish its timings.
+    for (auto* context : impl_->contexts)
+        context->poll();
+    auto& capture = *impl_->capture;
+    if (Impl::Clock::now() < capture.end || capture.pending)
+        return {};
+    auto result = std::move(capture.report);
+    // Later submissions may introduce new children below an existing context.
+    // Publish a contiguous tree, independent of their completion order.
+    auto rows = std::move(result.scopes);
+    std::vector<std::vector<int>> children(rows.size() + 1);
+    for (int i = 0; i < int(rows.size()); ++i)
+        children[rows[i].parent + 1].push_back(i);
+    auto append = [&](auto&& self, int oldParent, int parent) -> void {
+        for (auto child : children[oldParent + 1]) {
+            int index = int(result.scopes.size());
+            auto row = std::move(rows[child]);
+            row.parent = parent;
+            result.scopes.push_back(std::move(row));
+            self(self, child, index);
+        }
+    };
+    result.scopes.clear();
+    append(append, -1, -1);
+    impl_->capture.reset();
+    return result;
+}
 VulkanContext& VulkanAccess::device(RenderCore& core) {
     return core.impl_->vk;
 }
 
 struct GraphContext::Impl {
+    RenderCore& core;
+    std::string name;
+    uint64_t captureRequest = 0;
+    bool localProfile = false;
+    std::optional<GpuProfile> profileResult;
     VulkanContext& vk;
     rg::ResourcePool pool;
     rg::RenderGraph graph;
@@ -39,9 +139,9 @@ struct GraphContext::Impl {
     VkFence fence = VK_NULL_HANDLE;
     bool pending = false, recorded = false, completed = false;
 
-    Impl(RenderCore& core, const rg::Registry& registry)
-        : vk(VulkanAccess::device(core)), pool(vk, registry), graph(pool), profiler(vk),
-          compiler(core.impl_->compiler) {
+    Impl(RenderCore& owner, const rg::Registry& registry, std::string label)
+        : core(owner), name(std::move(label)), vk(VulkanAccess::device(owner)), pool(vk, registry), graph(pool), profiler(vk),
+          compiler(owner.impl_->compiler) {
         VkFenceCreateInfo info{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
         VK_CHECK(vkCreateFence(vk.device, &info, nullptr, &fence));
         try {
@@ -58,6 +158,18 @@ struct GraphContext::Impl {
             vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
         vk.freeCommand(command);
         vkDestroyFence(vk.device, fence, nullptr);
+    }
+    void complete() {
+        profiler.resolve();
+        pending = false;
+        completed = true;
+        if (auto result = profiler.takeResult()) {
+            if (captureRequest)
+                core.impl_->capture->append(name, *result);
+            if (localProfile)
+                profileResult = std::move(result);
+        }
+        captureRequest = 0;
     }
     void writable() const {
         if (pending)
@@ -84,11 +196,21 @@ struct GraphContext::Impl {
         vk.submit(info, fence);
         pending = true;
         recorded = false;
+        auto& capture = core.impl_->capture;
+        if (captureRequest && capture && capture->report.request == captureRequest)
+            ++capture->pending;
+        else
+            captureRequest = 0;
     }
 };
-GraphContext::GraphContext(RenderCore& core, const rg::Registry& registry)
-    : impl_(std::make_unique<Impl>(core, registry)) {}
-GraphContext::~GraphContext() = default;
+GraphContext::GraphContext(RenderCore& core, const rg::Registry& registry, std::string name)
+    : impl_(std::make_unique<Impl>(core, registry, std::move(name))) {
+    core.impl_->contexts.insert(this);
+}
+GraphContext::~GraphContext() {
+    wait();
+    impl_->core.impl_->contexts.erase(this);
+}
 rg::RenderGraph& GraphContext::graph() {
     impl_->writable();
     return impl_->graph;
@@ -214,7 +336,10 @@ void GraphContext::record(const ProfileRequest& profile) {
     VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     VK_CHECK(vkBeginCommandBuffer(impl_->command, &begin));
-    impl_->profiler.beginFrame(impl_->command, profile.request, profile.sequence, profile.width,
+    impl_->captureRequest = impl_->core.impl_->profileRequest();
+    impl_->localProfile = profile.request != 0;
+    impl_->profiler.beginFrame(impl_->command, profile.request ? profile.request : impl_->captureRequest,
+                               profile.sequence, profile.width,
                                profile.height);
     rg::GraphAccess::execute(impl_->graph, impl_->command, impl_->profiler);
     impl_->profiler.endFrame(impl_->command);
@@ -231,18 +356,14 @@ bool GraphContext::poll() {
     if (status == VK_NOT_READY)
         return false;
     VK_CHECK(status);
-    impl_->profiler.resolve();
-    impl_->pending = false;
-    impl_->completed = true;
+    impl_->complete();
     return true;
 }
 void GraphContext::wait() {
     if (!impl_->pending)
         return;
     VK_CHECK(vkWaitForFences(impl_->vk.device, 1, &impl_->fence, VK_TRUE, UINT64_MAX));
-    impl_->profiler.resolve();
-    impl_->pending = false;
-    impl_->completed = true;
+    impl_->complete();
 }
 void GraphContext::advanceHistory() {
     impl_->writable();
@@ -252,7 +373,9 @@ double GraphContext::gpuMilliseconds() const {
     return impl_->profiler.frameMs();
 }
 std::optional<GpuProfile> GraphContext::takeProfile() {
-    return impl_->profiler.takeResult();
+    auto result = std::move(impl_->profileResult);
+    impl_->profileResult.reset();
+    return result;
 }
 void NativeResources::importImage(rg::ResourceId id, Image& image) {
     context_.impl_->writable();

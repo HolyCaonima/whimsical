@@ -7,7 +7,7 @@
 | 模块 | 拥有的内容 | 依赖 |
 | --- | --- | --- |
 | `xpbd/model` | 数学表达式、空间、集合、稳定索引、初始数据、不可变快照与变更 | C++ 标准库 |
-| `xpbd/compiler` | Jacobian 生成、SoA 布局、颜色批次、Jacobi 关联表、动态扫描流程、迁移映射 | Model |
+| `xpbd/compiler` | Jacobian 生成、SoA 布局、求解阶段、区域分析与融合、Jacobi 关联表、迁移映射 | Model |
 | `xpbd/runtime` | GPU 当前状态、执行上下文、提交/完成、状态迁移、范围回读与结果发布 | Compiler、RenderCore |
 | `xpbd/adapter` | 脚本定义入口、模型句柄、可靠请求通道、GPU 宿主服务 | 按前端和 GPU 服务分开链接 |
 
@@ -89,7 +89,7 @@ auto tail = instance.read(StateField::Value, variables, 99996, 4);
 
 ## 规模与调度
 
-实例索引为 32 位；集合内的 `(set, index)` 在追加和计划切换后保持稳定，不复用旧索引。模型实例只有固定的 22 个求解 buffer 角色及少量辅助资源；十万个变量不会变成十万个 ResourceId、表达式或 pass。
+实例索引为 32 位；集合内的 `(set, index)` 在追加和计划切换后保持稳定，不复用旧索引。模型实例只有固定的 25 个求解 buffer 角色及少量辅助资源；十万个变量不会变成十万个 ResourceId、表达式或 pass。
 
 `SolverPolicy` 提供：
 
@@ -98,6 +98,12 @@ auto tail = instance.read(StateField::Value, variables, 99996, 4);
 - `Hybrid`：在颜色预算内着色，超出预算的关系进入 Jacobi；默认预算 32，上限 64。
 
 只读端点不产生写冲突。`readOnly` 是结构承诺，仍可通过速度、加速度或状态命令驱动；逆度量为零不会被编译器自动视为只读。批次按颜色和数学类型形成，不为每个独立连通分量创建一个 pass。
+
+执行方式与数值方法分开选择：`SolverPolicy::execution` 默认 `ExecutionMode::Auto`，也可指定 `ExecutionMode::Global` 保留逐阶段 dispatch。JavaScript 对应 `compile(handle, {execution:'auto'})` / `{execution:'global'}`。
+
+Auto 根据静态端点连接识别封闭组件，按变量数、关系数、状态容量和函数复杂度选择工作组融合，并把多个小组件打包。区域内的值、前值、速度、history 和乘子放入共享内存，保持原有颜色顺序、Jacobi 归并及子步 / 迭代循环。共享只读端点也会连接组件，因为预测仍可能推进只读变量。大型组件保留全局路径；含动态端点的模型目前整体使用全局路径。
+
+`CompiledPlan::statistics` 报告组件数、局部区域数、局部变量 / 关系数、每工作组共享字节数，以及优化前后的每步数值计算 dispatch 数。后者不含动态拓扑构建和上传 / 回读。具体预算、实现边界和实测结果见 [编译器优化说明](xpbd-compiler-optimization.md)。
 
 关联结构按端点数增长，不创建关系之间的两两冲突图。Jacobi 用端点最大关联度缩放乘子增量与对应修正，避免共享端点的贡献无控制累加；高关联度可能需要更多迭代。它和 Colored 的迭代路径不保证逐位一致。
 

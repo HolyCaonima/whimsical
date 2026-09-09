@@ -1,60 +1,47 @@
 # GPU 分阶段计时
 
-控制台输入 `profileGPU`，抓取下一次实际提交的 GPU 帧。名称不区分大小写，支持现有模糊候选和方向键选择。报告异步回到游戏内控制台及标准输出，并覆盖保存最新的 `captures/gpu-profile.txt`、`captures/gpu-profile.json`。
+控制台输入 `profileGPU`，采集随后约 1 秒内通过同一个 RenderCore 的所有 GraphContext 记录并提交的 GPU 工作。渲染、XPBD 和其他计算图自动参与，不需要把请求逐个转发给子系统。
 
 ```text
 profileGPU
 profileGPU last
 ```
 
-`last` 查看最近已完成的报告，不重新抓取。已有请求未完成时重复输入不会排队多次。窗口最小化时请求保留，恢复渲染后抓取。地图重载和关闭 HUD 不会丢失请求。控制台 PageUp/PageDown 可以浏览完整结果。
+报告异步回到控制台和标准输出，并覆盖保存 `captures/gpu-profile.txt`、`captures/gpu-profile.json`。`last` 只查看最近的报告；重复请求不会排队。采样结束后，RenderCore 等待被采集的提交完成再发布结果，不要求各子系统主动提取自己的计时。
 
-从启动命令行请求：
+报告列出每个执行图及其阶段的：
+
+- GPU 时间戳区间总和（inclusive ms）。
+- 占所有被采集提交的区间总和的比例。
+- 执行次数，以及每次的平均区间耗时。
+
+同名阶段按父级路径归并，所以多次迭代的 `Colored distance` 会显示累计耗时和实际调度次数，不会打印数百行重复名称。子阶段已包含在父阶段中，不能再次累加。渲染帧、模拟步和回读的提交频率不同，不能把执行图平均提交耗时直接当成每帧成本。XPBD 图同时包含求解和回读提交，可通过 `Predict` 等阶段的次数进一步区分。
+
+根节点显示的是 **GPU 提交区间的总和**，不是现实经过的时间或 GPU 利用率。时间戳区间包含 GPU 同步和流水线影响，不代表隔离 shader 的纯运算成本。CPU 等待、Present，以及绕过 GraphContext 的原生上传 / 资源构建提交不在报告内。
+
+## 命令行与生命周期
 
 ```powershell
-.\RunHoneybud.cmd --profile-gpu
-.\RunHoneybud.cmd --console --exec "profileGPU"
-.\build\bin\Release\Whimsical.exe --map /Game/Maps/HoneybudCourt --frames 1 --profile-gpu
+.\Projects\ConstraintLab\Run.cmd --profile-gpu
+.\Projects\ConstraintLab\Run.cmd --console --exec "profileGPU"
 ```
 
-启动请求测量首帧，可能包含历史初始化和 TLAS 首次构建。评估稳定运行时的成本，应在场景运行后输入控制台命令。这里只报告 GPU 时间戳区间，不把 CPU 提交时间或 FPS 换算成 GPU 耗时。
-
-## Scope 覆盖
-
-| Scope | 测量范围 |
-|---|---|
-| GPU Frame | 本帧主命令缓冲的 GPU 时间戳区间 |
-| Initialize History / Reservoirs | 首帧或资源重新创建时的清理 |
-| HUD Texture Upload | HUD 需要更新时的 GPU 图像拷贝 |
-| Skinned BLAS Refit | 蒙皮几何变化后的 BLAS 更新 |
-| Acceleration Structures → TLAS Build / Refit | TLAS 构建或更新及后续同步 |
-| GBuffer Raster | GBuffer 光栅化 |
-| ReSTIR Initial DI + Secondary GI + Specular | 初始采样 |
-| ReSTIR Temporal + Spatial Reconnection | 时空复用 |
-| Visibility + Radiance Resolve | 可见性和辐射求解 |
-| NRD RELAX Diffuse Specular → 每个 NRD dispatch | 降噪整体及库提供的各个子阶段 |
-| Composition + Tone Map + HUD | 合成、色调映射和 HUD 合成 |
-| History Store | 历史资源拷贝 |
-| Audit Readback / Screenshot Readback | 对应功能开启时的 GPU 回读拷贝 |
-| Swapchain Blit / Present Transition | 交换链图像拷贝及布局转换 |
-
-条件阶段只在实际记录时出现。报告显示 inclusive ms 和占整帧比例，子阶段已包含在父阶段中，不应再次累加。计时包含该区间已有的同步与可能的队列等待，不等于隔离运行某个 shader 的纯计算耗时；不测量 CPU 蒙皮、资源创建、初始化阶段单独提交的上传／静态 BLAS 构建，也不包含 `vkQueuePresentKHR` 的调用或显示耗时。
+启动时的请求可能覆盖初始化，长时间的 CPU 编译也会占用采样窗口。评估稳定成本，应在运行后输入命令。有限帧退出或关闭窗口时，应用提前结束采样并收集已有提交，报告使用实际缩短后的窗口时长；不会假装采满一秒。没有工作被提交的窗口可以返回空报告。
 
 ## 实现与扩展
 
-`GpuScope` 以 RAII 记录开始和结束标记，支持嵌套。RenderGraph 自动为每个已命名 pass 加 Scope，NRD 按 dispatch 名称生成子 Scope；以后新增 graph pass 自然进入报告。图外记录可直接使用：
+`RenderCore::requestProfile(request, windowMilliseconds)` 发起采样；`takeProfile()` 非阻塞轮询所有执行图的 fence 并汇总报告；`endProfile()` 可提前关闭窗口。请求和结果仍通过应用的跨线程值对象传递，Renderer 不再接收或收集全局 GPU profile 请求。
+
+每个执行图可提供诊断名称：
 
 ```cpp
-{
-    GpuScope scope(profiler, command, "My GPU Pass");
-    // Record GPU commands here.
-}
+rc::GraphContext work(core, registry, "My compute system");
+// Declare passes, compile, record and submit as usual.
+// Participation in a RenderCore capture is automatic.
 ```
 
-无抓取请求时仅保留整帧两个时间戳；详细 Scope 时间戳只写入被请求的那一帧。设备支持 `VK_EXT_debug_utils` 时，Scope 同时生成 RenderDoc 等工具可见的标记，Release 无需开启验证层。
+RenderGraph 自动为命名 pass 加入 `GpuScope`，原生图内扩展可创建嵌套 scope。报告因此包含 Renderer 的 GBuffer、TLAS、ReSTIR、NRD 子阶段，以及 XPBD 的预测、约束迭代、速度恢复、历史提交、数据传输等实际执行分支。
 
-Profiler 由渲染线程持有。请求序号随不可变 Frame 发布，相同快照重复渲染不会重复抓取；结果在既有帧 fence 完成后读取，通过互斥保护的值对象交给主线程。没有为抓取增加 `vkDeviceWaitIdle` 或逐 Scope 等待。有限帧运行会在最后一帧已有的 fence 等待后解析结果。
+各 GraphContext 仍拥有独立 query pool 和 fence；RenderCore 负责采样决策、完成收集和汇总，不把不同系统的执行节奏绑在一起。查询池按页增长，不再因超过 256 个 scope 截断报告。普通运行仅记录每次提交的首尾两个时间戳，详细阶段标记只在采样窗口或显式局部请求时启用。
 
-时间戳按队列的 `timestampValidBits` 处理回绕，再乘 `timestampPeriod` 转为毫秒。队列不支持时间戳时明确报告不支持；Scope 数超出 256 个时标记报告不完整。参见 [Vulkan 时间戳查询](https://docs.vulkan.org/samples/latest/samples/api/timestamp_queries/README.html)。
-
-`gpu_profile` 测试验证单位转换、32/64 位回绕、层级百分比和 JSON 转义。`--console-smoke` 还通过 Win32 输入执行两次抓取，覆盖重复请求、HUD 关闭及地图重载后的使用；运行日志和 JSON 可用于检查实际 Vulkan 时间戳结果。
+`GraphContext::record(ProfileRequest)` / `takeProfile()` 保留单图显式抓取能力，可以与全局采样同时使用。计时结果在 fence 完成后解析，采样不增加 `vkDeviceWaitIdle` 或逐 scope 等待。时间戳仍按设备 `timestampValidBits` 处理回绕，再乘 `timestampPeriod` 转换为毫秒。

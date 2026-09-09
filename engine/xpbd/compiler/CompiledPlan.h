@@ -4,11 +4,13 @@
 
 namespace whimsical::xpbd {
 enum class SolveMode { Colored, Jacobi, Hybrid };
+enum class ExecutionMode { Auto, Global };
 struct SolverPolicy {
     uint32_t substeps = 4, iterations = 4;
     SolveMode mode = SolveMode::Hybrid;
     uint32_t colorBudget = 32; // bounded coloring; Hybrid sends overflow to gather Jacobi
     float relaxation = 1;
+    ExecutionMode execution = ExecutionMode::Auto;
 };
 enum class BufferRole : uint32_t {
     Values,
@@ -33,6 +35,9 @@ enum class BufferRole : uint32_t {
     Diagnostics,
     ScanScratch,
     AdjacencyCursors,
+    RegionRanges,
+    RegionState,
+    LocalOffsets,
     Count
 };
 constexpr size_t BufferCount = size_t(BufferRole::Count);
@@ -60,9 +65,13 @@ struct PlanStatistics {
     uint64_t coloredRelations = 0, jacobiRelations = 0, incidenceEntries = 0;
     uint32_t colors = 0;
     uint64_t storageBytes = 0;
+    uint32_t components = 0, localRegions = 0;
+    uint32_t localSharedBytes = 0;
+    uint64_t localVariables = 0, localRelations = 0;
+    uint64_t referenceDispatches = 0, dispatches = 0; // per tick, excluding topology/transfers
 };
-// No device, resource IDs or submission state. Instance count affects arrays, not
-// expression graphs, kernels, or one GPU resource per variable/relation.
+// No device, resource IDs or submission state. Instance count affects work tables
+// and execution mapping, without a graph or GPU resource per variable/relation.
 struct CompiledPlan {
     ModelSnapshot model;
     SolverPolicy policy;
@@ -73,6 +82,8 @@ struct CompiledPlan {
     std::vector<RelationLayout> relations;
     std::vector<Kernel> kernels;
     std::vector<Batch> predict, solve, apply, recover, update;
+    // Closed regions execute the same substep/iteration schedule inside a workgroup.
+    std::vector<Batch> local;
     uint32_t resetKernel = 0;
     uint32_t multiplierCount = 0;
     bool dynamicTopology = false;

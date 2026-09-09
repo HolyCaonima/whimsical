@@ -40,6 +40,11 @@ class RenderCore {
     RenderCore& operator=(const RenderCore&) = delete;
     void waitIdle();
     uint32_t errors() const;
+    // Capture submissions from every execution context over a wall-clock window.
+    // Results contain summed GPU intervals, not CPU waits or elapsed frame time.
+    void requestProfile(uint64_t request, double windowMilliseconds = 1000);
+    void endProfile(); // close the window early, e.g. when the GPU owner shuts down
+    std::optional<GpuProfile> takeProfile();
 };
 
 struct ProfileRequest {
@@ -59,7 +64,7 @@ class GraphContext {
     friend class NativeResources;
 
   public:
-    GraphContext(RenderCore&, const rg::Registry&);
+    GraphContext(RenderCore&, const rg::Registry&, std::string name = "Graph");
     ~GraphContext();
     GraphContext(const GraphContext&) = delete;
     GraphContext& operator=(const GraphContext&) = delete;

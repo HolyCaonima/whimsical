@@ -79,6 +79,8 @@ struct Instance::Storage {
         for (uint32_t i = 0; i < BufferCount; ++i) {
             const auto& b = plan->buffers[i];
             auto d = declaration(b.name, b.initial.size(), b.integers);
+            if (!plan->local.empty() && BufferRole(i) == BufferRole::Contributions)
+                d.view.body = "coherent " + d.view.body;
             if (BufferRole(i) == BufferRole::Diagnostics)
                 d.handover = rg::Access::Host;
             resources[i] = registry.declare(std::move(d));
@@ -99,7 +101,7 @@ struct Instance::Storage {
         auto remap = declaration("migration", 4, true);
         remap.lifetime = rg::Lifetime::External;
         migration = registry.declare(std::move(remap));
-        execution = std::make_unique<rc::GraphContext>(core, registry);
+        execution = std::make_unique<rc::GraphContext>(core, registry, "XPBD model " + std::to_string(plan->model.model));
         interface = "#version 450\n" + registry.glsl().at("graph.compute.glsl") + plan->interface();
         for (const auto& kernel : plan->kernels)
             programs.push_back(&execution->compute(kernel.name + ".comp", interface + kernel.source));
@@ -250,7 +252,7 @@ PublishedState Instance::publish() {
         d.name += " source";
         copy->source[i] = copy->registry.declare(d);
     }
-    copy->execution = std::make_unique<rc::GraphContext>(core_, copy->registry);
+    copy->execution = std::make_unique<rc::GraphContext>(core_, copy->registry, "XPBD snapshot");
     rc::NativeResources from(*storage_->execution), to(*copy->execution);
     std::array<Buffer, 3> sources;
     std::array<rg::AccessState, 3> states;
@@ -309,7 +311,7 @@ void Instance::step(const TickInput& input) {
         s.dynamicEndpoints(endpoints);
     s.topology(input.tick);
     float h = input.dt / s.plan->policy.substeps;
-    for (uint32_t substep = 0; substep < s.plan->policy.substeps; ++substep) {
+    for (uint32_t substep = 0; !s.plan->predict.empty() && substep < s.plan->policy.substeps; ++substep) {
         float time = float(completed_.time) + h * (substep + 1);
         for (const auto& batch : s.plan->predict)
             s.batch(batch, h, time, input.tick, 0);
@@ -326,6 +328,10 @@ void Instance::step(const TickInput& input) {
         for (const auto& batch : s.plan->update)
             s.batch(batch, h, time, input.tick, 0);
     }
+    // Global reset touches all multipliers. Run closed regions afterwards so their
+    // final multipliers remain available for readback and history/state consumers.
+    for (const auto& batch : s.plan->local)
+        s.batch(batch, h, float(completed_.time), input.tick, 0);
     s.submit(input.tick, input.profileRequest);
     submitted_ = {model_.model, model_.version, input.tick, completed_.time + input.dt};
     pending_ = true;

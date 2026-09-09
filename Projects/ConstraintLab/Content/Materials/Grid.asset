@@ -1,0 +1,22 @@
+ALAS1
+{"id": "5eff0d5dc336439498cd46b5bd692b7d", "type": "Material", "name": "Grid", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "09ea3e8ad6a24bb8a7cdf45a42a418aa",
+    "path": "/Game/shaders/Surface"
+  },
+  "properties": {
+    "baseColor": [
+      0.07,
+      0.12,
+      0.16
+    ],
+    "roughness": 0.7,
+    "emission": [
+      0.005,
+      0.008,
+      0.012
+    ]
+  },
+  "textures": {}
+}

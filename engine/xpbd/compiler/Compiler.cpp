@@ -1,4 +1,4 @@
-#include "CompiledPlan.h"
+#include "Schedule.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -10,8 +10,6 @@
 namespace whimsical::xpbd {
 // Kernel generation is local to the physics compiler; RenderCore never sees spaces,
 // constraints, multiplier state, coloring, or the numerical method.
-std::string variableKernel(const Space&, const char* operation);
-std::string relationKernel(const RelationType&, bool jacobi, bool update);
 std::string incidenceKernel(const RelationType&, bool scatter);
 namespace {
 constexpr const char* Names[] = {"q",
@@ -35,12 +33,14 @@ constexpr const char* Names[] = {"q",
                                  "adjEntries",
                                  "diagnostics",
                                  "scanScratch",
-                                 "adjCursors"};
+                                 "adjCursors",
+                                 "regionRanges", "regionState", "localOffsets"};
 bool integer(BufferRole r) {
     return r == BufferRole::Variables || r == BufferRole::VariableWork || r == BufferRole::Relations ||
            r == BufferRole::Endpoints || r == BufferRole::RelationWork || r == BufferRole::AdjacencyOffsets ||
            r == BufferRole::AdjacencyEntries || r == BufferRole::Diagnostics ||
-           r == BufferRole::ScanScratch || r == BufferRole::AdjacencyCursors;
+           r == BufferRole::ScanScratch || r == BufferRole::AdjacencyCursors || r == BufferRole::RegionRanges ||
+           r == BufferRole::RegionState || r == BufferRole::LocalOffsets;
 }
 uint32_t checked(size_t n) {
     if (n > UINT32_MAX)
@@ -93,14 +93,14 @@ layout(push_constant) uniform Step {
     uint tick; uint iteration; float relaxation; uint reserved;
 } step;
 uint invocation() { return gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * 8388480u; }
-struct Variable {uint q; uint v; uint m; uint stride; uint flags;};
+struct Variable {uint q; uint v; uint m; uint stride; uint flags; uint id;};
 Variable variable(uint id) {
-    uint k=id*5u; return Variable(x_variables[k],x_variables[k+1u],x_variables[k+2u],x_variables[k+3u],x_variables[k+4u]);
+    uint k=id*5u; return Variable(x_variables[k],x_variables[k+1u],x_variables[k+2u],x_variables[k+3u],x_variables[k+4u],id);
 }
-struct Relation {uint e; uint p; uint a; uint h; uint l; uint c; uint stride; uint cs;};
+struct Relation {uint e; uint p; uint a; uint h; uint l; uint c; uint stride; uint cs; uint id;};
 Relation relation(uint id) {
     uint k=id*8u;return Relation(x_relations[k],x_relations[k+1u],x_relations[k+2u],x_relations[k+3u],
-        x_relations[k+4u],x_relations[k+5u],x_relations[k+6u],x_relations[k+7u]);
+        x_relations[k+4u],x_relations[k+5u],x_relations[k+6u],x_relations[k+7u],id);
 }
 )";
 }
@@ -316,19 +316,30 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     append(buffer(BufferRole::AdjacencyOffsets), offsets);
     append(buffer(BufferRole::AdjacencyEntries), entries);
     p->statistics.incidenceEntries = offsets.back();
+    std::vector<KernelFunction> functions;
     auto kernel = [&](std::string name, std::string source) {
         auto id = checked(p->kernels.size());
         p->kernels.push_back({std::move(name), std::move(source)});
+        functions.emplace_back();
+        return id;
+    };
+    auto operation = [&](std::string name, KernelFunction function) {
+        auto id = kernel(std::move(name), globalKernel(function));
+        functions[id] = std::move(function);
         return id;
     };
     for (uint32_t space = 0; space < p->spaces.size(); ++space) {
         const auto& s = *p->spaces[space];
         auto first = append(buffer(BufferRole::VariableWork), variableGroups[space]),
              count = checked(variableGroups[space].size());
-        p->predict.push_back({kernel("Predict " + s.name, variableKernel(s, "predict")), first, count});
-        p->recover.push_back({kernel("Recover " + s.name, variableKernel(s, "recover")), first, count});
+        auto suffix = std::to_string(space);
+        p->predict.push_back(
+            {operation("Predict " + s.name, variableFunction(s, "predict", "predict" + suffix)), first, count});
+        p->recover.push_back(
+            {operation("Recover " + s.name, variableFunction(s, "recover", "recover" + suffix)), first, count});
         if (p->statistics.jacobiRelations)
-            p->apply.push_back({kernel("Gather " + s.name, variableKernel(s, "apply")), first, count});
+            p->apply.push_back(
+                {operation("Gather " + s.name, variableFunction(s, "apply", "gather" + suffix)), first, count});
     }
     std::map<std::pair<int32_t, uint32_t>, std::vector<uint32_t>> groups;
     for (const auto& in : instances)
@@ -341,8 +352,10 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         auto found = solveKernels.find(key);
         uint32_t program;
         if (found == solveKernels.end()) {
-            program = kernel(std::string(jacobi ? "Jacobi " : "Colored ") + p->types[type]->name,
-                             relationKernel(*p->types[type], jacobi, false));
+            program = operation(std::string(jacobi ? "Jacobi " : "Colored ") + p->types[type]->name,
+                                relationFunction(*p->types[type], jacobi, false,
+                                                 std::string(jacobi ? "jacobi" : "colored") +
+                                                     std::to_string(type)));
             solveKernels.emplace(key, program);
         } else
             program = found->second;
@@ -365,7 +378,8 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
                 if (in.type == type)
                     work.push_back(in.id);
             p->update.push_back(
-                {kernel("Commit " + p->types[type]->name, relationKernel(*p->types[type], false, true)),
+                {operation("Commit " + p->types[type]->name,
+                           relationFunction(*p->types[type], false, true, "commit" + std::to_string(type))),
                  append(buffer(BufferRole::RelationWork), work), checked(work.size())});
         }
     p->resetKernel =
@@ -386,6 +400,7 @@ if(lane==127u && i-lane<step.count)x_scanScratch[step.reserved+i/128u]=partial[l
 void main(){uint i=invocation();if(i<step.count)x_scanScratch[step.first+i]+=x_scanScratch[step.reserved+i/128u];}
 )");
     }
+    lowerSchedule(*p, functions);
     for (auto& b : p->buffers) {
         if (b.initial.empty())
             b.initial.resize(4);

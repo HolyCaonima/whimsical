@@ -60,7 +60,6 @@ class Renderer {
     uint64_t frames() const;
     RenderStatistics statistics() const;
     SceneUpdateStatistics sceneStatistics() const;
-    std::optional<GpuProfile> takeGpuProfile(); // Render-thread result; caller publishes the value.
     std::optional<CpuProfile> takeCpuProfile();
     uint32_t errors() const;
 };

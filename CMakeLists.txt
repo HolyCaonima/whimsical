@@ -127,7 +127,7 @@ target_compile_definitions(whimsical_rendercore PRIVATE
 add_library(whimsical_xpbd_model engine/xpbd/model/Expression.cpp engine/xpbd/model/Model.cpp)
 target_include_directories(whimsical_xpbd_model PUBLIC engine)
 target_compile_options(whimsical_xpbd_model PRIVATE /W4 /permissive- /utf-8)
-add_library(whimsical_xpbd_compiler engine/xpbd/compiler/Compiler.cpp engine/xpbd/compiler/Kernels.cpp engine/xpbd/compiler/Migration.cpp)
+add_library(whimsical_xpbd_compiler engine/xpbd/compiler/Compiler.cpp engine/xpbd/compiler/Kernels.cpp engine/xpbd/compiler/Migration.cpp engine/xpbd/compiler/Schedule.cpp)
 target_link_libraries(whimsical_xpbd_compiler PUBLIC whimsical_xpbd_model)
 target_compile_options(whimsical_xpbd_compiler PRIVATE /W4 /permissive- /utf-8)
 add_library(whimsical_xpbd_runtime engine/xpbd/runtime/Instance.cpp)

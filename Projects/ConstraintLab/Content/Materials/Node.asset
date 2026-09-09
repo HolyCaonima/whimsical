@@ -1,0 +1,22 @@
+ALAS1
+{"id": "2d4a0242eaf64a92b75c0a9381c68785", "type": "Material", "name": "Node", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "09ea3e8ad6a24bb8a7cdf45a42a418aa",
+    "path": "/Game/shaders/Surface"
+  },
+  "properties": {
+    "baseColor": [
+      0.72,
+      0.4,
+      0.13
+    ],
+    "roughness": 0.75,
+    "emission": [
+      0,
+      0,
+      0
+    ]
+  },
+  "textures": {}
+}

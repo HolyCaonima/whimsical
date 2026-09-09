@@ -1,0 +1,43 @@
+body { width:100%; height:100%; margin:0; font-family:LatoLatin; font-size:14px; color:#d5e3e9; pointer-events:none; }
+div { display:block; }
+button { display:inline-block; font-family:LatoLatin; font-size:13px; color:#b8cbd5; background-color:#152532; border:1px #2a414f; border-radius:5px; padding:9px 11px; pointer-events:auto; vertical-align:middle; }
+button:hover { background-color:#244353; color:#ffffff; border-color:#527c88; }
+button:active { background-color:#355765; }
+button.active { background-color:#163c40; border-color:#2c746f; color:#72e0ce; }
+button.primary { background-color:#69d7c2; color:#092c2b; border-color:#69d7c2; }
+button.primary:hover { background-color:#9befdc; }
+#header { position:absolute; left:0; top:0; width:100%; height:84px; background-color:#0c1721; border-bottom:1px #263946; }
+.brand-mark { position:absolute; left:28px; top:15px; font-size:44px; color:#69d7c2; }
+.brand { position:absolute; left:87px; top:18px; font-size:22px; font-weight:bold; letter-spacing:2px; }
+.brand span { display:block; font-size:11px; font-weight:normal; letter-spacing:1px; color:#7798a9; margin-top:5px; }
+#status { position:absolute; right:28px; top:26px; padding:8px 14px; border:1px #245650; border-radius:5px; background-color:#12322f; color:#8ae1ce; font-size:11px; font-weight:bold; letter-spacing:1px; }
+#status.warning { background-color:#4b201d; color:#ffb391; border-color:#884237; }
+#viewport { position:absolute; left:18px; top:100px; right:330px; bottom:62px; border:1px #243d48; border-radius:4px; }
+.view-heading { position:absolute; left:26px; top:25px; }
+.eyebrow { font-size:10px; letter-spacing:2px; color:#769aa9; }
+.view-title { font-size:28px; font-weight:bold; margin-top:8px; color:#e7f3f6; }
+.view-subtitle { font-size:12px; color:#8da6b1; margin-top:6px; }
+#camera { position:absolute; right:22px; top:25px; font-size:11px; padding:7px 11px; background-color:#12232c; }
+#formula { position:absolute; left:24px; bottom:24px; padding:14px 18px; background-color:#0b1924df; border-left:2px #65d3be; }
+#equation { font-size:16px; color:#c9e7e6; }
+#sample-note { margin-top:8px; font-size:11px; color:#7e9aa8; }
+.legend { position:absolute; right:23px; bottom:29px; color:#8ca7b3; font-size:11px; }
+.teal { color:#69d7c2; margin-left:10px; }.gold { color:#ffc66c; margin-left:15px; }
+#sidebar { position:absolute; top:100px; right:18px; bottom:62px; width:294px; background-color:#0e1c28; border:1px #243d48; border-radius:4px; overflow:auto; pointer-events:auto; }
+.section { padding:10px 19px; border-bottom:1px #243641; }
+#population { font-size:39px; font-weight:bold; color:#eff9fb; margin:6px 0 1px; }
+.muted { font-size:11px; color:#7794a3; }
+.sizes { margin:10px 0 10px; }.sizes button { width:55px; margin-right:4px; text-align:center; padding:7px 9px; }
+.section-title { font-weight:bold; font-size:13px; color:#d0e1e7; margin-bottom:9px; }
+.buttons { margin-bottom:8px; }.buttons button { margin-right:5px; }
+.wide { display:block; width:226px; text-align:center; margin-top:8px; }
+.metric { margin-top:10px; font-size:12px; }.metric span { color:#7795a6; }.metric b { float:right; color:#c9e0e7; font-weight:normal; }
+.control-row { height:35px; margin-top:8px; font-size:12px; }.control-row span { display:inline-block; width:93px; padding-top:8px; color:#8eacbc; }.control-row button { padding:6px 10px; font-size:12px; }.control-row b { display:inline-block; min-width:41px; text-align:center; font-weight:normal; }
+.telemetry { border-bottom:0px; }.telemetry .metric { margin-top:9px; }
+.meter-track { height:3px; margin-top:10px; background-color:#233b48; }#meter { width:0%; height:3px; background-color:#65d3be; }
+.diagnostics { padding-top:9px; border-top:1px #243641; }
+#footer { position:absolute; bottom:0; left:0; width:100%; height:45px; background-color:#0c1721; border-top:1px #263946; font-size:11px; color:#7c9aa9; }
+#notice { position:absolute; left:25px; top:14px; right:380px; }#footer-state { position:absolute; right:25px; top:14px; color:#557d91; }
+scrollbarvertical { width:5px; background-color:#10212d; }scrollbarvertical sliderbar { width:5px; min-height:30px; background-color:#35505f; }
+
+

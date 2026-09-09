@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cmath>
 #include <mutex>
+#include <future>
 using namespace whimsical;
 int main(int argc, char** argv) {
     std::cout.setf(std::ios::unitbuf);
@@ -315,7 +316,7 @@ int main(int argc, char** argv) {
             return true;
         };
         variables.command(
-            "profileGPU", "profileGPU [last]: capture the next GPU frame, or show the last report",
+            "profileGPU", "profileGPU [last]: capture one second of RenderCore GPU submissions, or show the last report",
             [&](const auto& args) {
                 if (args.size() == 1 && args[0] == "last")
                     return lastGpuProfile ? lastGpuProfile->text()
@@ -323,10 +324,10 @@ int main(int argc, char** argv) {
                 if (!args.empty())
                     throw std::runtime_error("Usage: profileGPU [last]");
                 if (gpuProfileRequest != gpuProfileCompleted)
-                    return std::string("GPU profile already pending; waiting for the next rendered frame.");
+                    return std::string("GPU profile already pending; collecting RenderCore submissions.");
                 ++gpuProfileRequest;
                 return "GPU profile request " + std::to_string(gpuProfileRequest) +
-                       " queued for the next rendered frame.";
+                       " queued for a one-second RenderCore capture.";
             });
         auto collectGpuProfile = [&] {
             std::optional<GpuProfile> result;
@@ -408,41 +409,62 @@ int main(int argc, char** argv) {
         variables.finishStartup();
         std::string renderError;
         uint32_t validationErrors = 0;
+        std::promise<void> producerStopped;
+        auto producerCompletion = producerStopped.get_future();
         std::thread renderThread([&] {
             try {
                 deviceOptions.presentationWindow = window.handle();
                 deviceOptions.rayQueries = true;
                 rc::RenderCore renderCore(deviceOptions);
                 xpbd::GpuService xpbdService(renderCore,scripts.xpbdMailbox());
-                Renderer renderer(renderCore, options);
-                FrameRef frame;
-                uint64_t seen = 0;
-                for (;;) {
-                    // Only blocks before the first snapshot: afterwards the newest one is
-                    // re-presented rather than stalling for the next simulation tick.
-                    if (mailbox.acquire(frame, seen) == FrameStatus::Closed)
-                        break;
-                    xpbdService.drain();
-                    bool more = renderer.render(frame);
-                    if (auto result = renderer.takeCpuProfile()) {
-                        std::lock_guard<std::mutex> lock(cpuProfileMutex);
-                        cpuProfileResult = std::move(result);
+                try {
+                    Renderer renderer(renderCore, options);
+                    FrameRef frame;
+                    uint64_t seen = 0, lastGpuRequest = 0;
+                    for (;;) {
+                        // Only blocks before the first snapshot: afterwards the newest one is
+                        // re-presented rather than stalling for the next simulation tick.
+                        if (mailbox.acquire(frame, seen) == FrameStatus::Closed)
+                            break;
+                        if (frame->gpuProfileRequest > lastGpuRequest) {
+                            renderCore.requestProfile(frame->gpuProfileRequest);
+                            lastGpuRequest = frame->gpuProfileRequest;
+                        }
+                        xpbdService.drain();
+                        bool more = renderer.render(frame);
+                        if (auto result = renderer.takeCpuProfile()) {
+                            std::lock_guard<std::mutex> lock(cpuProfileMutex);
+                            cpuProfileResult = std::move(result);
+                        }
+                        if (auto result = renderCore.takeProfile()) {
+                            std::lock_guard<std::mutex> lock(gpuProfileMutex);
+                            gpuProfileResult = std::move(result);
+                        }
+                        rendered.store(renderer.frames());
+                        const auto stats = renderer.statistics();
+                        renderFps.store(stats.fps);
+                        renderFrameMs.store(stats.frameMs);
+                        renderCpuMs.store(stats.cpuMs);
+                        renderGpuMs.store(stats.gpuMs);
+                        renderVsync.store(stats.vsync);
+                        if (!more)
+                            break;
                     }
-                    if (auto result = renderer.takeGpuProfile()) {
-                        std::lock_guard<std::mutex> lock(gpuProfileMutex);
-                        gpuProfileResult = std::move(result);
-                    }
-                    rendered.store(renderer.frames());
-                    const auto stats = renderer.statistics();
-                    renderFps.store(stats.fps);
-                    renderFrameMs.store(stats.frameMs);
-                    renderCpuMs.store(stats.cpuMs);
-                    renderGpuMs.store(stats.gpuMs);
-                    renderVsync.store(stats.vsync);
-                    if (!more)
-                        break;
+                    validationErrors = renderer.errors();
+                } catch (const std::exception& error) {
+                    renderError = error.what();
                 }
-                validationErrors = renderer.errors();
+                renderCore.endProfile();
+                if (auto result = renderCore.takeProfile()) {
+                    std::lock_guard<std::mutex> lock(gpuProfileMutex);
+                    gpuProfileResult = std::move(result);
+                }
+                // Keep GPU services alive while the producer finishes its current
+                // callback. A render limit or renderer failure must not retire its
+                // channels underneath an active simulation tick.
+                finished.store(true);
+                window.wake();
+                producerCompletion.wait();
             } catch (const std::exception& error) {
                 renderError = error.what();
             }
@@ -492,9 +514,9 @@ int main(int argc, char** argv) {
             frame.cpuProfile = cpuSnapshot;
             mailbox.publish(std::move(frame));
         };
-        prepareCpuProfile();
-        publish();
         try {
+            prepareCpuProfile();
+            publish();
             while (window.pump() && !finished.load() && !quitRequested) {
                 auto now = Clock::now();
                 accumulator += std::min(std::chrono::duration<double>(now - previous).count(), .1);
@@ -622,6 +644,7 @@ int main(int argc, char** argv) {
         } catch (const std::exception& e) {
             mainError = e.what();
         }
+        producerStopped.set_value();
         mailbox.close();
         renderThread.join();
         gameCpuProfiler.reset();

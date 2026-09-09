@@ -1,0 +1,22 @@
+ALAS1
+{"id": "4089373dbe75479a833585dba88c84bb", "type": "Material", "name": "Edge", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "09ea3e8ad6a24bb8a7cdf45a42a418aa",
+    "path": "/Game/shaders/Surface"
+  },
+  "properties": {
+    "baseColor": [
+      0.78,
+      0.45,
+      0.17
+    ],
+    "roughness": 0.75,
+    "emission": [
+      0,
+      0,
+      0
+    ]
+  },
+  "textures": {}
+}

@@ -1,0 +1,7 @@
+ALAS1
+{"id": "09ea3e8ad6a24bb8a7cdf45a42a418aa", "type": "Shader", "name": "Lab surface", "version": 1, "storage": "embedded", "metadata": {"materialModel": "metallicRoughness", "properties": [{"name": "baseColor", "type": "vec3", "default": [0.5, 0.5, 0.5]}, {"name": "roughness", "type": "float", "default": 0.6}, {"name": "emission", "type": "vec3", "default": [0, 0, 0]}], "textures": []}}
+SurfaceData s = DefaultSurface(ctx);
+s.albedo = properties.baseColor;
+s.roughness = properties.roughness;
+s.emission = properties.emission;
+return s;

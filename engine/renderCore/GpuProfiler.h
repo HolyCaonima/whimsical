@@ -5,15 +5,17 @@
 namespace whimsical {
 // Owned by one graph execution context. Resolve only after its submission completes.
 class GpuProfiler {
-    static constexpr uint32_t MaxScopes = 256;
+    static constexpr uint32_t ScopesPerPool = 256;
     VulkanContext& vk_;
-    VkQueryPool pool_ = VK_NULL_HANDLE;
+    std::vector<VkQueryPool> pools_;
     uint32_t validBits_ = 0;
     bool pending_ = false, detailed_ = false;
     GpuProfile recording_;
     std::vector<int> stack_;
     std::optional<GpuProfile> completed_;
     double frameMs_ = 0;
+    VkQueryPool allocatePool();
+    void timestamp(VkCommandBuffer, uint32_t query, VkPipelineStageFlags2);
 
   public:
     explicit GpuProfiler(VulkanContext&);

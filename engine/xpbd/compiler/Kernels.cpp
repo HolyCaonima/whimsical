@@ -1,4 +1,4 @@
-#include "CompiledPlan.h"
+#include "Schedule.h"
 #include <sstream>
 #include <algorithm>
 
@@ -19,84 +19,82 @@ void relationInputs(std::ostringstream& s, const RelationType& t) {
         s << "uint id" << e << "=x_endpoints[r.e+" << e << "u]; Variable v" << e << "=variable(id" << e
           << ");\n";
         for (uint32_t c = 0; c < t.spaces[e]->stateSize; ++c)
-            s << "x[" << offset + c << "]=x_q[v" << e << ".q+" << c << "u*v" << e << ".stride];\n";
+            s << "x[" << offset + c << "]=loadValue(v" << e << "," << c << "u);\n";
         offset += t.spaces[e]->stateSize;
     }
     for (uint32_t i = 0; i < t.parameters; ++i)
         s << "x[" << offset + i << "]=x_parameters[r.p+" << i << "u*r.stride];\n";
     offset += t.parameters;
     for (uint32_t i = 0; i < t.history; ++i)
-        s << "x[" << offset + i << "]=x_history[r.h+" << i << "u*r.stride];\n";
+        s << "x[" << offset + i << "]=loadHistory(r," << i << "u);\n";
     offset += t.history;
     for (uint32_t i = 0; i < t.rows; ++i)
-        s << "x[" << offset + i << "]=x_lambda[r.l+" << i << "u*r.stride];\n";
-    s << "x[" << n - 2 << "]=step.h; x[" << n - 1 << "]=step.time;\n";
+        s << "x[" << offset + i << "]=loadMultiplier(r," << i << "u);\n";
+    s << "x[" << n - 2 << "]=h; x[" << n - 1 << "]=time;\n";
 }
 } // namespace
-std::string variableKernel(const Space& space, const char* operation) {
+KernelFunction variableFunction(const Space& space, const char* operation, const std::string& name) {
     const std::string op = operation;
     std::ostringstream s;
     const auto S = space.stateSize, T = space.tangentSize;
-    s << space.retract.glsl("retractValue") << space.difference.glsl("differenceValue");
-    s << "void main(){uint lane=invocation();if(lane>=step.count)return;uint "
-         "id=x_variableWork[step.first+lane];Variable v=variable(id);\n";
+    s << space.retract.glsl(name + "_retractValue") << space.difference.glsl(name + "_differenceValue");
+    s << "void " << name << "(uint id,float h,float time,float relaxation){Variable v=variable(id);\n";
     if (op == "predict") {
         local(s, "inputValue", S + T);
         local(s, "outputValue", S);
         for (uint32_t i = 0; i < S; ++i)
-            s << "inputValue[" << i << "]=x_q[v.q+" << i << "u*v.stride];x_oldq[v.q+" << i
-              << "u*v.stride]=inputValue[" << i << "];\n";
+            s << "inputValue[" << i << "]=loadValue(v," << i << "u);storePrevious(v," << i
+              << "u,inputValue[" << i << "]);\n";
         s << "if(x_variableEnabled[id]==0.0)return;\n";
         for (uint32_t i = 0; i < T; ++i)
-            s << "inputValue[" << S + i << "]=step.h*x_velocity[v.v+" << i
-              << "u*v.stride]+step.h*step.h*x_acceleration[v.v+" << i << "u*v.stride];\n";
-        s << "retractValue(inputValue,outputValue);\n";
+            s << "inputValue[" << S + i << "]=h*loadVelocity(v," << i
+              << "u)+h*h*x_acceleration[v.v+" << i << "u*v.stride];\n";
+        s << name << "_retractValue(inputValue,outputValue);\n";
         finite(s, "outputValue", S);
         for (uint32_t i = 0; i < S; ++i)
-            s << "x_q[v.q+" << i << "u*v.stride]=outputValue[" << i << "];\n";
+            s << "storeValue(v," << i << "u,outputValue[" << i << "]);\n";
     } else if (op == "recover") {
         s << "if(x_variableEnabled[id]==0.0)return;\n";
         local(s, "inputValue", S * 2);
         local(s, "outputValue", T);
         for (uint32_t i = 0; i < S; ++i)
-            s << "inputValue[" << i << "]=x_q[v.q+" << i << "u*v.stride];inputValue[" << S + i
-              << "]=x_oldq[v.q+" << i << "u*v.stride];\n";
-        s << "differenceValue(inputValue,outputValue);\n";
+            s << "inputValue[" << i << "]=loadValue(v," << i << "u);inputValue[" << S + i
+              << "]=loadPrevious(v," << i << "u);\n";
+        s << name << "_differenceValue(inputValue,outputValue);\n";
         finite(s, "outputValue", T);
         for (uint32_t i = 0; i < T; ++i)
-            s << "x_velocity[v.v+" << i << "u*v.stride]=outputValue[" << i << "]/step.h;\n";
+            s << "storeVelocity(v," << i << "u,outputValue[" << i << "]/h);\n";
     } else {
         s << "if(v.flags!=0u || x_variableEnabled[id]==0.0)return;\n";
         local(s, "inputValue", S + T);
         local(s, "outputValue", S);
         for (uint32_t i = 0; i < S; ++i)
-            s << "inputValue[" << i << "]=x_q[v.q+" << i << "u*v.stride];\n";
+            s << "inputValue[" << i << "]=loadValue(v," << i << "u);\n";
         for (uint32_t i = 0; i < T; ++i)
             s << "inputValue[" << S + i << "]=0.0;\n";
         s << "for(uint j=x_adjOffsets[id];j<x_adjOffsets[id+1u];++j){uint "
              "at=x_adjEntries[j*2u],stride=x_adjEntries[j*2u+1u];\n";
         for (uint32_t i = 0; i < T; ++i)
             s << "inputValue[" << S + i << "]+=x_contributions[at+" << i << "u*stride];\n";
-        s << "}\nretractValue(inputValue,outputValue);\n";
+        s << "}\n" << name << "_retractValue(inputValue,outputValue);\n";
         finite(s, "outputValue", S);
         for (uint32_t i = 0; i < S; ++i)
-            s << "x_q[v.q+" << i << "u*v.stride]=outputValue[" << i << "];\n";
+            s << "storeValue(v," << i << "u,outputValue[" << i << "]);\n";
     }
     s << "}\n";
-    return s.str();
+    return {name, s.str(), BufferRole::VariableWork};
 }
-std::string relationKernel(const RelationType& t, bool jacobi, bool update) {
+KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update, const std::string& name) {
     std::ostringstream s;
     const auto N = t.inputSize(), D = t.tangentSize(), M = t.rows;
-    s << t.residual.glsl("residual", true);
+    s << t.residual.glsl(name + "_residual", true);
     if (t.projection)
-        s << t.projection->glsl("projectMultiplier");
+        s << t.projection->glsl(name + "_projectMultiplier");
     if (t.update)
-        s << t.update->glsl("commitHistory");
+        s << t.update->glsl(name + "_commitHistory");
     for (uint32_t e = 0; e < t.spaces.size(); ++e)
-        s << t.spaces[e]->retract.glsl("retract" + std::to_string(e), true);
-    s << "void main(){uint lane=invocation();if(lane>=step.count)return;uint "
-         "id=x_relationWork[step.first+lane];Relation r=relation(id);\n";
+        s << t.spaces[e]->retract.glsl(name + "_retract" + std::to_string(e), true);
+    s << "void " << name << "(uint id,float h,float time,float relaxation){Relation r=relation(id);\n";
     if (jacobi)
         for (uint32_t c = 0; c < D; ++c)
             s << "x_contributions[r.c+" << c << "u*r.cs]=0.0;\n";
@@ -104,18 +102,18 @@ std::string relationKernel(const RelationType& t, bool jacobi, bool update) {
     relationInputs(s, t);
     if (update) {
         local(s, "nextHistory", t.history);
-        s << "commitHistory(x,nextHistory);\n";
+        s << name << "_commitHistory(x,nextHistory);\n";
         finite(s, "nextHistory", t.history);
         for (uint32_t c = 0; c < t.history; ++c)
-            s << "x_history[r.h+" << c << "u*r.stride]=nextHistory[" << c << "];\n";
+            s << "storeHistory(r," << c << "u,nextHistory[" << c << "]);\n";
         s << "}\n";
-        return s.str();
+        return {name, s.str(), BufferRole::RelationWork};
     }
     local(s, "c", M);
     local(s, "rawJ", M * N);
     local(s, "j", M * D);
     local(s, "wjt", D * M);
-    s << "residual(x,c,rawJ);\n";
+    s << name << "_residual(x,c,rawJ);\n";
     uint32_t qo = 0, vo = 0;
     for (uint32_t e = 0; e < t.spaces.size(); ++e) {
         const auto S = t.spaces[e]->stateSize, T = t.spaces[e]->tangentSize;
@@ -125,7 +123,7 @@ std::string relationKernel(const RelationType& t, bool jacobi, bool update) {
             s << "input" << e << "[" << a << "]=x[" << qo + a << "];\n";
         for (uint32_t a = 0; a < T; ++a)
             s << "input" << e << "[" << S + a << "]=0.0;\n";
-        s << "retract" << e << "(input" << e << ",output" << e << ",tangent" << e << ");\n";
+        s << name << "_retract" << e << "(input" << e << ",output" << e << ",tangent" << e << ");\n";
         for (uint32_t row = 0; row < M; ++row)
             for (uint32_t col = 0; col < T; ++col) {
                 s << "j[" << row * D + vo + col << "]=0.0";
@@ -177,9 +175,9 @@ std::string relationKernel(const RelationType& t, bool jacobi, bool update) {
     local(s, "rhs", M);
     local(s, "dl", M);
     for (uint32_t row = 0; row < M; ++row) {
-        s << "float alpha" << row << "=x_compliance[r.a+" << row << "u*r.stride]/(step.h*step.h);\n";
-        s << "rhs[" << row << "]=-c[" << row << "]-alpha" << row << "*x_lambda[r.l+" << row
-          << "u*r.stride];\n";
+        s << "float alpha" << row << "=x_compliance[r.a+" << row << "u*r.stride]/(h*h);\n";
+        s << "rhs[" << row << "]=-c[" << row << "]-alpha" << row << "*loadMultiplier(r," << row
+          << "u);\n";
         for (uint32_t col = 0; col < M; ++col) {
             s << "a[" << row * M + col << "]=" << (row == col ? "alpha" + std::to_string(row) : "0.0");
             for (uint32_t k = 0; k < D; ++k)
@@ -212,11 +210,11 @@ std::string relationKernel(const RelationType& t, bool jacobi, bool update) {
             s << "degree=max(degree,x_adjOffsets[id" << e << "+1u]-x_adjOffsets[id" << e << "]);\n";
     }
     for (uint32_t row = 0; row < M; ++row)
-        s << "x[" << lambdaInput + row << "]=x_lambda[r.l+" << row << "u*r.stride]+rhs[" << row
-          << "]*step.relaxation" << (jacobi ? "/float(degree)" : "") << ";\n";
+        s << "x[" << lambdaInput + row << "]=loadMultiplier(r," << row << "u)+rhs[" << row
+          << "]*relaxation" << (jacobi ? "/float(degree)" : "") << ";\n";
     if (t.domain == Domain::Projected) {
         local(s, "projected", M);
-        s << "projectMultiplier(x,projected);\n";
+        s << name << "_projectMultiplier(x,projected);\n";
     }
     local(s, "nextLambda", M);
     for (uint32_t row = 0; row < M; ++row) {
@@ -228,7 +226,7 @@ std::string relationKernel(const RelationType& t, bool jacobi, bool update) {
         if (t.domain == Domain::Projected)
             next = "projected[" + std::to_string(row) + "]";
         s << "nextLambda[" << row << "]=" << next << ";dl[" << row << "]=nextLambda[" << row
-          << "]-x_lambda[r.l+" << row << "u*r.stride];\n";
+          << "]-loadMultiplier(r," << row << "u);\n";
     }
     finite(s, "nextLambda", M);
     finite(s, "dl", M);
@@ -248,14 +246,14 @@ std::string relationKernel(const RelationType& t, bool jacobi, bool update) {
             for (uint32_t b = 0; b < e; ++b)
                 s << " && id" << e << "!=id" << b;
             s << ") {\n";
-            s << "retract" << e << "(input" << e << ",output" << e << ",tangent" << e << ");\n";
+            s << name << "_retract" << e << "(input" << e << ",output" << e << ",tangent" << e << ");\n";
             finite(s, "output" + std::to_string(e), S);
             s << "}\n";
         }
         vo += T;
     }
     for (uint32_t row = 0; row < M; ++row)
-        s << "x_lambda[r.l+" << row << "u*r.stride]=nextLambda[" << row << "];\n";
+        s << "storeMultiplier(r," << row << "u,nextLambda[" << row << "]);\n";
     vo = 0;
     for (uint32_t e = 0; e < t.spaces.size(); ++e) {
         const auto S = t.spaces[e]->stateSize, T = t.spaces[e]->tangentSize;
@@ -268,14 +266,13 @@ std::string relationKernel(const RelationType& t, bool jacobi, bool update) {
                 s << " && id" << e << "!=id" << b;
             s << ") {\n";
             for (uint32_t col = 0; col < S; ++col)
-                s << "x_q[v" << e << ".q+" << col << "u*v" << e << ".stride]=output" << e << "[" << col
-                  << "];\n";
+                s << "storeValue(v" << e << "," << col << "u,output" << e << "[" << col << "]);\n";
             s << "}\n";
         }
         vo += T;
     }
     s << "}\n";
-    return s.str();
+    return {name, s.str(), BufferRole::RelationWork, jacobi};
 }
 std::string incidenceKernel(const RelationType& t, bool scatter) {
     std::ostringstream s;
@@ -297,6 +294,35 @@ std::string incidenceKernel(const RelationType& t, bool scatter) {
         offset += t.spaces[e]->tangentSize;
     }
     s << "}\n";
+    return s.str();
+}
+std::string globalKernel(const KernelFunction& function) {
+    const char* work = function.work == BufferRole::VariableWork ? "variableWork" : "relationWork";
+    return stateAccess(false) + function.source + "void main(){uint lane=invocation();if(lane>=step.count)return;" +
+           function.entry + "(x_" + work + "[step.first+lane],step.h,step.time,step.relaxation); }\n";
+}
+std::string stateAccess(bool localState, uint32_t variableCount) {
+    struct FieldAccess {
+        const char* name;
+        const char* buffer;
+        const char* offset;
+        bool variable;
+    };
+    const FieldAccess fields[] = {{"Value", "q", "q", true}, {"Previous", "oldq", "q", true},
+                                  {"Velocity", "velocity", "v", true}, {"History", "history", "h", false},
+                                  {"Multiplier", "lambda", "l", false}};
+    std::ostringstream s;
+    for (uint32_t i = 0; i < 5; ++i) {
+        const auto& field = fields[i];
+        const char* type = field.variable ? "Variable" : "Relation";
+        std::string address = std::string("x_") + field.buffer + "[v." + field.offset + "+c*v.stride]";
+        if (localState)
+            address = "regionState[x_localOffsets[" +
+                (field.variable ? "v.id*3u+" + std::to_string(i) :
+                 std::to_string(uint64_t(variableCount) * 3) + "u+v.id*2u+" + std::to_string(i - 3)) + "u]+c]";
+        s << "float load" << field.name << "(" << type << " v,uint c){return " << address << ";}\n";
+        s << "void store" << field.name << "(" << type << " v,uint c,float value){" << address << "=value;}\n";
+    }
     return s.str();
 }
 } // namespace whimsical::xpbd

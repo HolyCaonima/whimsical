@@ -396,6 +396,15 @@ __declspec(noinline) duk_ret_t ScriptBindings::dispatch(duk_context* c, int op) 
                 e.policy.colorBudget = p.at("colorBudget").uint();
             if (p.contains("relaxation"))
                 e.policy.relaxation = float(p.at("relaxation").number());
+            if (p.contains("execution")) {
+                auto execution = p.at("execution").string();
+                if (execution == "auto")
+                    e.policy.execution = ExecutionMode::Auto;
+                else if (execution == "global")
+                    e.policy.execution = ExecutionMode::Global;
+                else
+                    throw std::invalid_argument("Unknown solver execution mode");
+            }
             if (p.contains("mode")) {
                 auto mode = p.at("mode").string();
                 if (mode == "colored")

@@ -1,0 +1,22 @@
+ALAS1
+{"id": "412150be804f1d9de993fa1754c6cc4d", "type": "Material", "name": "Obstacle", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "09ea3e8ad6a24bb8a7cdf45a42a418aa",
+    "path": "/Game/shaders/Surface"
+  },
+  "properties": {
+    "baseColor": [
+      0.07,
+      0.36,
+      0.38
+    ],
+    "roughness": 0.75,
+    "emission": [
+      0.005,
+      0.02,
+      0.02
+    ]
+  },
+  "textures": {}
+}

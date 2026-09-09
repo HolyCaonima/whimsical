@@ -1,0 +1,22 @@
+ALAS1
+{"id": "b056271df15643cd959a85c895e1d0c0", "type": "Material", "name": "Anchor", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "09ea3e8ad6a24bb8a7cdf45a42a418aa",
+    "path": "/Game/shaders/Surface"
+  },
+  "properties": {
+    "baseColor": [
+      1,
+      0.59,
+      0.18
+    ],
+    "roughness": 0.7,
+    "emission": [
+      0.3,
+      0.1,
+      0.01
+    ]
+  },
+  "textures": {}
+}

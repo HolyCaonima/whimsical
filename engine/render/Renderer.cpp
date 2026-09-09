@@ -42,7 +42,6 @@ struct Renderer::Impl {
     std::vector<Image> swapImages;
     std::vector<VkSemaphore> finished;
     VkSemaphore acquired = VK_NULL_HANDLE;
-    uint64_t lastProfileRequest = 0;
     ShaderCompiler shaderCompiler;
     MaterialBindings materialBindings;
 
@@ -96,7 +95,7 @@ struct Renderer::Impl {
     void initialize() {
         if (!vk.surface)
             throw std::invalid_argument("Rendering presentation requires a RenderCore with a surface");
-        execution = std::make_unique<rc::GraphContext>(core, resources.registry);
+        execution = std::make_unique<rc::GraphContext>(core, resources.registry, "Renderer");
         pool.emplace(*execution);
         graph = &execution->graph();
         renderTargets = std::make_unique<GpuRenderTargets>(vk, resources.registry, *pool);
@@ -531,10 +530,7 @@ struct Renderer::Impl {
         execution->compile(viewWidth, viewHeight);
 
         CpuScope recordScope("Record GPU Commands");
-        const auto request = frame.gpuProfileRequest > lastProfileRequest ? frame.gpuProfileRequest : 0;
-        execution->record({request, frameNumber + 1, width, height});
-        if (request)
-            lastProfileRequest = request;
+        execution->record({0, frameNumber + 1, width, height});
         recordScope.finish();
 
         CpuScope submitScope("Queue Submit");
@@ -606,9 +602,6 @@ RenderStatistics Renderer::statistics() const {
 }
 SceneUpdateStatistics Renderer::sceneStatistics() const {
     return impl_->scene->statistics;
-}
-std::optional<GpuProfile> Renderer::takeGpuProfile() {
-    return impl_->execution->takeProfile();
 }
 std::optional<CpuProfile> Renderer::takeCpuProfile() {
     auto result = std::move(impl_->cpuProfileResult);
