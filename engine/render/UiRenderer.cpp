@@ -1,4 +1,5 @@
 #include "UiRenderer.h"
+#include "RangeAllocator.h"
 #include <unordered_map>
 #include <algorithm>
 #include <cstring>
@@ -13,8 +14,12 @@ struct UiRenderer::Impl {
     VkSampler sampler = VK_NULL_HANDLE;
     struct Mesh {
         std::weak_ptr<const ui::Geometry> source;
-        Buffer vertices, indices;
+        uint32_t firstVertex, vertexCount, firstIndex, indexCount;
     };
+    // Immutable UI geometry owns a range, not a Vulkan allocation. Storage survives
+    // geometry retirement and grows only when reusable capacity is exhausted.
+    RangeAllocator vertexRanges, indexRanges;
+    Buffer vertices, indices;
     struct Texture {
         std::weak_ptr<const ui::Texture> source;
         Image image;
@@ -167,10 +172,8 @@ struct UiRenderer::Impl {
             vkDestroyDescriptorPool(vk.device, texture.pool, nullptr);
     }
     ~Impl() {
-        for (auto& pair : meshes) {
-            vk.destroy(pair.second.vertices);
-            vk.destroy(pair.second.indices);
-        }
+        vk.destroy(vertices);
+        vk.destroy(indices);
         for (auto& pair : textures)
             destroy(pair.second);
         destroy(white);
@@ -180,10 +183,12 @@ struct UiRenderer::Impl {
         vkDestroySampler(vk.device, sampler, nullptr);
     }
     void prepare(const ui::UiFrame* frame) {
+        // The renderer has waited for the previous submission. Expired CPU sources
+        // therefore have no GPU readers, and their ranges can be reused immediately.
         for (auto it = meshes.begin(); it != meshes.end();) {
             if (it->second.source.expired()) {
-                vk.destroy(it->second.vertices);
-                vk.destroy(it->second.indices);
+                vertexRanges.release(it->second.firstVertex, it->second.vertexCount);
+                indexRanges.release(it->second.firstIndex, it->second.indexCount);
                 it = meshes.erase(it);
             } else
                 ++it;
@@ -197,23 +202,56 @@ struct UiRenderer::Impl {
         }
         if (!frame)
             return;
+        std::vector<uint64_t> added;
         for (const auto& draw : frame->draws) {
             const auto& g = *draw.geometry;
+            if (g.indices.empty())
+                continue;
             if (meshes.find(g.id) == meshes.end()) {
                 auto& mesh = meshes[g.id];
                 mesh.source = draw.geometry;
-                mesh.vertices = vk.buffer(g.vertices.size() * sizeof(ui::Vertex),
-                                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, BufferMemory::Upload);
-                mesh.indices =
-                    vk.buffer(g.indices.size() * sizeof(int), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, BufferMemory::Upload);
-                std::memcpy(mesh.vertices.mapped, g.vertices.data(), g.vertices.size() * sizeof(ui::Vertex));
-                std::memcpy(mesh.indices.mapped, g.indices.data(), g.indices.size() * sizeof(int));
+                mesh.vertexCount = uint32_t(g.vertices.size());
+                mesh.indexCount = uint32_t(g.indices.size());
+                mesh.firstVertex = vertexRanges.allocate(mesh.vertexCount);
+                mesh.firstIndex = indexRanges.allocate(mesh.indexCount);
+                added.push_back(g.id);
             }
             if (draw.texture && textures.find(draw.texture->id) == textures.end()) {
                 auto& texture = textures[draw.texture->id];
                 texture.source = draw.texture;
                 upload(texture, draw.texture->width, draw.texture->height, draw.texture->pixels.data());
             }
+        }
+        auto grow = [&](Buffer& buffer, VkDeviceSize bytes, VkBufferUsageFlags usage) {
+            if (bytes <= buffer.size)
+                return false;
+            auto capacity = std::max(bytes, std::max<VkDeviceSize>(4096, buffer.size * 2));
+            vk.destroy(buffer);
+            buffer = vk.buffer(capacity, usage, BufferMemory::Upload);
+            return true;
+        };
+        const bool verticesGrew = grow(vertices, VkDeviceSize(vertexRanges.size()) * sizeof(ui::Vertex),
+                                       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+        const bool indicesGrew = grow(indices, VkDeviceSize(indexRanges.size()) * sizeof(int),
+                                      VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+        auto uploadMesh = [&](const Mesh& mesh, const ui::Geometry& geometry, bool vertex, bool index) {
+            if (vertex && mesh.vertexCount)
+                std::memcpy(static_cast<ui::Vertex*>(vertices.mapped) + mesh.firstVertex,
+                            geometry.vertices.data(), mesh.vertexCount * sizeof(ui::Vertex));
+            if (index && mesh.indexCount)
+                std::memcpy(static_cast<int*>(indices.mapped) + mesh.firstIndex,
+                            geometry.indices.data(), mesh.indexCount * sizeof(int));
+        };
+        // Growth restores retained geometry from immutable CPU sources, never by
+        // reading write-combined GPU upload memory. Other frames upload only additions.
+        if (verticesGrew || indicesGrew)
+            for (const auto& entry : meshes)
+                if (auto source = entry.second.source.lock())
+                    uploadMesh(entry.second, *source, verticesGrew, indicesGrew);
+        for (auto id : added) {
+            const auto& mesh = meshes.at(id);
+            auto source = mesh.source.lock();
+            uploadMesh(mesh, *source, !verticesGrew, !indicesGrew);
         }
     }
     // The render graph owns the attachment: it has already put the target in the right
@@ -223,6 +261,8 @@ struct UiRenderer::Impl {
             vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             float sx = float(width) / frame->width, sy = float(height) / frame->height;
             for (const auto& draw : frame->draws) {
+                if (draw.geometry->indices.empty())
+                    continue;
                 int x = std::clamp(int(draw.scissor[0] * sx), 0, int(width));
                 int y = std::clamp(int(draw.scissor[1] * sy), 0, int(height));
                 int right = std::clamp(int((draw.scissor[0] + draw.scissor[2]) * sx), x, int(width));
@@ -233,14 +273,14 @@ struct UiRenderer::Impl {
                 vkCmdSetScissor(command, 0, 1, &scissor);
                 const auto& mesh = meshes.at(draw.geometry->id);
                 VkDeviceSize offset = 0;
-                vkCmdBindVertexBuffers(command, 0, 1, &mesh.vertices.handle, &offset);
-                vkCmdBindIndexBuffer(command, mesh.indices.handle, 0, VK_INDEX_TYPE_UINT32);
+                vkCmdBindVertexBuffers(command, 0, 1, &vertices.handle, &offset);
+                vkCmdBindIndexBuffer(command, indices.handle, 0, VK_INDEX_TYPE_UINT32);
                 auto set = draw.texture ? textures.at(draw.texture->id).set : white.set;
                 vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &set, 0,
                                         nullptr);
                 Push push{draw.transform, draw.x, draw.y, float(frame->width), float(frame->height)};
                 vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
-                vkCmdDrawIndexed(command, uint32_t(draw.geometry->indices.size()), 1, 0, 0, 0);
+                vkCmdDrawIndexed(command, mesh.indexCount, 1, mesh.firstIndex, int32_t(mesh.firstVertex), 0);
             }
         }
     }

@@ -176,7 +176,7 @@ struct UiBindings::Impl {
             return 1;
         }
         if (op == "text")
-            e.SetInnerRML(ui::UiCore::escape(string(2)));
+            ui::UiCore::setText(e, string(2));
         else if (op == "rml")
             e.SetInnerRML(string(2));
         else if (op == "getRml") {

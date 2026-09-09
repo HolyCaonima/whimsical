@@ -26,6 +26,14 @@ RmlUi 全局初始化由共享服务管理，各 uiCore 有独立 Context 和录
 
 UiFrame 每次包含完整绘制列表，并持有几何和纹理的共享引用。mailbox 丢帧不影响资源创建/销毁顺序。Vulkan 后端在帧 fence 之后回收没有快照或 Context 引用的资源，重复呈现不会重传已有几何。字体/图片上传发生在首次使用时。
 
+### 文本值、几何身份与 GPU 存储
+
+`setText` 是纯文本值更新：已有文本节点保持身份，相同值不触发布局更新；从富文本内容切换到纯文本时才替换子节点。文本不经过 RML 解析。`setInnerRML` 明确表示结构替换，仍会重建子树。这个契约由 uiCore 提供，脚本绑定只转发，不为具体项目缓存文案。
+
+位置、变换、裁剪属于 `UiFrame::Draw`；顶点和索引属于不可变 `Geometry`。Vulkan 后端用现有 `RangeAllocator` 为几何分配共享顶点/索引缓冲区中的区间，几何失效只回收区间，不销毁 GPU buffer。容量不足时按几何增长扩容，并从仍有效的 CPU 几何恢复内容，不读取上传内存。常规帧只上传新增几何。
+
+`prepare` 必须在上一帧 fence 完成后运行：该同步边界保证区间回收、覆盖和缓冲区扩容不会碰到 GPU 读者。CPU 快照引用保证跨线程和丢帧安全，GPU 容量由后端持有，两种生命周期互不绑定。纹理仍按独立资源缓存。
+
 ## 项目资源
 
 `UiCore(assets.mounts())` 共享资产层的 Content 映射。JS 入口接受任意已挂载虚拟根，带真实扩展名；`/Game/` 默认为当前脚本或 Map 所属 Content。RML 内的 RCSS、图片和模板使用相对引用或来源内的 `/Game/...`，不能引用其他 Content；`createDocument` 的第二个参数确定相对路径基址。UI 文件是 Content 下的源资源，无需将 RML/RCSS 包进 `.asset`。JS 继续使用现有 Script 资产加载规则。

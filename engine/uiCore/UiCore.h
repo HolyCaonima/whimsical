@@ -6,6 +6,7 @@
 #include <string>
 namespace Rml {
 class Context;
+class Element;
 class ElementDocument;
 } // namespace Rml
 
@@ -30,6 +31,9 @@ class UiCore {
     void processInput(Input&);
     void resize(int width, int height);
     std::shared_ptr<const UiFrame> snapshot();
+    // Text is a value update. Existing text nodes keep their identity; markup
+    // replacement remains a separate operation on the DOM.
+    static void setText(Rml::Element&, const std::string&);
     static std::string escape(const std::string&);
 };
 } // namespace ui

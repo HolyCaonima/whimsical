@@ -1,6 +1,7 @@
 #include "UiCore.h"
 #include "core/Input.h"
 #include <RmlUi/Core.h>
+#include <RmlUi/Core/ElementText.h>
 #include <RmlUi/Core/StyleSheetContainer.h>
 #include <chrono>
 #include <algorithm>
@@ -12,6 +13,21 @@
 #include <wrl/client.h>
 
 namespace whimsical::ui {
+void UiCore::setText(Rml::Element& element, const std::string& value) {
+    // RmlUi decodes entities during text layout even without parsing markup.
+    const auto encoded = escape(value);
+    auto* text = dynamic_cast<Rml::ElementText*>(&element);
+    if (!text && element.GetNumChildren() == 1)
+        text = dynamic_cast<Rml::ElementText*>(element.GetChild(0));
+    if (text) {
+        text->SetText(encoded);
+        return;
+    }
+    // Converting rich content to plain text is the only structural transition.
+    while (element.GetNumChildren())
+        element.RemoveChild(element.GetChild(0));
+    element.AppendChild(element.GetOwnerDocument()->CreateTextNode(encoded));
+}
 namespace {
 uint64_t resourceId = 0, contextId = 0;
 // RmlUi owns global interfaces, while each context supplies its own mount table.

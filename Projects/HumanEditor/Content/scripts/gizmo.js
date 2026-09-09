@@ -35,6 +35,15 @@ HE.gizmoHighlight=function(axis){
     var g=HE.gizmo;if(g.hover===axis)return;g.hover=axis;
     Object.keys(g.handles).forEach(function(a){var row=g.handles[a];row.render.material=axis&&axis.indexOf(a)>=0?g.highlight:row.material;Engine.setComponent(row.entity,'render',row.render);});
 };
+// Mode/space describe the controls; camera motion only changes their projection.
+HE.updateGizmoPresentation=function(){
+    var g=HE.gizmo,key=HE.mode+':'+HE.gizmoSpace();
+    if(g.presentationKey===key)return;
+    g.presentationKey=key;
+    var root=HE.el('gizmo');
+    ['move','rotate','scale'].forEach(function(mode){root.setClass(mode,HE.mode===mode);});
+    HE.el('gizmo-mode').setText(({move:'W  MOVE',rotate:'E  ROTATE',scale:'R  SCALE'})[HE.mode]+' / '+HE.gizmoSpace());
+};
 HE.updateGizmo=function(){
     var g=HE.gizmo,e=HE.selected.length?HE.selected[HE.selected.length-1]:0;
     function hide(){
@@ -52,6 +61,7 @@ HE.updateGizmo=function(){
         }
         return;
     }
+    HE.updateGizmoPresentation();
     var key=JSON.stringify([e,p,HE.camera,HE.rect,HE.mode,HE.gizmoSpace()]);if(HE.gizmoKey===key)return;
     HE.gizmoKey=key;g.visible=true;Engine.enabled(g.root,true);HE.gizmoHighlight(null);
     var radius=HE.gizmoRadius/point.scale,eye=HE.eye(),toward=HE.unit(position.map(function(v,i){return eye[i]-v;}));
@@ -81,8 +91,6 @@ HE.updateGizmo=function(){
         Engine.setComponent(row.entity,'transform',{parent:g.parent,position:[0,0,0],rotation:q,scale:[radius,radius,radius]});Engine.setComponent(row.entity,'render',row.render);
     });
     var root=HE.el('gizmo');root.setProperty('display','block');root.setProperty('left',Math.round(point.x)+'px');root.setProperty('top',Math.round(point.y)+'px');
-    ['move','rotate','scale'].forEach(function(mode){root.setClass(mode,HE.mode===mode);});
-    HE.el('gizmo-mode').setText(({move:'W  MOVE',rotate:'E  ROTATE',scale:'R  SCALE'})[HE.mode]+' / '+HE.gizmoSpace());
 };
 HE.updateGizmoHover=function(){
     var g=HE.gizmo,p=HE.pointer,r=HE.rect;
@@ -181,7 +189,7 @@ HE.dragTo=function(x,y){
     });
 };
 HE.endDrag=function(cancel){
-    var d=HE.drag;if(!d)return;HE.drag=null;HE.gizmoKey=null;HE.gizmoHighlight(null);
+    var d=HE.drag;if(!d)return;HE.drag=null;HE.gizmoKey=null;HE.gizmo.presentationKey=null;HE.gizmoHighlight(null);
     if(!d.changed)return;
     if(cancel){HE.pending={kind:'rollback',selection:d.before.selection,revision:d.before.revision,saveTarget:HE.source};Engine.scene.restore(d.before.snapshot);}
     else HE.commit(d.mode+' '+HE.axis.toUpperCase(),d.before);

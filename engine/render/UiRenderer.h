@@ -11,7 +11,8 @@ class UiRenderer {
   public:
     explicit UiRenderer(VulkanContext&);
     ~UiRenderer();
-    // Called after the frame fence; upload resources and retire those no snapshot retains.
+    // Called after the frame fence. Geometry occupies reusable ranges in retained
+    // buffers; retire ranges only once no CPU snapshot/context holds the geometry.
     void prepare(const ui::UiFrame*);
     // Called inside a render graph pass that has already declared the target attachment.
     void draw(VkCommandBuffer, uint32_t width, uint32_t height, const ui::UiFrame*);
