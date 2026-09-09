@@ -37,10 +37,18 @@ scrollbarcorner { background-color:#1a1a1a; }
 #menu-shield { display:none; position:absolute; left:0; top:34px; right:0; bottom:0; z-index:99; pointer-events:auto; }
 #main-menu { display:none; position:absolute; width:254px; padding:4px; z-index:101; background-color:#292929; border:1px #535353; border-radius:4px; pointer-events:auto; }
 #main-menu button { display:block; position:relative; box-sizing:border-box; width:254px; height:30px; margin:0; padding:0 10px; line-height:30px; border:0px; border-radius:2px; background-color:#292929; text-align:left; font-size:12px; }
+#main-menu.compact { width:92px; padding:3px; background-color:#1c1c1c; border:1px #4a4a4a; border-radius:3px; }
+#main-menu.compact button { width:86px; height:22px; padding:0 8px; line-height:22px; font-size:11px; text-align:right; background-color:#1c1c1c; border-radius:2px; }
 #main-menu button:hover, #main-menu button:focus { background-color:#3b5365; color:#ffffff; }
 #main-menu button.disabled { background-color:#292929; color:#696969; }
+#main-menu button.checked { color:#e1effa; }
+#main-menu.compact button.checked { background-color:#2a5574; color:#e6f3fb; }
+#main-menu.compact button:hover, #main-menu.compact button:focus { background-color:#333333; }
+#main-menu.compact button.checked:hover, #main-menu.compact button.checked:focus { background-color:#356888; }
 #main-menu button span { position:absolute; right:10px; top:0; color:#929292; font-size:11px; }
+#main-menu button.checked span { color:#8ec0e0; }
 #main-menu button.disabled span { color:#606060; }
+#viewbar .view-value.active { background-color:#1c1c1c; color:#ffffff; }
 .menu-separator { height:1px; margin:4px 6px; background-color:#414141; }
 #doc-title { position:absolute; right:14px; top:6px; height:22px; line-height:22px; padding:0 11px; background-color:#1c1c1c; border:1px #2c2c2c; border-radius:4px; white-space:nowrap; }
 #project-label { color:#8a8a8a; font-size:11px; }
@@ -222,6 +230,15 @@ scrollbarcorner { background-color:#1a1a1a; }
 #status { position:absolute; left:125px; top:0; width:65%; height:25px; overflow:hidden; white-space:nowrap; }
 #viewbar { overflow:hidden; white-space:nowrap; }
 #viewbar button { padding:3px 6px; margin-right:2px; }
+.view-sep { display:inline-block; width:1px; height:14px; margin:7px 7px 0 3px; background-color:#3d3d3d; vertical-align:top; }
+.view-tool { display:inline-block; vertical-align:top; height:22px; margin:3px 8px 0 0; pointer-events:auto; }
+#viewbar .view-toggle, #viewbar .view-value { height:22px; margin:0; padding:0 6px; border:0px; border-radius:2px; background-color:#282828; font-size:11px; line-height:22px; }
+#viewbar .view-toggle { color:#8d8d8d; }
+#viewbar .view-value { padding:0 2px 0 4px; color:#c8c8c8; }
+#viewbar .view-value.off { color:#6a6a6a; }
+#viewbar .view-toggle:hover, #viewbar .view-value:hover { background-color:#3a3a3a; color:#ffffff; }
+#viewbar .view-toggle.active { background-color:#2a5574; color:#e6f3fb; }
+#viewbar .view-speed { position:absolute; right:34px; top:2px; height:24px; box-sizing:border-box; margin:0; padding:0 8px; font-size:11px; line-height:22px; background-color:#282828; border-width:0; }
 #viewbar #maximize-view { position:absolute; right:4px; top:2px; width:26px; height:24px; box-sizing:border-box; margin:0; padding:0; }
 .viewport-icon { position:absolute; left:6px; top:5px; width:12px; height:12px; pointer-events:none; }
 .viewport-icon .corner { position:absolute; width:4px; height:4px; box-sizing:border-box; border-color:#d3d3d3; pointer-events:none; }

@@ -39,7 +39,7 @@ HE.help=function(){HE.modal('HumanEditor controls',
     '<p>Click visible geometry to select using the GPU Entity ID image. Ctrl+click adds or removes actors. Select lights and non-rendering entities in the Outliner.</p>'+
     '<p>W / E / R switches the gizmo at the selected actor: move arrows, rotation rings, or scale boxes. Drag the red X, green Y or blue Z axis; drag along a ring to rotate. The small XY / XZ / YZ squares move or scale two axes together. World / Local changes move and rotation axis orientation. Scale always uses local axes and changes render dimensions; collider dimensions remain independent.</p>'+
     '<p>Right click an actor or Outliner row for actor commands. Right drag: orbit, with WASD and Q/E for camera travel. Middle mouse: pan. Wheel: zoom. F: focus.</p>'+
-    '<p>Drag panel dividers to resize the workspace. Maximize / Restore expands the viewport. Ctrl+Space toggles the Content Drawer. Viewport Settings adjusts snapping increments and camera speed; Window resets the layout.</p>'+
+    '<p>Drag panel dividers to resize the workspace. Maximize / Restore expands the viewport. Ctrl+Space toggles the Content Drawer. Grid, rotation and scale snap, plus camera speed, live on the viewport toolbar. Window resets the layout.</p>'+
     '<p>Ctrl+S save; Ctrl+Z / Y undo / redo; Ctrl+D duplicate subtree; Ctrl+C / V copy / paste; Delete removes selected subtrees. Escape cancels a transform drag.</p>'+
     '<p>Open Project mounts an existing project. Double-click a Map to open it, a StaticMesh to place it, a Material to assign it, or a text / JSON asset to edit it. Save As must stay in a Content containing all scene dependencies.</p>'+
     '<p>Details asset fields show the asset name; click the field to choose another asset, or the folder button beside it to reveal that asset in the Content Browser. The folder button is dimmed for assets outside this project Content, such as /Engine meshes.</p>'+
@@ -57,10 +57,12 @@ function initialize(){
         'asset-tiles':function(){HE.browser.list=false;HE.refreshAssets();},
         'asset-list':function(){HE.browser.list=true;HE.refreshAssets();},
         'show-log':function(){HE.showLog(true);},'hide-log':function(){HE.showLog(false);},
-        'content-drawer':HE.toggleContent,'maximize-view':HE.toggleViewport,'view-options':HE.viewOptions,
+        'content-drawer':HE.toggleContent,'maximize-view':HE.toggleViewport,
         'camera-reset':function(){HE.camera=HE.copy(Engine.scene.resources().camera);HE.applyCamera();},
-        'space':function(){HE.space=HE.space==='world'?'local':'world';HE.el('space').setText(HE.space==='world'?'World':'Local');},
-        'snap':function(){HE.snapEnabled=!HE.snapEnabled;HE.el('snap').setClass('active',HE.snapEnabled);},
+        'space':function(){HE.space=HE.space==='world'?'local':'world';HE.paintViewbar();},
+        'snap-move':function(){HE.toggleSnap('snapEnabled');},
+        'snap-rotate':function(){HE.toggleSnap('rotationSnapEnabled');},
+        'snap-scale':function(){HE.toggleSnap('scaleSnapEnabled');},
     };
     Object.keys(bindings).forEach(function(id){HE.bind(id,bindings[id]);});
     HE.menuIds=['file-menu','edit-menu','window-menu','help'];
@@ -83,11 +85,18 @@ function initialize(){
             {label:HE.layout.maximized?'Restore viewport':'Maximize viewport',run:HE.toggleViewport,separator:true},
             {label:'Reset layout',run:function(){HE.layout={left:250,right:360,bottom:270,details:0.43,content:true,maximized:false};HE.resize(HE.width,HE.height,true);}}
         ];},
-        'help':function(){return [{label:'Controls and shortcuts',run:HE.help}];}
+        'help':function(){return [{label:'Controls and shortcuts',run:HE.help}];},
+        'snap-move-value':function(){return HE.incrementMenu('snap','snapEnabled',[0.1,0.25,0.5,1,5],' m');},
+        'snap-rotate-value':function(){return HE.incrementMenu('rotationSnap','rotationSnapEnabled',[5,10,15,30,45,90],'\u00b0');},
+        'snap-scale-value':function(){return HE.incrementMenu('scaleSnap','scaleSnapEnabled',[0.01,0.1,0.25,0.5,1],'');},
+        'camera-speed':function(){return HE.incrementMenu('cameraSpeed',null,[0.25,0.5,1,2,4],'x');}
     };
     HE.menuIds.forEach(function(id){
         HE.bind(id,function(){if(HE.activeMenu===id)HE.closeMenu();else HE.openMenu(id);});
         HE.bind(id,function(){if(HE.activeMenu&&HE.activeMenu!==id)HE.openMenu(id);},'mouseover');
+    });
+    ['snap-move-value','snap-rotate-value','snap-scale-value','camera-speed'].forEach(function(id){
+        HE.bind(id,function(){if(HE.activeMenu===id)HE.closeMenu();else HE.openMenu(id);});
     });
     HE.bind('menu-shield',HE.closeMenu,'mousedown');
     HE.bind('tree-search',HE.refreshTree,'change');HE.bind('asset-search',HE.refreshAssets,'change');
@@ -108,7 +117,7 @@ function initialize(){
     HE.doc.on('focus',function(ev){HE.browserFocused=false;var id=ev.target.getAttribute('id')||'';HE.editingText=/^(field-|entity-name|tree-search|asset-search|folder-search|place-search|details-search|log-text|asset-filter|asset-sort)/.test(id);},true);
     HE.doc.on('mouseup',HE.guard(HE.pointerUp),true);
     HE.source=Engine.scene.info().source;HE.camera=HE.copy(Engine.scene.resources().camera);
-    HE.createTools();HE.applyCamera();HE.refreshTree();HE.refreshDetails();HE.refreshStatus();
+    HE.createTools();HE.applyCamera();HE.refreshTree();HE.refreshDetails();HE.refreshStatus();HE.paintViewbar();
     if(HE.settings.project){
         HE.openProject(Engine.project.read(HE.settings.project));
     }else{HE.mount='/Game';HE.folder='/Game';HE.assets=Engine.content.browse('/Game');HE.refreshAssets();}

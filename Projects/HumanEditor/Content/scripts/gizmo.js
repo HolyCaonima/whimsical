@@ -158,7 +158,7 @@ HE.dragTo=function(x,y){
         var r=d.rotation;
         if(r.tangent)r.angle=(dx*r.tangent.x+dy*r.tangent.y)/(r.tangent.x*r.tangent.x+r.tangent.y*r.tangent.y);
         else {var angle=HE.rotationAngle(r,x,y),delta=angle-r.last;r.angle+=Math.atan2(Math.sin(delta),Math.cos(delta));r.last=angle;}
-        d.angle=r.angle;var step=HE.rotationSnap*Math.PI/180;if(HE.snapEnabled)d.angle=Math.round(d.angle/step)*step;
+        d.angle=r.angle;var step=HE.rotationSnap*Math.PI/180;if(HE.rotationSnapEnabled)d.angle=Math.round(d.angle/step)*step;
         HE.el('gizmo-mode').setText('E  ROTATE  '+(d.angle*180/Math.PI).toFixed(1)+' deg');
     }
     d.rows.forEach(function(row){
@@ -175,7 +175,7 @@ HE.dragTo=function(x,y){
         amounts=amounts.map(function(amount){
             if(d.mode==='scale')amount/=d.plane?d.radius:HE.gizmoRadius/origin.scale;
             var step=d.mode==='move'?HE.snap:HE.scaleSnap;
-            return HE.snapEnabled?Math.round(amount/step)*step:amount;
+            return (d.mode==='move'?HE.snapEnabled:HE.scaleSnapEnabled)?Math.round(amount/step)*step:amount;
         });
         if(d.mode==='move'){
             var position=[p.x,p.y,p.z];

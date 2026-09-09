@@ -68,7 +68,8 @@ HE.refreshAssets=function(){
     HE.refreshFolders();
     var folder=HE.folder,search=HE.el('asset-search').getValue().toLowerCase(),filter=HE.el('asset-filter').getValue()||'All';
     var descending=HE.el('asset-sort').getValue()==='desc',items=[];
-    Object.keys(b.dirs).forEach(function(p){
+    // A category lists assets of that type across subfolders, so directories cannot match it; only the parent entry survives.
+    if(filter==='All')Object.keys(b.dirs).forEach(function(p){
         if(p===folder||p.indexOf(folder+'/')!==0)return;
         var relative=p.substring(folder.length+1);
         if(search?relative.toLowerCase().indexOf(search)<0:HE.parentFolder(p)!==folder)return;

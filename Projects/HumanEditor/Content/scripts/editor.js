@@ -3,6 +3,7 @@ var HE = {
     selected: [], undoStack: [], redoStack: [], revision: 0, savedRevision: 0, serial: 0,
     pending: null, source: null, mount: '/Target', assets: [], clipboard: null,
     mode: 'move', axis: 'x', space: 'world', snap: 0.25, snapEnabled: true,
+    rotationSnapEnabled: true, scaleSnapEnabled: true,
     messages: [], targetPath: '', publicScripts: [], programs: {}
 };
 HE.copy = function (v) { return JSON.parse(JSON.stringify(v)); };

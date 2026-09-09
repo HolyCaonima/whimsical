@@ -204,7 +204,7 @@ HE.smokeTick=function(dt,input){
         check(HE.browser.items.length===1&&HE.browser.items[0].parent,'parent survives search, category and descending sort');
         HE.el('asset-sort').setValue('asc');
         HE.browseFolder(HE.mount);HE.el('asset-filter').setValue('Map');HE.refreshAssets();
-        check(HE.browser.items.some(function(item){return item.kind==='folder'&&item.name==='Props';}),'category filter keeps folder navigation');
+        check(HE.browser.items.length&&HE.browser.items.every(function(item){return item.kind==='asset'&&item.type==='Map';}),'category filter lists matching assets without folders');
         HE.el('asset-filter').setValue('All');HE.el('asset-search').setValue('Architecture');HE.refreshAssets();
         check(HE.browser.items.some(function(item){return item.kind==='folder'&&item.name==='Architecture';}),'search finds nested folders');
         HE.browseFolder(HE.mount+'/Maps');HE.browserTravel(-1);

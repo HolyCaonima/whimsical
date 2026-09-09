@@ -33,7 +33,7 @@ Content 路径和公共脚本从项目文件读取，无需手填。启动地图
 | 移动 / 旋转 / 缩放 | W / E / R 直接切换选中对象处的箭头 / 半圆环 / 方块网格实体；红 X、绿 Y、蓝 Z，悬停及拖拽轴显示黄色。旋转时固定参考平面并显示角度，侧视轴使用屏幕切线拖动；拖拽期间固定当前模式 |
 | 世界 / 本地坐标 | 视口工具栏 World / Local 控制移动和旋转；缩放始终使用物体本地坐标轴 |
 | 双轴移动 / 缩放 | 拖动 XY / XZ / YZ 平面小方块，同时调整两个轴；悬停高亮方块及对应轴，第三轴不变。接近侧视的平面自动隐藏 |
-| 吸附 | 视口 Snap 开关；Settings 设置位置、旋转、缩放步长，默认 0.25 米 / 10 度 / 0.1 |
+| 吸附 | 视口工具栏分别开关网格 / 旋转 / 缩放吸附；点数值打开步长菜单。默认 0.25 米 / 10 度 / 0.1 |
 | 对象右键菜单 | 视口右键单击对象或右键 Outliner 条目；包含聚焦、复制粘贴、副本、删除、启停和父级操作；右键已选对象保留多选，Esc 或点击菜单外关闭 |
 | 相机 | 右键拖动环绕，右键按住配合 WASD / Q / E 移动，Shift 加速；中键平移；滚轮缩放 |
 | 聚焦 / 重置相机 | F / 右键 Focus selected；Perspective 恢复地图相机 |
@@ -51,16 +51,16 @@ Content 路径和公共脚本从项目文件读取，无需手填。启动地图
 | 场景资源 | World Settings 编辑地图相机、导航、脚本、引用和场景数据 |
 | 文件夹导航 | 单击卡片选中、双击或 Enter 进入；Up / Backspace 返回上级；Back / Forward 恢复目录及当时的搜索和类别条件；顶部路径可点击 |
 | 目录树 | 左侧 +/- 展开折叠，单击目录进入；Find 搜索目录名并保留祖先层级，网格进入子目录时展开对应父级 |
-| 内容搜索 | Search 搜索当前目录及子目录中的文件夹和资产；类别筛选保留直接子文件夹入口；Refresh 重新扫描 |
+| 内容搜索 | Search 搜索当前目录及子目录中的文件夹和资产；类别筛选平铺当前目录及子目录中该类型的资产，除返回上级入口外不显示文件夹；Refresh 重新扫描 |
 | 内容视图 | 文件夹优先排列，Name A-Z / Z-A 排序；List / Tiles 切换列表和卡片；底部显示数量及选中项完整路径 |
 | 资产创建 | + New asset 创建 Data / Material / Script；选中资产显示高亮，双击打开 |
 | 资产打开 | 双击 Map 加载、StaticMesh 放置、Material 指派；文本 / JSON 资产可编辑保存 |
 | 模拟 | Play 启动目标程序，Pause / Resume 暂停恢复，Stop 恢复 Play 前场景和选择 |
 | 日志 / 帮助 | Output Log / Help；引擎控制台继续通过 F10 使用 |
 | 面板布局 | 拖动左右分隔条、内容面板上沿、Outliner / Details 之间的分隔条；Window → Reset layout 恢复默认 |
-| 视口最大化 | Maximize / Restore；保留面板尺寸，继续支持拾取与变换 |
+| 视口最大化 | 视口右上角或 Window → Maximize / Restore；保留面板尺寸，继续支持拾取与变换 |
 | 内容抽屉 | 底部 Content Drawer 或 Ctrl+Space 收起 / 展开；Window 可重新打开 Content Browser / Output Log |
-| 相机速度 | 视口 Settings 中 Camera speed，Shift 仍可临时加速 |
+| 相机速度 | 视口工具栏右侧的相机速度，点开选择 0.25x–4x；Shift 仍可临时加速 |
 
 多选支持成组变换、启停、删除、层级和材质指派；Details 编辑最后选中的活动对象。灯光或没有可见网格的实体通过 Outliner 选中。变换的 rotation 字段遵循引擎的四元数 `[x,y,z,w]`，轴向旋转工具负责生成正确旋转值。
 
@@ -70,7 +70,7 @@ Details 内的启停和父级操作同样只作用于活动对象。字段草稿
 
 缩放修改 `render.scale`，碰撞体尺寸是独立组件数据，按引擎契约单独编辑。复制重映射 Transform 父级；自定义脚本数据内的引用仍保持原值。
 
-布局、折叠状态和视口设置在当前编辑器会话内保留，不写入地图，也不进入场景撤销历史。资源类别沿用项目目录约定（Maps / Materials / Models / textures / scripts）；未按这些目录组织的资源归入 Other，打开时仍以资产头的真实类型执行操作。没有搜索或类别筛选时，内容网格只显示当前目录的直接子项。
+布局、折叠状态、吸附开关与相机速度在当前编辑器会话内保留，不写入地图，也不进入场景撤销历史。资源类别沿用项目目录约定（Maps / Materials / Models / textures / scripts）；未按这些目录组织的资源归入 Other，打开时仍以资产头的真实类型执行操作。没有搜索或类别筛选时，内容网格只显示当前目录的直接子项。
 
 Content Browser 获得焦点时，Delete / Ctrl+D 等演员快捷键不会操作场景选择。Enter 打开选中项，Backspace 返回上级，Esc 清空网格搜索和选择；文本框内保留正常输入行为。
 
@@ -96,7 +96,7 @@ Content Browser 获得焦点时，Delete / Ctrl+D 等演员快捷键不会操作
 - `Content/scripts/viewport.js`：UI 输入、相机、ID 回读、投影与轴向变换。
 - `Content/scripts/gizmo.js`：临时实体 gizmo、屏幕尺寸、半圆朝向、悬停、旋转与变换事务；颜色及选轴共用 GPU 网格和深度排序。
 - `tools/gizmo-meshes.mjs`：生成普通 STM1 格式的箭头、缩放手柄、平面方块、半圆环与整圆环网格；运行 `node Projects/HumanEditor/tools/gizmo-meshes.mjs` 可重新生成。
-- `Content/scripts/panels.js`：对象树、对象右键菜单与通用对话框。
+- `Content/scripts/panels.js`：对象树、视口工具栏、对象右键菜单与通用对话框。
 - `Content/scripts/inspector.js`：属性布局、嵌套字段、组件草稿、筛选及编辑交互。
 - `Content/scripts/browser.js`：Content 目录索引、导航历史、搜索、网格 / 列表及资产打开操作。
 - `Content/scripts/main.js`：UI 绑定及宿主生命周期。

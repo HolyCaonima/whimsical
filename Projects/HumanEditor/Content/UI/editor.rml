@@ -3,7 +3,26 @@
   <div id="menubar"><span class="brand">H</span><b>HumanEditor</b><button id="file-menu">File</button><button id="edit-menu">Edit</button><button id="window-menu">Window</button><button id="help">Help</button><div id="doc-title"><span id="project-label">No project</span><span class="doc-sep">/</span><span id="level-label">Untitled</span><span id="dirty-dot"/></div></div>
   <div id="toolbar"><button id="open-content">Open Project</button><button id="new-level">New Level</button><button id="save">Save</button><button id="save-as">Save As</button><span class="separator">|</span><button id="undo">Undo</button><button id="redo">Redo</button><span class="separator">|</span><button id="play" class="play">Play</button><button id="pause">Pause</button><button id="stop">Stop</button><button id="world-settings">World Settings</button></div>
   <div id="place" class="panel"><div class="tab">Place Actors</div><div class="pad"><div class="search-label">Search actors</div><input id="place-search" type="text" placeholder="Search actors..."/><div id="place-categories"/><div id="palette"/></div></div>
-  <div id="viewbar"><button id="camera-reset">Perspective</button><button id="space">World</button><button id="snap" class="active">Snap</button><button id="view-options">Settings</button><button id="maximize-view" title="Maximize viewport"><span class="viewport-icon"><span class="corner tl"/><span class="corner tr"/><span class="corner bl"/><span class="corner br"/></span></button><span id="pick-info"/></div>
+  <div id="viewbar">
+    <button id="camera-reset" title="Reset to the map camera">Perspective</button>
+    <button id="space" title="Move and rotate in world or local axes">World</button>
+    <span class="view-sep"/>
+    <span class="view-tool">
+      <button id="snap-move" class="view-toggle active" title="Grid snap">Grid</button>
+      <button id="snap-move-value" class="view-value" title="Grid snap increment">0.25 m</button>
+    </span>
+    <span class="view-tool">
+      <button id="snap-rotate" class="view-toggle active" title="Rotation snap">Rotate</button>
+      <button id="snap-rotate-value" class="view-value" title="Rotation snap increment">10°</button>
+    </span>
+    <span class="view-tool">
+      <button id="snap-scale" class="view-toggle active" title="Scale snap">Scale</button>
+      <button id="snap-scale-value" class="view-value" title="Scale snap increment">0.1</button>
+    </span>
+    <button id="camera-speed" class="view-speed" title="Camera speed">Speed <span id="camera-speed-label">1x</span></button>
+    <button id="maximize-view" title="Maximize viewport"><span class="viewport-icon"><span class="corner tl"/><span class="corner tr"/><span class="corner bl"/><span class="corner br"/></span></button>
+    <span id="pick-info"/>
+  </div>
   <div id="viewport"/>
   <div id="viewhint">W Move / E Rotate / R Scale   |   RMB + WASD fly   |   MMB pan   |   Wheel zoom   |   Ctrl+click multi-select</div>
   <div id="gizmo" class="move"><div id="gizmo-mode"/></div>
