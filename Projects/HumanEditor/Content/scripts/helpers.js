@@ -52,37 +52,60 @@ HE.toggleHelpers=function(){
 HE.wireBegin=function(){var h=HE.helpers;HE.wireMeshes.forEach(function(name){h.used[name]=0;});};
 HE.wirePart=function(mesh,owner){
     var h=HE.helpers,pool=h.wires[mesh],part=pool[h.used[mesh]++];
-    if(!part){part=HE.helperEntity(mesh);pool.push(part);}
-    h.byWire[part]=owner;
+    if(!part){part={entity:HE.helperEntity(mesh),geometry:null};pool.push(part);}
+    h.byWire[part.entity]=owner;
     return part;
 };
 HE.wireEnd=function(){
     var h=HE.helpers;
     HE.wireMeshes.forEach(function(name){
         var pool=h.wires[name],used=h.used[name],live=h.live[name]||0,i;
-        for(i=used;i<live;i++)Engine.enabled(pool[i],false);
-        for(i=live;i<used;i++)Engine.enabled(pool[i],true);
+        for(i=used;i<live;i++)Engine.enabled(pool[i].entity,false);
+        for(i=live;i<used;i++)Engine.enabled(pool[i].entity,true);
         h.live[name]=used;
     });
 };
-HE.screenSize=function(p,pixels){var point=HE.project(p);return point?pixels/point.scale:pixels*0.02;};
+// One camera basis per helper update; line width needs depth, not a full screen projection.
+HE.helperProjectionScale=function(p){
+    var view=HE.helpers.view,c=HE.camera;
+    var z=(p[0]-c.target[0])*view.forward[0]+(p[1]-c.target[1])*view.forward[1]+(p[2]-c.target[2])*view.forward[2]+c.distance;
+    return z>0.1?view.focal/z:0;
+};
+HE.screenSize=function(p,pixels){var scale=HE.helperProjectionScale(p);return scale?pixels/scale:pixels*0.02;};
 // A billboard pinned to forty pixels turns a wide shot into a contact sheet of icons, so the
 // pixel size is a ceiling rather than a target: it stops a near light from filling the screen,
 // and past the distance where the quad would grow beyond a fixture the icon is simply an
 // object in the room and shrinks with everything else.
 HE.iconSize=function(p){return Math.min(HE.iconMetres,HE.screenSize(p,HE.iconPixels));};
+// Conservative group culling: test the whole shape, not just the emitter. Keep
+// depth unbounded at the far end so this does not duplicate engine clip settings.
+HE.helperInView=function(p,radius,pixels){
+    var view=HE.helpers.view,c=HE.camera,dx=p[0]-c.target[0],dy=p[1]-c.target[1],dz=p[2]-c.target[2];
+    var z=dx*view.forward[0]+dy*view.forward[1]+dz*view.forward[2]+c.distance;
+    radius+=pixels*Math.max(0.02,(z+radius)/view.focal);
+    if(z+radius<=0)return false;
+    var x=dx*view.right[0]+dy*view.right[1]+dz*view.right[2];
+    var y=dx*view.up[0]+dy*view.up[1]+dz*view.up[2];
+    return Math.abs(x)<=z*view.tanX+radius*view.planeX&&
+        Math.abs(y)<=z*view.tanY+radius*view.planeY;
+};
 HE.wireLine=function(owner,a,b,mesh){
     var d=[b[0]-a[0],b[1]-a[1],b[2]-a[2]],length=Math.sqrt(HE.dot(d,d));
     if(!(length>0.00001))return;
-    var mid=[(a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2],thin=HE.screenSize(mid,HE.wirePixels*HE.wireWeight[mesh]);
-    Engine.setComponent(HE.wirePart(mesh,owner),'transform',{parent:HE.helpers.parent,position:mid,
-        rotation:HE.qfromY([d[0]/length,d[1]/length,d[2]/length]),scale:[thin,length,thin]});
+    var mid=[(a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2];
+    HE.helpers.build.parts.push({mesh:mesh,position:mid,
+        pose:HE.pose(mid,HE.qfromY([d[0]/length,d[1]/length,d[2]/length])),length:length});
+};
+HE.wireCircleSteps=function(center,radius){
+    var scale=HE.helperProjectionScale(center);
+    return scale?Math.max(8,Math.min(40,Math.round(radius*scale*0.4))):12;
 };
 // Segment count follows the on-screen radius: a distant circle costs a handful of rods and a
 // near one stays round.
 HE.wireCircle=function(owner,center,u,v,radius,mesh){
     if(!(radius>0.0001))return;
-    var point=HE.project(center),steps=point?Math.max(8,Math.min(40,Math.round(radius*point.scale*0.4))):12;
+    var steps=HE.wireCircleSteps(center,radius);
+    HE.helpers.build.lod.push({center:center,radius:radius,steps:steps});
     var previous=null;
     for(var i=0;i<=steps;i++){
         var a=i*Math.PI*2/steps,c=Math.cos(a)*radius,s=Math.sin(a)*radius;
@@ -96,12 +119,16 @@ HE.wireArrow=function(owner,from,direction,length,mesh){
     var thin=HE.screenSize(from,HE.wirePixels*HE.wireWeight[tip]),head=Math.min(length*0.4,thin*12),radius=head*0.36;
     var base=[from[0]+direction[0]*(length-head),from[1]+direction[1]*(length-head),from[2]+direction[2]*(length-head)];
     HE.wireLine(owner,from,base,mesh);
-    Engine.setComponent(HE.wirePart(tip,owner),'transform',
-        {parent:HE.helpers.parent,position:base,rotation:HE.qfromY(direction),scale:[radius,head,radius]});
+    HE.helpers.build.parts.push({mesh:tip,position:base,pose:HE.pose(base,HE.qfromY(direction)),length:head,radius:radius});
+};
+HE.wireSphereVisible=function(center,radius){
+    var scale=HE.helperProjectionScale(center);
+    return radius>0&&(!scale||radius*scale>=5);
 };
 HE.wireSphere=function(owner,center,radius,mesh){
-    var point=HE.project(center);
-    if(!(radius>0)||(point&&radius*point.scale<5))return;
+    var visible=HE.wireSphereVisible(center,radius);
+    HE.helpers.build.lod.push({center:center,radius:radius,visible:visible});
+    if(!visible)return;
     HE.wireCircle(owner,center,[1,0,0],[0,1,0],radius,mesh);
     HE.wireCircle(owner,center,[0,1,0],[0,0,1],radius,mesh);
     HE.wireCircle(owner,center,[0,0,1],[1,0,0],radius,mesh);
@@ -120,6 +147,16 @@ HE.wireCone=function(owner,apex,u,v,axis,reach,angle,edges,mesh){
 // Engine lights are physical and carry no authored range, so a beam is drawn out to the
 // distance where its inverse square falloff stops lighting anything.
 HE.lightReach=function(light){return Math.max(0.4,Math.min(60,Math.sqrt(light.intensity/HE.lightCutoff)));};
+HE.lightWireRadius=function(light){
+    if(light.type==='spot')return Math.max(HE.lightReach(light),light.radius);
+    if(light.type==='rect'){
+        var w=light.width/2,h=light.height/2,thrown=Math.min(HE.lightReach(light),Math.max(w,h)*2);
+        // Include arrow heads as well as the emitter rectangle.
+        return Math.max(Math.sqrt(w*w+h*h),thrown*1.15);
+    }
+    if(light.type==='capsule')return Math.sqrt(light.length*light.length/4+light.radius*light.radius);
+    return light.radius;
+};
 // The billboard says where a light is; these wires say what it covers. They follow the
 // selection because a room full of cones is unreadable, which is also why the sprite stays.
 HE.lightWires=function(record,pose){
@@ -156,6 +193,34 @@ HE.lightWires=function(record,pose){
         [[r,0],[-r,0],[0,r],[0,-r]].forEach(function(o){HE.wireLine(owner,at(o[0],-half,o[1]),at(o[0],half,o[1]),'Wire');});
     }else HE.wireSphere(owner,pos,light.radius,'Wire');
 };
+// Cache world-space geometry separately from its camera-dependent width. Only a LOD
+// transition, light edit or pose edit rebuilds cones/circles. Arrows have screen-sized
+// heads (and directional lights a screen-sized span), so those shapes follow the view.
+HE.updateLightWires=function(record,pose){
+    var h=HE.helpers,key=JSON.stringify([record.light,pose]),geometry=record.geometry;
+    var rebuild=!geometry||geometry.key!==key||record.light.type==='directional'||record.light.type==='rect';
+    if(!rebuild){
+        for(var i=0;i<geometry.lod.length;i++){
+            var lod=geometry.lod[i];
+            if(lod.steps!==undefined?HE.wireCircleSteps(lod.center,lod.radius)!==lod.steps:
+                HE.wireSphereVisible(lod.center,lod.radius)!==lod.visible){rebuild=true;break;}
+        }
+    }
+    if(rebuild){
+        geometry={key:key,parts:[],lod:[]};h.build=geometry;
+        HE.lightWires(record,pose);h.build=null;record.geometry=geometry;
+    }
+    for(var j=0;j<geometry.parts.length;j++){
+        var line=geometry.parts[j],part=HE.wirePart(line.mesh,record.entity);
+        var thin=line.radius!==undefined?line.radius:HE.screenSize(line.position,HE.wirePixels*HE.wireWeight[line.mesh]);
+        if(part.geometry!==line){
+            line.pose.scale={x:thin,y:line.length,z:thin};
+            Engine.transform(part.entity,line.pose);part.geometry=line;part.thin=thin;
+        }else if(part.thin!==thin){
+            Engine.scale(part.entity,{x:thin,y:line.length,z:thin});part.thin=thin;
+        }
+    }
+};
 // Engine.entity() materializes every component, so the light set is rescanned per edit, not per tick.
 HE.rescanHelpers=function(){
     var h=HE.helpers;if(!h)return;
@@ -173,6 +238,8 @@ HE.rescanHelpers=function(){
             record.iconMesh=icon;HE.paintIcon(record);
         }
         record.light=light;
+        record.pose=Engine.position(e);record.position=[record.pose.x,record.pose.y,record.pose.z];
+        record.wireRadius=HE.lightWireRadius(light);
         h.lights.push(record);
     });
     Object.keys(h.records).forEach(function(id){
@@ -193,17 +260,32 @@ HE.updateHelpers=function(){
     var key=HE.drag?++h.serial:JSON.stringify([HE.camera,HE.rect.width,HE.rect.height,HE.selected]);
     if(h.key===key)return;
     h.key=key;
+    var basis=HE.basis(),tanY=Math.tan(HE.camera.fov/2),tanX=tanY*HE.rect.width/HE.rect.height;
+    h.view={forward:basis.forward,right:basis.right,up:basis.up,focal:HE.rect.height/(2*tanY),
+        tanX:tanX,tanY:tanY,planeX:Math.sqrt(1+tanX*tanX),planeY:Math.sqrt(1+tanY*tanY)};
     var billboard=HE.billboard(),selected={};
     HE.selected.forEach(function(e){selected[e]=true;});
     HE.wireBegin();
     h.lights.forEach(function(record){
-        var pose=Engine.position(record.entity),pos=[pose.x,pose.y,pose.z];
+        // Camera motion uses cached world poses. Drags can move a light through
+        // an ancestor, so refresh all light poses while an edit is in progress.
+        if(HE.drag){record.pose=Engine.position(record.entity);record.position=[record.pose.x,record.pose.y,record.pose.z];}
+        var pose=record.pose,pos=record.position;
         var size=HE.iconSize(pos),active=!!selected[record.entity];
-        var billboarded={parent:h.parent,position:pos,scale:[size,size,size],rotation:billboard};
-        Engine.setComponent(record.icon,'transform',billboarded);
-        Engine.setComponent(record.ghost,'transform',billboarded);
-        if(record.active!==active){record.active=active;HE.paintIcon(record);}
-        if(active)HE.lightWires(record,pose);
+        var visible=HE.helperInView(pos,size*Math.SQRT1_2,2);
+        if(record.iconVisible!==visible){
+            Engine.enabled(record.icon,visible);Engine.enabled(record.ghost,visible);record.iconVisible=visible;
+        }
+        if(visible){
+            var billboarded=HE.pose(pos,billboard);billboarded.scale={x:size,y:size,z:size};
+            Engine.transform(record.icon,billboarded);
+            Engine.transform(record.ghost,billboarded);
+            if(record.active!==active){record.active=active;HE.paintIcon(record);}
+        }
+        if(active){
+            var radius=record.light.type==='directional'?HE.screenSize(pos,120)*1.2:record.wireRadius;
+            if(HE.helperInView(pos,radius,HE.wirePixels+2))HE.updateLightWires(record,pose);
+        }
     });
     HE.wireEnd();
 };
