@@ -33,6 +33,7 @@ HE.select = function (e, additive) {
     }
     HE.syncOutlines();
     HE.paintSelection(); HE.refreshDetails();
+    if (HE.selected.indexOf(e) >= 0) HE.revealInTree(e);
 };
 HE.checkpoint = function () { return {snapshot: Engine.scene.capture(), selection: HE.ids(), revision: HE.revision}; };
 HE.commit = function (label, before) {

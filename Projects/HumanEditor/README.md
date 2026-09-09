@@ -28,7 +28,7 @@ Content 路径和公共脚本从项目文件读取，无需手填。启动地图
 
 | 操作 | 入口 |
 | --- | --- |
-| 选中 / 多选 | 点击视口中的可见表面；Ctrl+点击增减选择；也可点击 Outliner |
+| 选中 / 多选 | 点击视口中的可见表面；Ctrl+点击增减选择；也可点击 Outliner。选中对象会在 Outliner 中展开其折叠的父级并滚动进可见区域 |
 | 父子对象树 | 点击 `+ / -` 展开折叠；输入框搜索；双击对象聚焦 |
 | 移动 / 旋转 / 缩放 | W / E / R 直接切换选中对象处的箭头 / 半圆环 / 方块网格实体；红 X、绿 Y、蓝 Z，悬停及拖拽轴显示黄色。旋转时固定参考平面并显示角度，侧视轴使用屏幕切线拖动；拖拽期间固定当前模式 |
 | 世界 / 本地坐标 | 视口工具栏 World / Local 控制移动和旋转；缩放始终使用物体本地坐标轴 |
@@ -106,7 +106,7 @@ Content Browser 获得焦点时，Delete / Ctrl+D 等演员快捷键不会操作
 - `tools/setup.mjs`：重新生成本项目的资产信封、设置和 Workbench。
 
 ## 验证
-
+非必要不冒烟，冒烟需要得到主人的允许。
 ```powershell
 node Projects/HumanEditor/tools/smoke.mjs
 $editorTest = Get-Content Projects/HumanEditor/Saved/smoke-project.txt

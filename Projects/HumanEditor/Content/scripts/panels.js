@@ -119,6 +119,19 @@ HE.refreshTree = function(){
     });
     HE.treeCount=rows.length;HE.treeShown=HE.el('tree').querySelectorAll('.tree-row').length;HE.sizeTree();HE.paintSelection();
 };
+// Selections made outside the tree, like a viewport pick, still have to land on a visible row.
+HE.revealInTree=function(entity){
+    if(!HE.doc||!entity||!Engine.alive(entity))return;
+    var opened=false,transform=Engine.entity(entity).components.transform;
+    while(transform&&transform.parent){
+        if(HE.collapsed[transform.parent]){HE.collapsed[transform.parent]=false;opened=true;}
+        var parent=Engine.findEntity(transform.parent);
+        transform=parent?Engine.entity(parent).components.transform:null;
+    }
+    if(opened)HE.refreshTree();
+    var row=HE.doc.getElementById('entity-'+entity);
+    if(row)row.scrollIntoView('nearest');
+};
 HE.sizeTree=function(){
     // Scroll contents need a definite width in RmlUi, just like inspector fields.
     HE.el('tree').querySelectorAll('.tree-row').forEach(function(el){el.setProperty('width',((HE.detailsWidth||HE.layout.right)-18)+'px');});
