@@ -27,8 +27,6 @@ struct RenderComponent {
     std::shared_ptr<const MaterialAsset> material;
     bool visible = true;
     bool castShadow = true;
-    bool overlay = false; // Unlit, vertex-coloured helper geometry, outside scene lighting.
-    vec3 overlayColor{1};
 };
 // A renderable occupies a stable slot for its whole lifetime. Transform and attributes
 // are separate because a transform changes orders of magnitude more often, and the two
@@ -49,12 +47,9 @@ struct ProxyAttributes {
     uint32_t material = 0;
     bool visible = true;
     bool castShadow = true;
-    bool overlay = false;
-    vec3 overlayColor{1};
     bool operator==(const ProxyAttributes& o) const {
         return entity == o.entity && material == o.material && visible == o.visible &&
-               castShadow == o.castShadow && overlay == o.overlay &&
-               overlayColor == o.overlayColor;
+               castShadow == o.castShadow;
     }
     bool operator!=(const ProxyAttributes& o) const {
         return !(*this == o);
@@ -183,7 +178,7 @@ struct Frame {
     Camera camera;
     ViewRect viewport;
     Input input;
-    std::vector<EntityOutline> outlines; // Sorted by entity, unique, visible scene geometry only.
+    std::vector<EntityOutline> outlines; // Host-selected visible entities, sorted and unique.
     uint64_t tick = 0;
     double time = 0;
     bool resetHistory = false;

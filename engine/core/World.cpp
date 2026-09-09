@@ -136,7 +136,7 @@ Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug,
     if (view)
         for (const auto& outline : view->outlines)
             if (auto r = registry().tryGet<Renderable>(outline.entity);
-                r && enabled(outline.entity) && r->appearance.visible && !r->appearance.overlay)
+                r && enabled(outline.entity) && r->appearance.visible)
                 outlines[outline.entity] = outline.color;
     for (const auto& [entity, color] : outlines)
         f.outlines.push_back({entity, color});

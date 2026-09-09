@@ -1,6 +1,6 @@
 # HumanEditor
 
-使用 Whimsical 引擎的项目级场景编辑器。编辑器行为由本项目的 JavaScript 实现，界面使用 RmlUi；变换 gizmo 使用临时网格实体和通用 `render.overlay` 渲染。首次使用此版本需重新构建引擎，后续编辑器脚本修改只需重启。
+使用 Whimsical 引擎的项目级场景编辑器。编辑器行为由本项目的 JavaScript 实现，界面使用 RmlUi；变换 gizmo 使用临时网格实体和普通 Material 资产；材质声明 display 域、独立深度层和光追可见性，颜色与高亮使用材质参数。首次使用此版本需重新构建引擎，后续编辑器脚本修改只需重启。
 
 编辑器选择轮廓通过 `Engine.view.outlines` 显式提交，支持多选；它不设置引擎玩家或玩法状态，加载地图不会产生角色脚下标记。
 

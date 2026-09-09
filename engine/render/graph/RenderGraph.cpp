@@ -82,7 +82,7 @@ void RenderGraph::reset() {
     declared_ = 0;
 }
 
-RenderGraph::Builder RenderGraph::add(const char* name) {
+RenderGraph::Builder RenderGraph::add(std::string name) {
     if (declared_ == passes_.size())
         passes_.emplace_back();
     auto& pass = passes_[declared_];
@@ -93,10 +93,11 @@ RenderGraph::Builder RenderGraph::add(const char* name) {
     pass.bindings.clear();
     pass.colors.clear();
     pass.edges.clear();
-    pass.name = name;
+    pass.name = std::move(name);
     pass.depth = {};
     pass.depthUse = 0;
     pass.depthClear = 1.f;
+    pass.depthLoad = false;
     pass.pipeline = VK_NULL_HANDLE;
     pass.divisor = 1;
     pass.sideEffect = false;
@@ -154,12 +155,13 @@ RenderGraph::Builder& RenderGraph::Builder::color(ResourceId id, VkClearColorVal
     pass.colors.push_back(attachment);
     return overwrite(id, Access::Color);
 }
-RenderGraph::Builder& RenderGraph::Builder::depth(ResourceId id, float clear) {
+RenderGraph::Builder& RenderGraph::Builder::depth(ResourceId id, std::optional<float> clear) {
     auto& pass = graph_->passes_[pass_];
     pass.depth = id;
-    pass.depthClear = clear;
+    pass.depthClear = clear.value_or(1.f);
+    pass.depthLoad = !clear.has_value();
     pass.depthUse = uint32_t(pass.uses.size());
-    return overwrite(id, Access::Depth);
+    return clear ? overwrite(id, Access::Depth) : modify(id, Access::Depth);
 }
 RenderGraph::Builder& RenderGraph::Builder::shader(const std::vector<ShaderAccess>& accesses) {
     merge(graph_->passes_[pass_].shaders, accesses);
@@ -561,8 +563,8 @@ void RenderGraph::execute(VkCommandBuffer command, GpuProfiler& profiler) {
         const auto& pass = passes_[p];
         if (!pass.alive)
             continue;
-        CpuScope cpuScope(pass.name);
-        GpuScope gpuScope(profiler, command, pass.name);
+        CpuScope cpuScope(pass.name.c_str());
+        GpuScope gpuScope(profiler, command, pass.name.c_str());
         context.descriptors = pass.bindings.empty() ? VK_NULL_HANDLE : pool_->descriptors(p, pass.bindings);
         synchronise(command, pass.resolvedUses.data(), uint32_t(pass.resolvedUses.size()));
         const bool renders = !pass.colors.empty() || pass.depth.valid();
@@ -598,7 +600,8 @@ void RenderGraph::execute(VkCommandBuffer command, GpuProfiler& profiler) {
             if (pass.depth.valid()) {
                 depthAttachment.imageView = pool_->image(pass.depth).view;
                 depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-                depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+                depthAttachment.loadOp =
+                    pass.depthLoad ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
                 depthAttachment.storeOp = pass.resolvedUses[pass.depthUse].consumedLater
                                               ? VK_ATTACHMENT_STORE_OP_STORE
                                               : VK_ATTACHMENT_STORE_OP_DONT_CARE;

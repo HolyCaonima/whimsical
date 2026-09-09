@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include "ResourcePool.h"
 #include "ShaderAccess.h"
 #include "render/GpuProfiler.h"
@@ -49,7 +50,8 @@ class RenderGraph {
         // overwrites, a loaded one modifies and therefore needs a producer.
         Builder& color(ResourceId);
         Builder& color(ResourceId, VkClearColorValue clear);
-        Builder& depth(ResourceId, float clear = 1.f);
+        // nullopt loads existing depth; a value explicitly clears it.
+        Builder& depth(ResourceId, std::optional<float> clear = 1.f);
         // Everything the pass's shaders touch, read out of the compiled module. A pass
         // that binds several programs — one per material, say — states each of them.
         Builder& shader(const std::vector<ShaderAccess>&);
@@ -72,7 +74,7 @@ class RenderGraph {
     // liveness and storage reuse can be exercised without a device.
     explicit RenderGraph(const Registry&);
     void reset();
-    Builder add(const char* name);
+    Builder add(std::string name);
     // Resolve content versions into dependencies, cull, decide what storage the frame
     // needs and make the pool match.
     void compile(uint32_t width, uint32_t height);
@@ -125,7 +127,7 @@ class RenderGraph {
     // one pass while another builder was still open silently handed its resources to the
     // wrong pass. Ownership is what removes that ordering rule.
     struct Pass {
-        const char* name = "";
+        std::string name;
         std::vector<Use> uses;
         std::vector<Use> resolvedUses;
         std::vector<ShaderAccess> shaders;
@@ -135,6 +137,7 @@ class RenderGraph {
         ResourceId depth;
         uint32_t depthUse = 0;
         float depthClear = 1.f;
+        bool depthLoad = false;
         VkPipeline pipeline = VK_NULL_HANDLE;
         uint16_t divisor = 1;
         bool sideEffect = false;

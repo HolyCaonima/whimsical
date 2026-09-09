@@ -1,0 +1,5 @@
+ALAS1
+{"id":"45c52a2c1f355e5f9b4b4a4365f3c1a0","type":"Shader","name":"Gizmo","version":1,"storage":"embedded","metadata":{"materialModel":"metallicRoughness","properties":[{"name":"baseColor","type":"vec3","default":[1,1,1]}],"textures":[]}}
+SurfaceData s = DefaultSurface(ctx);
+s.albedo = properties.baseColor * ctx.vertexColor;
+return s;

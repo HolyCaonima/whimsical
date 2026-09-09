@@ -142,7 +142,7 @@ def obj(name,p=(0,0,0),scale=(1,1,1),mesh=None,mat=0,yaw=0,half=None,layer=1,ena
 schema=dict(materialModel='metallicRoughness',properties=[
     dict(name='baseColor',type='vec3',default=[1,1,1]),dict(name='roughness',type='float',default=.75),
     dict(name='emission',type='vec3',default=[0,0,0]),dict(name='metallic',type='float',default=0)],
-    textures=[],renderState=dict(surface='opaque',cull='none',alphaCutoff=.5))
+    textures=[])
 standard=asset('shaders/Standard','Shader',metadata=schema,source='Standard.glsl')
 skyshader=asset('shaders/Sky','Shader',metadata=schema,source='Sky.glsl')
 for name, rough in [('Surface',.8),('Gloss',.38),('Matte',.95)]:

@@ -55,7 +55,7 @@ struct RestirGiResources {
 
 struct ShadingResources {
     rg::ResourceId rawDiffuse, rawSpecular, denoisedDiffuse, denoisedSpecular, directDebug, indirectDebug,
-        display;
+        display, layerDepth;
     explicit ShadingResources(rg::Registry&);
 };
 

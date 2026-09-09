@@ -16,24 +16,24 @@ HE.setMode=function(mode){
     HE.cancelPick();HE.mode=mode;HE.updateGizmo();
 };
 HE.createGizmo=function(){
-    var material=Engine.asset('/Game/Materials/Gizmo');
+    var materials=['X','Y','Z'].map(function(axis){return Engine.asset('/Game/Materials/Gizmo'+axis);});
+    var highlight=Engine.asset('/Game/Materials/GizmoHighlight');
     var root=Engine.create({name:'Transform gizmo',persistent:false,enabled:false,components:{transform:{position:[0,0,0]}}});
     var parent=Engine.entity(root).id;
-    var g=HE.gizmo={root:root,parent:parent,handles:{},byEntity:{},meshes:{},hover:null,visible:false};
+    var g=HE.gizmo={root:root,parent:parent,handles:{},byEntity:{},meshes:{},hover:null,visible:false,highlight:highlight};
     ['Move','Scale','Arc','Ring','Plane'].forEach(function(name){g.meshes[name]=Engine.asset('/Game/Models/Gizmo/'+name);});
     HE.gizmoAxes.concat(HE.gizmoPlanes).forEach(function(axis){
         var i=HE.gizmoAxes.indexOf(axis.length===1?axis:({xy:'z',xz:'y',yz:'x'})[axis]);
-        var color=i===0?[0.94,0.19,0.16]:i===1?[0.30,0.86,0.20]:[0.18,0.42,1];
-        var render={mesh:g.meshes.Move,material:material,overlay:true,overlayColor:color,castShadow:false};
+        var render={mesh:g.meshes.Move,material:materials[i]};
         var entity=Engine.create({name:'Gizmo '+axis.toUpperCase(),persistent:false,components:{transform:{parent:parent,position:[0,0,0]},render:render}});
-        g.handles[axis]={entity:entity,color:color,render:render};g.byEntity[entity]=axis;
+        g.handles[axis]={entity:entity,material:materials[i],render:render};g.byEntity[entity]=axis;
     });
     HE.gizmoKey=null;
 };
 HE.gizmoAxis=function(entity){return HE.gizmo?HE.gizmo.byEntity[entity]:null;};
 HE.gizmoHighlight=function(axis){
     var g=HE.gizmo;if(g.hover===axis)return;g.hover=axis;
-    Object.keys(g.handles).forEach(function(a){var row=g.handles[a];row.render.overlayColor=axis&&axis.indexOf(a)>=0?[1,0.87,0.1]:row.color;Engine.setComponent(row.entity,'render',row.render);});
+    Object.keys(g.handles).forEach(function(a){var row=g.handles[a];row.render.material=axis&&axis.indexOf(a)>=0?g.highlight:row.material;Engine.setComponent(row.entity,'render',row.render);});
 };
 HE.updateGizmo=function(){
     var g=HE.gizmo,e=HE.selected.length?HE.selected[HE.selected.length-1]:0;

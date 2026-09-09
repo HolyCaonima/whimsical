@@ -23,6 +23,8 @@ MaterialBindings MaterialBindings::build(const std::vector<Material>& instances)
         GpuMaterial gpu;
         gpu.info.x = uint32_t(std::find(result.shaders.begin(), result.shaders.end(), material.shader) -
                               result.shaders.begin());
+        gpu.info.y = uint32_t(material.renderState.surface) | (uint32_t(material.renderState.cull) << 1);
+        gpu.info.z = glm::floatBitsToUint(material.renderState.alphaCutoff);
         std::copy(material.properties.begin(), material.properties.end(), gpu.properties.begin());
         for (size_t t = 0; t < material.textures.size(); ++t) {
             if (!material.textures[t])
@@ -33,6 +35,9 @@ MaterialBindings MaterialBindings::build(const std::vector<Material>& instances)
                 result.textures.push_back(material.textures[t]);
         }
         result.materials.push_back(gpu);
+        const auto& state = material.renderState;
+        result.rayPolicies.push_back({state.rayVisible,
+                                      state.surface == SurfaceMode::Opaque && state.cull == SurfaceCull::None});
     }
     return result;
 }

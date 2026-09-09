@@ -6,7 +6,8 @@
 
 namespace whimsical {
 // Ray queries execute in compute shaders, so link the live Shader set into each
-// compute pass. Raster links a single Shader. There are no Material permutations.
+// compute pass. Raster links a single Shader. Material render state is runtime data
+// or fixed-function pipeline state, never generated surface-code permutations.
 class ShaderCompiler {
   public:
     using ShaderSet = std::vector<std::shared_ptr<const ShaderAsset>>;

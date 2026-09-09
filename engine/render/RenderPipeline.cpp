@@ -45,8 +45,6 @@ RenderPipeline::RenderPipeline(VulkanContext& vk, ShaderCompiler& shaders, Resou
 }
 
 RenderPipeline::~RenderPipeline() {
-    vkDestroyPipeline(vk_.device, overlayProgram_, nullptr);
-    vkDestroyPipeline(vk_.device, overlayIDProgram_, nullptr);
     for (const auto& program : screenSpace_)
         if (program.pipeline)
             vkDestroyPipeline(vk_.device, program.pipeline, nullptr);
@@ -75,11 +73,14 @@ Program RenderPipeline::createCompute(const std::vector<uint32_t>& code) {
     return program;
 }
 
-VkPipeline RenderPipeline::createRaster(const std::shared_ptr<const ShaderAsset>& shader, bool entityID, bool overlay) {
-    const auto code = overlay ? loadSpirv(entityID ? "overlay_id.frag" : "overlay.frag")
-                              : shaders_.compile(entityID ? "entity_id.frag" : "gbuffer.frag", {shader});
+VkPipeline RenderPipeline::createRaster(const RasterKey& key, bool entityID) {
+    const bool display = key.domain == MaterialDomain::Display;
+    const auto code = shaders_.compile(entityID  ? "entity_id.frag"
+                                       : display ? "display.frag"
+                                                 : "gbuffer.frag",
+                                       {key.shader});
     const auto vertexCode = loadSpirv("gbuffer.vert");
-    auto& accesses = overlay ? (entityID ? overlayIDAccess_ : overlayAccess_) : (entityID ? entityIDAccess_ : rasterAccess_);
+    auto& accesses = entityID ? entityIDAccess_ : display ? displayAccess_ : rasterAccess_;
     merge(accesses, reflect(pool_.registry(), vertexCode.data(), vertexCode.size()));
     merge(accesses, reflect(pool_.registry(), code.data(), code.size()));
     VkShaderModule vertex = createModule(vk_, vertexCode), fragment = createModule(vk_, code);
@@ -106,21 +107,43 @@ VkPipeline RenderPipeline::createRaster(const std::shared_ptr<const ShaderAsset>
     viewport.viewportCount = viewport.scissorCount = 1;
     VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
     rs.polygonMode = VK_POLYGON_MODE_FILL;
-    rs.cullMode = overlay ? VK_CULL_MODE_NONE : shader->renderState.cull == SurfaceCull::Back    ? VK_CULL_MODE_BACK_BIT
-                  : shader->renderState.cull == SurfaceCull::Front ? VK_CULL_MODE_FRONT_BIT
-                                                                   : VK_CULL_MODE_NONE;
+    rs.cullMode = key.cull == SurfaceCull::Back    ? VK_CULL_MODE_BACK_BIT
+                  : key.cull == SurfaceCull::Front ? VK_CULL_MODE_FRONT_BIT
+                                                   : VK_CULL_MODE_NONE;
     rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rs.lineWidth = 1;
     VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
     ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
     VkPipelineDepthStencilStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-    ds.depthTestEnable = ds.depthWriteEnable = VK_TRUE;
-    ds.depthCompareOp = VK_COMPARE_OP_LESS;
+    // Vulkan gates writes on depthTestEnable. Expose independent material switches
+    // by using an always-passing test when only writing was requested.
+    ds.depthTestEnable = key.depthTest || key.depthWrite;
+    ds.depthWriteEnable = key.depthWrite;
+    constexpr VkCompareOp compareOps[] = {VK_COMPARE_OP_NEVER,
+                                          VK_COMPARE_OP_LESS,
+                                          VK_COMPARE_OP_EQUAL,
+                                          VK_COMPARE_OP_LESS_OR_EQUAL,
+                                          VK_COMPARE_OP_GREATER,
+                                          VK_COMPARE_OP_NOT_EQUAL,
+                                          VK_COMPARE_OP_GREATER_OR_EQUAL,
+                                          VK_COMPARE_OP_ALWAYS};
+    ds.depthCompareOp = key.depthTest ? compareOps[int(key.depthCompare)] : VK_COMPARE_OP_ALWAYS;
     std::array<VkPipelineColorBlendAttachmentState, 6> attachments{};
     for (auto& a : attachments)
         a.colorWriteMask = 15;
+    if (!entityID && key.blend != MaterialBlend::Opaque) {
+        auto& a = attachments[0];
+        a.blendEnable = VK_TRUE;
+        a.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        a.dstColorBlendFactor =
+            key.blend == MaterialBlend::Alpha ? VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA : VK_BLEND_FACTOR_ONE;
+        a.colorBlendOp = a.alphaBlendOp = VK_BLEND_OP_ADD;
+        a.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        a.dstAlphaBlendFactor =
+            key.blend == MaterialBlend::Alpha ? VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA : VK_BLEND_FACTOR_ONE;
+    }
     VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-    blend.attachmentCount = entityID || overlay ? 1 : uint32_t(attachments.size());
+    blend.attachmentCount = entityID || display ? 1 : uint32_t(attachments.size());
     blend.pAttachments = attachments.data();
     VkDynamicState states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
     VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
@@ -132,7 +155,7 @@ VkPipeline RenderPipeline::createRaster(const std::shared_ptr<const ShaderAsset>
     VkPipelineRenderingCreateInfo rendering{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
     if (entityID)
         formats[0] = VK_FORMAT_R32_UINT;
-    rendering.colorAttachmentCount = entityID || overlay ? 1 : 6;
+    rendering.colorAttachmentCount = entityID || display ? 1 : 6;
     rendering.pColorAttachmentFormats = formats;
     rendering.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
     VkGraphicsPipelineCreateInfo gp{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
@@ -156,24 +179,27 @@ VkPipeline RenderPipeline::createRaster(const std::shared_ptr<const ShaderAsset>
     return raster;
 }
 
-void RenderPipeline::ensurePrograms(const MaterialBindings& bindings) {
-    for (const auto& shader : bindings.shaders)
-        if (!rasterPrograms_.count(shader))
-            rasterPrograms_.emplace(shader, createRaster(shader));
-    auto programs = computePrograms_.find(bindings.shaders);
+void RenderPipeline::ensurePrograms(const std::vector<Material>& materials,
+                                    const ShaderCompiler::ShaderSet& shaders) {
+    for (const auto& material : materials) {
+        auto key = RasterKey::from(material);
+        if (!rasterPrograms_.count(key))
+            rasterPrograms_.emplace(key, createRaster(key));
+    }
+    auto programs = computePrograms_.find(shaders);
     if (programs == computePrograms_.end()) {
         SurfacePrograms linked;
         const auto& names = ShaderCompiler::surfacePasses;
         try {
             for (uint32_t i = 0; i < linked.size(); ++i)
-                linked[i] = createCompute(shaders_.compile(names[i], bindings.shaders));
+                linked[i] = createCompute(shaders_.compile(names[i], shaders));
         } catch (...) {
             for (const auto& program : linked)
                 if (program.pipeline)
                     vkDestroyPipeline(vk_.device, program.pipeline, nullptr);
             throw;
         }
-        programs = computePrograms_.emplace(bindings.shaders, std::move(linked)).first;
+        programs = computePrograms_.emplace(shaders, std::move(linked)).first;
     }
     for (uint32_t i = 0; i < programs->second.size(); ++i)
         compute_[i] = &programs->second[i];
@@ -204,13 +230,60 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
     }
 
     auto* gpuScene = setup.scene;
-    const bool hasOverlays = std::any_of(frame.proxies.begin(), frame.proxies.end(), [](const RenderProxy& p) {
-        return p.live && p.attributes.visible && p.attributes.overlay;
-    });
-    if (hasOverlays && !overlayProgram_) {
-        overlayProgram_ = createRaster(nullptr, false, true);
-        overlayIDProgram_ = createRaster(nullptr, true, true);
+    // Scheduling owns visibility, material selection and layer membership. Both
+    // colour and picking are built together, so their coverage/order cannot drift.
+    struct DrawGroup {
+        std::vector<RasterDraw> color, entityID;
+    };
+    std::map<std::pair<MaterialDomain, uint32_t>, DrawGroup> groups;
+    const bool picking = setup.targets && !setup.targets->rasterOutputs().empty();
+    for (uint32_t slot = 0; slot < frame.proxies.size(); ++slot) {
+        const auto& proxy = frame.proxies[slot];
+        if (!proxy.live || !proxy.attributes.visible)
+            continue;
+        const auto& material = frame.materials[proxy.attributes.material];
+        auto& group = groups[{material.renderState.domain, material.renderState.layer}];
+        const auto key = RasterKey::from(material);
+        group.color.push_back({slot, rasterPrograms_.at(key)});
+        if (picking && !entityIDPrograms_.count(key))
+            entityIDPrograms_.emplace(key, createRaster(key, true));
     }
+    for (auto& entry : groups) {
+        auto& group = entry.second;
+        // Opaque geometry establishes depth first. Blended draws use back-to-front
+        // instance-origin order; picking consumes precisely the same draw order.
+        std::stable_sort(group.color.begin(), group.color.end(),
+                         [&](const RasterDraw& a, const RasterDraw& b) {
+                             const auto& pa = frame.proxies[a.slot];
+                             const auto& pb = frame.proxies[b.slot];
+                             const bool blendA = frame.materials[pa.attributes.material].renderState.blend !=
+                                                 MaterialBlend::Opaque;
+                             const bool blendB = frame.materials[pb.attributes.material].renderState.blend !=
+                                                 MaterialBlend::Opaque;
+                             if (blendA != blendB)
+                                 return !blendA;
+                             if (!blendA)
+                                 return false;
+                             auto da = pa.transform.position - frame.camera.eye(),
+                                  db = pb.transform.position - frame.camera.eye();
+                             return glm::dot(da, da) > glm::dot(db, db);
+                         });
+        if (picking)
+            for (const auto& draw : group.color) {
+                const auto& material = frame.materials[frame.proxies[draw.slot].attributes.material];
+                group.entityID.push_back({draw.slot, entityIDPrograms_.at(RasterKey::from(material))});
+            }
+    }
+    auto record = [gpuScene](std::vector<RasterDraw> draws) {
+        return [gpuScene, draws = std::move(draws)](const PassContext& c) {
+            if (draws.empty())
+                return;
+            vkCmdBindDescriptorSets(c.command, VK_PIPELINE_BIND_POINT_GRAPHICS, c.layout, 0, 1,
+                                    &c.descriptors, 0, nullptr);
+            gpuScene->recordDraws(c.command, draws);
+        };
+    };
+    auto& surfaces = groups[{MaterialDomain::Surface, 0}];
     if (gpuScene->skinsDirty())
         // A refit rewrites the bottom-level structures of the meshes that moved and leaves
         // the rest standing, which is what Modify says and why the top-level build below
@@ -231,7 +304,6 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
 
     VkClearColorValue farViewZ{};
     farViewZ.float32[0] = 10000;
-    const auto& programs = rasterPrograms_;
     // Attachments and the vertex and index fetch are the pass's own: they are the only
     // things a compiled shader has nothing to say about. Everything the vertex and
     // fragment stages read comes from the modules themselves.
@@ -246,44 +318,29 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
         .shader(rasterAccess_)
         .read(scene.vertices, Access::Vertex)
         .read(scene.indices, Access::Index)
-        .record([gpuScene, &frame, &programs](const PassContext& c) {
-            if (frame.materials.empty())
-                return; // An empty scene still clears the attachments; it has no raster programs to bind.
-            vkCmdBindDescriptorSets(c.command, VK_PIPELINE_BIND_POINT_GRAPHICS, c.layout, 0, 1,
-                                    &c.descriptors, 0, nullptr);
-            gpuScene->recordDraws(c.command, frame, programs);
-        });
+        .record(record(surfaces.color));
 
     if (setup.targets) {
         for (const auto& output : setup.targets->rasterOutputs()) {
-            for (const auto& material : frame.materials)
-                if (!entityIDPrograms_.count(material.shader))
-                    entityIDPrograms_.emplace(material.shader, createRaster(material.shader, true));
             graph.add("EntityID Raster")
                 .color(output.color, black())
                 .depth(output.depth)
                 .shader(entityIDAccess_)
                 .read(scene.vertices, Access::Vertex)
                 .read(scene.indices, Access::Index)
-                .record([this, gpuScene, &frame](const PassContext& c) {
-                    if (frame.materials.empty())
-                        return;
-                    vkCmdBindDescriptorSets(c.command, VK_PIPELINE_BIND_POINT_GRAPHICS, c.layout, 0, 1,
-                                            &c.descriptors, 0, nullptr);
-                    gpuScene->recordDraws(c.command, frame, entityIDPrograms_);
-                });
-            if (hasOverlays)
-                graph.add("Overlay EntityID Raster")
+                .record(record(surfaces.entityID));
+            for (const auto& entry : groups) {
+                if (entry.first.first != MaterialDomain::Display)
+                    continue;
+                auto layer = entry.first.second;
+                graph.add("Display EntityID Layer " + std::to_string(layer))
                     .color(output.color)
-                    .depth(output.depth)
-                    .shader(overlayIDAccess_)
+                    .depth(output.depth, layer ? std::optional<float>(1.f) : std::nullopt)
+                    .shader(entityIDAccess_)
                     .read(scene.vertices, Access::Vertex)
                     .read(scene.indices, Access::Index)
-                    .record([this, gpuScene, &frame](const PassContext& c) {
-                        vkCmdBindDescriptorSets(c.command, VK_PIPELINE_BIND_POINT_GRAPHICS, c.layout, 0, 1,
-                                                &c.descriptors, 0, nullptr);
-                        gpuScene->recordDraws(c.command, frame, {}, true, overlayIDProgram_);
-                    });
+                    .record(record(entry.second.entityID));
+            }
         }
         setup.targets->addReadbacks(graph);
     }
@@ -357,20 +414,18 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
         .dispatch(*compute_[Composite])
         .overwrite(shade.display, Access::Compute);
 
-    // Helpers use the same entity/mesh transforms and depth ordering in colour and ID.
-    // A fresh depth attachment keeps them in front of the scene without changing its G-buffer.
-    if (hasOverlays)
-        graph.add("Entity Overlay Raster")
+    for (const auto& entry : groups) {
+        if (entry.first.first != MaterialDomain::Display)
+            continue;
+        auto layer = entry.first.second;
+        graph.add("Display Color Layer " + std::to_string(layer))
             .color(shade.display)
-            .depth(g.depth)
-            .shader(overlayAccess_)
+            .depth(layer ? shade.layerDepth : g.depth, layer ? std::optional<float>(1.f) : std::nullopt)
+            .shader(displayAccess_)
             .read(scene.vertices, Access::Vertex)
             .read(scene.indices, Access::Index)
-            .record([this, gpuScene, &frame](const PassContext& c) {
-                vkCmdBindDescriptorSets(c.command, VK_PIPELINE_BIND_POINT_GRAPHICS, c.layout, 0, 1,
-                                        &c.descriptors, 0, nullptr);
-                gpuScene->recordDraws(c.command, frame, {}, true, overlayProgram_);
-            });
+            .record(record(entry.second.color));
+    }
 
     // The readback buffers declare a Host handover, so the CPU is a consumer the graph can
     // see: it keeps these passes alive and ends the frame with the barrier that makes the

@@ -45,20 +45,8 @@ std::shared_ptr<ShaderAsset> ShaderAsset::decode(const Json& metadata, const std
     if (shader->properties.size() > MaxProperties || shader->textures.size() > MaxTextures)
         throw std::invalid_argument(
             "Shader schema exceeds the surface ABI capacity (8 properties / 8 textures)");
-    const auto& state = metadata.at("renderState");
-    auto mode = state.at("surface").string(), cull = state.at("cull").string();
-    if (mode != "opaque" && mode != "masked")
-        throw std::invalid_argument("Deferred surface shaders support opaque or masked rendering");
-    shader->renderState.mode = mode == "masked" ? SurfaceMode::Masked : SurfaceMode::Opaque;
-    if (cull != "none" && cull != "back" && cull != "front")
-        throw std::invalid_argument("Unsupported Shader cull mode");
-    shader->renderState.cull = cull == "none"   ? SurfaceCull::None
-                               : cull == "back" ? SurfaceCull::Back
-                                                : SurfaceCull::Front;
-    if (state.contains("alphaCutoff"))
-        shader->renderState.alphaCutoff = float(state.at("alphaCutoff").number());
-    if (shader->renderState.alphaCutoff < 0 || shader->renderState.alphaCutoff > 1)
-        throw std::invalid_argument("Shader alpha cutoff must be in [0, 1]");
+    if (metadata.contains("renderState"))
+        throw std::invalid_argument("Shader renderState moved to Material assets");
     return shader;
 }
 } // namespace whimsical

@@ -38,10 +38,7 @@ class RenderPipeline {
   public:
     RenderPipeline(VulkanContext&, ShaderCompiler&, rg::ResourcePool&, const RenderResources&);
     ~RenderPipeline();
-    void ensurePrograms(const MaterialBindings&);
-    const std::map<std::shared_ptr<const ShaderAsset>, VkPipeline>& rasterPrograms() const {
-        return rasterPrograms_;
-    }
+    void ensurePrograms(const std::vector<Material>&, const ShaderCompiler::ShaderSet&);
     size_t rasterProgramCount() const {
         return rasterPrograms_.size();
     }
@@ -76,17 +73,16 @@ class RenderPipeline {
     // pass points at whichever program is current rather than owning it.
     std::array<const rg::Program*, PassCount> compute_{};
     std::array<rg::Program, screenSpacePasses.size()> screenSpace_;
-    std::map<std::shared_ptr<const ShaderAsset>, VkPipeline> rasterPrograms_;
-    std::map<std::shared_ptr<const ShaderAsset>, VkPipeline> entityIDPrograms_;
+    std::map<RasterKey, VkPipeline> rasterPrograms_;
+    std::map<RasterKey, VkPipeline> entityIDPrograms_;
     std::map<ShaderCompiler::ShaderSet, SurfacePrograms> computePrograms_;
     // The G-buffer pass binds one pipeline per material, so what it touches is the union
     // over them plus the vertex stage they share.
     std::vector<rg::ShaderAccess> rasterAccess_;
     std::vector<rg::ShaderAccess> entityIDAccess_;
-    std::vector<rg::ShaderAccess> overlayAccess_, overlayIDAccess_;
-    VkPipeline overlayProgram_ = VK_NULL_HANDLE, overlayIDProgram_ = VK_NULL_HANDLE;
+    std::vector<rg::ShaderAccess> displayAccess_;
 
     rg::Program createCompute(const std::vector<uint32_t>& code);
-    VkPipeline createRaster(const std::shared_ptr<const ShaderAsset>&, bool entityID = false, bool overlay = false);
+    VkPipeline createRaster(const RasterKey&, bool entityID = false);
 };
 } // namespace whimsical

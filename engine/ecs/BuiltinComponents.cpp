@@ -169,7 +169,6 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
         c.dependencies = {{"transform"}};
         c.validateValue = [](const std::any& value) {
             const auto& render = std::any_cast<const SceneRender&>(value);
-            validateRenderAppearance(render.appearance);
             validatePersistentId(render.material.id);
         };
         codec<SceneRender>(
@@ -186,23 +185,14 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
                     a.visible = j.at("visible").boolean();
                 if (j.contains("castShadow"))
                     a.castShadow = j.at("castShadow").boolean();
-                if (j.contains("overlay"))
-                    a.overlay = j.at("overlay").boolean();
-                if (j.contains("overlayColor"))
-                    a.overlayColor = vector3(j.at("overlayColor"));
                 if (j.contains("mesh"))
                     v.mesh = AssetRef::fromJson(j.at("mesh"));
-                validateRenderAppearance(a);
                 return v;
             },
             [](const SceneRender& v) {
                 const auto& a = v.appearance;
                 Json j{{"material", v.material.json()},
                        {"visible", a.visible}, {"castShadow", a.castShadow}};
-                if (a.overlay)
-                    j["overlay"] = true;
-                if (a.overlay || a.overlayColor != vec3(1))
-                    j["overlayColor"] = vector(a.overlayColor);
                 if (v.mesh)
                     j["mesh"] = v.mesh->json();
                 return j;

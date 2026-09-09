@@ -1,5 +1,4 @@
 #include "Systems.h"
-#include "Validation.h"
 #include "core/CpuProfile.h"
 #include "assets/MaterialAsset.h"
 namespace whimsical {
@@ -18,21 +17,18 @@ static ProxyTransform proxyTransform(const Transform& t) {
 void RenderSystem::add(Entity e, RenderComponent appearance, std::shared_ptr<const StaticMesh> mesh) {
     if (!appearance.material)
         throw std::invalid_argument("Render requires a Material asset");
-    validateRenderAppearance(appearance);
     auto& t = s.registry.get<Transform>(e);
     auto batch = Changes::Batch(s.changes);
     auto& r = s.registry.emplace<Renderable>(e, Renderable{appearance, std::move(mesh)});
     r.slot = s.renderScene.create(proxyTransform(t),
-                                  {e, 0,
-                                   s.enabled(e) && appearance.visible,
-                                   appearance.castShadow, appearance.overlay, appearance.overlayColor}, appearance.material);
+                                  {e, 0, s.enabled(e) && appearance.visible, appearance.castShadow},
+                                  appearance.material);
     if (r.mesh)
         s.changes.mark<GeometryChanged>(e);
     s.changes.mark<Renderable>(e);
     batch.commit();
 }
 void RenderSystem::set(Entity e, RenderComponent appearance, std::shared_ptr<const StaticMesh> mesh) {
-    validateRenderAppearance(appearance);
     if (!appearance.material)
         throw std::invalid_argument("Render requires a Material asset");
     if (mesh && s.registry.has<Skin>(e))
@@ -54,9 +50,8 @@ void RenderSystem::publishTransform(Entity e) {
 void RenderSystem::publishAttributes(Entity e) {
     if (auto r = s.registry.tryGet<Renderable>(e))
         s.renderScene.setAttributes(r->slot,
-                                    {e, 0,
-                                     s.enabled(e) && r->appearance.visible,
-                                     r->appearance.castShadow, r->appearance.overlay, r->appearance.overlayColor}, r->appearance.material);
+                                    {e, 0, s.enabled(e) && r->appearance.visible, r->appearance.castShadow},
+                                    r->appearance.material);
 }
 void RenderSystem::setStaticMesh(Entity e, std::shared_ptr<const StaticMesh> mesh) {
     auto batch = Changes::Batch(s.changes);

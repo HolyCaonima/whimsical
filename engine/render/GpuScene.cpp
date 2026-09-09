@@ -412,11 +412,11 @@ void GpuScene::updateTextures(const std::vector<std::shared_ptr<const TextureAss
     for (auto& old : oldImages)
         vk.destroy(old);
     rebind();
-    historyInvalidated = true;
 }
 
 void GpuScene::updateMaterials(const MaterialBindings& next) {
     updateTextures(next.textures);
+    rayPoliciesDirty |= bindings.rayPolicies != next.rayPolicies;
     bindings = next;
     std::memcpy(materialData.mapped, bindings.materials.data(),
                 bindings.materials.size() * sizeof(GpuMaterial));
@@ -505,23 +505,18 @@ void GpuScene::settleMotion(uint32_t slot) {
 // instance, which is where the visibility mask and geometry binding live.
 void GpuScene::writeAttributes(uint32_t slot, const RenderProxy& p) {
     auto mesh = p.live ? meshFor(slot) : std::nullopt;
-    auto color = glm::uvec3(glm::clamp(p.attributes.overlayColor, vec3(0), vec3(1)) * 255.f + .5f);
     static_cast<GpuInstance*>(instanceData.mapped)[slot].info = {
-        p.attributes.material, mesh ? meshes[*mesh].firstIndex : 0, p.attributes.entity,
-        (color.r << 8) | (color.g << 16) | (color.b << 24)};
+        p.attributes.material, mesh ? meshes[*mesh].firstIndex : 0, p.attributes.entity, 0};
     VkAccelerationStructureInstanceKHR a{};
     a.transform = rowMajor(shadowModel[slot]);
     a.instanceCustomIndex = slot;
     // Bit 0 is shadow visibility; the other bits retain material/reflective rays.
-    a.mask = mesh && p.attributes.visible && !p.attributes.overlay
-                 ? (p.attributes.castShadow ? 0xffu : 0xfeu) : 0u;
+    a.mask = mesh && p.attributes.visible && bindings.rayPolicies[p.attributes.material].visible
+                 ? (p.attributes.castShadow ? 0xffu : 0xfeu)
+                 : 0u;
     a.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-    if (p.live) {
-        auto shaderIndex = bindings.materials[p.attributes.material].info.x;
-        const auto& state = bindings.shaders[shaderIndex]->renderState;
-        if (state.mode == SurfaceMode::Opaque && state.cull == SurfaceCull::None)
-            a.flags |= VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
-    }
+    if (p.live && bindings.rayPolicies[p.attributes.material].opaque)
+        a.flags |= VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
     a.accelerationStructureReference = mesh ? blas[*mesh].address : 0;
     static_cast<VkAccelerationStructureInstanceKHR*>(tlasInstances.mapped)[slot] = a;
     statistics.attributes++;
@@ -575,8 +570,9 @@ void GpuScene::apply(const Frame& frame, bool reset) {
     } else {
         for (auto slot : frame.delta.moved)
             writeTransform(slot, frame.proxies[slot], false);
-        for (auto slot : frame.delta.attributes)
-            writeAttributes(slot, frame.proxies[slot]);
+        if (!rayPoliciesDirty)
+            for (auto slot : frame.delta.attributes)
+                writeAttributes(slot, frame.proxies[slot]);
         // Structural changes rewrite both halves, so they run last and win. A slot
         // that just appeared, or was handed to a different object, has no previous
         // position worth interpolating from.
@@ -590,6 +586,12 @@ void GpuScene::apply(const Frame& frame, bool reset) {
             if (motionFrame[slot] != sceneStamp)
                 settleMotion(slot);
     }
+    // Material policy can change without an instance delta. Refresh ray masks and
+    // opaque flags independently of temporal resets, including repeated snapshots.
+    if (rayPoliciesDirty && !resync)
+        for (uint32_t slot = 0; slot < capacity; ++slot)
+            writeAttributes(slot, frame.proxies[slot]);
+    rayPoliciesDirty = false;
     movedLastFrame = movedThisFrame;
     statistics.resynchronised = resync;
     mirrorRevision = frame.delta.revision;
@@ -676,27 +678,21 @@ void GpuScene::recordTlas(VkCommandBuffer c, GpuProfiler& profiler) {
 
 // The slot is the draw's instance index, so gl_InstanceIndex, the acceleration
 // structure's custom index and the GPU instance entry all stay the same number.
-void GpuScene::recordDraws(VkCommandBuffer c, const Frame& frame,
-                           const std::map<std::shared_ptr<const ShaderAsset>, VkPipeline>& programs,
-                           bool overlay, VkPipeline overrideProgram) {
+void GpuScene::recordDraws(VkCommandBuffer c, const std::vector<RasterDraw>& draws) {
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(c, 0, 1, &vertexData.handle, &offset);
     vkCmdBindIndexBuffer(c, indexData.handle, 0, VK_INDEX_TYPE_UINT32);
     VkPipeline bound = VK_NULL_HANDLE;
-    for (uint32_t slot = 0; slot < frame.proxies.size(); slot++) {
-        const auto& p = frame.proxies[slot];
-        if (!p.live || !p.attributes.visible || p.attributes.overlay != overlay)
-            continue;
-        auto geometry = meshFor(slot);
+    for (const auto& draw : draws) {
+        auto geometry = meshFor(draw.slot);
         if (!geometry)
             continue;
-        auto pipeline = overrideProgram ? overrideProgram : programs.at(frame.materials[p.attributes.material].shader);
-        if (pipeline != bound) {
-            vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-            bound = pipeline;
+        if (draw.pipeline != bound) {
+            vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.pipeline);
+            bound = draw.pipeline;
         }
-        auto& mesh = meshes[*geometry];
-        vkCmdDrawIndexed(c, mesh.indexCount, 1, mesh.firstIndex, 0, slot);
+        const auto& mesh = meshes[*geometry];
+        vkCmdDrawIndexed(c, mesh.indexCount, 1, mesh.firstIndex, 0, draw.slot);
     }
 }
 } // namespace whimsical

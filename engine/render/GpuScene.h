@@ -1,4 +1,5 @@
 #pragma once
+#include "RasterDraw.h"
 #include "Geometry.h"
 #include "MaterialBindings.h"
 #include "RangeAllocator.h"
@@ -47,13 +48,9 @@ class GpuScene {
     }
     void recordSkinnedBlas(VkCommandBuffer);
     void recordTlas(VkCommandBuffer, GpuProfiler&);
-    void recordDraws(VkCommandBuffer, const Frame&, const std::map<std::shared_ptr<const ShaderAsset>, VkPipeline>&,
-                     bool overlay = false, VkPipeline overrideProgram = VK_NULL_HANDLE);
+    void recordDraws(VkCommandBuffer, const std::vector<RasterDraw>&);
 
     // A new texture set replaces images the temporal history was accumulated against.
-    bool takeHistoryInvalidation() {
-        return std::exchange(historyInvalidated, false);
-    }
 
     SceneUpdateStatistics statistics;
     uint64_t writes = 0, resyncs = 0, tlasRebuilds = 0, slotFrames = 0;
@@ -119,7 +116,7 @@ class GpuScene {
     std::vector<uint32_t> movedThisFrame, movedLastFrame;
     uint64_t sceneStamp = 0, mirrorRevision = 0, mirrorTopology = 0;
     uint32_t mirrorCapacity = 0;
-    bool mirrorValid = false, historyInvalidated = false;
+    bool mirrorValid = false, rayPoliciesDirty = false;
 
     void destroyAS(AccelerationStructure&);
     AccelerationStructure createAS(VkAccelerationStructureTypeKHR, VkDeviceSize);

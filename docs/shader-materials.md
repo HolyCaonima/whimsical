@@ -11,7 +11,8 @@ Neither assets, World nor Frame contain texture descriptors or Shader dispatch I
 The Vulkan renderer uses ray queries inside compute shaders, not a ray-tracing pipeline
 with an SBT. `ShaderCompiler` therefore uses GLSL source linking:
 
-* Each Shader gets one GBuffer fragment program and graphics pipeline. The common vertex
+* Each Shader is linked into the output adapter it needs (GBuffer, display or EntityID).
+  Graphics pipelines additionally key fixed-function Material state. The common vertex
   program already handles static and skinned geometry; there is no skinning permutation.
 * Each active Shader generation is linked once into a generated dispatch table in
   the six `ShaderCompiler::surfacePasses` (lighting, GI reuse, DI temporal/spatial,
@@ -64,16 +65,16 @@ normal-map fallback belongs in the Shader source, where the texture handle is kn
 GBuffer encoding and committed ray-hit shading call the generated evaluation. Candidate
 acceptance in **both** GI/specular traces and shadow visibility uses the same opacity and
 cull rules. BLAS triangles are non-opaque so rejected masked candidates can continue to
-geometry behind them. Opaque two-sided Shader instances use the renderer-owned TLAS
-force-opaque flag to bypass candidate evaluation. Material changes reset history and
-refresh instance attributes before the TLAS update, including changes to that flag. Opaque shaders ignore opacity. Roughness has the same .08 floor in
+geometry behind them. Opaque two-sided Material instances use the renderer-owned TLAS
+force-opaque flag to bypass candidate evaluation. Material changes refresh instance attributes before the TLAS update, including changes
+to that flag, without resetting lighting history. Opaque materials ignore opacity. Roughness has the same .08 floor in
 the GBuffer and reconstructed ray surface.
 
-Supported metadata is deliberately narrow: `metallicRoughness`, `opaque` or `masked`,
-`none`/`back`/`front` culling and an alpha cutoff. Deferred surfaces always depth-test and
-write depth. Unsupported models and transparent blending are rejected at asset loading,
-rather than silently rendered as PBR. A new material model would also need a lighting and
-GBuffer contract; it is not an arbitrary string that changes only the fragment stage.
+Shader metadata declares `metallicRoughness` and the property/texture schema. Material
+`renderState` owns culling, clipping, depth, blending, domain, layer and ray visibility.
+The surface domain requires opaque blending; the display domain supports unlit alpha
+and additive blending. See [Material rendering policy](material-render-policy.md) for
+the complete schema and data/system boundaries.
 
 ## Authoring
 
@@ -90,8 +91,7 @@ The Shader header's `metadata` contains:
     {"name": "tint", "type": "vec3", "default": [0.3, 0.7, 0.2]},
     {"name": "roughness", "type": "float", "default": 0.7}
   ],
-  "textures": ["color"],
-  "renderState": {"surface": "masked", "cull": "none", "alphaCutoff": 0.5}
+  "textures": ["color"]
 }
 ```
 
@@ -107,22 +107,27 @@ return s;
 ```
 
 Material payloads contain `shader: AssetRef`, `properties: {name: value}` and
-`textures: {name: AssetRef}`. Properties may be float, vec2, vec3 or vec4. Omitted values
+`textures: {name: AssetRef}`, and optional `renderState`. For the masked example above,
+put `"renderState": {"surface": "masked", "cull": "none", "alphaCutoff": 0.5}` on the
+Material payload. Properties may be float, vec2, vec3 or vec4. Omitted values
 use Shader defaults; omitted textures remain unbound. Unknown names, wrong dimensions,
 duplicate schema names and unsupported metadata fail at resolution. Values use float
 precision on document load so save/capture round trips are stable.
 
 `MaterialBindings` assigns the runtime Shader table, deduplicates Texture assets, and packs
-176-byte GPU records (Shader index, eight vec4 property slots, eight texture handles).
+176-byte GPU records (Shader index, surface/cull flags, alpha cutoff, eight vec4 property
+slots, eight texture handles).
 The schema uses at most eight properties and eight textures per Shader. This fixed ABI
 keeps the existing descriptor layout small; it is a capacity limit, not eight hardcoded
 material features. Global limits remain 256 Materials and 64 distinct textures.
 
 Material edits compare CPU instances and update bindings after the previous GPU fence.
-Source/schema/state reloads produce new immutable Shader generations through the existing
+Source/schema reloads produce new immutable Shader generations through the existing
 AssetManager cache/scan path. Existing Frames retain their generations; map reload brings
-the new generation into the renderer. Source/schema/set changes select new programs and
-invalidate history. Ordinary values/textures invalidate history without Shader compilation.
+the new generation into the renderer. Source/schema/set changes select new programs.
+Material state selects pipelines or updates runtime acceptance data; ordinary values and
+textures update bindings without Shader compilation. None of these material updates
+resets lighting history.
 
 ## Persistence and migration
 

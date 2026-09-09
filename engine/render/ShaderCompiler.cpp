@@ -73,17 +73,6 @@ std::string ShaderCompiler::surfaceLibrary(const ShaderSet& shaders, bool raster
             code << "textures." << shader.textures[t] << " = materials[ctx.material].textures[" << t / 4
                  << "][" << t % 4 << "];\n";
         code << "#line 1 " << i + 1 << "\n" << shader.source << "\n}\n#line 1 0\n";
-        code << "bool AcceptSurface_" << i << "(MaterialContext ctx, SurfaceData s) { return ";
-        auto state = shader.renderState;
-        if (state.cull == SurfaceCull::Back)
-            code << "ctx.frontFacing && ";
-        if (state.cull == SurfaceCull::Front)
-            code << "!ctx.frontFacing && ";
-        if (state.mode == SurfaceMode::Masked)
-            code << "s.opacity >= " << state.alphaCutoff;
-        else
-            code << "true";
-        code << "; }\n";
     }
     code << "SurfaceData EvaluateSurface(MaterialContext ctx) {\n";
     if (raster)
@@ -93,15 +82,6 @@ std::string ShaderCompiler::surfaceLibrary(const ShaderSet& shaders, bool raster
         for (size_t i = 0; i < shaders.size(); ++i)
             code << "case " << i << "u: return EvaluateSurface_" << i << "(ctx);\n";
         code << "}\nreturn DefaultSurface(ctx);\n";
-    }
-    code << "}\nbool AcceptSurface(MaterialContext ctx, SurfaceData s) {\n";
-    if (raster)
-        code << "return AcceptSurface_0(ctx,s);\n";
-    else {
-        code << "switch(materials[ctx.material].info.x) {\n";
-        for (size_t i = 0; i < shaders.size(); ++i)
-            code << "case " << i << "u: return AcceptSurface_" << i << "(ctx,s);\n";
-        code << "}\nreturn false;\n";
     }
     code << "}\n";
     return code.str();

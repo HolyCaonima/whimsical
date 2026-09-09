@@ -5,7 +5,6 @@ surface with an absent surface. Albedo, shadow lighting and resolved GI/specular
 must agree; an actual foliage surface must change the image. No project assets
 are modified. The generated projects, logs and audit captures remain inspectable.
 """
-import copy
 import json
 import math
 from pathlib import Path
@@ -32,8 +31,7 @@ def write_asset(path, kind, payload, identity=None):
 
 
 def set_point_lights(scene, lights):
-    """Migrate old diagnostic W/sr fixtures to v7 ECS radiant-power components."""
-    scene["version"] = 8
+    """Convert diagnostic W/sr values to ECS radiant-power components."""
     scene.pop("lights", None)
     scene["entities"] = [e for e in scene["entities"] if "light" not in e["components"]]
     for l in lights:
@@ -69,26 +67,29 @@ def run():
     mesh = b"STM1" + struct.pack("<II", 4, 6) + struct.pack("<60f", *vertices) + struct.pack("<6I", 0, 1, 2, 0, 2, 3)
     quad = write_asset(content / "Quad.asset", "StaticMesh", mesh)
     _, scene = read_asset(ROOT / "Projects/Afterlight/Content/Maps/RainCourt.asset")
-    template = copy.deepcopy(scene["entities"][0])
-    scene.update(scripts=[], entities=[], materials=[], materialAssets=[], references={}, data={})
+    scene.update(scripts=[], entities=[], references={}, data={})
     scene["camera"].update(target=[0, 0, 0], yaw=.6, pitch=.9, distance=13, fov=.62)
+    materials, material_refs = [], []
     for name, color in (("Paving", [.65, .65, .65]), ("Standard", [.8, .2, .1]), ("Foliage", [.1, .8, .2])):
-        scene["materials"].append(dict(shader=refs[name], properties=dict(baseColor=color), textures={}))
+        material = dict(shader=refs[name], properties=dict(baseColor=color), textures={},
+                        renderState=dict(surface="masked" if name == "Foliage" else "opaque"))
+        materials.append(material)
+        material_refs.append(write_asset(content / (name + "Material.asset"), "Material", material))
+    box_header = json.loads((ROOT / "engine/Content/Meshes/Box.asset").read_text().split("\n")[1])
+    box = dict(id=box_header["id"], path="/Engine/Meshes/Box")
     for name, position, scale, material in (("Ground", [0, -.25, 0], [8, .5, 8], 0),
                                            ("Box", [2, .5, 1], [1, 1, 1], 1),
                                            ("Leaf", [0, 1.5, 0], [2, 1, 2], 2)):
-        obj = copy.deepcopy(template)
-        obj.update(id=uuid.uuid4().hex, name=name)
-        obj["components"]["transform"].update(position=position, rotation=[0, 0, 0, 1])
-        obj["components"]["render"].update(scale=scale, material=material)
-        if name == "Leaf":
-            obj["components"]["render"]["mesh"] = quad
+        obj = dict(id=uuid.uuid4().hex, name=name, enabled=True, components=dict(
+            transform=dict(position=position, rotation=[0, 0, 0, 1], scale=scale),
+            render=dict(mesh=quad if name == "Leaf" else box, material=material_refs[material])))
         scene["entities"].append(obj)
     captures = {}
     set_point_lights(scene, [dict(positionRadius=[0, 6, 0, .1], colorIntensity=[1, 1, 1, 75])])
     for case, visible, coverage in (("absent", False, 0), ("discarded", True, 0), ("foliage", True, 1)):
         scene["entities"][2]["components"]["render"]["visible"] = visible
-        scene["materials"][-1]["properties"]["coverage"] = coverage
+        materials[-1]["properties"]["coverage"] = coverage
+        write_asset(content / "FoliageMaterial.asset", "Material", materials[-1], material_refs[-1]["id"])
         write_asset(content / "Test.asset", "Map", scene)
         audit = tag + "-" + case
         args = [str(ROOT / "build/bin/Release/Whimsical.exe"), "--project", str(project),

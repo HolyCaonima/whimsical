@@ -183,6 +183,7 @@ ShadingResources::ShadingResources(Registry& registry) {
     indirectDebug =
         registry.declare(image("indirectDebug", Format::RGBA16F, Lifetime::Transient, "indirectDebug"));
     display = registry.declare(image("finalImage", Format::RGBA16F, Lifetime::Transient, "finalImage"));
+    layerDepth = registry.declare(image("layerDepth", Format::D32, Lifetime::Transient, nullptr));
 }
 
 // Nothing declared here has a shader view, which is what lets an optional resource exist on

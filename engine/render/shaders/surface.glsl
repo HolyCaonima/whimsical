@@ -23,6 +23,14 @@ struct SurfaceData {
 SurfaceData DefaultSurface(MaterialContext ctx) {
     return SurfaceData(vec3(1), normalize(ctx.normal), vec3(0), .5, 0, 1);
 }
+// One material-owned acceptance rule for raster, picking and every ray query.
+// Encoding is defined by MaterialBindings, independent of Shader generation.
+bool AcceptSurface(MaterialContext ctx, SurfaceData s) {
+    uvec4 state = materials[ctx.material].info;
+    uint cull = state.y >> 1;
+    return (cull != 1u || ctx.frontFacing) && (cull != 2u || !ctx.frontFacing) &&
+           ((state.y & 1u) == 0u || s.opacity >= uintBitsToFloat(state.z));
+}
 vec4 SampleTexture(MaterialContext ctx, int handle, vec2 uv) {
     if (handle < 0) return vec4(1);
 #ifdef FRAGMENT_PASS

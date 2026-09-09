@@ -1,5 +1,5 @@
 ALAS1
-{"id":"d8257b9fae6cad637326bf809df51f9f","type":"Material","name":"Gizmo","version":1,"storage":"embedded","metadata":{}}
+{"id":"93fc9b7c2f8e27cb23a9ef9ca9e4cd4d","type":"Material","name":"GizmoX","version":1,"storage":"embedded","metadata":{}}
 {
   "shader": {
     "id": "45c52a2c1f355e5f9b4b4a4365f3c1a0",
@@ -7,9 +7,9 @@ ALAS1
   },
   "properties": {
     "baseColor": [
-      1,
-      1,
-      1
+      0.94,
+      0.19,
+      0.16
     ]
   },
   "textures": {},

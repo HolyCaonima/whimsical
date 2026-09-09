@@ -1,5 +1,5 @@
 ALAS1
-{"id": "28b5fbce0b534eb2a76bb822e671e527", "type": "Shader", "name": "Example surface", "version": 1, "storage": "embedded", "metadata": {"materialModel": "metallicRoughness", "properties": [{"name": "baseColor", "type": "vec3", "default": [0.5, 0.5, 0.5]}, {"name": "roughness", "type": "float", "default": 0.5}, {"name": "emission", "type": "vec3", "default": [0, 0, 0]}, {"name": "metallic", "type": "float", "default": 0}], "textures": [], "renderState": {"surface": "opaque", "cull": "none", "alphaCutoff": 0.5}}}
+{"id":"28b5fbce0b534eb2a76bb822e671e527","type":"Shader","name":"Example surface","version":1,"storage":"embedded","metadata":{"materialModel":"metallicRoughness","properties":[{"name":"baseColor","type":"vec3","default":[0.5,0.5,0.5]},{"name":"roughness","type":"float","default":0.5},{"name":"emission","type":"vec3","default":[0,0,0]},{"name":"metallic","type":"float","default":0}],"textures":[]}}
 SurfaceData s = DefaultSurface(ctx);
 s.albedo = properties.baseColor;
 s.roughness = properties.roughness;

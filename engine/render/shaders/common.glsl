@@ -12,7 +12,7 @@ struct Instance {
     uvec4 info;
 };
 struct Material {
-    uvec4 info; // renderer-owned Shader table index
+    uvec4 info; // Shader index, surface/cull flags, alpha cutoff bits, reserved
     vec4 properties[8];
     ivec4 textures[2];
 };

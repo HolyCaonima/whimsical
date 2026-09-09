@@ -469,15 +469,13 @@ struct Renderer::Impl {
             materialsChanged = !(frame.materials == previous->materials);
             // Stable light slots permit parameter animation; topology changes restart history.
             reset = reset || frame.lightEntities != previous->lightEntities ||
-                    frame.lights.size() != previous->lights.size() || materialsChanged;
+                    frame.lights.size() != previous->lights.size();
         }
         if (materialsChanged) {
             materialBindings = MaterialBindings::build(frame.materials);
-            pipeline->ensurePrograms(materialBindings);
+            pipeline->ensurePrograms(frame.materials, materialBindings.shaders);
             scene->updateMaterials(materialBindings);
         }
-        if (scene->takeHistoryInvalidation())
-            historyValid = false;
         const bool clearHistory = !historyValid;
         reset = reset || clearHistory;
         GpuGlobals data{};

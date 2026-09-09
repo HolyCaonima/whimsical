@@ -19,9 +19,13 @@ s.albedo = properties.baseColor;
 s.roughness = properties.roughness;
 s.metallic = properties.metallic;
 s.emission = properties.emission;
-return s;`,{metadata:{materialModel:'metallicRoughness',properties:[{name:'baseColor',type:'vec3',default:[0.5,0.5,0.5]},{name:'roughness',type:'float',default:0.5},{name:'emission',type:'vec3',default:[0,0,0]},{name:'metallic',type:'float',default:0}],textures:[],renderState:{surface:'opaque',cull:'none',alphaCutoff:0.5}}});
+return s;`,{metadata:{materialModel:'metallicRoughness',properties:[{name:'baseColor',type:'vec3',default:[0.5,0.5,0.5]},{name:'roughness',type:'float',default:0.5},{name:'emission',type:'vec3',default:[0,0,0]},{name:'metallic',type:'float',default:0}],textures:[]}});
 const material=(color,roughness=0.5,metallic=0)=>({shader,properties:{baseColor:color,roughness,metallic,emission:[0,0,0]},textures:{}});
-asset('Materials/Gizmo','Material',{shader,properties:{},textures:{}});
+const gizmoShader=asset('shaders/Gizmo','Shader',`SurfaceData s = DefaultSurface(ctx);
+s.albedo = properties.baseColor * ctx.vertexColor;
+return s;`,{metadata:{materialModel:'metallicRoughness',properties:[{name:'baseColor',type:'vec3',default:[1,1,1]}],textures:[]}});
+for(const [name,color] of Object.entries({Gizmo:[1,1,1],GizmoX:[.94,.19,.16],GizmoY:[.30,.86,.20],GizmoZ:[.18,.42,1],GizmoHighlight:[1,.87,.1]}))
+  asset('Materials/'+name,'Material',{shader:gizmoShader,properties:{baseColor:color},textures:{},renderState:{domain:'display',layer:1,rayVisible:false,depthTest:true,depthWrite:true}});
 const surface=(name,color,roughness=0.5,metallic=0)=>{const path='Materials/Workbench/'+name;return asset(path,'Material',material(color,roughness,metallic));};
 const ground=surface('Ground',[0.18,0.20,0.23]),cube=surface('Cube',[0.65,0.32,0.12],0.3,0.25),capsule=surface('Capsule',[0.15,0.35,0.55],0.25,0.4);
 const mesh=name=>({id:JSON.parse(fs.readFileSync(path.join(root,'../../engine/Content/Meshes',name+'.asset'),'utf8').split('\n')[1]).id,path:'/Engine/Meshes/'+name});
