@@ -1,13 +1,13 @@
 # Maple Circuit / 街区大奖赛
 
-使用 Afterlight 引擎现有功能制作的独立赛车项目，参考用户提供的 Maple Circuit 录屏。没有修改 `engine/`、引擎构建配置或 Afterlight 示例项目。赛车、环境和天空都是项目资产；车辆、AI、比赛规则、特效与 HUD 由项目 JavaScript 驱动。
+使用 Whimsical 引擎现有功能制作的独立赛车项目，参考用户提供的 Maple Circuit 录屏。没有修改 `engine/`、引擎构建配置或 Afterlight 示例项目。赛车、环境和天空都是项目资产；车辆、AI、比赛规则、特效与 HUD 由项目 JavaScript 驱动。
 
 ## 运行
 
 双击仓库根目录 `RunMapleCircuit.cmd`。也可以从仓库根目录运行：
 
 ```powershell
-.\build\bin\Release\Afterlight.exe --project Projects/MapleCircuit --width 1280 --height 800
+.\build\bin\Release\Whimsical.exe --project Projects/MapleCircuit --width 1280 --height 800
 ```
 
 点击 **START RACE** 或按 W / Enter，倒计时后发车。初始待发车状态不推进时间，首次着色器编译不会让对手提前开走。
@@ -61,13 +61,13 @@ python Projects/MapleCircuit/SourceArt/build.py
 node Projects/MapleCircuit/Tests/gameplay.test.cjs
 
 # 真正使用引擎物理和 Vulkan：四辆 AI 车完整三圈
-.\build\bin\Release\Afterlight.exe --project Projects/MapleCircuit --map /Game/Maps/Verification --frames 1650 --capture --validation --width 960 --height 600 --cvar "t.TimeScale=4"
+.\build\bin\Release\Whimsical.exe --project Projects/MapleCircuit --map /Game/Maps/Verification --frames 1650 --capture --validation --width 960 --height 600 --cvar "t.TimeScale=4"
 
 # 加速、漂移烟团、暂停、回正与重赛
-.\build\bin\Release\Afterlight.exe --project Projects/MapleCircuit --map /Game/Maps/ControlsVerification --frames 220 --capture --validation --width 960 --height 600
+.\build\bin\Release\Whimsical.exe --project Projects/MapleCircuit --map /Game/Maps/ControlsVerification --frames 220 --capture --validation --width 960 --height 600
 
 # 自动驶入漂移并冻结画面，供截图检查；不是正常游戏入口
-.\build\bin\Release\Afterlight.exe --project Projects/MapleCircuit --map /Game/Maps/DriftPreview --frames 240 --capture --width 1280 --height 800
+.\build\bin\Release\Whimsical.exe --project Projects/MapleCircuit --map /Game/Maps/DriftPreview --frames 240 --capture --width 1280 --height 800
 ```
 
 2026-09-06 验证结果：

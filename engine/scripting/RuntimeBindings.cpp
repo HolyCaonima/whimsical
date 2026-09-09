@@ -2,7 +2,7 @@
 #include "RuntimeHost.h"
 #include "scene/ScenePersistence.h"
 
-namespace afterlight {
+namespace whimsical {
 namespace {
 template <class T> T& stored(duk_context* c, const char* name) {
     duk_push_heap_stash(c);
@@ -329,4 +329,4 @@ void installRuntimeBindings(duk_context* c) {
     duk_put_prop_string(c, -2, "view");
     duk_pop(c);
 }
-} // namespace afterlight
+} // namespace whimsical

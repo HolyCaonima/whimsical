@@ -2,7 +2,7 @@
 #include "Math.h"
 #include <stdexcept>
 
-namespace afterlight {
+namespace whimsical {
 // Local and world transforms are TRS. Hierarchies never introduce shear.
 struct TransformPose {
     vec3 position{0};
@@ -30,4 +30,4 @@ inline TransformPose relativeTransform(const TransformPose& parent, const Transf
     return {(inverse * (world.position - parent.position)) / parent.scale,
             glm::normalize(inverse * world.rotation), world.scale / parent.scale};
 }
-} // namespace afterlight
+} // namespace whimsical

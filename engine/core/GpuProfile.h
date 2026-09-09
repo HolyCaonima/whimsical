@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-namespace afterlight {
+namespace whimsical {
 // Value-only report crossing from the render thread to the console.
 struct GpuScopeTiming {
     std::string name;
@@ -18,4 +18,4 @@ struct GpuProfile {
     std::string json() const;
 };
 double gpuTimestampMilliseconds(uint64_t begin, uint64_t end, uint32_t validBits, double periodNanoseconds);
-} // namespace afterlight
+} // namespace whimsical

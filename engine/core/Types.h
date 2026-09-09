@@ -13,7 +13,7 @@
 #include <cstdint>
 #include <optional>
 #include <algorithm>
-namespace afterlight {
+namespace whimsical {
 namespace ui {
 struct UiFrame;
 }
@@ -195,4 +195,4 @@ using FrameRef = std::shared_ptr<const Frame>;
 inline mat4 transform(const ProxyTransform& t) {
     return glm::translate(mat4(1), t.position) * glm::mat4_cast(t.rotation) * glm::scale(mat4(1), t.scale);
 }
-} // namespace afterlight
+} // namespace whimsical

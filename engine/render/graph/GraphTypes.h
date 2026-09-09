@@ -5,7 +5,7 @@
 // Vulkan vocabulary of the render graph. A pass names where it touches a resource and what
 // it does to the contents; this file is the only place that turns that pair into the
 // stage/access/layout triple a barrier is made of.
-namespace afterlight::rg {
+namespace whimsical::rg {
 struct AccessInfo {
     VkPipelineStageFlags2 stage = 0;
     VkAccessFlags2 access = 0;
@@ -23,4 +23,4 @@ struct AccessState {
     VkPipelineStageFlags2 flushedStages = 0; // reads already made visible to the last write
     VkAccessFlags2 flushedAccess = 0;
 };
-} // namespace afterlight::rg
+} // namespace whimsical::rg

@@ -3,7 +3,7 @@
 #include <array>
 #include "ShaderCompiler.h"
 
-namespace afterlight {
+namespace whimsical {
 struct alignas(16) GpuMaterial {
     glm::uvec4 info{0};
     std::array<vec4, ShaderAsset::MaxProperties> properties{};
@@ -17,4 +17,4 @@ struct MaterialBindings {
     std::vector<GpuMaterial> materials;
     static MaterialBindings build(const std::vector<Material>&);
 };
-} // namespace afterlight
+} // namespace whimsical

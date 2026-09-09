@@ -6,7 +6,7 @@
 #include <optional>
 #include <utility>
 
-namespace afterlight {
+namespace whimsical {
 class World;
 struct SceneStorage;
 // Mutable access exists only while the catalog executes a component lifecycle
@@ -95,4 +95,4 @@ template <class Runtime, class Document> ComponentContract component(const char*
     return c;
 }
 void registerBuiltinComponents(ComponentCatalog&);
-} // namespace afterlight
+} // namespace whimsical

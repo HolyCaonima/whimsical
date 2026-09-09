@@ -3,7 +3,7 @@
 #include "core/Math.h"
 #include <vector>
 
-namespace afterlight {
+namespace whimsical {
 struct StaticVertex {
     vec3 position, normal;
     vec2 uv;
@@ -21,4 +21,4 @@ struct TextureAsset final : Asset {
     std::vector<uint32_t> pixels;
     static std::shared_ptr<TextureAsset> decode(const std::string&, const Json& metadata);
 };
-} // namespace afterlight
+} // namespace whimsical

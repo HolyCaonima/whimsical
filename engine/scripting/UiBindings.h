@@ -3,10 +3,10 @@
 #include <memory>
 #include <functional>
 #include <string>
-namespace afterlight::ui {
+namespace whimsical::ui {
 class UiCore;
 }
-namespace afterlight {
+namespace whimsical {
 // Owns only this JS realm's documents and callbacks. Engine UI survives map reloads.
 class UiBindings {
     struct Impl;
@@ -18,4 +18,4 @@ class UiBindings {
     ~UiBindings();
     void setVisible(bool);
 };
-} // namespace afterlight
+} // namespace whimsical

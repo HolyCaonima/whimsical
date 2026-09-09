@@ -11,7 +11,7 @@ def run():
     output = ROOT / 'build' / 'ecs-gpu-test'
     output.mkdir(parents=True, exist_ok=True)
     with (output / 'run.log').open('w') as log:
-        subprocess.run([str(ROOT / 'build/bin/Release/Afterlight.exe'), '--ecs-smoke',
+        subprocess.run([str(ROOT / 'build/bin/Release/Whimsical.exe'), '--ecs-smoke',
                         '--width', '800', '--height', '500'], cwd=ROOT,
                        stdout=log, stderr=subprocess.STDOUT, check=True)
     report = json.loads((ROOT / 'captures/render-report.json').read_text())
@@ -38,7 +38,7 @@ def run():
                                                    startupMap='/Game/Empty', scripts=[])))
     (content / 'Empty.asset').write_text('ALAS1\n' + header + '\n' + json.dumps(scene))
     with (output / 'empty.log').open('w') as log:
-        subprocess.run([str(ROOT / 'build/bin/Release/Afterlight.exe'), '--project', str(project),
+        subprocess.run([str(ROOT / 'build/bin/Release/Whimsical.exe'), '--project', str(project),
                         '--frames', '60', '--capture', '--validation', '--width', '800', '--height', '500'],
                        cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True)
     empty = json.loads((ROOT / 'captures/render-report.json').read_text())

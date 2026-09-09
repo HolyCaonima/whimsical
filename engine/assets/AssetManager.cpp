@@ -3,7 +3,7 @@
 #include <sstream>
 #include <algorithm>
 
-namespace afterlight {
+namespace whimsical {
 namespace {
 AssetHeader readHeader(std::istream& file) {
     std::string magic, header;
@@ -362,4 +362,4 @@ AssetRef AssetManager::saveImpl(const AssetPath& path, AssetHeader header, const
     s.cache.clear();
     return bound(s, key);
 }
-} // namespace afterlight
+} // namespace whimsical

@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <functional>
 
-namespace afterlight {
+namespace whimsical {
 MaterialBindings MaterialBindings::build(const std::vector<Material>& instances) {
     MaterialBindings result;
     for (const auto& material : instances) {
@@ -36,4 +36,4 @@ MaterialBindings MaterialBindings::build(const std::vector<Material>& instances)
     }
     return result;
 }
-} // namespace afterlight
+} // namespace whimsical

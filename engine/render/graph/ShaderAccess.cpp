@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace afterlight::rg {
+namespace whimsical::rg {
 namespace {
 enum Op : uint16_t {
     EntryPoint = 15,
@@ -312,4 +312,4 @@ void merge(std::vector<ShaderAccess>& into, const std::vector<ShaderAccess>& fro
         }
     }
 }
-} // namespace afterlight::rg
+} // namespace whimsical::rg

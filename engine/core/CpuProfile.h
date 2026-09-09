@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-namespace afterlight {
+namespace whimsical {
 struct CpuScopeTiming {
     std::string name;
     int parent = -1;
@@ -55,4 +55,4 @@ class CpuScope {
     CpuScope(const CpuScope&) = delete;
     CpuScope& operator=(const CpuScope&) = delete;
 };
-} // namespace afterlight
+} // namespace whimsical

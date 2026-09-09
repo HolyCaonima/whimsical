@@ -1,7 +1,7 @@
 #pragma once
 #include "ConsoleRegistry.h"
 #include "Types.h"
-namespace afterlight {
+namespace whimsical {
 // Domain registration and the Frame boundary are separate from the generic registry/UI.
 class EngineSettings {
     ConsoleRegistry& vars_;
@@ -22,4 +22,4 @@ class EngineSettings {
         return vars_.get<double>("t.TimeScale");
     }
 };
-} // namespace afterlight
+} // namespace whimsical

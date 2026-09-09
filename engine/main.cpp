@@ -19,7 +19,7 @@
 #include <algorithm>
 #include <cmath>
 #include <mutex>
-using namespace afterlight;
+using namespace whimsical;
 int main(int argc, char** argv) {
     std::cout.setf(std::ios::unitbuf);
     try {
@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
         std::vector<std::string> startupCommands;
         uint32_t stress = 0;
         std::filesystem::path projectPath =
-            std::filesystem::path(AFTERLIGHT_ROOT) / "Projects" / "Afterlight";
+            std::filesystem::path(WHIMSICAL_ROOT) / "Projects" / "Afterlight";
         std::string mapPath;
         for (int i = 1; i < argc; i++) {
             std::string arg = argv[i];
@@ -120,7 +120,7 @@ int main(int argc, char** argv) {
                     throw std::runtime_error("Missing value for " + arg);
                 startupCommands.push_back(argv[++i]);
             } else if (arg == "--help") {
-                std::cout << "Afterlight [--frames N] [--capture] [--width 1280] [--height 800] [--view "
+                std::cout << "Whimsical [--frames N] [--capture] [--width 1280] [--height 800] [--view "
                              "0..7] [--no-hud] [--validation] [--no-validation] [--present "
                              "fifo|mailbox|immediate] [--demo] [--smoke] [--ecs-smoke] [--stress N] "
                              "[--full-upload] "
@@ -161,11 +161,11 @@ int main(int argc, char** argv) {
             throw std::runtime_error("--console-smoke requires its own run");
         if (ecsSmoke && (smoke || demo || consoleSmoke || !options.audit.empty()))
             throw std::runtime_error("--ecs-smoke requires its own run");
-        std::cout << "AFTERLIGHT | C++ engine / JavaScript gameplay / Vulkan RT\n";
+        std::cout << "WHIMSICAL | C++ engine / JavaScript gameplay / Vulkan RT\n";
         Window window(width, height);
         Project project(projectPath);
         AssetManager assets(project.content());
-        assets.mount("/Engine", std::filesystem::path(AFTERLIGHT_ROOT) / "engine/Content", false, true);
+        assets.mount("/Engine", std::filesystem::path(WHIMSICAL_ROOT) / "engine/Content", false, true);
         wchar_t windows[MAX_PATH];
         GetWindowsDirectoryW(windows, MAX_PATH);
         assets.mount("/SystemFonts", std::filesystem::path(windows) / "Fonts", false);
@@ -295,7 +295,7 @@ int main(int argc, char** argv) {
             console.log(report);
             std::cout << report;
             try {
-                const auto directory = std::filesystem::path(AFTERLIGHT_ROOT) / "captures";
+                const auto directory = std::filesystem::path(WHIMSICAL_ROOT) / "captures";
                 std::filesystem::create_directories(directory);
                 std::ofstream json(directory / "cpu-profile.json"), text(directory / "cpu-profile.txt");
                 json << lastCpuProfile->json();
@@ -340,7 +340,7 @@ int main(int argc, char** argv) {
             console.log(report, !lastGpuProfile->error.empty());
             std::cout << report;
             try {
-                const auto directory = std::filesystem::path(AFTERLIGHT_ROOT) / "captures";
+                const auto directory = std::filesystem::path(WHIMSICAL_ROOT) / "captures";
                 std::filesystem::create_directories(directory);
                 std::ofstream json(directory / "gpu-profile.json"), text(directory / "gpu-profile.txt");
                 json << lastGpuProfile->json();

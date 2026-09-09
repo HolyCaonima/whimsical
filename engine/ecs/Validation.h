@@ -2,7 +2,7 @@
 #include "Components.h"
 #include <stdexcept>
 
-namespace afterlight {
+namespace whimsical {
 inline void validateRigidPose(const PhysicsPose& p) {
     float q = glm::dot(p.rotation, p.rotation);
     if (!std::isfinite(p.position.x) || !std::isfinite(p.position.y) || !std::isfinite(p.position.z) ||
@@ -14,4 +14,4 @@ inline void validateRenderAppearance(const RenderComponent& r) {
         if (!std::isfinite(r.overlayColor[i]) || r.overlayColor[i] < 0 || r.overlayColor[i] > 1)
             throw std::invalid_argument("Overlay colour must be in [0, 1]");
 }
-} // namespace afterlight
+} // namespace whimsical

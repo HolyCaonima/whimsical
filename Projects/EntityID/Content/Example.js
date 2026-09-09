@@ -1,4 +1,4 @@
-// Run: Afterlight.exe --project Projects/EntityID --width 640 --height 480 --frames 90 --validation
+// Run: Whimsical.exe --project Projects/EntityID --width 640 --height 480 --frames 90 --validation
 var rt, request, nearBox, farBox, writer, phase = 0, previous;
 function expect(ok, message) {
     if (!ok) throw new Error("EntityID example: " + message);

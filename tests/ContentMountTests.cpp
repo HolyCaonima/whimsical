@@ -5,7 +5,7 @@
 #include <RmlUi/Core.h>
 #include <fstream>
 #include <iostream>
-using namespace afterlight;
+using namespace whimsical;
 namespace fs = std::filesystem;
 static void check(bool ok, const char* message) {
     if (!ok)
@@ -59,7 +59,7 @@ static void fixture(const fs::path& root, int value) {
 }
 int main() {
     try {
-        auto root = fs::path(AFTERLIGHT_ROOT) / "build" / ("content-mounts-" + newPersistentId());
+        auto root = fs::path(WHIMSICAL_ROOT) / "build" / ("content-mounts-" + newPersistentId());
         fixture(root / "a", 1);
         fixture(root / "b", 2);
         AssetManager assets;
@@ -70,7 +70,7 @@ int main() {
             "var roots = " +
             Json{{"a", (root / "a").generic_u8string()}, {"b", (root / "b").generic_u8string()}}.dump() +
             ";");
-        std::ifstream example(fs::path(AFTERLIGHT_ROOT) / "tests/ContentMountsExample.js");
+        std::ifstream example(fs::path(WHIMSICAL_ROOT) / "tests/ContentMountsExample.js");
         std::string source((std::istreambuf_iterator<char>(example)), {});
         scripts.execute(source, "ContentMountsExample.js");
         auto a = assets.reference(AssetPath("/A/value"));

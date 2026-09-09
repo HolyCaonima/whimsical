@@ -1,6 +1,6 @@
 #pragma once
 #include <duktape.h>
-namespace afterlight {
+namespace whimsical {
 // Scene, simulation, view and authoring access share the existing World/Catalog contracts.
 void installRuntimeBindings(duk_context*);
-} // namespace afterlight
+} // namespace whimsical

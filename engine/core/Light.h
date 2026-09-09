@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace afterlight {
+namespace whimsical {
 // The packed GPU ABI and sampling math are shared with GLSL, avoiding a second
 // reference implementation that can agree with tests while the renderer diverges.
 #include "lighting/LightSampling.h"
@@ -76,4 +76,4 @@ inline Light packLight(const LightComponent& v, vec3 position, quat rotation) {
 inline float lightProposalPower(const Light& l) {
     return glm::dot(vec3(l.colorIntensity), vec3(.2126f,.7152f,.0722f))*l.colorIntensity.w;
 }
-} // namespace afterlight
+} // namespace whimsical

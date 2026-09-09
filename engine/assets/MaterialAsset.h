@@ -2,8 +2,8 @@
 #include "StaticMesh.h"
 #include "Material.h"
 
-namespace afterlight {
+namespace whimsical {
 struct MaterialAsset final : Asset {
     Material parameters;
 };
-} // namespace afterlight
+} // namespace whimsical

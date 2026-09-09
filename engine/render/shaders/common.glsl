@@ -1,5 +1,5 @@
-#ifndef AFTERLIGHT_COMMON
-#define AFTERLIGHT_COMMON
+#ifndef WHIMSICAL_COMMON
+#define WHIMSICAL_COMMON
 #extension GL_EXT_nonuniform_qualifier : require
 const float PI = 3.14159265359;
 struct OutlineEntry {

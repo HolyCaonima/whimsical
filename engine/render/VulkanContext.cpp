@@ -2,7 +2,7 @@
 #include <iostream>
 #include <cstring>
 #include <algorithm>
-namespace afterlight {
+namespace whimsical {
 static VKAPI_ATTR VkBool32 VKAPI_CALL callback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
                                                VkDebugUtilsMessageTypeFlagsEXT,
                                                const VkDebugUtilsMessengerCallbackDataEXT* data, void* user) {
@@ -13,7 +13,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL callback(VkDebugUtilsMessageSeverityFlagBi
     return VK_FALSE;
 }
 void VulkanContext::initialize(HWND hwnd, bool validation) {
-    const std::string bundledLayers = std::string(AFTERLIGHT_ROOT) + "/third_party/validation";
+    const std::string bundledLayers = std::string(WHIMSICAL_ROOT) + "/third_party/validation";
     if (GetEnvironmentVariableA("VK_LAYER_PATH", nullptr, 0) == 0 &&
         GetFileAttributesA((bundledLayers + "/VkLayer_khronos_validation.json").c_str()) !=
             INVALID_FILE_ATTRIBUTES)
@@ -41,8 +41,8 @@ void VulkanContext::initialize(HWND hwnd, bool validation) {
         extensions.push_back(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
     }
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-    app.pApplicationName = "Afterlight";
-    app.pEngineName = "Afterlight Engine";
+    app.pApplicationName = "Whimsical";
+    app.pEngineName = "Whimsical Engine";
     app.apiVersion = VK_API_VERSION_1_3;
     const char* layer = "VK_LAYER_KHRONOS_validation";
     VkDebugUtilsMessengerCreateInfoEXT dbg{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
@@ -357,4 +357,4 @@ void VulkanContext::barrier(VkCommandBuffer c) {
     d.pMemoryBarriers = &b;
     vkCmdPipelineBarrier2(c, &d);
 }
-} // namespace afterlight
+} // namespace whimsical

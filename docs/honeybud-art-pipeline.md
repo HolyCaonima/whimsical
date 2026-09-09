@@ -5,7 +5,7 @@
 双击根目录 `RunHoneybud.cmd`，或运行：
 
 ```powershell
-.\build\bin\Release\Afterlight.exe --map /Game/Maps/HoneybudCourt
+.\build\bin\Release\Whimsical.exe --map /Game/Maps/HoneybudCourt
 ```
 
 Map 使用现有角色移动、相机和跟随狗逻辑。初始为庭院全景；滚轮缩放，中键旋转，F 恢复跟随。原来的 Rain Court 仍可通过 `Run.cmd` 启动。

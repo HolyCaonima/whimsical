@@ -2,7 +2,7 @@
 #include "core/CpuProfile.h"
 #include <chrono>
 
-namespace afterlight {
+namespace whimsical {
 RenderAuditWorker::RenderAuditWorker(uint32_t width, uint32_t height) : width_(width), height_(height) {
     for (auto& buffer : buffers_)
         buffer.resize(size_t(width) * height * 4 * RenderAudit::signalCount);
@@ -84,4 +84,4 @@ void RenderAuditWorker::run() {
         ready_.notify_all();
     }
 }
-} // namespace afterlight
+} // namespace whimsical

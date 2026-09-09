@@ -59,7 +59,7 @@ def run():
         set_point_lights(scene, active)
         write_asset(project / "Content/Test.asset", "Map", scene)
         name = tag + "-" + case
-        args = [str(ROOT / "build/bin/Release/Afterlight.exe"), "--project", str(project),
+        args = [str(ROOT / "build/bin/Release/Whimsical.exe"), "--project", str(project),
                 "--frames", "96", "--width", "643", "--height", "403", "--validation",
                 "--no-hud", "--present", "immediate", "--capture", "--audit", name]
         print("Validating " + name, flush=True)

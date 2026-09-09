@@ -9,7 +9,7 @@
 #include <vector>
 #include <emmintrin.h>
 
-namespace afterlight {
+namespace whimsical {
 // GPU readback of unfiltered linear signals; no tone mapping or history filtering is applied here.
 struct RenderAudit {
     // Signals are named, not numbered: the renderer resolves each name to a render graph
@@ -98,4 +98,4 @@ struct RenderAudit {
         report.close();
     }
 };
-} // namespace afterlight
+} // namespace whimsical

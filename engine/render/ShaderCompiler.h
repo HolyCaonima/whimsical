@@ -4,7 +4,7 @@
 #include <map>
 #include <array>
 
-namespace afterlight {
+namespace whimsical {
 // Ray queries execute in compute shaders, so link the live Shader set into each
 // compute pass. Raster links a single Shader. There are no Material permutations.
 class ShaderCompiler {
@@ -24,4 +24,4 @@ class ShaderCompiler {
     std::map<std::string, std::vector<uint32_t>> programs_;
     std::filesystem::path directory_;
 };
-} // namespace afterlight
+} // namespace whimsical

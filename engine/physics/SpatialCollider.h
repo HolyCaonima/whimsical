@@ -2,7 +2,7 @@
 #include "PhysicsScene.h"
 #include "core/SpatialTransform.h"
 
-namespace afterlight {
+namespace whimsical {
 // Primitive collision supports orthogonal boxes and uniformly scaled capsules.
 // Keep authoring dimensions separate from the derived world-space shape.
 inline ColliderShape scaledCollider(const ColliderShape& local, vec3 scale) {
@@ -16,4 +16,4 @@ inline ColliderShape scaledCollider(const ColliderShape& local, vec3 scale) {
 inline ShapeQuery worldCollider(const ColliderShape& local, const TransformPose& p) {
     return {scaledCollider(local, p.scale), {p.position, p.rotation}};
 }
-} // namespace afterlight
+} // namespace whimsical

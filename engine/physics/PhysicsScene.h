@@ -6,7 +6,7 @@
 #include <thread>
 #include <vector>
 
-namespace afterlight {
+namespace whimsical {
 struct BodyHandle {
     uint32_t slot = UINT32_MAX, generation = 0;
     explicit operator bool() const {
@@ -140,4 +140,4 @@ class PhysicsScene {
     // Keep feet fixed; reject expansion into ceilings or other bodies.
     bool resizeCharacter(BodyHandle, float height);
 };
-} // namespace afterlight
+} // namespace whimsical

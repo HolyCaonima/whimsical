@@ -93,7 +93,7 @@ def reference(kind,c,p,eye):
 def capture(project,scene,tag,case,extra=(),frames=128):
     write_asset(project/'Content/Test.asset','Map',scene)
     name=tag+'-'+case
-    args=[str(ROOT/'build/bin/Release/Afterlight.exe'),'--project',str(project),'--frames',str(frames),
+    args=[str(ROOT/'build/bin/Release/Whimsical.exe'),'--project',str(project),'--frames',str(frames),
           '--width','480','--height','303','--validation','--no-hud','--present','immediate','--capture','--audit',name,*extra]
     print('Validating '+name,flush=True)
     with (project/(case+'.log')).open('w') as log:

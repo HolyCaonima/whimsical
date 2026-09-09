@@ -3,7 +3,7 @@
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
-namespace afterlight {
+namespace whimsical {
 double gpuTimestampMilliseconds(uint64_t begin, uint64_t end, uint32_t validBits, double period) {
     if (!validBits || validBits > 64)
         throw std::invalid_argument("Unsupported GPU timestamp width");
@@ -44,4 +44,4 @@ std::string GpuProfile::json() const {
                 {"scopes", Json::array(std::move(rows))}}
         .dump();
 }
-} // namespace afterlight
+} // namespace whimsical

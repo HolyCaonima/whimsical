@@ -2,7 +2,7 @@
 #include <sstream>
 #include <stdexcept>
 
-namespace afterlight::rg {
+namespace whimsical::rg {
 FormatInfo formatInfo(Format format) {
     switch (format) {
     case Format::RGBA16F:
@@ -125,4 +125,4 @@ std::map<std::string, std::string> Registry::glsl() const {
             {"graph.compute.glsl", sections[1].str()},
             {"graph.rtxdi.glsl", sections[2].str()}};
 }
-} // namespace afterlight::rg
+} // namespace whimsical::rg

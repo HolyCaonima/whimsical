@@ -8,7 +8,7 @@
 #include <variant>
 #include <vector>
 
-namespace afterlight {
+namespace whimsical {
 using ConsoleValue = std::variant<bool, int, double, std::string>;
 enum class CVarSource { Default, Config, CommandLine, Console };
 enum CVarFlags : unsigned { CVarNone = 0, CVarArchive = 1, CVarReadOnly = 2, CVarRestart = 4 };
@@ -69,4 +69,4 @@ class ConsoleRegistry {
     std::vector<std::string> search(const std::string& query, bool includeHelp) const;
     bool started_ = false;
 };
-} // namespace afterlight
+} // namespace whimsical

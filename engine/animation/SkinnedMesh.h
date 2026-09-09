@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 #include <vector>
-namespace afterlight {
+namespace whimsical {
 struct SkinVertex {
     vec3 position, normal, color;
     glm::uvec4 joints;
@@ -26,4 +26,4 @@ struct DeformedVertex {
     vec3 position, normal;
 };
 std::vector<DeformedVertex> deformSkin(const SkinnedMesh&, const std::vector<mat4>& palette);
-} // namespace afterlight
+} // namespace whimsical

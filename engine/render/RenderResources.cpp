@@ -1,7 +1,7 @@
 #include "RenderResources.h"
 #include <Rtxdi/RtxdiParameters.h>
 
-namespace afterlight {
+namespace whimsical {
 using namespace rg;
 
 namespace {
@@ -224,4 +224,4 @@ OutputResources::OutputResources(Registry& registry, bool captureEnabled, uint32
 RenderResources::RenderResources(bool captureEnabled, uint32_t auditSignals)
     : scene(registry), gbuffer(registry), di(registry), gi(registry), shading(registry),
       output(registry, captureEnabled, auditSignals) {}
-} // namespace afterlight
+} // namespace whimsical

@@ -1,7 +1,7 @@
 #pragma once
 #include "ShaderAsset.h"
 
-namespace afterlight {
+namespace whimsical {
 class AssetManager;
 struct TextureAsset;
 // CPU instances contain no descriptor, pipeline or GPU table indices.
@@ -24,4 +24,4 @@ struct MaterialDefinition {
     Material resolve(AssetManager&) const;
     static MaterialDefinition capture(const Material&, const AssetManager&);
 };
-} // namespace afterlight
+} // namespace whimsical

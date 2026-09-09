@@ -4,7 +4,7 @@
 #include <memory>
 #include <stdexcept>
 
-namespace afterlight {
+namespace whimsical {
 Json::Json(double v) : value_(v) {
     if (!std::isfinite(v))
         throw std::invalid_argument("JSON number must be finite");
@@ -100,8 +100,8 @@ static void push(duk_context* c, const Json& j) {
 }
 std::string Json::dump() const {
     auto c = heap();
-    afterlight::push(c.get(), *this);
+    whimsical::push(c.get(), *this);
     duk_json_encode(c.get(), -1);
     return duk_get_string(c.get(), -1);
 }
-} // namespace afterlight
+} // namespace whimsical

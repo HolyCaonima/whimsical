@@ -2,7 +2,7 @@
 #include "Registry.h"
 #include "render/VulkanContext.h"
 
-namespace afterlight::rg {
+namespace whimsical::rg {
 // Reflection describes operations, never coverage. Even a write-only shader may update
 // just one pixel. A binding-only use (e.g. imageSize) needs storage but no old contents.
 struct ShaderAccess {
@@ -17,4 +17,4 @@ struct Program {
 };
 std::vector<ShaderAccess> reflect(const Registry&, const uint32_t* words, size_t count);
 void merge(std::vector<ShaderAccess>& into, const std::vector<ShaderAccess>& from);
-} // namespace afterlight::rg
+} // namespace whimsical::rg

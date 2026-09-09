@@ -3,7 +3,7 @@
 #include <array>
 #include <string>
 #include <vector>
-namespace afterlight {
+namespace whimsical {
 // Platform input data, independent of World, animation and rendering.
 struct Input {
     std::vector<ui::InputEvent> uiEvents;
@@ -15,4 +15,4 @@ struct Input {
     float mouseX = 0, mouseY = 0, deltaX = 0, deltaY = 0, wheel = 0;
     uint32_t width = 1280, height = 800;
 };
-} // namespace afterlight
+} // namespace whimsical

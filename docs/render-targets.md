@@ -98,7 +98,7 @@ if (result !== null && result.status === "ready") {
 ## 可运行示例
 
 ```powershell
-.\build\bin\Release\Afterlight.exe --project Projects/EntityID --width 640 --height 480 --frames 90 --validation
+.\build\bin\Release\Whimsical.exe --project Projects/EntityID --width 640 --height 480 --frames 90 --validation
 ```
 
 [`Example.js`](../Projects/EntityID/Content/Example.js) 创建两个互相遮挡的 box，验证中心 ID、远处可见边缘、背景 0，再隐藏近处物体验证远处 ID，最后移除组件验证通用 RT 保留内容回读。成功输出 `EntityID example PASS`。此示例不依赖物理拾取，也不修改其他项目。

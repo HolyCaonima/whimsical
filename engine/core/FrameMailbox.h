@@ -2,7 +2,7 @@
 #include "Types.h"
 #include <mutex>
 #include <condition_variable>
-namespace afterlight {
+namespace whimsical {
 // Latest-wins snapshot channel between the simulation and the renderer.
 //
 // Publishing never blocks on the GPU: a newer snapshot simply replaces an unread one,
@@ -68,4 +68,4 @@ class FrameMailbox {
         ready_.notify_all();
     }
 };
-} // namespace afterlight
+} // namespace whimsical

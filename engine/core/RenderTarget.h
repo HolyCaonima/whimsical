@@ -4,7 +4,7 @@
 #include <mutex>
 #include <optional>
 
-namespace afterlight {
+namespace whimsical {
 // Version of completed GPU contents, delivered without exposing a mapped GPU pointer.
 struct TextureContents {
     uint64_t rtVersion = 0, contentVersion = 0, renderFrame = 0, sourceTick = 0;
@@ -78,4 +78,4 @@ class RenderTargetAccess {
     std::vector<std::shared_ptr<PixelReadRequest>> snapshot(uint64_t tick);
 };
 Json textureContentsJson(const TextureContents&);
-} // namespace afterlight
+} // namespace whimsical

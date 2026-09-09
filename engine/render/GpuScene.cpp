@@ -4,7 +4,7 @@
 #include <cstring>
 #include <set>
 
-namespace afterlight {
+namespace whimsical {
 namespace {
 struct alignas(16) GpuInstance {
     mat4 model, previousModel;
@@ -699,4 +699,4 @@ void GpuScene::recordDraws(VkCommandBuffer c, const Frame& frame,
         vkCmdDrawIndexed(c, mesh.indexCount, 1, mesh.firstIndex, 0, slot);
     }
 }
-} // namespace afterlight
+} // namespace whimsical

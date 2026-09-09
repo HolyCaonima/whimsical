@@ -6,7 +6,7 @@
 #include <mutex>
 #include <thread>
 
-namespace afterlight {
+namespace whimsical {
 // Lossless, bounded CPU consumer. The renderer hands over completed GPU readbacks;
 // only this worker touches the accumulator and output files. Two reusable CPU slots
 // overlap copying with analysis without growing memory or dropping regression samples.
@@ -33,4 +33,4 @@ class RenderAuditWorker {
     double cpuMilliseconds_ = 0;
     std::thread worker_;
 };
-} // namespace afterlight
+} // namespace whimsical

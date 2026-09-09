@@ -15,7 +15,7 @@
 #include <fstream>
 #include <iostream>
 
-namespace afterlight {
+namespace whimsical {
 namespace {
 static_assert(sizeof(GpuGlobals) == 336, "Globals ABI mismatch");
 } // namespace
@@ -271,7 +271,7 @@ struct Renderer::Impl {
     }
 
     void saveCapture() {
-        std::filesystem::path dir = std::filesystem::path(AFTERLIGHT_ROOT) / "captures";
+        std::filesystem::path dir = std::filesystem::path(WHIMSICAL_ROOT) / "captures";
         if (!options.audit.empty())
             dir /= options.audit;
         std::filesystem::create_directories(dir);
@@ -602,7 +602,7 @@ struct Renderer::Impl {
             renderTargets->collect();
             if (audit) {
                 CpuScope auditScope("Audit / Drain Worker and Save");
-                const auto output = std::filesystem::path(AFTERLIGHT_ROOT) / "captures" / options.audit;
+                const auto output = std::filesystem::path(WHIMSICAL_ROOT) / "captures" / options.audit;
                 auditSamples = audit->finish(output).samples;
             }
             profiler->resolve();
@@ -649,4 +649,4 @@ std::optional<CpuProfile> Renderer::takeCpuProfile() {
 uint32_t Renderer::errors() const {
     return impl_->vk.validationErrors.load();
 }
-} // namespace afterlight
+} // namespace whimsical

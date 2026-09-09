@@ -6,7 +6,7 @@
 #include "assets/EngineAssets.h"
 #include <algorithm>
 
-namespace afterlight {
+namespace whimsical {
 namespace {
 Json vector(vec3 v) {
     return Json::array({v.x, v.y, v.z});
@@ -600,4 +600,4 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
         "data", [](const Json& j) { return ScriptData{j}; }, [](const ScriptData& v) { return v.value; },
         [](const ScriptData& v) { (void)v.value.members(); }));
 }
-} // namespace afterlight
+} // namespace whimsical

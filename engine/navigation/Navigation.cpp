@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
-namespace afterlight {
+namespace whimsical {
 namespace {
 QueryFilter blockers(const NavigationAgent& a) {
     QueryFilter f;
@@ -142,4 +142,4 @@ std::vector<vec3> Navigation::findPath(const PhysicsScene& scene, vec3 start, ve
     }
     return result;
 }
-} // namespace afterlight
+} // namespace whimsical

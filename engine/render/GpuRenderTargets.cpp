@@ -2,7 +2,7 @@
 #include "graph/ImageReadback.h"
 #include <cstring>
 
-namespace afterlight {
+namespace whimsical {
 namespace {
 rg::Format graphFormat(PixelFormat format) {
     switch (format) {
@@ -202,4 +202,4 @@ void GpuRenderTargets::collect() {
     }
     reads_.clear();
 }
-} // namespace afterlight
+} // namespace whimsical

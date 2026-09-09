@@ -2,7 +2,7 @@
 #include "scene/ScenePersistence.h"
 #include "uiCore/UiCore.h"
 
-namespace afterlight {
+namespace whimsical {
 RuntimeHost::RuntimeHost(World& world, AssetManager& assets, ui::UiCore* ui)
     : world_(world), assets_(assets), ui_(ui) {
     simulation_ = realm();
@@ -269,4 +269,4 @@ void RuntimeHost::executeHost(const std::string& source, const std::string& labe
     application_->execute(source, label);
     processRequests();
 }
-} // namespace afterlight
+} // namespace whimsical

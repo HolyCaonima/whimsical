@@ -5,12 +5,12 @@
 #include <string>
 #include <stdexcept>
 #include <atomic>
-namespace afterlight {
+namespace whimsical {
 inline void vkCheck(VkResult r, const char* operation) {
     if (r != VK_SUCCESS)
         throw std::runtime_error(std::string(operation) + " failed: " + std::to_string(r));
 }
-#define VK_CHECK(x) ::afterlight::vkCheck((x), #x)
+#define VK_CHECK(x) ::whimsical::vkCheck((x), #x)
 // Allocation identity survives handle reuse. Owners that create raw Vulkan objects use
 // this same source of identities when constructing their wrappers.
 inline uint64_t nextResourceGeneration() {
@@ -67,4 +67,4 @@ class VulkanContext {
     static void barrier(VkCommandBuffer);
     uint32_t memoryType(uint32_t, VkMemoryPropertyFlags required, VkMemoryPropertyFlags preferred = 0) const;
 };
-} // namespace afterlight
+} // namespace whimsical

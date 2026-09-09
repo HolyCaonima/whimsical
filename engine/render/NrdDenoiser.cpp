@@ -4,7 +4,7 @@
 #include <cstring>
 #include <algorithm>
 #include <iostream>
-namespace afterlight {
+namespace whimsical {
 static void nrdCheck(nrd::Result r) {
     if (r != nrd::Result::SUCCESS)
         throw std::runtime_error("NRD API failed: " + std::to_string(uint32_t(r)));
@@ -316,4 +316,4 @@ void NrdDenoiser::dispatch(VkCommandBuffer command,
     previousProjection_ = projection;
     first_ = false;
 }
-} // namespace afterlight
+} // namespace whimsical

@@ -2,7 +2,7 @@
 #include "Validation.h"
 #include "core/CpuProfile.h"
 #include <algorithm>
-namespace afterlight {
+namespace whimsical {
 static void validateJoints(const SceneStorage& s, Entity e, const std::vector<PhysicsPose>& joints) {
     s.registry.get<Transform>(e);
     for (const auto& p : joints)
@@ -297,4 +297,4 @@ void AnimationSystem::update(float dt) {
         batch.commit();
     }
 }
-} // namespace afterlight
+} // namespace whimsical

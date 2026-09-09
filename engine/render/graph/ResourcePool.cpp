@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <map>
 
-namespace afterlight::rg {
+namespace whimsical::rg {
 namespace {
 VkFormat vulkanFormat(Format format) {
     switch (format) {
@@ -389,4 +389,4 @@ uint64_t ResourcePool::ownedBytes() const {
 uint64_t ResourcePool::declaredBytes() const {
     return declaredBytes_;
 }
-} // namespace afterlight::rg
+} // namespace whimsical::rg

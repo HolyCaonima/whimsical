@@ -14,7 +14,7 @@ profileGPU last
 ```powershell
 .\RunHoneybud.cmd --profile-gpu
 .\RunHoneybud.cmd --console --exec "profileGPU"
-.\build\bin\Release\Afterlight.exe --map /Game/Maps/HoneybudCourt --frames 1 --profile-gpu
+.\build\bin\Release\Whimsical.exe --map /Game/Maps/HoneybudCourt --frames 1 --profile-gpu
 ```
 
 启动请求测量首帧，可能包含历史初始化和 TLAS 首次构建。评估稳定运行时的成本，应在场景运行后输入控制台命令。这里只报告 GPU 时间戳区间，不把 CPU 提交时间或 FPS 换算成 GPU 耗时。

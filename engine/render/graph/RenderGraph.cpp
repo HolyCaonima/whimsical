@@ -2,7 +2,7 @@
 #include "core/CpuProfile.h"
 #include <algorithm>
 
-namespace afterlight::rg {
+namespace whimsical::rg {
 AccessInfo accessInfo(Access access, Usage usage) {
     AccessInfo info;
     const bool reads = consumes(usage), writes = produces(usage);
@@ -626,4 +626,4 @@ void RenderGraph::execute(VkCommandBuffer command, GpuProfiler& profiler) {
     }
     handover(command);
 }
-} // namespace afterlight::rg
+} // namespace whimsical::rg

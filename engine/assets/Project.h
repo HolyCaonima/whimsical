@@ -2,7 +2,7 @@
 #include "Asset.h"
 #include <filesystem>
 
-namespace afterlight {
+namespace whimsical {
 class Project {
     std::filesystem::path root_;
     std::string id_, name_;
@@ -40,4 +40,4 @@ class Project {
         return runOnStartup_;
     }
 };
-} // namespace afterlight
+} // namespace whimsical

@@ -3,7 +3,7 @@
 #include <random>
 #include <stdexcept>
 
-namespace afterlight {
+namespace whimsical {
 void validatePersistentId(const std::string& id) {
     if (id.size() != 32 || id.find_first_not_of("0123456789abcdef") != std::string::npos)
         throw std::invalid_argument("Persistent ID must be 32 lowercase hex digits: " + id);
@@ -79,4 +79,4 @@ AssetHeader AssetHeader::fromJson(const Json& j) {
         throw std::invalid_argument("Inline asset cannot declare an external payload address");
     return h;
 }
-} // namespace afterlight
+} // namespace whimsical

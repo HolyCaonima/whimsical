@@ -3,7 +3,7 @@
 #include "ui/Console.h"
 #include <stdexcept>
 #include <iostream>
-namespace afterlight {
+namespace whimsical {
 // Drives the real Win32 message -> text input -> console -> Frame route.
 class ConsoleSmoke {
     unsigned stage_ = 0;
@@ -81,4 +81,4 @@ class ConsoleSmoke {
         return stage_ == 10;
     }
 };
-} // namespace afterlight
+} // namespace whimsical

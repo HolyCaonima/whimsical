@@ -1,7 +1,7 @@
 #pragma once
 #include "RenderGraph.h"
 
-namespace afterlight::rg {
+namespace whimsical::rg {
 struct ImageReadback {
     ResourceRef source;
     VkDeviceSize offset = VK_WHOLE_SIZE; // Append after the preceding image when omitted.
@@ -33,4 +33,4 @@ inline void addImageReadback(RenderGraph& graph, const char* name, ResourceId de
             }
         });
 }
-} // namespace afterlight::rg
+} // namespace whimsical::rg

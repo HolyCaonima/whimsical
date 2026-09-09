@@ -1,5 +1,5 @@
-#ifndef AFTERLIGHT_LIGHT_SAMPLING
-#define AFTERLIGHT_LIGHT_SAMPLING
+#ifndef WHIMSICAL_LIGHT_SAMPLING
+#define WHIMSICAL_LIGHT_SAMPLING
 // Shared production math: GLSL shaders and the native physical integration tests.
 #ifdef __cplusplus
 #define LIGHT_INLINE inline

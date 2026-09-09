@@ -1,7 +1,7 @@
 #pragma once
 #include "SceneAsset.h"
 #include "assets/AssetManager.h"
-namespace afterlight {
+namespace whimsical {
 class World;
 class ScenePersistence {
     static void instantiate(World&, const SceneDocument&, AssetManager&);
@@ -23,4 +23,4 @@ class ScenePersistence {
     // Same path preserves the Map ID; Save As creates a new Map ID and keeps Object IDs.
     static AssetRef save(World&, AssetManager&, const AssetPath&, const std::string& name);
 };
-} // namespace afterlight
+} // namespace whimsical

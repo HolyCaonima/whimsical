@@ -4,7 +4,7 @@
 #include <memory>
 #include <vector>
 
-namespace afterlight::ui {
+namespace whimsical::ui {
 // Backend-neutral immutable resources. A mailbox drop cannot lose a creation or release command.
 struct Vertex {
     float x, y;
@@ -32,4 +32,4 @@ struct UiFrame {
     int width = 0, height = 0;
     std::vector<Draw> draws;
 };
-} // namespace afterlight::ui
+} // namespace whimsical::ui

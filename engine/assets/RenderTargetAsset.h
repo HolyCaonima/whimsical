@@ -1,7 +1,7 @@
 #pragma once
 #include "Asset.h"
 
-namespace afterlight {
+namespace whimsical {
 enum class PixelFormat { R32Uint, R32Float, RGBA8, RGBA32Float };
 const char* pixelFormatName(PixelFormat);
 uint32_t pixelBytes(PixelFormat);
@@ -13,4 +13,4 @@ struct RenderTargetAsset final : Asset {
     PixelFormat format = PixelFormat::R32Uint;
     static std::shared_ptr<RenderTargetAsset> decode(const std::string&);
 };
-} // namespace afterlight
+} // namespace whimsical

@@ -2,7 +2,7 @@
 #include "Asset.h"
 #include "core/Math.h"
 
-namespace afterlight {
+namespace whimsical {
 enum class PropertyType { Float = 1, Vec2, Vec3, Vec4 };
 enum class MaterialModel { MetallicRoughness };
 enum class SurfaceMode { Opaque, Masked };
@@ -28,4 +28,4 @@ struct ShaderAsset final : Asset {
     ShaderRenderState renderState;
     static std::shared_ptr<ShaderAsset> decode(const Json& metadata, const std::string& source);
 };
-} // namespace afterlight
+} // namespace whimsical

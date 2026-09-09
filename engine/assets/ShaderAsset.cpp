@@ -3,7 +3,7 @@
 #include <regex>
 #include <stdexcept>
 
-namespace afterlight {
+namespace whimsical {
 std::shared_ptr<ShaderAsset> ShaderAsset::decode(const Json& metadata, const std::string& source) {
     auto shader = std::make_shared<ShaderAsset>();
     shader->source = source;
@@ -61,4 +61,4 @@ std::shared_ptr<ShaderAsset> ShaderAsset::decode(const Json& metadata, const std
         throw std::invalid_argument("Shader alpha cutoff must be in [0, 1]");
     return shader;
 }
-} // namespace afterlight
+} // namespace whimsical

@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace afterlight::animation::ai4animation {
+namespace whimsical::animation::ai4animation {
 const std::vector<vec3>& ControllerAsset::guidance(const Context& c) const {
     auto rule = std::find_if(actions.begin(), actions.end(),
                              [&](const GuidanceRule& r) { return r.action == c.input.action; });
@@ -173,4 +173,4 @@ ControllerAsset::decode(std::istream& file, std::shared_ptr<const OnnxModel> net
 std::unique_ptr<Solver> ControllerResource::createSolver() const {
     return std::make_unique<Controller>(data);
 }
-} // namespace afterlight::animation::ai4animation
+} // namespace whimsical::animation::ai4animation

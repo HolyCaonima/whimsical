@@ -5,7 +5,7 @@
 #include "platform/FileDialog.h"
 #include <deque>
 
-namespace afterlight {
+namespace whimsical {
 // Application composition for one active scene. Realms execute code; the host owns
 // their lifetimes, scene transitions, simulation scheduling and the presented view.
 class RuntimeHost {
@@ -94,4 +94,4 @@ class RuntimeHost {
     void execute(const std::string&, const std::string& label = "runtime");
     void executeHost(const std::string&, const std::string& label = "host");
 };
-} // namespace afterlight
+} // namespace whimsical

@@ -4,7 +4,7 @@
 #include <map>
 #include <istream>
 
-namespace afterlight::animation::ai4animation {
+namespace whimsical::animation::ai4animation {
 struct Foot {
     std::vector<unsigned> chain;
     unsigned contact = 0;
@@ -87,4 +87,4 @@ class Controller final : public Solver {
 std::vector<float> encodePose(const Pose& model, const std::vector<vec3>& localVelocities);
 Sequence decodeSequence(const std::vector<float>&, unsigned joints, unsigned samples, float window,
                         const Transform& root);
-} // namespace afterlight::animation::ai4animation
+} // namespace whimsical::animation::ai4animation

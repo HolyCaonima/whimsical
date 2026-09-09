@@ -1,7 +1,7 @@
 #pragma once
 #include "physics/PhysicsScene.h"
 #include "core/SpatialTransform.h"
-namespace afterlight {
+namespace whimsical {
 struct AnimationColliderDescription {
     uint32_t joint = 0;
     ColliderShape shape;
@@ -34,4 +34,4 @@ class AnimationCollision {
     void remove(uint32_t owner);
     std::vector<AnimationColliderDescription> describe(uint32_t owner) const;
 };
-} // namespace afterlight
+} // namespace whimsical

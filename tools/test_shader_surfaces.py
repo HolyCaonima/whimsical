@@ -91,7 +91,7 @@ def run():
         scene["materials"][-1]["properties"]["coverage"] = coverage
         write_asset(content / "Test.asset", "Map", scene)
         audit = tag + "-" + case
-        args = [str(ROOT / "build/bin/Release/Afterlight.exe"), "--project", str(project),
+        args = [str(ROOT / "build/bin/Release/Whimsical.exe"), "--project", str(project),
                 "--frames", "80", "--width", "480", "--height", "320", "--validation",
                 "--no-hud", "--capture", "--audit", audit]
         print("Validating " + case, flush=True)

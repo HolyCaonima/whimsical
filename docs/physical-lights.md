@@ -78,7 +78,7 @@ python tools/test_rtxdi_motion.py
 
 `physical_lights` 检查平方反比、球体近场、单双面、Directional 角盘、Spot 角分布、封闭球面的总通量、采样 PDF Jacobian，以及五类组件的真实 JS 创建/修改、层级、磁盘保存加载和停用移除。GPU 测试用独立面片积分对照未经 NRD 的线性 DI，另测 300m Directional 遮挡和零光源。`--temporal` 在 64 帧后移动光源并降为 1/4 功率，检查随后八帧的实际历史恢复。
 
-运行示例：`.\build\bin\Release\Afterlight.exe --map /Game/Maps/PhysicalLights`。从左到右是 Spot、Point、Rect、Capsule，另有 Directional 填充；五盏灯由地图脚本通过普通组件接口创建。Space 切换恒功率尺寸动画，Q/R 或中键转动视角，滚轮缩放。
+运行示例：`.\build\bin\Release\Whimsical.exe --map /Game/Maps/PhysicalLights`。从左到右是 Spot、Point、Rect、Capsule，另有 Directional 填充；五盏灯由地图脚本通过普通组件接口创建。Space 切换恒功率尺寸动画，Q/R 或中键转动视角，滚轮缩放。
 
 ### 2026-09-07 实测
 

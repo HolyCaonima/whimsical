@@ -2,7 +2,7 @@
 #include "VulkanContext.h"
 #include "core/GpuProfile.h"
 #include <optional>
-namespace afterlight {
+namespace whimsical {
 // Owned by the render thread. Resolve only after the submitted frame fence has completed.
 class GpuProfiler {
     static constexpr uint32_t MaxScopes = 256;
@@ -42,4 +42,4 @@ class GpuScope {
     GpuScope(const GpuScope&) = delete;
     GpuScope& operator=(const GpuScope&) = delete;
 };
-} // namespace afterlight
+} // namespace whimsical

@@ -4,7 +4,7 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
-using namespace afterlight;
+using namespace whimsical;
 void check(bool value, const char* why) {
     if (!value)
         throw std::runtime_error(why);

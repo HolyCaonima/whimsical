@@ -3,7 +3,7 @@
 #include "FileDialog.h"
 #include <windows.h>
 #include <optional>
-namespace afterlight {
+namespace whimsical {
 class Window {
     HWND hwnd_ = nullptr;
     Input input_;
@@ -37,4 +37,4 @@ class Window {
     void minimize(bool);
     std::optional<std::string> openFileDialog(const OpenFileDialogOptions&);
 };
-} // namespace afterlight
+} // namespace whimsical

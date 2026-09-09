@@ -3,7 +3,7 @@
 #include "core/Types.h"
 #include <NRD.h>
 #include <array>
-namespace afterlight {
+namespace whimsical {
 class GpuProfiler;
 class NrdDenoiser {
     VulkanContext& vk_;
@@ -31,4 +31,4 @@ class NrdDenoiser {
     void dispatch(VkCommandBuffer, const std::array<Image*, size_t(nrd::ResourceType::MAX_NUM)>&,
                   const Camera&, uint32_t frame, bool reset, float frameMs, GpuProfiler&);
 };
-} // namespace afterlight
+} // namespace whimsical

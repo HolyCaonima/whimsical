@@ -8,7 +8,7 @@
 #include <vector>
 #include <functional>
 
-namespace afterlight {
+namespace whimsical {
 using Entity = uint32_t;
 // IDs are never reused, including across map loads. Only live entities occupy storage.
 // Ordered pools keep references stable and make simulation/serialization deterministic.
@@ -134,4 +134,4 @@ class Registry {
         return live_.size();
     }
 };
-} // namespace afterlight
+} // namespace whimsical

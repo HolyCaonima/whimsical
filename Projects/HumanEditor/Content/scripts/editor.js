@@ -111,6 +111,12 @@ HE.save = function (path) {
     HE.savedRevision = HE.revision; HE.refreshStatus(); HE.log('Saved ' + HE.source.path);
 };
 HE.levelName = function () { return HE.source ? HE.source.path.split('/').pop() : 'Untitled'; };
+// Without a project only a Content directory is mounted, so name it by its folder.
+HE.contentName = function () {
+    if (HE.projectName) return HE.projectName;
+    if (!HE.targetPath) return 'No project';
+    return HE.targetPath.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
+};
 HE.saveAs = function (after) {
     HE.prompt('Save level as', 'Mounted asset path (without .asset)', HE.mount + '/Maps/NewLevel', function (path) { HE.save(path); HE.scan(); if(typeof after==='function')after(); });
 };

@@ -24,7 +24,7 @@ def run():
         scene["entities"][1]["components"]["transform"]["position"][0] = 2 if case == "after" else 0
         write_asset(project / "Content/Test.asset", "Map", scene)
         name = tag + "-" + case
-        args = [str(ROOT / "build/bin/Release/Afterlight.exe"), "--project", str(project),
+        args = [str(ROOT / "build/bin/Release/Whimsical.exe"), "--project", str(project),
                 "--frames", "72", "--width", "640", "--height", "400", "--validation",
                 "--no-hud", "--present", "immediate", "--capture", "--audit", name,
                 "--cvar", "r.DIHistoryConfidence=" + str(confidence).lower()]

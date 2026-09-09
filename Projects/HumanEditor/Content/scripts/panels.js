@@ -92,9 +92,10 @@ HE.paintSelection = function(){
 };
 HE.refreshStatus = function(){
     if(!HE.doc)return;
-    HE.el('level-label').setText(HE.levelName()+(HE.dirty()?' *':''));
+    HE.el('level-label').setText(HE.levelName());
+    HE.el('dirty-dot').setClass('on',HE.dirty());
     HE.el('save-state').setText(HE.dirty()?'Unsaved changes':'All saved');
-    HE.el('project-label').setText(HE.projectName||HE.targetPath||'HUMANEDITOR');
+    HE.el('project-label').setText(HE.contentName());
 };
 HE.refreshTree = function(){
     if(!HE.doc)return;

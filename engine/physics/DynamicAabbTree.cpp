@@ -1,7 +1,7 @@
 #include "DynamicAabbTree.h"
 #include <cmath>
 
-namespace afterlight {
+namespace whimsical {
 namespace {
 constexpr float Margin = .1f;
 PhysicsBounds merged(PhysicsBounds a, PhysicsBounds b) {
@@ -247,4 +247,4 @@ std::vector<uint32_t> DynamicAabbTree::raycast(vec3 o, vec3 d, float distance, s
         },
         visited);
 }
-} // namespace afterlight
+} // namespace whimsical

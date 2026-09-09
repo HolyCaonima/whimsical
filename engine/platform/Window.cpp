@@ -4,7 +4,7 @@
 #include <windowsx.h>
 #include <mmsystem.h>
 #include <stdexcept>
-namespace afterlight {
+namespace whimsical {
 namespace {
 std::wstring wide(const std::string& text) {
     if (text.empty())
@@ -63,12 +63,12 @@ Window::Window(uint32_t width, uint32_t height) {
     WNDCLASSW wc{};
     wc.lpfnWndProc = procedure;
     wc.hInstance = GetModuleHandleW(nullptr);
-    wc.lpszClassName = L"AfterlightWindow";
+    wc.lpszClassName = L"WhimsicalWindow";
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     RegisterClassW(&wc);
     RECT r{0, 0, LONG(width), LONG(height)};
     AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
-    hwnd_ = CreateWindowExW(0, wc.lpszClassName, L"AFTERLIGHT | The Rain Court", WS_OVERLAPPEDWINDOW,
+    hwnd_ = CreateWindowExW(0, wc.lpszClassName, L"WHIMSICAL", WS_OVERLAPPEDWINDOW,
                             CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left, r.bottom - r.top, nullptr,
                             nullptr, wc.hInstance, this);
     if (!hwnd_)
@@ -263,4 +263,4 @@ void Window::resizeClient(uint32_t width, uint32_t height) {
 void Window::minimize(bool value) {
     ShowWindow(hwnd_, value ? SW_MINIMIZE : SW_RESTORE);
 }
-} // namespace afterlight
+} // namespace whimsical

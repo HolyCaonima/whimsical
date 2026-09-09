@@ -1,7 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <map>
-namespace afterlight {
+namespace whimsical {
 // Stable geometry ranges. Released holes are coalesced and reused without moving
 // live meshes or invalidating their BLAS. GPU buffers grow only at the high-water mark.
 class RangeAllocator {
@@ -45,4 +45,4 @@ class RangeAllocator {
             free_.emplace(first, count);
     }
 };
-} // namespace afterlight
+} // namespace whimsical

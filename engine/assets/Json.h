@@ -5,7 +5,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace afterlight {
+namespace whimsical {
 // An owning document value. Parsing uses a private Duktape heap, never the gameplay VM.
 class Json {
   public:
@@ -75,4 +75,4 @@ class Json {
   private:
     Value value_;
 };
-} // namespace afterlight
+} // namespace whimsical

@@ -2,7 +2,7 @@
 #include "VulkanContext.h"
 #include "uiCore/UiFrame.h"
 #include <memory>
-namespace afterlight {
+namespace whimsical {
 // Render-thread-only backend. No RmlUi context or JS pointers cross this boundary.
 class UiRenderer {
     struct Impl;
@@ -16,4 +16,4 @@ class UiRenderer {
     // Called inside a render graph pass that has already declared the target attachment.
     void draw(VkCommandBuffer, uint32_t width, uint32_t height, const ui::UiFrame*);
 };
-} // namespace afterlight
+} // namespace whimsical

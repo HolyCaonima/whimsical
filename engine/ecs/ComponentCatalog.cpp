@@ -2,7 +2,7 @@
 #include "core/World.h"
 #include <algorithm>
 
-namespace afterlight {
+namespace whimsical {
 ComponentCatalog& componentCatalog() {
     static ComponentCatalog catalog = [] {
         ComponentCatalog c;
@@ -271,4 +271,4 @@ ComponentSet ComponentCatalog::capture(const World& w, Entity e, const AssetMana
             resolve(value, assets);
     return result;
 }
-} // namespace afterlight
+} // namespace whimsical

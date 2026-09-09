@@ -1,4 +1,4 @@
-"""Assemble the Blender kit manifest into a native, portable Afterlight Map."""
+"""Assemble the Blender kit manifest into a native, portable Whimsical Map."""
 import copy
 import json
 import math

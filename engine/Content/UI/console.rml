@@ -14,6 +14,6 @@ h1 { color: #72e3c3; font-size: 17px; margin: 0px 0px 9px; }
 .caret { color: #72e3c3; }
 #scroll { position: absolute; top: 15px; right: 18px; }
 </style></head><body id="engine-console">
-<h1>AFTERLIGHT / CONSOLE</h1><div class="help">~ / F10 Toggle | Esc Close | Up / Down Select / History | Enter Execute | Tab Complete</div>
+<h1>WHIMSICAL / CONSOLE</h1><div class="help">~ / F10 Toggle | Esc Close | Up / Down Select / History | Enter Execute | Tab Complete</div>
 <div id="scroll"/><div id="content"><div id="lines"><div id="log-content"/></div><div id="suggestions"/></div><div id="input"/>
 </body></rml>

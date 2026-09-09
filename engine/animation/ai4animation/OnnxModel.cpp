@@ -2,9 +2,9 @@
 #include <onnxruntime_cxx_api.h>
 #include <stdexcept>
 
-namespace afterlight::animation::ai4animation {
+namespace whimsical::animation::ai4animation {
 static Ort::Env& environment() {
-    static Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "Afterlight.Animation");
+    static Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "Whimsical.Animation");
     return env;
 }
 static size_t elements(const std::vector<int64_t>& shape) {
@@ -67,4 +67,4 @@ std::vector<float> OnnxModel::run(const std::vector<float>& features) const {
     const float* data = result[0].GetTensorData<float>();
     return {data, data + outputSize()};
 }
-} // namespace afterlight::animation::ai4animation
+} // namespace whimsical::animation::ai4animation

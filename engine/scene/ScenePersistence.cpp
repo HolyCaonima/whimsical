@@ -2,7 +2,7 @@
 #include "core/World.h"
 #include <algorithm>
 #include <set>
-namespace afterlight {
+namespace whimsical {
 SceneDocument ScenePersistence::capture(const World& world, const AssetManager& assets) {
     world.storage_.changes.requireCommitted();
     SceneDocument s;
@@ -187,4 +187,4 @@ AssetRef ScenePersistence::save(World& world, AssetManager& assets, const AssetP
     world.resources.mapAsset = ref;
     return ref;
 }
-} // namespace afterlight
+} // namespace whimsical

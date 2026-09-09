@@ -1,6 +1,6 @@
 #pragma once
 #include "core/Types.h"
-namespace afterlight {
+namespace whimsical {
 struct GpuVertex {
     vec4 position;
     vec4 normal;
@@ -12,4 +12,4 @@ struct GpuVertex {
 struct MeshRange {
     uint32_t firstIndex = 0, indexCount = 0;
 };
-} // namespace afterlight
+} // namespace whimsical

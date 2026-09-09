@@ -2,7 +2,7 @@
 #include "uiCore/UiCore.h"
 #include "core/Types.h"
 #include <RmlUi/Core.h>
-namespace afterlight {
+namespace whimsical {
 struct RenderStatistics;
 namespace ui {
 // Host-owned diagnostics only. Gameplay documents and events belong to the project.
@@ -19,4 +19,4 @@ class EngineUi {
     std::shared_ptr<const UiFrame> snapshot(const Frame&);
 };
 } // namespace ui
-} // namespace afterlight
+} // namespace whimsical

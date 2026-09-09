@@ -3,7 +3,7 @@
 #include "assets/MaterialAsset.h"
 #include "ecs/ComponentCatalog.h"
 #include <type_traits>
-namespace afterlight {
+namespace whimsical {
 template <class T, class = void> struct SystemOwned : std::false_type {};
 template <class T> struct SystemOwned<T, std::void_t<typename T::Ownership>> : std::true_type {};
 struct SceneResources {
@@ -121,4 +121,4 @@ class World {
     Frame snapshot(const Input&, uint64_t, double, int, bool physicsDebug = false,
                    const RenderView* view = nullptr);
 };
-} // namespace afterlight
+} // namespace whimsical

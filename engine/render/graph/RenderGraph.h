@@ -4,7 +4,7 @@
 #include "render/GpuProfiler.h"
 #include <functional>
 
-namespace afterlight::rg {
+namespace whimsical::rg {
 class RenderGraph;
 
 // Everything a pass body is allowed to know: a command buffer, the descriptor set for this
@@ -178,4 +178,4 @@ class RenderGraph {
     void synchronise(VkCommandBuffer, const Use*, uint32_t count);
     void handover(VkCommandBuffer);
 };
-} // namespace afterlight::rg
+} // namespace whimsical::rg

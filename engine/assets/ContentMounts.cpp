@@ -6,7 +6,7 @@
 #include <sstream>
 #include <stdexcept>
 
-namespace afterlight {
+namespace whimsical {
 namespace {
 bool inside(const std::filesystem::path& root, const std::filesystem::path& file) {
     auto a = root.native(), b = file.native();
@@ -171,4 +171,4 @@ void ContentMounts::write(const ContentFile& file, const std::string& bytes) {
         throw;
     }
 }
-} // namespace afterlight
+} // namespace whimsical

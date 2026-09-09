@@ -5,7 +5,7 @@
 #include <set>
 #include <thread>
 
-namespace afterlight {
+namespace whimsical {
 class AssetManager {
   public:
     using Loader =
@@ -107,4 +107,4 @@ class AssetManager {
     Document readEntry(const AssetRef&);
     AssetRef saveImpl(const AssetPath&, AssetHeader, const std::string&, bool writeExternal);
 };
-} // namespace afterlight
+} // namespace whimsical

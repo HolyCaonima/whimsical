@@ -2,7 +2,7 @@
 #include <string>
 #include <vector>
 
-namespace afterlight {
+namespace whimsical {
 // Host-independent options. Patterns are semicolon-separated file globs, e.g. "*.png;*.jpg".
 struct FileDialogFilter {
     std::string name;
@@ -13,4 +13,4 @@ struct OpenFileDialogOptions {
     std::string initialDirectory;
     std::vector<FileDialogFilter> filters;
 };
-} // namespace afterlight
+} // namespace whimsical

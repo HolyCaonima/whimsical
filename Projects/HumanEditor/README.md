@@ -1,6 +1,6 @@
 # HumanEditor
 
-使用 Afterlight 引擎的项目级场景编辑器。编辑器行为由本项目的 JavaScript 实现，界面使用 RmlUi；变换 gizmo 使用临时网格实体和通用 `render.overlay` 渲染。首次使用此版本需重新构建引擎，后续编辑器脚本修改只需重启。
+使用 Whimsical 引擎的项目级场景编辑器。编辑器行为由本项目的 JavaScript 实现，界面使用 RmlUi；变换 gizmo 使用临时网格实体和通用 `render.overlay` 渲染。首次使用此版本需重新构建引擎，后续编辑器脚本修改只需重启。
 
 编辑器选择轮廓通过 `Engine.view.outlines` 显式提交，支持多选；它不设置引擎玩家或玩法状态，加载地图不会产生角色脚下标记。
 
@@ -9,10 +9,10 @@
 双击本目录的 **Run.cmd**，或在仓库根目录运行：
 
 ```powershell
-.\build\bin\Release\Afterlight.exe --project Projects/HumanEditor --width 1600 --height 1000
+.\build\bin\Release\Whimsical.exe --project Projects/HumanEditor --width 1600 --height 1000
 ```
 
-默认挂载 Afterlight 的 Content 并打开 RainCourt，**仅加载场景数据，不执行它的游戏脚本**。Content Browser 从 Content 根目录显示文件夹，地图加载不改变正在浏览的目录。启动不会保存或修改目标项目。建议使用 1440×900 及以上窗口；左侧工具、对象树、属性和内容列表可以滚动。
+默认挂载 Afterlight 项目的 Content 并打开 RainCourt，**仅加载场景数据，不执行它的游戏脚本**。Content Browser 从 Content 根目录显示文件夹，地图加载不改变正在浏览的目录。启动不会保存或修改目标项目。建议使用 1440×900 及以上窗口；左侧工具、对象树、属性和内容列表可以滚动。
 
 ## 打开另一个项目
 
@@ -107,11 +107,11 @@ Content Browser 获得焦点时，Delete / Ctrl+D 等演员快捷键不会操作
 ```powershell
 node Projects/HumanEditor/tools/smoke.mjs
 $editorTest = Get-Content Projects/HumanEditor/Saved/smoke-project.txt
-.\build\bin\Release\Afterlight.exe --project $editorTest --width 1440 --height 900 --frames 100 --validation --capture
+.\build\bin\Release\Whimsical.exe --project $editorTest --width 1440 --height 900 --frames 100 --validation --capture
 ```
 
 测试只在本项目 Saved 中生成隔离的宿主和目标 Content。真实 Duktape + Vulkan 验证覆盖：ID 选中、组件修改、子树复制删除、撤销重做、轴向拖拽、保存重载、Save As 目的地、Play/Pause/Stop、失败回滚，以及 UI 接管输入后的相机与快捷键。另检查视口最大化 / 恢复、抽屉与分隔条布局、目录及资源筛选、放置分类，以及属性折叠和关键控件尺寸。
 
 2026-09-08：1440×900 隔离验证输出 `SMOKE PASS`、`layout PASS`、`browser PASS`，正常退出，Vulkan validation errors=0。浏览器验证包含嵌套目录进入、前进 / 后退、搜索状态恢复、资产打开、键盘焦点隔离，以及滚动时的网格和列表布局。另以 1600×1000 打开默认 RainCourt 并检查 GPU 截图。交互验证调用项目输入处理函数，不视为外部鼠标端到端测试。
 
-2026-09-08 材质引用迁移：需要重新构建 Afterlight；地图使用 v9 与独立 Material 资产，旧材质编号接口已移除。详见 [框架审计](../../docs/material-asset-references.md)。
+2026-09-08 材质引用迁移：需要重新构建 Whimsical；地图使用 v9 与独立 Material 资产，旧材质编号接口已移除。详见 [框架审计](../../docs/material-asset-references.md)。

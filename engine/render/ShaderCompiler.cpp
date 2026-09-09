@@ -7,7 +7,7 @@
 #include <cstring>
 #include <regex>
 
-namespace afterlight {
+namespace whimsical {
 static std::string read(const std::filesystem::path& file) {
     std::ifstream stream(file, std::ios::binary);
     if (!stream)
@@ -32,9 +32,9 @@ static std::string expandIncludes(const std::string& source, const std::filesyst
             const auto& name = match[1].str();
             auto path = directory / name;
             if (name.rfind("Rtxdi/", 0) == 0)
-                path = std::filesystem::path(AFTERLIGHT_RTXDI_INCLUDES) / name;
+                path = std::filesystem::path(WHIMSICAL_RTXDI_INCLUDES) / name;
             else if (name.rfind("generated/", 0) == 0)
-                path = std::filesystem::path(AFTERLIGHT_SHADERS) / name;
+                path = std::filesystem::path(WHIMSICAL_SHADERS) / name;
             result << expandIncludes(read(path), path.parent_path());
         } else result << line << '\n';
     }
@@ -117,13 +117,13 @@ std::string ShaderCompiler::passSource(const std::filesystem::path& directory, c
     return expandIncludes(source, directory);
 }
 const std::vector<uint32_t>& ShaderCompiler::compile(const std::string& pass, const ShaderSet& shaders) {
-    auto source = passSource(AFTERLIGHT_SHADER_SOURCES, pass, shaders);
+    auto source = passSource(WHIMSICAL_SHADER_SOURCES, pass, shaders);
     auto key = pass + '\n' + source;
     auto found = programs_.find(key);
     if (found != programs_.end())
         return found->second;
     if (directory_.empty()) {
-        directory_ = std::filesystem::path(AFTERLIGHT_SHADERS) / ("runtime-" + newPersistentId());
+        directory_ = std::filesystem::path(WHIMSICAL_SHADERS) / ("runtime-" + newPersistentId());
         std::filesystem::create_directories(directory_);
     }
     auto input = directory_ / (std::to_string(programs_.size()) + "." + pass);
@@ -133,7 +133,7 @@ const std::vector<uint32_t>& ShaderCompiler::compile(const std::string& pass, co
     log += ".log";
     std::ofstream(input, std::ios::binary) << source;
     // Launch the compiler directly; asset text never passes through a shell.
-    std::wstring command = L"\"" + std::filesystem::path(AFTERLIGHT_GLSLANG).wstring() +
+    std::wstring command = L"\"" + std::filesystem::path(WHIMSICAL_GLSLANG).wstring() +
                            L"\" --target-env vulkan1.2 -V \"" + input.wstring() + L"\" -o \"" +
                            output.wstring() + L"\"";
     SECURITY_ATTRIBUTES security{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
@@ -169,4 +169,4 @@ const std::vector<uint32_t>& ShaderCompiler::compile(const std::string& pass, co
     std::memcpy(words.data(), bytes.data(), bytes.size());
     return programs_.emplace(std::move(key), std::move(words)).first->second;
 }
-} // namespace afterlight
+} // namespace whimsical

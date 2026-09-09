@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace afterlight {
+namespace whimsical {
 struct PhysicsBounds {
     vec3 min{0}, max{0};
 };
@@ -76,4 +76,4 @@ class DynamicAabbTree {
     std::vector<uint32_t> raycast(vec3 origin, vec3 direction, float distance,
                                   size_t* visited = nullptr) const;
 };
-} // namespace afterlight
+} // namespace whimsical

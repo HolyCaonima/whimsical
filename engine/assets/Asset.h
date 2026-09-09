@@ -2,7 +2,7 @@
 #include "Json.h"
 #include <memory>
 
-namespace afterlight {
+namespace whimsical {
 std::string newPersistentId();
 void validatePersistentId(const std::string&);
 // Virtual locators always resolve to .asset files, never to their payload files.
@@ -80,4 +80,4 @@ struct ScriptAsset final : Asset {
 struct BinaryAsset final : Asset {
     std::string bytes;
 };
-} // namespace afterlight
+} // namespace whimsical

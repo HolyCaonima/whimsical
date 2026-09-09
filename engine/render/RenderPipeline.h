@@ -7,7 +7,7 @@
 #include <array>
 #include <map>
 
-namespace afterlight {
+namespace whimsical {
 class NrdDenoiser;
 class UiRenderer;
 class GpuRenderTargets;
@@ -89,4 +89,4 @@ class RenderPipeline {
     rg::Program createCompute(const std::vector<uint32_t>& code);
     VkPipeline createRaster(const std::shared_ptr<const ShaderAsset>&, bool entityID = false, bool overlay = false);
 };
-} // namespace afterlight
+} // namespace whimsical

@@ -2,7 +2,7 @@
 #include "Validation.h"
 #include "physics/SpatialCollider.h"
 #include <algorithm>
-namespace afterlight {
+namespace whimsical {
 bool SceneStorage::enabled(Entity e) const {
     while (e) {
         if (registry.has<Disabled>(e))
@@ -103,4 +103,4 @@ void TransformSystem::refreshEnabled(Entity e) {
             refreshEnabled(child);
     batch.commit();
 }
-} // namespace afterlight
+} // namespace whimsical

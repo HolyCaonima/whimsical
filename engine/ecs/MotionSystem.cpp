@@ -1,6 +1,6 @@
 #include "Systems.h"
 #include "physics/SpatialCollider.h"
-namespace afterlight {
+namespace whimsical {
 MotionSystem::MotionSystem(SceneStorage& storage, TransformSystem& t, NavigationSettings& n)
     : s(storage), transforms(t), navigation(n) {
     s.changes.subscribe<WorldPoseChanged>([this](Entity e) {
@@ -187,4 +187,4 @@ PhysicsPose MotionSystem::solveRootMotion(Entity e, const animation::Transform& 
 std::vector<vec3> MotionSystem::findPath(Entity e, vec3 target) const {
     return Navigation::findPath(s.physics, feet(e), target, agent(e), navigation);
 }
-} // namespace afterlight
+} // namespace whimsical

@@ -7,7 +7,7 @@
 #include <numeric>
 #include <stdexcept>
 
-namespace afterlight::animation::ai4animation {
+namespace whimsical::animation::ai4animation {
 static vec3 unit(vec3 v) {
     float l = glm::length(v);
     return l > 1e-6f ? v / l : vec3(0);
@@ -340,4 +340,4 @@ void Controller::evaluate(const Context& c, Output& out) {
     current_.age += dt;
     previous_.age += dt;
 }
-} // namespace afterlight::animation::ai4animation
+} // namespace whimsical::animation::ai4animation

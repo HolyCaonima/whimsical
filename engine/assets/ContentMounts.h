@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace afterlight {
+namespace whimsical {
 class ContentMounts;
 // A mount is a lease on one independent Content. Reusing its alias creates a new identity.
 class ContentSource {
@@ -60,4 +60,4 @@ class ContentMounts {
     static void write(const ContentFile&, const std::string& bytes);
     static void validateAlias(const std::string&);
 };
-} // namespace afterlight
+} // namespace whimsical

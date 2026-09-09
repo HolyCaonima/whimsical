@@ -55,7 +55,7 @@ HUD、标题栏与 `stat` 的 `CPU (Render)` 是渲染线程从场景准备到�
 | `t.TimeScale` | float / 1 | 0–4；0 暂停游戏逻辑，控制台、窗口、渲染继续运行 |
 | `r.Present` | string / fifo | fifo / mailbox / immediate，需要重启 |
 | `r.Validation` | bool / Release false | Vulkan 验证，需要重启；Debug 默认 true |
-| `sys.Engine` | string / Afterlight | 只读示例 |
+| `sys.Engine` | string / Whimsical | 只读示例 |
 
 `r.Present` 与 `r.Validation` 修改后显示请求值和当前 active 值，当前渲染器保持原设置。`stat` 和 HUD 显示实际测量数据，不把请求的模式假装成已生效模式。需要重启的值如要跨进程保留，须显式保存；`r.Validation` 未标记 archive，可用命令行或项目配置启用。
 
@@ -74,7 +74,7 @@ r.Present="fifo"
 `cvar.save` 仅保存 Archive 标记的变量到当前项目 `Saved/ConsoleVariables.cfg`，不在退出时自动保存，也不修改版本管理中的项目配置。`cvar.load` 重新读取两个配置文件，遵守已有命令行/控制台优先级。`Saved/` 已加入忽略列表。模型、材质和 Map 仍走 AssetManager；CVar 是独立于内容资产的进程运行配置。
 
 ```powershell
-.\build\bin\Release\Afterlight.exe --console --cvar "r.Exposure=1.3"
+.\build\bin\Release\Whimsical.exe --console --cvar "r.Exposure=1.3"
 .\RunHoneybud.cmd --console --exec "r.DebugView 2" --exec "help r.Exposure"
 ```
 
@@ -109,7 +109,7 @@ variables.command("game.inspect", "Inspect game state", [](const auto& args) {
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/build.ps1 -Test
-.\build\bin\Release\Afterlight.exe --console-smoke --width 1280 --height 800
+.\build\bin\Release\Whimsical.exe --console-smoke --width 1280 --height 800
 ```
 
 原生 smoke 通过 Win32 消息驱动控制台，检查输入、实际改参、错误拒绝、F1 不再改变视图、关闭 HUD 后重新打开、resize 和 Map 重载后参数保留，有限帧数后自动关闭并保存截图。`render-report.json` 包含实际呈现的 exposure、debugView、hudEnabled、consoleOpen 和验证错误计数。

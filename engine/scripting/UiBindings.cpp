@@ -6,7 +6,7 @@
 #include <RmlUi/Core/Elements/ElementFormControlTextArea.h>
 #include <unordered_map>
 
-namespace afterlight {
+namespace whimsical {
 struct UiBindings::Impl {
     duk_context* js;
     ui::UiCore& ui;
@@ -358,4 +358,4 @@ UiBindings::~UiBindings() = default;
 void UiBindings::setVisible(bool value) {
     impl_->setVisible(value);
 }
-} // namespace afterlight
+} // namespace whimsical

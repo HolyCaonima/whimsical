@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <tuple>
 
-namespace afterlight {
+namespace whimsical {
 namespace {
 std::string key(std::string name) {
     for (char& c : name)
@@ -376,7 +376,7 @@ std::vector<ConsoleResult> ConsoleRegistry::load(std::istream& input) {
     return results;
 }
 void ConsoleRegistry::save(std::ostream& out) const {
-    out << "# Afterlight console variables; explicit save, archive variables only.\n";
+    out << "# Whimsical console variables; explicit save, archive variables only.\n";
     for (const auto& item : variables_) {
         const auto& v = item.second;
         if ((v.flags & CVarArchive) && !(v.flags & CVarReadOnly))
@@ -385,4 +385,4 @@ void ConsoleRegistry::save(std::ostream& out) const {
     if (!out)
         throw std::runtime_error("Could not write console configuration");
 }
-} // namespace afterlight
+} // namespace whimsical

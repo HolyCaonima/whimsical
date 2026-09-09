@@ -2,9 +2,9 @@
 #include "core/World.h"
 #include "assets/StaticMesh.h"
 #include <iostream>
-namespace afterlight {
+namespace whimsical {
 // GPU lifecycle regression driven by *presented* frames, so the mailbox cannot
-// collapse all mutations into one unobserved snapshot. Use with the Afterlight map.
+// collapse all mutations into one unobserved snapshot. Use with the Afterlight project map.
 class EcsSmoke {
     uint32_t stage_ = 0, nextFrame_ = 12;
     Entity first_ = 0, second_ = 0;
@@ -69,4 +69,4 @@ class EcsSmoke {
         nextFrame_ = rendered + 12;
     }
 };
-} // namespace afterlight
+} // namespace whimsical

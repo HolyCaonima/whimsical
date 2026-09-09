@@ -5,7 +5,7 @@
 #include <thread>
 #include <functional>
 #include <set>
-namespace afterlight {
+namespace whimsical {
 namespace ui {
 class UiCore;
 }
@@ -55,4 +55,4 @@ class ScriptRuntime {
     void log(const std::string& text);
     void tick(float dt, const Input& input, bool gameplayInput = true);
 };
-} // namespace afterlight
+} // namespace whimsical

@@ -1,7 +1,7 @@
 """Second art pass: tailored cloth, embossed ceramic and botanical geometry.
 
 The kit API owns exporting and resource identity. This module authors shapes and
-surface treatments only; the same meshes/materials feed Blender and Afterlight.
+surface treatments only; the same meshes/materials feed Blender and Whimsical.
 """
 import math
 import random

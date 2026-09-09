@@ -18,7 +18,7 @@ async def main():
             else:
                 path = Path(sys.argv[1]).resolve()
                 code = "import runpy; runpy.run_path(" + repr(str(path)) + ", run_name='__main__')"
-                result = await session.call_tool('execute_blender_code', {'code': code, 'user_prompt': 'Create original Honeybud Court assets for Afterlight from the supplied style references.'})
+                result = await session.call_tool('execute_blender_code', {'code': code, 'user_prompt': 'Create original Honeybud Court assets for the Afterlight project from the supplied style references.'})
             output = result.model_dump(mode='json')
             print(json.dumps(output, ensure_ascii=False))
             audit = Path(__file__).resolve().parents[2] / 'captures/honeybud'

@@ -3,7 +3,7 @@
 #include <cassert>
 #include <iomanip>
 #include <sstream>
-namespace afterlight {
+namespace whimsical {
 thread_local CpuProfiler* CpuProfiler::current_ = nullptr;
 CpuProfiler::CpuProfiler(bool enabled, const char* thread, const char* root) : active_(enabled) {
     if (active_) {
@@ -95,4 +95,4 @@ std::string CpuProfile::json() const {
                 {"threads", Json::array(std::move(lanes))}}
         .dump();
 }
-} // namespace afterlight
+} // namespace whimsical

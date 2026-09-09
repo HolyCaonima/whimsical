@@ -3,7 +3,7 @@
 #include <sstream>
 #include <stdexcept>
 
-namespace afterlight {
+namespace whimsical {
 Project::Project(const std::filesystem::path& path) {
     auto file = std::filesystem::is_directory(path) ? path / ".project" : path;
     if (file.filename() != ".project")
@@ -61,4 +61,4 @@ Project Project::create(const std::filesystem::path& directory, const std::strin
         throw std::runtime_error("Cannot write .project");
     return Project(directory);
 }
-} // namespace afterlight
+} // namespace whimsical

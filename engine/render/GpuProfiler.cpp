@@ -1,5 +1,5 @@
 #include "GpuProfiler.h"
-namespace afterlight {
+namespace whimsical {
 GpuProfiler::GpuProfiler(VulkanContext& vk) : vk_(vk) {
     uint32_t count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(vk.physical, &count, nullptr);
@@ -94,4 +94,4 @@ GpuScope::~GpuScope() {
         vkCmdEndDebugUtilsLabelEXT(command_);
     profiler_.endScope(command_, scope_);
 }
-} // namespace afterlight
+} // namespace whimsical

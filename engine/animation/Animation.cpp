@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <unordered_set>
 
-namespace afterlight::animation {
+namespace whimsical::animation {
 Transform compose(const Transform& a, const Transform& b) {
     return {a.position + a.rotation * b.position, glm::normalize(a.rotation * b.rotation)};
 }
@@ -225,4 +225,4 @@ void solveFabrik(const Skeleton& skeleton, Pose& model, const std::vector<unsign
         model = skeleton.toModel(local);
     }
 }
-} // namespace afterlight::animation
+} // namespace whimsical::animation

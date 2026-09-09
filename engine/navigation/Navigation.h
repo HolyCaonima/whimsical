@@ -1,6 +1,6 @@
 #pragma once
 #include "physics/PhysicsScene.h"
-namespace afterlight {
+namespace whimsical {
 struct NavigationAgent {
     float radius = .4f, height = 2;
     uint32_t owner = 0;
@@ -21,4 +21,4 @@ class Navigation {
     static std::vector<vec3> findPath(const PhysicsScene&, vec3 start, vec3 end, const NavigationAgent& = {},
                                       const NavigationSettings& = {});
 };
-} // namespace afterlight
+} // namespace whimsical

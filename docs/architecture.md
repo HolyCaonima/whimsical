@@ -89,7 +89,7 @@ JS 接收输入副本，runtime 拒绝在非 owner 线程 tick。绑定检查实
 
 ## 3C 与玩法扩展
 
-动画底层通过独立 `afterlight_animation` 库提供统一 Asset/Instance/Solver 协议。AnimationSystem 在 gameplay tick 后求解，接受物理 root motion、将 FK 结果发布到关节碰撞体及不可变骨架快照。AI4Animation/ONNX 是一个具体后端；clip graph 和 motion matching 未来接入同级 Solver，无需修改上层输入/输出。详见 [Animation 架构、资产与接口](animation.md)。
+动画底层通过独立 `whimsical_animation` 库提供统一 Asset/Instance/Solver 协议。AnimationSystem 在 gameplay tick 后求解，接受物理 root motion、将 FK 结果发布到关节碰撞体及不可变骨架快照。AI4Animation/ONNX 是一个具体后端；clip graph 和 motion matching 未来接入同级 Solver，无需修改上层输入/输出。详见 [Animation 架构、资产与接口](animation.md)。
 
 Controller 是单角色命令入口；它不包含关卡内容。Locomotion 先更新物理站姿，再处理命令、路径、速度、转角，并向动画系统提交实际速度和动作意图。直接 WASD 覆盖点击命令；不可通行目标被拒绝；遇到动态阻挡时重新查询路径。Navigation 只查询 PhysicsScene，使用角色真实胶囊尺寸检查地面与净空，避免对角切角并验证平滑路径。实际位移使用连续扫掠和滑移；Companion 复用这些入口跟随主角。参见 [Physics Scene](physics-scene.md) 的所有权、动画接口和实现边界。
 

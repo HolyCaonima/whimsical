@@ -1,5 +1,5 @@
 #include "EngineSettings.h"
-namespace afterlight {
+namespace whimsical {
 EngineSettings::EngineSettings(ConsoleRegistry& v, bool validationDefault) : vars_(v) {
     v.variable("r.Exposure", 1.15, "Render tonemapping exposure multiplier", CVarArchive, CVarRange{.05, 8});
     v.variable("r.Hud", true, "Show gameplay HUD; the console remains accessible", CVarArchive);
@@ -16,7 +16,7 @@ EngineSettings::EngineSettings(ConsoleRegistry& v, bool validationDefault) : var
     v.variable("t.TimeScale", 1.0,
                "Gameplay time multiplier; 0 pauses gameplay while console and rendering continue", CVarNone,
                CVarRange{0, 4});
-    v.variable("sys.Engine", std::string("Afterlight"), "Engine identifier", CVarReadOnly);
+    v.variable("sys.Engine", std::string("Whimsical"), "Engine identifier", CVarReadOnly);
 }
 void EngineSettings::decorate(Frame& f) const {
     f.hudEnabled = hud();
@@ -25,4 +25,4 @@ void EngineSettings::decorate(Frame& f) const {
     f.forceFullUpload = vars_.get<bool>("r.FullUpload");
     f.diHistoryConfidence = vars_.get<bool>("r.DIHistoryConfidence");
 }
-} // namespace afterlight
+} // namespace whimsical

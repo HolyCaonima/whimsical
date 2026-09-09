@@ -11,7 +11,7 @@
 #include <wincodec.h>
 #include <wrl/client.h>
 
-namespace afterlight::ui {
+namespace whimsical::ui {
 namespace {
 uint64_t resourceId = 0, contextId = 0;
 // RmlUi owns global interfaces, while each context supplies its own mount table.
@@ -510,4 +510,4 @@ std::string UiCore::escape(const std::string& text) {
     }
     return result;
 }
-} // namespace afterlight::ui
+} // namespace whimsical::ui

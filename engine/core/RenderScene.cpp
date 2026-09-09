@@ -2,7 +2,7 @@
 #include "assets/MaterialAsset.h"
 #include <algorithm>
 #include <stdexcept>
-namespace afterlight {
+namespace whimsical {
 void SceneDelta::prepend(const SceneDelta& dropped) {
     // Slots are only ever appended to the scene, so every index the dropped delta names is
     // still addressable in the newer snapshot's proxy array and still means the same slot.
@@ -164,4 +164,4 @@ void RenderScene::exchangeScene(RenderScene& other) {
     other.marks_.assign(other.proxies_.size(), 0);
     other.pending_ = {};
 }
-} // namespace afterlight
+} // namespace whimsical

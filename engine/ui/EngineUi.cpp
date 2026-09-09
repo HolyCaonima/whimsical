@@ -3,7 +3,7 @@
 #include <iomanip>
 #include <sstream>
 
-namespace afterlight::ui {
+namespace whimsical::ui {
 EngineUi::EngineUi(UiCore& ui) : ui_(ui) {
     tools_ = ui_.loadDocument("/Engine/UI/tools.rml");
     console_ = ui_.loadDocument("/Engine/UI/console.rml");
@@ -112,4 +112,4 @@ std::shared_ptr<const UiFrame> EngineUi::snapshot(const Frame& frame) {
     }
     return result;
 }
-} // namespace afterlight::ui
+} // namespace whimsical::ui

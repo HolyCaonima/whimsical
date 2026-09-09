@@ -2,7 +2,7 @@
 #include "GraphTypes.h"
 #include <vector>
 
-namespace afterlight::rg {
+namespace whimsical::rg {
 // The storage shape two resources must agree on before one can reuse the other's memory,
 // and equally the test for whether an existing allocation still fits its declaration.
 uint64_t storageSignature(const Declaration&, uint32_t width, uint32_t height);
@@ -141,4 +141,4 @@ class ResourcePool {
         return bases_[id.index];
     }
 };
-} // namespace afterlight::rg
+} // namespace whimsical::rg

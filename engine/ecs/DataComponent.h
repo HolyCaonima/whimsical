@@ -1,7 +1,7 @@
 #pragma once
 #include "core/World.h"
 
-namespace afterlight {
+namespace whimsical {
 // The ordinary case: ECS owns the value, native code edits a draft, scripts and
 // maps share its codec. Backend components supply their own preparation/cleanup.
 template <class T, class Decode, class Encode, class Validate>
@@ -26,4 +26,4 @@ ComponentContract dataComponent(const char* name, Decode decode, Encode encode, 
     c.inspect = [](const World& w, Entity e) -> std::optional<std::any> { return w.get<T>(e); };
     return c;
 }
-} // namespace afterlight
+} // namespace whimsical

@@ -4,7 +4,7 @@
 #include <iostream>
 #include <stdexcept>
 
-namespace afterlight::ui {
+namespace whimsical::ui {
 namespace {
 std::string utf8(const std::u32string& s) {
     // Window supplies Unicode scalar values, so editing never splits a UTF-8 sequence.
@@ -38,7 +38,7 @@ Console::Console(ConsoleRegistry& registry) : registry_(registry) {
         scroll_ = 0;
         return "Console cleared.";
     });
-    log("AFTERLIGHT CONSOLE | ~ / F10 open | Esc close | Up/Down select/history | Enter execute | Tab "
+    log("WHIMSICAL CONSOLE | ~ / F10 open | Esc close | Up/Down select/history | Enter execute | Tab "
         "complete");
     log("Type help or find render. Values persist only after cvar.save.");
 }
@@ -206,4 +206,4 @@ ConsoleView Console::view() const {
     }
     return v;
 }
-} // namespace afterlight::ui
+} // namespace whimsical::ui

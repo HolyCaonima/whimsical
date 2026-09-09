@@ -24,7 +24,7 @@ try:
         scene['camera']=views[name]
         write_asset(map_path,'Map',json.dumps(scene,indent=2).encode())
         with (audit/f'{name}.log').open('w') as log:
-            subprocess.run([str(ROOT/'build/bin/Release/Afterlight.exe'),'--map','/Game/Maps/HoneybudCourt',
+            subprocess.run([str(ROOT/'build/bin/Release/Whimsical.exe'),'--map','/Game/Maps/HoneybudCourt',
                             '--no-hud','--width','1440','--height','1000','--frames','140','--capture','--validation'],
                            cwd=ROOT,stdout=log,stderr=subprocess.STDOUT,check=True)
         Image.open(ROOT/'captures/frame.bmp').save(output/f'project_{name}.png')

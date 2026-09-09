@@ -2,7 +2,7 @@
 #include "core/RenderTarget.h"
 #include "graph/RenderGraph.h"
 
-namespace afterlight {
+namespace whimsical {
 // Render-thread owner of runtime texture storage and asynchronous readback staging.
 // It knows pixel formats and producers' outputs, never Entity IDs or JavaScript values.
 class GpuRenderTargets {
@@ -54,4 +54,4 @@ class GpuRenderTargets {
     bool submitted_ = false;
     void destroy(Target&);
 };
-} // namespace afterlight
+} // namespace whimsical

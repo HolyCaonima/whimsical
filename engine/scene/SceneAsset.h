@@ -7,7 +7,7 @@
 #include "animation/AnimationCollision.h"
 #include <optional>
 #include "ecs/ComponentCatalog.h"
-namespace afterlight {
+namespace whimsical {
 struct SceneTransform {
     TransformPose local;
     std::string parent;
@@ -61,4 +61,4 @@ struct SceneDocument : SceneResourceDescription {
 struct SceneAsset final : Asset {
     SceneDocument scene;
 };
-} // namespace afterlight
+} // namespace whimsical

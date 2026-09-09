@@ -11,7 +11,7 @@
 // does to it, and it is the single source from which the descriptor layout, the GLSL
 // binding block and the physical allocation are derived. Nothing else in the engine names
 // a binding number.
-namespace afterlight::rg {
+namespace whimsical::rg {
 enum class Format : uint8_t { RGBA16F, RGBA32F, RG16F, R16F, R32F, RGBA8, D32, R32Uint };
 struct FormatInfo {
     const char* glsl; // storage image qualifier
@@ -195,4 +195,4 @@ class Registry {
     // Generated GLSL, keyed by the include name the shader sources ask for.
     std::map<std::string, std::string> glsl() const;
 };
-} // namespace afterlight::rg
+} // namespace whimsical::rg

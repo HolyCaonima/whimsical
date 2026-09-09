@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace afterlight::animation {
+namespace whimsical::animation {
 // Metres, Y up, +Z forward. Rigid transforms; a pose is parent-local.
 struct Transform {
     vec3 position{0};
@@ -89,7 +89,7 @@ class Solver {
     virtual void reset(const Context&) = 0;
     virtual void evaluate(const Context&, Output&) = 0;
 };
-class Asset : public afterlight::Asset {
+class Asset : public whimsical::Asset {
   public:
     virtual ~Asset() = default;
     virtual std::shared_ptr<const Skeleton> skeleton() const = 0;
@@ -146,4 +146,4 @@ class Instance {
 void solveFabrik(const Skeleton&, Pose& model, const std::vector<unsigned>& chain, vec3 target, quat rotation,
                  unsigned iterations = 10, float tolerance = .001f, const vec3* pole = nullptr,
                  float poleWeight = 1);
-} // namespace afterlight::animation
+} // namespace whimsical::animation

@@ -5,7 +5,7 @@
 #include <optional>
 #include <windows.h>
 #include <memory>
-namespace afterlight {
+namespace whimsical {
 // Swapchain pacing. FIFO is the shipping default; the uncapped modes exist so frame cost
 // can be measured without the display clamping every result to a vblank multiple.
 enum class PresentMode { Fifo, Mailbox, Immediate };
@@ -71,4 +71,4 @@ class Renderer {
     std::optional<CpuProfile> takeCpuProfile();
     uint32_t errors() const;
 };
-} // namespace afterlight
+} // namespace whimsical

@@ -20,7 +20,7 @@ HE.openProjectDialog=function(){
         }
         d.getElementById('project-browse').on('click',function(){
             try{
-                var path=Engine.files.openDialog({title:'Open Project',initialDirectory:HE.projectPath?HE.projectPath.replace(/[/\\][^/\\]+$/,''):'',filters:[{name:'Afterlight project (.project)',pattern:'.project'}]});
+                var path=Engine.files.openDialog({title:'Open Project',initialDirectory:HE.projectPath?HE.projectPath.replace(/[/\\][^/\\]+$/,''):'',filters:[{name:'Whimsical project (.project)',pattern:'.project'}]});
                 if(path)read(path);
             }catch(e){d.getElementById('dialog-error').setText(e.message||e);}
         });

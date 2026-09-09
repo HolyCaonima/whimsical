@@ -4,7 +4,7 @@
 #include <cstring>
 #include <fstream>
 
-namespace afterlight {
+namespace whimsical {
 struct UiRenderer::Impl {
     VulkanContext& vk;
     VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
@@ -29,7 +29,7 @@ struct UiRenderer::Impl {
         float x, y, width, height;
     };
     VkShaderModule shader(const char* name) {
-        auto path = std::string(AFTERLIGHT_SHADERS) + "/" + name + ".spv";
+        auto path = std::string(WHIMSICAL_SHADERS) + "/" + name + ".spv";
         std::ifstream file(path, std::ios::binary | std::ios::ate);
         if (!file)
             throw std::runtime_error("Missing UI shader: " + path);
@@ -254,4 +254,4 @@ void UiRenderer::draw(VkCommandBuffer command, uint32_t width, uint32_t height,
                       const ui::UiFrame* frame) {
     impl_->draw(command, width, height, frame);
 }
-} // namespace afterlight
+} // namespace whimsical

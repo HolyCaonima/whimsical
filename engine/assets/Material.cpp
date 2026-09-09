@@ -3,7 +3,7 @@
 #include "StaticMesh.h"
 #include <algorithm>
 
-namespace afterlight {
+namespace whimsical {
 Json MaterialDefinition::json() const {
     Json result{{"shader", shader.json()}, {"properties", properties}, {"textures", Json::object()}};
     for (const auto& texture : textures)
@@ -85,4 +85,4 @@ MaterialDefinition MaterialDefinition::capture(const Material& material, const A
                                     assets.resolve(material.textures[i]->reference()));
     return result;
 }
-} // namespace afterlight
+} // namespace whimsical

@@ -5,7 +5,7 @@
 #include "animation/AnimationCollision.h"
 #include "navigation/Navigation.h"
 
-namespace afterlight {
+namespace whimsical {
 struct SceneStorage {
     SceneStorage() {
         registry.onStructure = [this](Entity e, std::type_index type) { changes.mark(e, type); };
@@ -115,4 +115,4 @@ class AnimationSystem {
     void setAnimationColliders(Entity, const std::vector<AnimationColliderDescription>&);
     BodyHandle addAnimationCollider(Entity, uint32_t, const ColliderShape&, PhysicsPose, bool);
 };
-} // namespace afterlight
+} // namespace whimsical

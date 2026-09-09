@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
-namespace afterlight {
+namespace whimsical {
 struct ConsoleLine {
     std::string text;
     bool error = false;
@@ -14,4 +14,4 @@ struct ConsoleView {
     int selectedSuggestion = -1; // Index in the visible candidate window.
     unsigned scroll = 0;
 };
-} // namespace afterlight
+} // namespace whimsical

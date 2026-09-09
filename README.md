@@ -1,8 +1,10 @@
-# Afterlight — C++ / JavaScript / Vulkan 光追引擎
+# Whimsical — C++ / JavaScript / Vulkan 光追引擎
 
 这是一个可运行的 Windows x64 原生工程。C++17 引擎，Duktape JavaScript gameplay，Vulkan 1.3 ray query 渲染；主线程执行平台事件、60 Hz simulation 和 JS，独立渲染线程持有全部 GPU 资源。
 
-引擎不为某一种玩法定制：对象与场景是 ECS，能力按需组合；表面外观是资产化的 Shader → Material；内容按 Project 独立组织，通过 `/Game` 虚拟路径访问。仓库内有两个项目、三张可直接运行的地图。
+引擎叫 **Whimsical**：可执行文件是 `Whimsical.exe`，C++ 命名空间是 `whimsical`，构建目标是 `whimsical_*`。`Projects/` 下的 **Afterlight**、**MapleCircuit**、**HumanEditor**、**EntityID** 都只是基于它的项目，不是引擎的一部分。
+
+引擎不为某一种玩法定制：对象与场景是 ECS，能力按需组合；表面外观是资产化的 Shader → Material；内容按 Project 独立组织，通过 `/Game` 虚拟路径访问。仓库内有两个游戏项目、三张可直接运行的地图。
 
 ## 三个可直接运行的场景
 
@@ -16,11 +18,11 @@ Maple Circuit 是对引擎边界的一次实测：它没有改动 `engine/`、�
 
 ## 直接运行
 
-双击根目录对应的 `.cmd`。当前机器的可执行文件是 `build/bin/Release/Afterlight.exe`，也可以直接传参：
+双击根目录对应的 `.cmd`。当前机器的可执行文件是 `build/bin/Release/Whimsical.exe`，也可以直接传参：
 
 ```powershell
-.\build\bin\Release\Afterlight.exe --map /Game/Maps/HoneybudCourt
-.\build\bin\Release\Afterlight.exe --project Projects/MapleCircuit --width 1280 --height 800
+.\build\bin\Release\Whimsical.exe --map /Game/Maps/HoneybudCourt
+.\build\bin\Release\Whimsical.exe --project Projects/MapleCircuit --width 1280 --height 800
 ```
 
 按 **~ 或 F10** 打开游戏内控制台：支持 CVar 查询/修改、类型与范围校验、多关键词模糊补全、上下键选择候选、命令历史、配置保存。可试 `r.Exposure 1.4`、`r.Hud 0`、`r.DebugView 1`、`t.TimeScale 0`、`help`。控制台打开时接管游戏输入，关闭 HUD 后仍可使用。变量、启动覆盖及开发接口见 [CVar 与控制台](docs/console.md)。
@@ -31,7 +33,7 @@ Maple Circuit 是对引擎边界的一次实测：它没有改动 `engine/`、�
 
 标题栏显示实时 **FPS**、**Frame ms**（包含线程与呈现等待的整帧间隔）、**CPU (Render) ms**（场景准备、CPU 蒙皮、HUD、命令录制与提交，不含常规帧同步/呈现等待）、**GPU ms**（Vulkan timestamp），约每半秒更新。启动及重建窗口尺寸后的统计预热显示 `-- FPS`。默认使用 FIFO 垂直同步，因此通常不超过 60 FPS；用 `r.Stats 1` 开启独立性能面板（默认关闭），显示当前呈现模式与 VSync 状态；`r.Hud` 只控制项目游戏界面。渲染帧率不被 60 Hz 仿真锁死——渲染线程在没有新快照时重新呈现最新快照，用 `--present immediate` 或 `--present mailbox` 即可跑出显示器刷新率以上的真实帧成本。
 
-### Afterlight 操作（Rain Court / Honeybud Court）
+### Afterlight 项目操作（Rain Court / Honeybud Court）
 
 | 操作 | 行为 |
 | --- | --- |
@@ -68,28 +70,28 @@ powershell -ExecutionPolicy Bypass -File tools/build.ps1 -Test
 .\Run.cmd
 ```
 
-依赖全部位于 `third_party/`，不需要系统安装 Vulkan SDK。bootstrap 使用固定版本和 `tools/dependencies.lock.json` 中的 SHA-256 校验下载。CMake、GLSL 编译器、DXC 也随工程依赖下载，来源见 [固定依赖](docs/third-party.md)。`-Test` 运行 16 组 CTest：ECS 生命周期、资产／场景、玩法、物理、动画、Shader 编译、UI、控制台、性能计时与渲染审计。
+依赖全部位于 `third_party/`，不需要系统安装 Vulkan SDK。bootstrap 使用固定版本和 `tools/dependencies.lock.json` 中的 SHA-256 校验下载。CMake、GLSL 编译器、DXC 也随工程依赖下载，来源见 [固定依赖](docs/third-party.md)。`-Test` 运行当前的 2 组 CTest：`console_system` 与 `content_mounts`。早期的 ECS、玩法、物理、动画、Shader、渲染审计等测试已在一次测试清理中移除，docs 里各篇的历史验证记录仍引用当时的组数。
 
 表面 Shader 由随附 glslang 在运行时按 pass 编译，因此当前开发运行时需要源码树在位；离线 cook 与持久二进制缓存是后续工作。
 
 ```powershell
 # 原生窗口自动运行、GPU readback 截图、正常退出
-.\build\bin\Release\Afterlight.exe --frames 90 --capture
+.\build\bin\Release\Whimsical.exe --frames 90 --capture
 
 # 点击移动、镜头、resize、最小化恢复、取消命令、运行中重载 Map
-.\build\bin\Release\Afterlight.exe --smoke --width 960 --height 600
+.\build\bin\Release\Whimsical.exe --smoke --width 960 --height 600
 
 # 按呈现帧驱动的 ECS 生命周期回归：启停、蒙皮解绑重绑、几何增删改
-.\build\bin\Release\Afterlight.exe --ecs-smoke --width 960 --height 600
+.\build\bin\Release\Whimsical.exe --ecs-smoke --width 960 --height 600
 
 # 1280×800 默认；也可指定尺寸、调试视图和无 HUD 截图
-.\build\bin\Release\Afterlight.exe --view 5 --no-hud --frames 60 --capture
+.\build\bin\Release\Whimsical.exe --view 5 --no-hud --frames 60 --capture
 
 # 解除 vsync 量化，测量真实的每帧成本；启动即覆盖 CVar
-.\build\bin\Release\Afterlight.exe --present immediate --frames 360 --capture --cvar "r.Exposure=1.4"
+.\build\bin\Release\Whimsical.exe --present immediate --frames 360 --capture --cvar "r.Exposure=1.4"
 
 # 放大场景但保持每 tick 变化量恒定；加 --full-upload 退回逐帧全量重写以作对照
-.\build\bin\Release\Afterlight.exe --present immediate --frames 900 --capture --stress 900
+.\build\bin\Release\Whimsical.exe --present immediate --frames 900 --capture --stress 900
 ```
 
 截图写入 `captures/frame.bmp`；GPU 测量和 validation 状态写入 `captures/render-report.json`。`--capture` 未指定帧数时默认 90 帧。报告中的 `sceneSlotWrites` 与 `sceneSlotWritesIfRebuilt` 是同一场景下增量上传与全量重建的实际写入次数。
@@ -116,7 +118,7 @@ engine/
   render/                 Vulkan、几何、BLAS/TLAS、pass graph、NRD、运行时 Shader 编译与材质绑定
     shaders/              surface 契约、G-buffer / DI / GI / reuse / resolve / composite
 Projects/                 可整体搬迁的独立项目，互不引用
-  Afterlight/
+  Afterlight/             默认示例项目（Rain Court / Honeybud Court）
     .project              项目 ID、默认 Map、公共脚本加载顺序
     Config/               进程运行配置（CVar cfg）
     Content/              /Game 虚拟路径根
@@ -176,7 +178,7 @@ DI 接入固定版本 RTXDI-Library：8 个 power/uniform RIS 候选、SDK 时�
 
 NRD 4.17.3 实际参与 GPU 计算，使用 RELAX 的原生 SPIR-V、资源池、每 pass 常量、sampled/storage bindings 和两个 sampler；不是仅有接口占位。
 
-五类光源示例：`Afterlight.exe --map /Game/Maps/PhysicalLights`。Space 切换恒功率发光几何动画；组件接口、物理公式和验证命令见 [物理光源](docs/physical-lights.md)。
+五类光源示例：`Whimsical.exe --map /Game/Maps/PhysicalLights`。Space 切换恒功率发光几何动画；组件接口、物理公式和验证命令见 [物理光源](docs/physical-lights.md)。
 
 ## 当前实现边界
 
@@ -194,7 +196,7 @@ NRD 4.17.3 实际参与 GPU 计算，使用 RELAX 的原生 SPIR-V、资源池�
 
 ECS 侧当前是单 World、单已加载 Map，尚未引入 streaming、同一 Map 多实例或跨 Map 活实体解析。Map v3/v4 只在读取边界迁移，v1/v2 明确拒绝。
 
-排查闪烁时可运行 `Afterlight.exe --audit NAME --view 1 --capture`：固定场景，预热 64 帧后统计连续帧；加 `--audit-motion` 使用固定的镜头旋转轨迹。结果在 `captures/NAME/`。使用控制台 `r.DebugView 0..7` 设置诊断视图，1 为 ALBEDO；DIRECT RT (RAW) / INDIRECT RT (RAW) 是降噪前的光照信号。线程边界与开销见 [Render audit](docs/render-audit.md)。
+排查闪烁时可运行 `Whimsical.exe --audit NAME --view 1 --capture`：固定场景，预热 64 帧后统计连续帧；加 `--audit-motion` 使用固定的镜头旋转轨迹。结果在 `captures/NAME/`。使用控制台 `r.DebugView 0..7` 设置诊断视图，1 为 ALBEDO；DIRECT RT (RAW) / INDIRECT RT (RAW) 是降噪前的光照信号。线程边界与开销见 [Render audit](docs/render-audit.md)。
 
 ## 文档
 

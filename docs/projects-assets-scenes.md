@@ -7,14 +7,15 @@
 本次移除了 `animation::Library` 和 ScriptRuntime、ControllerAsset、SkinnedMesh 中的项目文件访问。类型解码器接收字节流和已解析依赖；ONNX Runtime 从 AssetManager 读取的字节建立 session。Renderer 只消费 Frame 中的 mesh 与姿态，不认识项目目录或持久 ID。SPIR-V 和 captures 是引擎构建／诊断文件，不属于 Project Content。
 
 ```text
-afterlight_assets: ContentMounts → AssetManager → Asset / Json；Project 独立描述启动配置
-afterlight_animation: Skeleton / Asset / Instance / Solver → afterlight_assets
-afterlight_core: World / ScenePersistence / RuntimeHost / ScriptRuntime → 上述两层
+whimsical_assets: ContentMounts → AssetManager → Asset / Json；Project 独立描述启动配置
+whimsical_animation: Skeleton / Asset / Instance / Solver → whimsical_assets
+whimsical_uicore: RmlUi Context / UiFrame → whimsical_assets
+whimsical_core: World / ScenePersistence / RuntimeHost / ScriptRuntime → 上述三层
 EngineAssets: 在组合入口注册 Map、SkinnedMesh、AnimationController、OnnxModel
 Renderer: Frame → GPU 资源
 ```
 
-通用 AssetManager 自带 Data、Script、Binary 类型，其余由 `registerEngineAssets()` 注册。增加后端只需注册类型解码器，无需修改 World。`animation::Asset` 继承公共 `afterlight::Asset`，保留 skeleton/createSolver/attributes 协议；每个角色仍有独立 Instance/Solver。
+通用 AssetManager 自带 Data、Script、Binary 类型，其余由 `registerEngineAssets()` 注册。增加后端只需注册类型解码器，无需修改 World。`animation::Asset` 继承公共 `whimsical::Asset`，保留 skeleton/createSolver/attributes 协议；每个角色仍有独立 Instance/Solver。
 
 ## Project 与路径
 
@@ -206,7 +207,7 @@ Engine.loadScene('/Game/Maps/MySave');
 
 JS load 延迟到当前受保护调用返回后执行，避免销毁正在执行的 heap。save 同步执行；sceneData 返回拷贝，修改后须 setSceneData。sceneObject 解析 Map 命名引用，cameraState 用于加载后初始化相机控制器。
 
-命令行：`Afterlight.exe --project <项目目录或.project> --map /Game/Maps/RainCourt`。默认 Project 是仓库 Projects/Afterlight，默认 Map 来自 startupMap。
+命令行：`Whimsical.exe --project <项目目录或.project> --map /Game/Maps/RainCourt`。默认 Project 是仓库 Projects/Afterlight，默认 Map 来自 startupMap。
 
 ## 验证和离线工具
 

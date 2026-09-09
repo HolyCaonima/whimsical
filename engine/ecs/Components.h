@@ -7,7 +7,7 @@
 #include "assets/RenderTargetAsset.h"
 #include <optional>
 
-namespace afterlight {
+namespace whimsical {
 // Backend-owned components expose writes through their system/contract, never
 // through an unchecked generic edit. New types opt in without a World blacklist.
 struct SystemComponent {};
@@ -91,4 +91,4 @@ struct Skin {
     std::shared_ptr<const SkinnedMesh> mesh;
     std::vector<unsigned> joints;
 };
-} // namespace afterlight
+} // namespace whimsical

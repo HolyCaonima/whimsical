@@ -2,7 +2,7 @@
 #include <atomic>
 #include <stdexcept>
 
-namespace afterlight {
+namespace whimsical {
 RenderTargetAsset::RenderTargetAsset()
     : generation([] {
           static std::atomic<uint64_t> next{0};
@@ -40,4 +40,4 @@ std::shared_ptr<RenderTargetAsset> RenderTargetAsset::decode(const std::string& 
         }
     throw std::invalid_argument("Unsupported RenderTarget format: " + name);
 }
-} // namespace afterlight
+} // namespace whimsical

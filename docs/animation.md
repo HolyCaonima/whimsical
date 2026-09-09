@@ -1,6 +1,6 @@
 # Animation 系统
 
-Animation 是独立的 C++17 库 `afterlight_animation`。上层提交动作意图、期望速度、朝向与可选未来轨迹，得到 parent-local 骨骼姿态、root motion、接触权重和事件。AI4Animation 是 `Solver` 的一个实现；未来 clip graph 和 motion matching 实现同一个接口，不需要继承神经动画类。
+Animation 是独立的 C++17 库 `whimsical_animation`。上层提交动作意图、期望速度、朝向与可选未来轨迹，得到 parent-local 骨骼姿态、root motion、接触权重和事件。AI4Animation 是 `Solver` 的一个实现；未来 clip graph 和 motion matching 实现同一个接口，不需要继承神经动画类。
 
 ```text
 Gameplay / JS / Navigation
@@ -25,7 +25,7 @@ World：物理接受 root motion → FK → 关节碰撞体 / 不可变骨架与
 
 属性只在显式设置时改变；每帧输入、待机、移动、`resetAnimation` 都保留当前值。实例之间独立。低层 `setSolver` 替换的是同一资产契约下的实现，保留属性；挂接新 Asset 会重新采用新声明和默认值。新求解器可将相同语义属性映射到图参数、候选集筛选或匹配代价，但选项与具体资源匹配仍由该资产负责。
 
-Afterlight 选中角色时，项目 `scripts/ui/animation_panel.asset` 通过 `Engine.animationAttributes(id)` 读取声明和值，在项目 HUD 中生成枚举选择器；点击由项目 JS 调用 `Engine.animationAttribute`。位置、样式、选中策略和紧凑窗口下的隐藏规则均在项目中，引擎不再创建该面板或将属性复制进渲染 Frame。RmlUi 在 gameplay 前接管面板点击和滚轮，避免同时移动角色或缩放镜头；未挂接动画时清空控件，`--no-hud` 时不拦截输入。
+Afterlight 项目中选中角色时，项目 `scripts/ui/animation_panel.asset` 通过 `Engine.animationAttributes(id)` 读取声明和值，在项目 HUD 中生成枚举选择器；点击由项目 JS 调用 `Engine.animationAttribute`。位置、样式、选中策略和紧凑窗口下的隐藏规则均在项目中，引擎不再创建该面板或将属性复制进渲染 Frame。RmlUi 在 gameplay 前接管面板点击和滚轮，避免同时移动角色或缩放镜头；未挂接动画时清空控件，`--no-hud` 时不拦截输入。
 
 AI4Animation 在下一次 10 Hz 预测时读取所选风格，沿用既有序列混合；UI 不重置播放状态或强制混合不同枚举值。后续求解器自行定义切换时机。
 

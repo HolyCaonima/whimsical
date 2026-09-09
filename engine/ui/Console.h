@@ -3,7 +3,7 @@
 #include "core/Types.h"
 #include <deque>
 
-namespace afterlight::ui {
+namespace whimsical::ui {
 // Text editing and input ownership live on the main thread, independent of the HUD painter.
 class Console {
   public:
@@ -31,4 +31,4 @@ class Console {
     bool complete(int direction = 1);
     std::vector<std::string> suggestions() const;
 };
-} // namespace afterlight::ui
+} // namespace whimsical::ui

@@ -2,7 +2,7 @@
 #include <cstring>
 #include <stdexcept>
 
-namespace afterlight {
+namespace whimsical {
 std::shared_ptr<StaticMesh> StaticMesh::decode(const std::string& bytes) {
     // STM1: counts followed by 15 float32 values per vertex and uint32 indices.
     if (bytes.size() < 12 || bytes.compare(0, 4, "STM1") != 0)
@@ -52,4 +52,4 @@ std::shared_ptr<TextureAsset> TextureAsset::decode(const std::string& bytes, con
     std::memcpy(texture->pixels.data(), bytes.data() + 12, size_t(count) * 4);
     return texture;
 }
-} // namespace afterlight
+} // namespace whimsical

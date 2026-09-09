@@ -12,7 +12,7 @@
 #include <utility>
 #include <memory>
 
-namespace afterlight {
+namespace whimsical {
 class GpuProfiler;
 
 // Everything the scene owns on the GPU: geometry, acceleration structures, the instance
@@ -138,4 +138,4 @@ class GpuScene {
     void writeAttributes(uint32_t slot, const RenderProxy&);
     void writeSlot(uint32_t slot, const RenderProxy&, bool zeroMotion);
 };
-} // namespace afterlight
+} // namespace whimsical

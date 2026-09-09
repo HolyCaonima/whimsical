@@ -3,10 +3,10 @@
 #include <memory>
 #include <vector>
 
-namespace afterlight::animation::ai4animation {
+namespace whimsical::animation::ai4animation {
 // Immutable ONNX session shared by characters. Runtime tensors remain per invocation.
 // Exported graphs include normalization, CxM iterations and the FiLM motion decoder.
-class OnnxModel : public afterlight::Asset {
+class OnnxModel : public whimsical::Asset {
     struct Impl;
     std::unique_ptr<Impl> impl_;
 
@@ -18,4 +18,4 @@ class OnnxModel : public afterlight::Asset {
     const std::vector<int64_t>& outputShape() const;
     std::vector<float> run(const std::vector<float>&) const;
 };
-} // namespace afterlight::animation::ai4animation
+} // namespace whimsical::animation::ai4animation

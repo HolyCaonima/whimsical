@@ -2,7 +2,7 @@
 #include "Types.h"
 #include <vector>
 #include <cstdint>
-namespace afterlight {
+namespace whimsical {
 // The persistent, slot-addressed description of everything the renderer can draw.
 //
 // A slot is stable for the whole lifetime of a proxy. The renderer mirrors slots one to
@@ -62,4 +62,4 @@ class RenderScene {
     // Hands the accumulated events to a snapshot and opens a new accumulation window.
     SceneDelta publish();
 };
-} // namespace afterlight
+} // namespace whimsical

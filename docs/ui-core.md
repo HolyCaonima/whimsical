@@ -1,6 +1,6 @@
 # uiCore / RmlUi / JavaScript UI
 
-`uiCore` 是独立 CMake 库，使用固定版本 RmlUi 6.1 和 FreeType 2.13.3。主线程拥有 Context、DOM、布局与事件；`render/UiRenderer` 只消费不可变 `UiFrame`，在渲染线程以 Vulkan 绘制几何、字体和图片。GDI HUD 与手工动画面板命中区域已移除。
+`engine/uiCore` 是独立 CMake 库 `whimsical_uicore`，使用固定版本 RmlUi 6.1 和 FreeType 2.13.3。主线程拥有 Context、DOM、布局与事件；`render/UiRenderer` 只消费不可变 `UiFrame`，在渲染线程以 Vulkan 绘制几何、字体和图片。GDI HUD 与手工动画面板命中区域已移除。
 
 ## 模块与生命周期
 
@@ -17,7 +17,7 @@ EngineUi (native tools) ──────────────────�
 - `engine/uiCore`：通用文档加载、默认样式、字体、输入路由、几何录制，不调用 World 或 ScriptRuntime。
 - `engine/scripting/UiBindings`：Duktape realm 的 DOM 句柄、事件回调及项目文档所有权；独立于玩法绑定实现。
 - `engine/ui/EngineUi`：仅拥有控制台和可选性能统计，不依赖 World，不查询角色或地图，也不处理玩法点击。
-- `Projects/Afterlight/Content/UI`、`scripts/gameplay/hud.asset` 和 `scripts/ui/`：项目拥有品牌、地点、角色卡片、操作提示、小地图和动画风格选择器的布局、数据筛选与事件。新项目不导入这些脚本，就不会出现 Afterlight 面板。
+- `Projects/Afterlight/Content/UI`、`scripts/gameplay/hud.asset` 和 `scripts/ui/`：项目拥有品牌、地点、角色卡片、操作提示、小地图和动画风格选择器的布局、数据筛选与事件。新项目不导入这些脚本，就不会出现 Afterlight 项目的面板。
 - `engine/render/UiRenderer`：Vulkan 资源缓存与 UI pass；不包含 RmlUi 头文件，不访问 DOM、World 或 JS。
 
 RmlUi 全局初始化由共享服务管理，各 uiCore 有独立 Context 和录制器。`ScriptRuntime` 可选接收 uiCore，因此无窗口的玩法测试仍可运行。窗口应用始终安装 `Engine.ui`。所有文档 API 与 JS 回调在同一主线程执行。
@@ -86,7 +86,7 @@ Console 保留现有命令编辑、历史、补全与优先输入权，展示改
 
 项目可实现可选的 `updateUI(dt)`：场景 initialize 完成后以 dt=0 调用，之后在 gameplay tick 完成后刷新；游戏暂停或固定审计时由宿主继续调用。该回调不推进玩法，允许暂停时的按钮和数据变化及时反映到 UI。RmlUi 布局与输入继续使用真实时间。
 
-Afterlight 动画面板通过 `Engine.animationAttributes(id)` 读取名字、solver 与枚举属性，用 `Engine.animationAttribute` 提交修改。小地图通过通用 `Engine.physicsBodies(filter)` 获取启用碰撞体的世界 AABB 与查询属性，自行决定过滤、投影、颜色和刷新频率；角色位置与路径直接来自项目控制器。Frame 不再携带小地图障碍、动画检查器或文案等仅供面板使用的数据。
+Afterlight 项目的动画面板通过 `Engine.animationAttributes(id)` 读取名字、solver 与枚举属性，用 `Engine.animationAttribute` 提交修改。小地图通过通用 `Engine.physicsBodies(filter)` 获取启用碰撞体的世界 AABB 与查询属性，自行决定过滤、投影、颜色和刷新频率；角色位置与路径直接来自项目控制器。Frame 不再携带小地图障碍、动画检查器或文案等仅供面板使用的数据。
 
 ## 后端边界与验证
 
@@ -96,8 +96,8 @@ Afterlight 动画面板通过 `Engine.animationAttributes(id)` 读取名字、so
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/build.ps1 -Test
-.\build\bin\Release\Afterlight.exe --smoke --width 960 --height 600
-.\build\bin\Release\Afterlight.exe --console-smoke
+.\build\bin\Release\Whimsical.exe --smoke --width 960 --height 600
+.\build\bin\Release\Whimsical.exe --console-smoke
 ```
 
 接口约定参考 [RmlUi integration](https://mikke89.github.io/RmlUiDoc/pages/cpp_manual/integrating.html) 和 [RenderInterface](https://mikke89.github.io/RmlUiDoc/pages/cpp_manual/interfaces/render.html)，实现以仓库固定的 6.1 头文件为准。
@@ -106,4 +106,4 @@ powershell -ExecutionPolicy Bypass -File tools/build.ps1 -Test
 
 Release 构建通过，13 项 CTest 全部通过。实际 Vulkan 运行分别检查项目 HUD、关闭项目 HUD 后单独显示统计、smoke 的缩放/最小化恢复/地图重载，以及 console-smoke；四次均正常退出，validation errors=0。截图和报告在 `captures/ui-ownership/`。
 
-空项目在 uiCore/ScriptRuntime 层验证了不会继承 Afterlight 面板；直接启动完全空的 3D 项目仍被 Renderer 的现有“无灯光/无实例”检查拒绝。该渲染能力边界未在本次 UI 迁移中修改，不能把 UI 层验证等同于完整空场景渲染支持。
+空项目在 uiCore/ScriptRuntime 层验证了不会继承 Afterlight 项目的面板；直接启动完全空的 3D 项目仍被 Renderer 的现有“无灯光/无实例”检查拒绝。该渲染能力边界未在本次 UI 迁移中修改，不能把 UI 层验证等同于完整空场景渲染支持。

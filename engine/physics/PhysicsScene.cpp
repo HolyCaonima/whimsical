@@ -4,7 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
-namespace afterlight {
+namespace whimsical {
 namespace {
 constexpr float Epsilon = 1e-5f, Skin = .002f;
 bool finite(vec3 p) {
@@ -664,4 +664,4 @@ bool PhysicsScene::resizeCharacter(BodyHandle h, float height) {
 void validateColliderShape(const ColliderShape& shape) {
     validate(shape);
 }
-} // namespace afterlight
+} // namespace whimsical

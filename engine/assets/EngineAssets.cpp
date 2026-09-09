@@ -5,7 +5,7 @@
 #include "MaterialAsset.h"
 #include "RenderTargetAsset.h"
 #include <sstream>
-namespace afterlight {
+namespace whimsical {
 void registerEngineAssets(AssetManager& manager) {
     manager.registerLoader(
         "RenderTarget",
@@ -57,4 +57,4 @@ void registerEngineAssets(AssetManager& manager) {
         },
         AssetManager::Encoding::Json);
 }
-} // namespace afterlight
+} // namespace whimsical

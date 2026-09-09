@@ -7,7 +7,7 @@
 // how long the contents mean anything, and how a shader names it. Binding numbers,
 // descriptor writes, allocation, clearing, barriers and the GLSL declaration block are all
 // derived from it, so adding a resource is one line in the feature that needs it.
-namespace afterlight {
+namespace whimsical {
 constexpr uint32_t MaxInstances = 1024, MaxLights = 256, MaxMaterials = 256, MaxTextures = 64;
 // The DI gradient is measured on strata of this many pixels a side.
 constexpr uint16_t GradientDivisor = 3;
@@ -76,4 +76,4 @@ struct RenderResources {
     OutputResources output;
     RenderResources(bool captureEnabled, uint32_t auditSignals);
 };
-} // namespace afterlight
+} // namespace whimsical

@@ -3,7 +3,7 @@
 #include <set>
 #include <stdexcept>
 
-namespace afterlight {
+namespace whimsical {
 static Json vector(vec3 v) {
     return Json::array({v.x, v.y, v.z});
 }
@@ -127,4 +127,4 @@ void SceneResourceDescription::validate() const {
         throw std::invalid_argument("Invalid Map camera");
     (void)data.members();
 }
-} // namespace afterlight
+} // namespace whimsical

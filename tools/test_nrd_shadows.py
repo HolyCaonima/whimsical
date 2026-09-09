@@ -50,7 +50,7 @@ def create_project(tag):
 def run():
     tag = "nrd-shadow-" + uuid.uuid4().hex[:8]
     project = create_project(tag)
-    args = [str(ROOT / "build/bin/Release/Afterlight.exe"), "--project", str(project),
+    args = [str(ROOT / "build/bin/Release/Whimsical.exe"), "--project", str(project),
             "--frames", "192", "--width", "640", "--height", "400", "--validation",
             "--present", "immediate", "--capture", "--audit", tag]
     print("Validating single-NRD shadow edges: " + tag, flush=True)

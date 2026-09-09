@@ -48,17 +48,17 @@ var description = Engine.content.describe(surface); // {ref, header}，不加载
 - 迁移器只理解通用的组件引用。项目自定义 JSON 中的数字别名必须由项目迁移；
   本次已将 RainCourt 的 `data.materials` 转为 AssetRef，并迁移反馈标记材质。
 - 已迁移仓库中的 8 张地图，提取 34 个 Material 资产；Honeybud 的 37 个已有资产绑定
-  保留原 ID。另为编辑器 gizmo、Afterlight 反馈标记和 EntityID 示例提供常规材质资产。
+  保留原 ID。另为编辑器 gizmo、Afterlight 项目反馈标记和 EntityID 示例提供常规材质资产。
 - HumanEditor、MapleCircuit 和 Honeybud 的生成入口已使用资产引用。
   临时 gizmo 实体仍通过 `persistent:false` 排除，不再需要临时材质表和编号重映射。
 
 ## 验证边界
 
-仅构建 Release 的 `Afterlight` 目标，并使用实际程序加载项目、渲染及检查退出日志。
+仅构建 Release 的 `Whimsical` 目标，并使用实际程序加载项目、渲染及检查退出日志。
 没有新增、修改或运行测试用例。旧测试中使用数字材质契约的代码仍待单独迁移，
 本次应用目标构建不等同于全量测试目标构建。
 
-Release `Afterlight` 目标构建通过。HumanEditor、Afterlight / RainCourt、MapleCircuit
+Release `Whimsical` 目标构建通过。HumanEditor、Afterlight / RainCourt、MapleCircuit
 和 HoneybudCourt 各完成 60 帧运行，正常退出且 Vulkan validation errors=0。
 迁移数据核对未发现材质参数或实体其他字段发生改变。
 

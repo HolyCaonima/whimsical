@@ -3,7 +3,7 @@
 在仓库根目录运行：
 
 ```powershell
-.\build\bin\Release\Afterlight.exe --project Projects/EntityID --width 640 --height 480 --frames 90 --validation
+.\build\bin\Release\Whimsical.exe --project Projects/EntityID --width 640 --height 480 --frames 90 --validation
 ```
 
 `Content/Example.js` 创建前后两个 box，使用通用 RT 资产引用挂载 `drawEntityID`，通过异步 ticket 读取 `Uint32Array`。它验证近处遮挡、背景 0、隐藏近处后的远处 ID，以及移除输出组件后的内容保留。

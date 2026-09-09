@@ -2,7 +2,7 @@
 #include "Validation.h"
 #include "core/CpuProfile.h"
 #include "assets/MaterialAsset.h"
-namespace afterlight {
+namespace whimsical {
 RenderSystem::RenderSystem(SceneStorage& storage) : s(storage) {
     s.changes.subscribe<WorldPoseChanged>([this](Entity e) { publishTransform(e); });
     s.changes.subscribe<EffectiveEnabledChanged>([this](Entity e) { publishAttributes(e); });
@@ -137,4 +137,4 @@ void RenderSystem::extract(Frame& f, bool debug, RenderTargetAccess& targets) {
         f.skeletons.push_back(std::move(pose));
     }
 }
-} // namespace afterlight
+} // namespace whimsical

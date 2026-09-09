@@ -2,7 +2,7 @@
 #include "physics/SpatialCollider.h"
 #include <algorithm>
 #include <stdexcept>
-namespace afterlight {
+namespace whimsical {
 std::vector<AnimationColliderDescription> AnimationCollision::describe(uint32_t owner) const {
     std::vector<AnimationColliderDescription> result;
     for (const auto& b : bindings_)
@@ -82,4 +82,4 @@ void AnimationCollision::remove(uint32_t owner) {
                                    [&](const Binding& b) { return b.owner == owner; }),
                     bindings_.end());
 }
-} // namespace afterlight
+} // namespace whimsical

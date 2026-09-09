@@ -5,7 +5,7 @@
 #include "graph/ImageReadback.h"
 #include <fstream>
 
-namespace afterlight {
+namespace whimsical {
 using namespace rg;
 
 namespace {
@@ -20,7 +20,7 @@ VkShaderModule createModule(VulkanContext& vk, const std::vector<uint32_t>& code
 // The SPIR-V is both what runs and what says which resources the pass touches, so it is
 // read rather than handed straight to the driver.
 std::vector<uint32_t> loadSpirv(const char* name) {
-    std::string path = std::string(AFTERLIGHT_SHADERS) + "/" + name + ".spv";
+    std::string path = std::string(WHIMSICAL_SHADERS) + "/" + name + ".spv";
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file)
         throw std::runtime_error("Missing SPIR-V: " + path);
@@ -436,4 +436,4 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
                            VK_FILTER_NEAREST);
         });
 }
-} // namespace afterlight
+} // namespace whimsical

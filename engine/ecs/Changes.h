@@ -5,7 +5,7 @@
 #include <any>
 #include <exception>
 
-namespace afterlight {
+namespace whimsical {
 // Typed invalidations, not a second copy of component state. A system publishes
 // after its authoritative write; subscribers read that committed state.
 class Changes {
@@ -162,4 +162,4 @@ struct CharacterResized {
     Entity entity;
     vec3 centerDelta;
 };
-} // namespace afterlight
+} // namespace whimsical

@@ -3,8 +3,8 @@
 控制台输入 `profileCPU` 抓取下一次 Game 更新及消费该请求快照的渲染帧；`profileCPU last` 重看最近报告。命令名支持控制台已有的模糊搜索和上下方向键候选。抓取未完成前再次输入只提示已有请求，不重复排队。关闭 HUD 不影响命令。
 
 ```powershell
-.\build\bin\Release\Afterlight.exe --map /Game/Maps/HoneybudCourt --profile-cpu
-.\build\bin\Release\Afterlight.exe --frames 1 --capture --exec "profileCPU"
+.\build\bin\Release\Whimsical.exe --map /Game/Maps/HoneybudCourt --profile-cpu
+.\build\bin\Release\Whimsical.exe --frames 1 --capture --exec "profileCPU"
 ```
 
 结果写入控制台、标准输出，以及 `captures/cpu-profile.txt` / `captures/cpu-profile.json`，后一次覆盖前一次。启动命令抓取的 Game 树只有初始快照准备，渲染器启动初始化不在采样内；评估稳定的逻辑更新应在运行后执行命令。有限帧模式也会收集最后一帧的结果；未完成请求在退出时明确提示。

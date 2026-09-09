@@ -1,6 +1,6 @@
 """Original Honeybud Court kit. Execute inside Blender through mcp_call.py.
 
-Metres, Blender Z-up -> Afterlight Y-up. Each reusable kit part is one material
+Metres, Blender Z-up -> Whimsical Y-up. Each reusable kit part is one material
 primitive; linked instances share both the exported mesh and the renderer BLAS.
 """
 import bpy

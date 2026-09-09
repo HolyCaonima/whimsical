@@ -9,7 +9,7 @@ class Context;
 class ElementDocument;
 } // namespace Rml
 
-namespace afterlight {
+namespace whimsical {
 struct Input;
 namespace ui {
 // One context per host. All DOM access and callbacks run on the simulation thread.
@@ -33,4 +33,4 @@ class UiCore {
     static std::string escape(const std::string&);
 };
 } // namespace ui
-} // namespace afterlight
+} // namespace whimsical

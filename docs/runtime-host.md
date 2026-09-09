@@ -168,7 +168,7 @@ Engine.view.outlines([]); // 只清空当前 realm 的请求
 
 引擎不持有玩家、选择、hover、路径或状态文案，不提供 `setPlayer/select/showPath/status`。物理 `input.picked` 返回命中的 pickable 实体；哪些对象可交互由项目决定，不会自动触发轮廓。项目使用已有命名引用与脚本状态表达角色和玩法，使用普通临时网格/材质表达角色圆圈、移动目标等效果。数据加载不执行项目表现脚本，因此不会自动出现这些效果。
 
-Afterlight 的 `gameplay/presentation` 创建并更新圆圈与目的地网格，圆圈相对角色脚部定位、目的地使用路径点高度；它们遵循普通几何深度和材质规则。HumanEditor 只提交自己的多选轮廓，Play 时清空自身请求，Stop/场景切换后按恢复的实体重新提交。
+Afterlight 项目的 `gameplay/presentation` 创建并更新圆圈与目的地网格，圆圈相对角色脚部定位、目的地使用路径点高度；它们遵循普通几何深度和材质规则。HumanEditor 只提交自己的多选轮廓，Play 时清空自身请求，Stop/场景切换后按恢复的实体重新提交。
 
 ## 验证入口
 

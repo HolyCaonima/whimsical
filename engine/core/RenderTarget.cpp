@@ -1,7 +1,7 @@
 #include "RenderTarget.h"
 #include <stdexcept>
 
-namespace afterlight {
+namespace whimsical {
 Json textureContentsJson(const TextureContents& v) {
     return {{"rtVersion", std::to_string(v.rtVersion)},
             {"contentVersion", std::to_string(v.contentVersion)},
@@ -140,4 +140,4 @@ std::vector<std::shared_ptr<PixelReadRequest>> RenderTargetAccess::snapshot(uint
     }
     return result;
 }
-} // namespace afterlight
+} // namespace whimsical

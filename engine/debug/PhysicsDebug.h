@@ -1,7 +1,7 @@
 #pragma once
 #include "core/Types.h"
 #include "physics/PhysicsScene.h"
-namespace afterlight {
+namespace whimsical {
 // Snapshot adapter: the render thread receives line values, never PhysicsScene pointers or handles.
 inline void appendPhysicsDebug(const PhysicsScene& scene, Frame& frame) {
     frame.physicsDebug = true;
@@ -51,4 +51,4 @@ inline void appendPhysicsDebug(const PhysicsScene& scene, Frame& frame) {
         }
     }
 }
-} // namespace afterlight
+} // namespace whimsical

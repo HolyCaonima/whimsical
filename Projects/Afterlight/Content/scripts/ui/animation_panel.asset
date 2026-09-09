@@ -1,6 +1,6 @@
 ALAS1
 {"id":"b1433b3e38624dd1b8dffb7b18ad542c","name":"animation_panel","version":1,"type":"Script","storage":"embedded","metadata":{}}
-// Presentation and interaction belong to Afterlight; the engine supplies attribute data only.
+// Presentation and interaction belong to the project; the engine supplies attribute data only.
 var AnimationPanel = {
     signature: '',
     control: function(parent, entity, attribute, index) {

@@ -15,7 +15,7 @@ int main(int argc, char** argv) {
     try {
         std::filesystem::path directory(argv[1]);
         std::filesystem::create_directories(directory);
-        for (const auto& [name, source] : afterlight::RenderResources(false, 0).registry.glsl()) {
+        for (const auto& [name, source] : whimsical::RenderResources(false, 0).registry.glsl()) {
             std::ofstream out(directory / name, std::ios::binary);
             out.exceptions(std::ios::failbit | std::ios::badbit);
             out << "// Generated from engine/render/RenderResources.cpp. Do not edit.\n" << source;

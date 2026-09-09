@@ -1,7 +1,7 @@
 #include "World.h"
 #include "CpuProfile.h"
 #include "debug/PhysicsDebug.h"
-namespace afterlight {
+namespace whimsical {
 World::World() {
     storage_.removeComponent = [this](Entity e, std::type_index type) {
         auto c = componentCatalog().find(type);
@@ -149,4 +149,4 @@ Frame World::snapshot(const Input& input, uint64_t tick, double time, int debug,
     resetHistory = false;
     return f;
 }
-} // namespace afterlight
+} // namespace whimsical

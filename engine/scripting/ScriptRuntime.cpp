@@ -9,7 +9,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <cstring>
-namespace afterlight {
+namespace whimsical {
 void ScriptRuntime::log(const std::string& text) {
     std::cout << "[JS] " << text << "\n";
     if (logSink_)
@@ -1162,4 +1162,4 @@ void ScriptRuntime::tick(float dt, const Input& rawInput, bool gameplayInput) {
         checkedCall(2);
     }
 }
-} // namespace afterlight
+} // namespace whimsical

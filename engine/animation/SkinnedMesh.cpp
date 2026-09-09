@@ -1,7 +1,7 @@
 #include "SkinnedMesh.h"
 
 #include <stdexcept>
-namespace afterlight {
+namespace whimsical {
 std::shared_ptr<SkinnedMesh> SkinnedMesh::decode(std::istream& file) {
     auto read = [&](void* p, size_t n) {
         if (!file.read(static_cast<char*>(p), std::streamsize(n)))
@@ -61,4 +61,4 @@ std::vector<DeformedVertex> deformSkin(const SkinnedMesh& mesh, const std::vecto
     }
     return result;
 }
-} // namespace afterlight
+} // namespace whimsical
