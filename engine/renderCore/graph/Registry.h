@@ -188,8 +188,11 @@ inline bool hostRead(const Declaration& declaration) {
 class Registry {
     std::vector<Declaration> declarations_;
     ResourceList bindings_; // binding number -> default resource and history half
+    uint32_t constantBytes_ = 0;
 
   public:
+    explicit Registry(uint32_t pushConstantBytes = 0) : constantBytes_(pushConstantBytes) {}
+    uint32_t pushConstantBytes() const { return constantBytes_; }
     ResourceId declare(Declaration);
     // Discard a frame's unbound imports. Shader interface declarations remain immutable.
     void truncateImports(size_t first);

@@ -31,7 +31,7 @@ VkFormat deviceFormat(PixelFormat format) {
     throw std::invalid_argument("Unsupported RenderTarget pixel format");
 }
 } // namespace
-GpuRenderTargets::GpuRenderTargets(VulkanContext& vk, rg::Registry& registry, rg::ResourcePool& pool)
+GpuRenderTargets::GpuRenderTargets(VulkanContext& vk, rg::Registry& registry, rc::NativeResources pool)
     : vk_(vk), registry_(registry), pool_(pool), fixedResources_(registry.size()) {}
 void GpuRenderTargets::destroy(Target& target) {
     vk_.destroy(target.color.image);

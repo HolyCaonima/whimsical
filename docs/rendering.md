@@ -99,7 +99,7 @@ graph.add("RTXDI Spatial Resampling")
 | `Imported` | 外部分配、图负责同步（swapchain、BLAS/TLAS） | 只同步不分配 |
 | `External` | 外部分配且外部同步（顶点、实例、灯表） | 只绑定，不参与 barrier |
 
-`History` 是替代"帧末复制"的机制。`ResourcePool` 为它分配两个物理槽位；渲染系统在提交后调用 `GraphContext::advanceHistory()`，`previous` 视图指向上一帧写入的那半，两半的 descriptor 在两套 set 里各写一次。其他 system 的执行上下文独立决定何时推进。G-buffer 的 albedo/normal/position/viewZ 和 GI reservoir 都走这条路，帧末不再有拷贝。
+`History` 是替代"帧末复制"的机制。`ResourcePool` 为它分配两个物理槽位；渲染系统在提交完成并收集读回之后调用 `GraphContext::advanceHistory()`，`previous` 视图指向上一帧写入的那半，两半的 descriptor 在两套 set 里各写一次。其他 system 的执行上下文独立决定何时推进。G-buffer 的 albedo/normal/position/viewZ 和 GI reservoir 都走这条路，帧末不再有拷贝。
 
 DI 的四层 reservoir 不是 `History`，因为四层里两层跨帧、两层帧内复用同一块地址空间。它改成**角色轮转**：shader 说角色，`diLayer(role) = role ^ g.renderSettings.w`，`w` 每帧在 0 和 2 之间翻转，等价于原来的 `final→previous final`、`replay→previous replay` 两次拷贝。
 

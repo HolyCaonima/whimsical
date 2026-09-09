@@ -113,7 +113,7 @@ target_link_libraries(whimsical_core PUBLIC duktape whimsical_animation whimsica
 # the rendering pipeline, UI, NRD, RTXDI or the application's scene/material runtime.
 add_library(whimsical_rendercore
   engine/renderCore/RenderCore.cpp engine/renderCore/ShaderCompiler.cpp engine/renderCore/GpuProfiler.cpp
-  engine/renderCore/vulkan/VulkanContext.cpp
+  engine/renderCore/vulkan/VulkanContext.cpp engine/renderCore/vulkan/Programs.cpp
   engine/renderCore/graph/Registry.cpp engine/renderCore/graph/ResourcePool.cpp
   engine/renderCore/graph/RenderGraph.cpp engine/renderCore/graph/ShaderAccess.cpp)
 target_include_directories(whimsical_rendercore PUBLIC engine)
@@ -123,6 +123,26 @@ target_compile_definitions(whimsical_rendercore PRIVATE
   WHIMSICAL_ROOT="${CMAKE_SOURCE_DIR}"
   WHIMSICAL_GLSLANG="${DEPS}/glslang/bin/glslang.exe"
   WHIMSICAL_SHADER_CACHE="${CMAKE_BINARY_DIR}/shaders")
+# XPBD definitions and planning are device-independent; execution consumes RenderCore.
+add_library(whimsical_xpbd_model engine/xpbd/model/Expression.cpp engine/xpbd/model/Model.cpp)
+target_include_directories(whimsical_xpbd_model PUBLIC engine)
+target_compile_options(whimsical_xpbd_model PRIVATE /W4 /permissive- /utf-8)
+add_library(whimsical_xpbd_compiler engine/xpbd/compiler/Compiler.cpp engine/xpbd/compiler/Kernels.cpp engine/xpbd/compiler/Migration.cpp)
+target_link_libraries(whimsical_xpbd_compiler PUBLIC whimsical_xpbd_model)
+target_compile_options(whimsical_xpbd_compiler PRIVATE /W4 /permissive- /utf-8)
+add_library(whimsical_xpbd_runtime engine/xpbd/runtime/Instance.cpp)
+target_link_libraries(whimsical_xpbd_runtime PUBLIC whimsical_xpbd_compiler whimsical_rendercore PRIVATE volk)
+target_compile_options(whimsical_xpbd_runtime PRIVATE /W4 /permissive- /utf-8)
+add_library(whimsical_xpbd_adapter engine/xpbd/adapter/Mailbox.cpp engine/xpbd/adapter/ScriptBindings.cpp)
+target_link_libraries(whimsical_xpbd_adapter PUBLIC whimsical_xpbd_compiler duktape PRIVATE whimsical_assets)
+target_compile_options(whimsical_xpbd_adapter PRIVATE /W4 /permissive- /utf-8)
+add_library(whimsical_xpbd_service engine/xpbd/adapter/GpuService.cpp)
+target_link_libraries(whimsical_xpbd_service PUBLIC whimsical_xpbd_runtime whimsical_xpbd_adapter)
+target_compile_options(whimsical_xpbd_service PRIVATE /W4 /permissive- /utf-8)
+add_executable(xpbd_run tools/XpbdRun.cpp)
+target_link_libraries(xpbd_run PRIVATE whimsical_xpbd_service)
+target_compile_options(xpbd_run PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(whimsical_core PUBLIC whimsical_xpbd_adapter)
 add_library(whimsical_shader_runtime engine/render/ShaderCompiler.cpp engine/render/MaterialBindings.cpp)
 target_link_libraries(whimsical_shader_runtime PUBLIC whimsical_core whimsical_rendercore)
 target_compile_options(whimsical_shader_runtime PRIVATE /W4 /permissive- /utf-8)
@@ -154,7 +174,7 @@ target_include_directories(whimsical_rendering PRIVATE "${DEPS}/rtxdi/Include")
 target_compile_options(whimsical_rendering PRIVATE /W4 /permissive- /utf-8)
 target_compile_definitions(whimsical_rendering PRIVATE WHIMSICAL_SHADERS="${CMAKE_BINARY_DIR}/shaders")
 add_executable(Whimsical engine/main.cpp engine/platform/Window.cpp)
-target_link_libraries(Whimsical PRIVATE whimsical_rendering user32 gdi32 winmm comdlg32)
+target_link_libraries(Whimsical PRIVATE whimsical_rendering whimsical_xpbd_service user32 gdi32 winmm comdlg32)
 whimsical_copy_onnx(Whimsical)
 target_compile_options(Whimsical PRIVATE /W4 /permissive- /utf-8)
 target_compile_options(whimsical_core PRIVATE /W4 /permissive- /utf-8)
@@ -173,6 +193,10 @@ add_custom_target(whimsical_shaders DEPENDS ${SPIRV})
 add_dependencies(whimsical_shaders whimsical_shader_bindings)
 add_dependencies(Whimsical whimsical_shaders)
 enable_testing()
+add_executable(xpbd_tests tests/XpbdTests.cpp)
+target_link_libraries(xpbd_tests PRIVATE whimsical_xpbd_runtime)
+target_compile_options(xpbd_tests PRIVATE /W4 /permissive- /utf-8)
+add_test(NAME xpbd_solver COMMAND xpbd_tests)
 add_executable(console_tests tests/ConsoleTests.cpp)
 target_link_libraries(console_tests PRIVATE whimsical_core)
 target_compile_options(console_tests PRIVATE /W4 /permissive- /utf-8)

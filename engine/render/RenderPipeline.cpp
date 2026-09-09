@@ -10,14 +10,6 @@ namespace whimsical {
 using namespace rg;
 
 namespace {
-VkShaderModule createModule(VulkanContext& vk, const std::vector<uint32_t>& code) {
-    VkShaderModuleCreateInfo info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-    info.codeSize = code.size() * sizeof(uint32_t);
-    info.pCode = code.data();
-    VkShaderModule shader;
-    VK_CHECK(vkCreateShaderModule(vk.device, &info, nullptr, &shader));
-    return shader;
-}
 // The SPIR-V is both what runs and what says which resources the pass touches, so it is
 // read rather than handed straight to the driver.
 std::vector<uint32_t> loadSpirv(const char* name) {
@@ -38,20 +30,15 @@ rg::ClearColor black() {
 
 RenderPipeline::RenderPipeline(VulkanContext& vk, ShaderCompiler& shaders, rc::GraphContext& execution,
                                const RenderResources& resources)
-    : vk_(vk), shaders_(shaders), execution_(execution), pool_(rc::VulkanAccess::resources(execution)), r_(resources) {
+    : vk_(vk), shaders_(shaders), execution_(execution), pool_(execution), r_(resources) {
     for (uint32_t i = 0; i < screenSpacePasses.size(); ++i) {
         compute_[Composite + i] = &execution_.compute(loadSpirv(screenSpacePasses[i]));
     }
 }
 
-RenderPipeline::~RenderPipeline() {
-    for (const auto& program : rasterPrograms_)
-        vkDestroyPipeline(vk_.device, program.second, nullptr);
-    for (const auto& program : entityIDPrograms_)
-        vkDestroyPipeline(vk_.device, program.second, nullptr);
-}
+RenderPipeline::~RenderPipeline() = default;
 
-VkPipeline RenderPipeline::createRaster(const RasterKey& key, bool entityID) {
+rc::Pipeline RenderPipeline::createRaster(const RasterKey& key, bool entityID) {
     const bool display = key.domain == MaterialDomain::Display;
     const auto code = shaders_.compile(entityID  ? "entity_id.frag"
                                        : display ? "display.frag"
@@ -61,42 +48,19 @@ VkPipeline RenderPipeline::createRaster(const RasterKey& key, bool entityID) {
     auto& accesses = entityID ? entityIDAccess_ : display ? displayAccess_ : rasterAccess_;
     merge(accesses, reflect(pool_.registry(), vertexCode.data(), vertexCode.size()));
     merge(accesses, reflect(pool_.registry(), code.data(), code.size()));
-    VkShaderModule vertex = createModule(vk_, vertexCode), fragment = createModule(vk_, code);
-    VkPipelineShaderStageCreateInfo stages[2]{};
-    for (int i = 0; i < 2; i++) {
-        stages[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        stages[i].stage = i ? VK_SHADER_STAGE_FRAGMENT_BIT : VK_SHADER_STAGE_VERTEX_BIT;
-        stages[i].module = i ? fragment : vertex;
-        stages[i].pName = "main";
-    }
-    VkVertexInputBindingDescription binding{0, sizeof(GpuVertex), VK_VERTEX_INPUT_RATE_VERTEX};
-    VkVertexInputAttributeDescription attributes[] = {
+    rc::GraphicsDescription desc;
+    desc.layout = pool_.pipelineLayout();
+    desc.bindings = {{0, sizeof(GpuVertex), VK_VERTEX_INPUT_RATE_VERTEX}};
+    desc.attributes = {
         {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},  {1, 0, VK_FORMAT_R32G32B32_SFLOAT, 16},
         {2, 0, VK_FORMAT_R32G32B32_SFLOAT, 32}, {3, 0, VK_FORMAT_R32G32B32_SFLOAT, 48},
         {4, 0, VK_FORMAT_R32G32_SFLOAT, 64},    {5, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 80}};
-    VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-    vi.vertexBindingDescriptionCount = 1;
-    vi.pVertexBindingDescriptions = &binding;
-    vi.vertexAttributeDescriptionCount = 6;
-    vi.pVertexAttributeDescriptions = attributes;
-    VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
-    ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    VkPipelineViewportStateCreateInfo viewport{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
-    viewport.viewportCount = viewport.scissorCount = 1;
-    VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
-    rs.polygonMode = VK_POLYGON_MODE_FILL;
-    rs.cullMode = key.cull == SurfaceCull::Back    ? VK_CULL_MODE_BACK_BIT
-                  : key.cull == SurfaceCull::Front ? VK_CULL_MODE_FRONT_BIT
-                                                   : VK_CULL_MODE_NONE;
-    rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    rs.lineWidth = 1;
-    VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-    ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-    VkPipelineDepthStencilStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+    desc.cull = key.cull == SurfaceCull::Back ? VK_CULL_MODE_BACK_BIT
+                : key.cull == SurfaceCull::Front ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_NONE;
     // Vulkan gates writes on depthTestEnable. Expose independent material switches
     // by using an always-passing test when only writing was requested.
-    ds.depthTestEnable = key.depthTest || key.depthWrite;
-    ds.depthWriteEnable = key.depthWrite;
+    desc.depthTest = key.depthTest || key.depthWrite;
+    desc.depthWrite = key.depthWrite;
     constexpr VkCompareOp compareOps[] = {VK_COMPARE_OP_NEVER,
                                           VK_COMPARE_OP_LESS,
                                           VK_COMPARE_OP_EQUAL,
@@ -105,7 +69,7 @@ VkPipeline RenderPipeline::createRaster(const RasterKey& key, bool entityID) {
                                           VK_COMPARE_OP_NOT_EQUAL,
                                           VK_COMPARE_OP_GREATER_OR_EQUAL,
                                           VK_COMPARE_OP_ALWAYS};
-    ds.depthCompareOp = key.depthTest ? compareOps[int(key.depthCompare)] : VK_COMPARE_OP_ALWAYS;
+    desc.depthCompare = key.depthTest ? compareOps[int(key.depthCompare)] : VK_COMPARE_OP_ALWAYS;
     std::array<VkPipelineColorBlendAttachmentState, 6> attachments{};
     for (auto& a : attachments)
         a.colorWriteMask = 15;
@@ -120,41 +84,16 @@ VkPipeline RenderPipeline::createRaster(const RasterKey& key, bool entityID) {
         a.dstAlphaBlendFactor =
             key.blend == MaterialBlend::Alpha ? VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA : VK_BLEND_FACTOR_ONE;
     }
-    VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-    blend.attachmentCount = entityID || display ? 1 : uint32_t(attachments.size());
-    blend.pAttachments = attachments.data();
-    VkDynamicState states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-    VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
-    dynamic.dynamicStateCount = 2;
-    dynamic.pDynamicStates = states;
-    VkFormat formats[] = {VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT,
-                          VK_FORMAT_R32G32B32A32_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT,
-                          VK_FORMAT_R32_SFLOAT,          VK_FORMAT_R16G16B16A16_SFLOAT};
-    VkPipelineRenderingCreateInfo rendering{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
+    desc.colors = {VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT,
+                   VK_FORMAT_R32G32B32A32_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT,
+                   VK_FORMAT_R32_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT};
+    if (entityID || display)
+        desc.colors.resize(1);
     if (entityID)
-        formats[0] = VK_FORMAT_R32_UINT;
-    rendering.colorAttachmentCount = entityID || display ? 1 : 6;
-    rendering.pColorAttachmentFormats = formats;
-    rendering.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
-    VkGraphicsPipelineCreateInfo gp{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-    gp.pNext = &rendering;
-    gp.stageCount = 2;
-    gp.pStages = stages;
-    gp.pVertexInputState = &vi;
-    gp.pInputAssemblyState = &ia;
-    gp.pViewportState = &viewport;
-    gp.pRasterizationState = &rs;
-    gp.pMultisampleState = &ms;
-    gp.pDepthStencilState = &ds;
-    gp.pColorBlendState = &blend;
-    gp.pDynamicState = &dynamic;
-    gp.layout = pool_.pipelineLayout();
-    VkPipeline raster;
-    auto result = vkCreateGraphicsPipelines(vk_.device, VK_NULL_HANDLE, 1, &gp, nullptr, &raster);
-    vkDestroyShaderModule(vk_.device, vertex, nullptr);
-    vkDestroyShaderModule(vk_.device, fragment, nullptr);
-    VK_CHECK(result);
-    return raster;
+        desc.colors[0] = VK_FORMAT_R32_UINT;
+    desc.blend.assign(attachments.begin(), attachments.begin() + desc.colors.size());
+    desc.depth = VK_FORMAT_D32_SFLOAT;
+    return rc::graphicsProgram(vk_, desc, rc::ShaderCode(vertexCode), rc::ShaderCode(code));
 }
 
 void RenderPipeline::ensurePrograms(const std::vector<Material>& materials,
@@ -192,7 +131,7 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
                 VkClearColorValue clear{};
                 VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
                 for (auto ref : resettable)
-                    if (c.pool->declaration(ref.id).kind == Kind::Image)
+                    if (c.declaration(ref.id).kind == Kind::Image)
                         vkCmdClearColorImage(c.command, c.image(ref).handle, c.image(ref).layout, &clear, 1,
                                              &range);
                     else
@@ -215,7 +154,7 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
         const auto& material = frame.materials[proxy.attributes.material];
         auto& group = groups[{material.renderState.domain, material.renderState.layer}];
         const auto key = RasterKey::from(material);
-        group.color.push_back({slot, rasterPrograms_.at(key)});
+        group.color.push_back({slot, rasterPrograms_.at(key)->pipeline});
         if (picking && !entityIDPrograms_.count(key))
             entityIDPrograms_.emplace(key, createRaster(key, true));
     }
@@ -242,7 +181,7 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
         if (picking)
             for (const auto& draw : group.color) {
                 const auto& material = frame.materials[frame.proxies[draw.slot].attributes.material];
-                group.entityID.push_back({draw.slot, entityIDPrograms_.at(RasterKey::from(material))});
+                group.entityID.push_back({draw.slot, entityIDPrograms_.at(RasterKey::from(material))->pipeline});
             }
     }
     auto record = [gpuScene](std::vector<RasterDraw> draws) {
@@ -264,14 +203,13 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
             .modify(scene.blas, Access::Build)
             .record([gpuScene](const PassContext& c) { gpuScene->recordSkinnedBlas(c.command); });
 
-    auto* profiler = setup.profiler;
     // A refit keeps the structure it updates; a rebuild replaces it. The scene has already
     // decided which, so the graph is told rather than assuming the conservative one. The
     // bottom level comes with the top one, which is what orders this against the refit.
     graph.add("Acceleration Structures")
         .read(scene.buildInstances, Access::Build)
         .use(scene.tlas, Access::Build, gpuScene->tlasRefits() ? Usage::Modify : Usage::Overwrite)
-        .record([gpuScene, profiler](const PassContext& c) { gpuScene->recordTlas(c.command, *profiler); });
+        .record([gpuScene](const PassContext& c) { gpuScene->recordTlas(c.command, c.profiler()); });
 
     rg::ClearColor farViewZ{10000, 0, 0, 0};
     // Attachments and the vertex and index fetch are the pass's own: they are the only
@@ -362,7 +300,7 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
         .overwrite(shade.denoisedDiffuse, Access::Compute)
         .overwrite(shade.denoisedSpecular, Access::Compute)
         .sideEffect()
-        .record([this, denoiser, &camera, profiler, index = uint32_t(setup.frameNumber), reset = setup.reset,
+        .record([this, denoiser, &camera, index = uint32_t(setup.frameNumber), reset = setup.reset,
                  ms = setup.frameMs](const PassContext& c) {
             std::array<Image*, size_t(nrd::ResourceType::MAX_NUM)> resources{};
             auto bind = [&](nrd::ResourceType type, ResourceRef ref) {
@@ -377,7 +315,7 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
             bind(nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST, r_.shading.denoisedSpecular);
             bind(nrd::ResourceType::IN_DIFF_CONFIDENCE, r_.di.diffuseConfidence);
             bind(nrd::ResourceType::IN_SPEC_CONFIDENCE, r_.di.specularConfidence);
-            denoiser->dispatch(c.command, resources, camera, index, reset, ms, *profiler);
+            denoiser->dispatch(c.command, resources, camera, index, reset, ms, c.profiler());
         });
 
     graph.add("Scene Composition + Tone Map")

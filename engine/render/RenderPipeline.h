@@ -5,6 +5,8 @@
 #include "ShaderCompiler.h"
 #include "renderCore/graph/RenderGraph.h"
 #include "renderCore/RenderCore.h"
+#include "renderCore/vulkan/Programs.h"
+#include "renderCore/vulkan/VulkanAccess.h"
 #include <array>
 #include <map>
 
@@ -20,7 +22,6 @@ struct FrameSetup {
     GpuScene* scene = nullptr;
     NrdDenoiser* denoiser = nullptr;
     UiRenderer* ui = nullptr;
-    GpuProfiler* profiler = nullptr;
     GpuRenderTargets* targets = nullptr;
     uint64_t frameNumber = 0;
     float frameMs = 16.7f;
@@ -68,14 +69,14 @@ class RenderPipeline {
     VulkanContext& vk_;
     ShaderCompiler& shaders_;
     rc::GraphContext& execution_;
-    rg::ResourcePool& pool_;
+    rc::NativeResources pool_;
     const RenderResources& r_;
     // The programs the frame declares itself with. The screen-space ones exist for the
     // whole run; the surface ones are relinked whenever the live Shader set changes, so a
     // pass points at whichever program is current rather than owning it.
     std::array<const rg::Program*, PassCount> compute_{};
-    std::map<RasterKey, VkPipeline> rasterPrograms_;
-    std::map<RasterKey, VkPipeline> entityIDPrograms_;
+    std::map<RasterKey, rc::Pipeline> rasterPrograms_;
+    std::map<RasterKey, rc::Pipeline> entityIDPrograms_;
     std::map<ShaderCompiler::ShaderSet, SurfacePrograms> computePrograms_;
     // The G-buffer pass binds one pipeline per material, so what it touches is the union
     // over them plus the vertex stage they share.
@@ -83,6 +84,6 @@ class RenderPipeline {
     std::vector<rg::ShaderAccess> entityIDAccess_;
     std::vector<rg::ShaderAccess> displayAccess_;
 
-    VkPipeline createRaster(const RasterKey&, bool entityID = false);
+    rc::Pipeline createRaster(const RasterKey&, bool entityID = false);
 };
 } // namespace whimsical

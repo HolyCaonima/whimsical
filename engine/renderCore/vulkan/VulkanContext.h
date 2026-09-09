@@ -5,6 +5,7 @@
 #include <string>
 #include <stdexcept>
 #include <atomic>
+#include <functional>
 namespace whimsical {
 inline void vkCheck(VkResult r, const char* operation) {
     if (r != VK_SUCCESS)
@@ -43,13 +44,11 @@ class VulkanContext {
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     VkPhysicalDevice physical = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
-    VkQueue queue = VK_NULL_HANDLE;
     uint32_t family = 0;
     VkPhysicalDeviceProperties properties{};
     VkPhysicalDeviceMemoryProperties memoryProperties{};
     VkPhysicalDeviceAccelerationStructurePropertiesKHR asProperties{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR};
-    VkCommandPool commandPool = VK_NULL_HANDLE;
     std::atomic<uint32_t> validationErrors{0};
     bool validationActive = false;
     bool debugLabels = false;
@@ -60,12 +59,26 @@ class VulkanContext {
     void destroy(Buffer&);
     Image image(uint32_t, uint32_t, VkFormat, VkImageUsageFlags, uint32_t mipLevels = 1);
     void destroy(Image&);
-    VkCommandBuffer beginOneTime();
-    void endOneTime(VkCommandBuffer);
+    VkCommandBuffer allocateCommand();
+    void freeCommand(VkCommandBuffer);
+    void submit(const VkSubmitInfo&, VkFence);
+    VkResult present(const VkPresentInfoKHR&);
+    // Synchronous native work: this scope owns command/fence lifetime and waits only
+    // for its submission. Resources referenced by the callback remain valid on return.
+    void execute(const std::function<void(VkCommandBuffer)>&);
+    // Upload mip zero and generate the image's remaining mip levels. The caller
+    // supplies tightly packed pixels, image format/usage and the consuming access.
+    void uploadImage(Image&, const void* pixels, size_t bytes,
+                     VkPipelineStageFlags2 consumerStage, VkAccessFlags2 consumerAccess,
+                     VkImageLayout finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                     VkFilter mipFilter = VK_FILTER_LINEAR);
     void transition(VkCommandBuffer, Image&, VkImageLayout,
                     VkPipelineStageFlags2 dstStage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
                     VkAccessFlags2 dstAccess = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
     static void barrier(VkCommandBuffer);
     uint32_t memoryType(uint32_t, VkMemoryPropertyFlags required, VkMemoryPropertyFlags preferred = 0) const;
+  private:
+    VkQueue queue = VK_NULL_HANDLE;
+    VkCommandPool commandPool = VK_NULL_HANDLE;
 };
 } // namespace whimsical

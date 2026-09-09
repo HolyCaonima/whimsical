@@ -1,4 +1,5 @@
 #pragma once
+#include "renderCore/vulkan/VulkanAccess.h"
 #include "RasterDraw.h"
 #include "Geometry.h"
 #include "MaterialBindings.h"
@@ -8,7 +9,6 @@
 #include "renderCore/vulkan/VulkanContext.h"
 #include "animation/SkinnedMesh.h"
 #include "assets/StaticMesh.h"
-#include "renderCore/graph/ResourcePool.h"
 #include <map>
 #include <utility>
 #include <memory>
@@ -25,7 +25,7 @@ class GpuScene {
     ~GpuScene();
 
     // Registered with the pool once; the graph then names them like any other resource.
-    void bind(rg::ResourcePool&, const SceneResources&);
+    void bind(rc::NativeResources, const SceneResources&);
 
     void updateMaterials(const MaterialBindings&);
     void updateSkins(const Frame&);
@@ -85,7 +85,7 @@ class GpuScene {
     };
     VulkanContext& vk;
     const RenderOptions& options;
-    rg::ResourcePool* pool_ = nullptr;
+    std::optional<rc::NativeResources> pool_;
     const SceneResources* ids_ = nullptr;
     Buffer tlasInstances, tlasScratch;
     std::vector<AccelerationStructure> blas;

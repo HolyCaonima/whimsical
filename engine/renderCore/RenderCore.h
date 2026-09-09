@@ -6,9 +6,13 @@
 
 namespace whimsical {
 class GpuProfiler;
-namespace rg { class RenderGraph; struct Program; }
+namespace rg {
+class RenderGraph;
+struct Program;
+} // namespace rg
 namespace rc {
 struct VulkanAccess;
+class NativeResources;
 
 struct DeviceOptions {
 #ifdef NDEBUG
@@ -27,6 +31,7 @@ class RenderCore {
     struct Impl;
     std::unique_ptr<Impl> impl_;
     friend struct VulkanAccess;
+    friend class GraphContext;
 
   public:
     explicit RenderCore(const DeviceOptions& = {});
@@ -39,7 +44,7 @@ class RenderCore {
 
 struct ProfileRequest {
     uint64_t request = 0;
-    uint64_t sequence = 0; // supplied by the owner: simulation tick, view frame, bake, ...
+    uint64_t sequence = 0;          // supplied by the owner: simulation tick, view frame, bake, ...
     uint32_t width = 0, height = 0; // optional diagnostic context
 };
 
@@ -51,6 +56,7 @@ class GraphContext {
     struct Impl;
     std::unique_ptr<Impl> impl_;
     friend struct VulkanAccess;
+    friend class NativeResources;
 
   public:
     GraphContext(RenderCore&, const rg::Registry&);
@@ -63,6 +69,11 @@ class GraphContext {
     // Owned CPU bytes become transfer nodes; callers never manage staging lifetimes.
     // Buffer payloads are complete, four-byte-aligned shader storage values.
     void upload(rg::ResourceRef, std::vector<uint8_t> bytes);
+    // A partial update preserves all bytes outside the supplied range.
+    void uploadRange(rg::ResourceRef, uint64_t offset, std::vector<uint8_t> bytes);
+    void copyBuffer(rg::ResourceRef source, rg::ResourceRef destination, uint64_t sourceOffset,
+                    uint64_t destinationOffset, uint64_t bytes);
+    void copyBuffer(rg::ResourceRef source, rg::ResourceRef destination);
     // destination is a buffer declared with handover=Access::Host.
     void readback(rg::ResourceRef source, rg::ResourceId destination);
     std::vector<uint8_t> readbackData(rg::ResourceId) const;

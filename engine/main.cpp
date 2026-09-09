@@ -2,6 +2,7 @@
 #include "assets/EngineAssets.h"
 #include "core/FrameMailbox.h"
 #include "scripting/RuntimeHost.h"
+#include "xpbd/adapter/GpuService.h"
 #include "platform/Window.h"
 #include "render/Renderer.h"
 #include "renderCore/RenderCore.h"
@@ -412,6 +413,7 @@ int main(int argc, char** argv) {
                 deviceOptions.presentationWindow = window.handle();
                 deviceOptions.rayQueries = true;
                 rc::RenderCore renderCore(deviceOptions);
+                xpbd::GpuService xpbdService(renderCore,scripts.xpbdMailbox());
                 Renderer renderer(renderCore, options);
                 FrameRef frame;
                 uint64_t seen = 0;
@@ -420,6 +422,7 @@ int main(int argc, char** argv) {
                     // re-presented rather than stalling for the next simulation tick.
                     if (mailbox.acquire(frame, seen) == FrameStatus::Closed)
                         break;
+                    xpbdService.drain();
                     bool more = renderer.render(frame);
                     if (auto result = renderer.takeCpuProfile()) {
                         std::lock_guard<std::mutex> lock(cpuProfileMutex);

@@ -430,6 +430,7 @@ void RenderGraph::Impl::checkDeclared(uint32_t pass, ResourceRef ref) const {
                              "' without declaring it");
 }
 
+const Declaration& PassContext::declaration(ResourceId id) const { return pool->declaration(id); }
 Image& PassContext::image(ResourceRef ref) const {
     graph->checkDeclared(pass, ref);
     return pool->image(ref);
@@ -571,11 +572,19 @@ void RenderGraph::Impl::handover(VkCommandBuffer command) {
         synchronise(command, handover_.data(), uint32_t(handover_.size()));
 }
 
+RenderGraph::Builder& RenderGraph::Builder::constants(std::vector<uint8_t> bytes) {
+    if (bytes.size() % 4 || bytes.size() > graph_->impl_->registry_.pushConstantBytes())
+        throw std::invalid_argument("Pass constants must fit the registry's aligned push constant range");
+    graph_->impl_->passes_[pass_].constants = std::move(bytes);
+    return *this;
+}
+
 void RenderGraph::Impl::execute(VkCommandBuffer command, GpuProfiler& profiler) {
     PassContext context;
     context.command = command;
     context.layout = pool_->pipelineLayout();
     context.pool = pool_;
+    context.profiler_ = &profiler;
     context.graph = &owner;
     barriers_ = 0;
     for (uint32_t p = 0; p < declared_; ++p) {
@@ -633,6 +642,9 @@ void RenderGraph::Impl::execute(VkCommandBuffer command, GpuProfiler& profiler) 
             vkCmdSetViewport(command, 0, 1, &viewport);
             vkCmdSetScissor(command, 0, 1, &scissor);
         }
+        if (!pass.constants.empty())
+            vkCmdPushConstants(command, context.layout, VK_SHADER_STAGE_ALL, 0,
+                               uint32_t(pass.constants.size()), pass.constants.data());
         if (pass.program) {
             vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pass.program->pipeline);
             if (!pass.bindings.empty())

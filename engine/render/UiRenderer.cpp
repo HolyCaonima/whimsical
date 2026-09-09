@@ -1,5 +1,6 @@
 #include "UiRenderer.h"
 #include "renderCore/RangeAllocator.h"
+#include "renderCore/vulkan/Programs.h"
 #include <unordered_map>
 #include <algorithm>
 #include <cstring>
@@ -10,7 +11,7 @@ struct UiRenderer::Impl {
     VulkanContext& vk;
     VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
     VkPipelineLayout layout = VK_NULL_HANDLE;
-    VkPipeline pipeline = VK_NULL_HANDLE;
+    rc::Pipeline pipeline;
     VkSampler sampler = VK_NULL_HANDLE;
     struct Mesh {
         std::weak_ptr<const ui::Geometry> source;
@@ -33,7 +34,7 @@ struct UiRenderer::Impl {
         std::array<float, 16> transform;
         float x, y, width, height;
     };
-    VkShaderModule shader(const char* name) {
+    std::vector<uint32_t> shader(const char* name) {
         auto path = std::string(WHIMSICAL_SHADERS) + "/" + name + ".spv";
         std::ifstream file(path, std::ios::binary | std::ios::ate);
         if (!file)
@@ -42,12 +43,7 @@ struct UiRenderer::Impl {
         std::vector<uint32_t> bytes((size + 3) / 4);
         file.seekg(0);
         file.read(reinterpret_cast<char*>(bytes.data()), std::streamsize(size));
-        VkShaderModuleCreateInfo info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-        info.codeSize = size;
-        info.pCode = bytes.data();
-        VkShaderModule result;
-        VK_CHECK(vkCreateShaderModule(vk.device, &info, nullptr, &result));
-        return result;
+        return bytes;
     }
     explicit Impl(VulkanContext& context) : vk(context) {
         VkDescriptorSetLayoutBinding binding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
@@ -68,84 +64,29 @@ struct UiRenderer::Impl {
         si.addressModeU = si.addressModeV = si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         VK_CHECK(vkCreateSampler(vk.device, &si, nullptr, &sampler));
         auto vertex = shader("ui.vert"), fragment = shader("ui.frag");
-        VkPipelineShaderStageCreateInfo stages[2]{};
-        for (int i = 0; i < 2; ++i) {
-            stages[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-            stages[i].stage = i ? VK_SHADER_STAGE_FRAGMENT_BIT : VK_SHADER_STAGE_VERTEX_BIT;
-            stages[i].module = i ? fragment : vertex;
-            stages[i].pName = "main";
-        }
-        VkVertexInputBindingDescription vb{0, sizeof(ui::Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
-        VkVertexInputAttributeDescription attrs[] = {{0, 0, VK_FORMAT_R32G32_SFLOAT, 0},
-                                                     {1, 0, VK_FORMAT_R8G8B8A8_UNORM, 8},
-                                                     {2, 0, VK_FORMAT_R32G32_SFLOAT, 12}};
-        VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-        vi.vertexBindingDescriptionCount = 1;
-        vi.pVertexBindingDescriptions = &vb;
-        vi.vertexAttributeDescriptionCount = 3;
-        vi.pVertexAttributeDescriptions = attrs;
-        VkPipelineInputAssemblyStateCreateInfo ia{
-            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
-        ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-        VkPipelineViewportStateCreateInfo viewport{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
-        viewport.viewportCount = viewport.scissorCount = 1;
-        VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
-        rs.polygonMode = VK_POLYGON_MODE_FILL;
-        rs.cullMode = VK_CULL_MODE_NONE;
-        rs.lineWidth = 1;
-        VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-        ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        rc::GraphicsDescription desc;
+        desc.layout = layout;
+        desc.bindings = {{0, sizeof(ui::Vertex), VK_VERTEX_INPUT_RATE_VERTEX}};
+        desc.attributes = {{0, 0, VK_FORMAT_R32G32_SFLOAT, 0},
+                           {1, 0, VK_FORMAT_R8G8B8A8_UNORM, 8},
+                           {2, 0, VK_FORMAT_R32G32_SFLOAT, 12}};
+        desc.colors = {VK_FORMAT_R8G8B8A8_UNORM};
         VkPipelineColorBlendAttachmentState attachment{};
         attachment.blendEnable = VK_TRUE;
         attachment.colorWriteMask = 15;
         attachment.srcColorBlendFactor = attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
         attachment.dstColorBlendFactor = attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
         attachment.colorBlendOp = attachment.alphaBlendOp = VK_BLEND_OP_ADD;
-        VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-        blend.attachmentCount = 1;
-        blend.pAttachments = &attachment;
-        VkDynamicState states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-        VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
-        dynamic.dynamicStateCount = 2;
-        dynamic.pDynamicStates = states;
-        VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
-        VkPipelineRenderingCreateInfo rendering{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
-        rendering.colorAttachmentCount = 1;
-        rendering.pColorAttachmentFormats = &format;
-        VkGraphicsPipelineCreateInfo gp{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-        gp.pNext = &rendering;
-        gp.stageCount = 2;
-        gp.pStages = stages;
-        gp.pVertexInputState = &vi;
-        gp.pInputAssemblyState = &ia;
-        gp.pViewportState = &viewport;
-        gp.pRasterizationState = &rs;
-        gp.pMultisampleState = &ms;
-        gp.pColorBlendState = &blend;
-        gp.pDynamicState = &dynamic;
-        gp.layout = layout;
-        auto result = vkCreateGraphicsPipelines(vk.device, VK_NULL_HANDLE, 1, &gp, nullptr, &pipeline);
-        vkDestroyShaderModule(vk.device, vertex, nullptr);
-        vkDestroyShaderModule(vk.device, fragment, nullptr);
-        VK_CHECK(result);
+        desc.blend = {attachment};
+        pipeline = rc::graphicsProgram(vk, desc, rc::ShaderCode(vertex), rc::ShaderCode(fragment));
         const uint8_t pixel[] = {255, 255, 255, 255};
         upload(white, 1, 1, pixel);
     }
     void upload(Texture& texture, int width, int height, const uint8_t* pixels) {
         texture.image = vk.image(width, height, VK_FORMAT_R8G8B8A8_UNORM,
                                  VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-        auto buffer = vk.buffer(size_t(width) * height * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, BufferMemory::Upload);
-        std::memcpy(buffer.mapped, pixels, size_t(width) * height * 4);
-        auto cmd = vk.beginOneTime();
-        vk.transition(cmd, texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-        VkBufferImageCopy copy{};
-        copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        copy.imageExtent = {uint32_t(width), uint32_t(height), 1};
-        vkCmdCopyBufferToImage(cmd, buffer.handle, texture.image.handle, texture.image.layout, 1, &copy);
-        vk.transition(cmd, texture.image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                      VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
-        vk.endOneTime(cmd);
-        vk.destroy(buffer);
+        vk.uploadImage(texture.image, pixels, size_t(width) * height * 4,
+                       VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
         // One small pool per retained texture avoids a hard document/texture capacity in uiCore.
         VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
         VkDescriptorPoolCreateInfo pi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
@@ -177,7 +118,7 @@ struct UiRenderer::Impl {
         for (auto& pair : textures)
             destroy(pair.second);
         destroy(white);
-        vkDestroyPipeline(vk.device, pipeline, nullptr);
+        pipeline.reset();
         vkDestroyPipelineLayout(vk.device, layout, nullptr);
         vkDestroyDescriptorSetLayout(vk.device, setLayout, nullptr);
         vkDestroySampler(vk.device, sampler, nullptr);
@@ -258,7 +199,7 @@ struct UiRenderer::Impl {
     // layout, opened rendering and set the viewport for this pass.
     void draw(VkCommandBuffer command, uint32_t width, uint32_t height, const ui::UiFrame* frame) {
         if (frame && frame->width > 0 && frame->height > 0) {
-            vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
             float sx = float(width) / frame->width, sy = float(height) / frame->height;
             for (const auto& draw : frame->draws) {
                 if (draw.geometry->indices.empty())

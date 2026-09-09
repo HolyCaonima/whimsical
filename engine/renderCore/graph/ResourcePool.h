@@ -22,6 +22,8 @@ class ResourcePool {
     void importImage(ResourceId, Image&);
     void importImage(ResourceId, Image&, AccessState&);
     void importBuffer(ResourceId, Buffer&);
+    void importBuffer(ResourceId, Buffer&, AccessState&, std::shared_ptr<void> owner = {});
+    void clearImport(ResourceId);
     // Called after replacing the unbound frame imports, with the previous GPU frame finished.
     void syncImports();
     void importTlas(ResourceId, VkAccelerationStructureKHR, uint64_t generation);
@@ -88,9 +90,10 @@ class ResourcePool {
     struct Physical {
         Image image;
         Buffer buffer;
-        Image* external = nullptr; // Lifetime::Imported
+        Image* external = nullptr;            // Lifetime::Imported
         AccessState* importedState = nullptr; // Owner-carried state when frame import slots move.
-        Buffer* host = nullptr;    // Lifetime::External
+        std::shared_ptr<void> importOwner;    // Optional lifetime retained through consumer completion.
+        Buffer* host = nullptr;               // Lifetime::External
         VkAccelerationStructureKHR tlas = VK_NULL_HANDLE;
         std::vector<VkDescriptorImageInfo> samplers;
         uint64_t generation = 0, stateGeneration = 0;

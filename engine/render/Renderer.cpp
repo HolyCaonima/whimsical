@@ -42,14 +42,13 @@ struct Renderer::Impl {
     std::vector<Image> swapImages;
     std::vector<VkSemaphore> finished;
     VkSemaphore acquired = VK_NULL_HANDLE;
-    GpuProfiler* profiler = nullptr;
     uint64_t lastProfileRequest = 0;
     ShaderCompiler shaderCompiler;
     MaterialBindings materialBindings;
 
     RenderResources resources;
     std::unique_ptr<rc::GraphContext> execution;
-    rg::ResourcePool* pool = nullptr;
+    std::optional<rc::NativeResources> pool;
     rg::RenderGraph* graph = nullptr;
     std::unique_ptr<GpuScene> scene;
     std::unique_ptr<RenderPipeline> pipeline;
@@ -64,6 +63,7 @@ struct Renderer::Impl {
 
     FrameRef previous;
     bool historyValid = false;
+    bool historyPending = false;
     bool resizePending = false;
     std::chrono::steady_clock::time_point previousRenderTime = std::chrono::steady_clock::now();
 
@@ -97,9 +97,8 @@ struct Renderer::Impl {
         if (!vk.surface)
             throw std::invalid_argument("Rendering presentation requires a RenderCore with a surface");
         execution = std::make_unique<rc::GraphContext>(core, resources.registry);
-        pool = &rc::VulkanAccess::resources(*execution);
+        pool.emplace(*execution);
         graph = &execution->graph();
-        profiler = &rc::VulkanAccess::profiler(*execution);
         renderTargets = std::make_unique<GpuRenderTargets>(vk, resources.registry, *pool);
         scene = std::make_unique<GpuScene>(vk, options);
         scene->bind(*pool, resources.scene);
@@ -368,6 +367,16 @@ struct Renderer::Impl {
         auditReadbackPending = false;
     }
 
+    void retireFrame() {
+        execution->wait();
+        collectAuditReadback();
+        renderTargets->collect();
+        if (historyPending) {
+            execution->advanceHistory();
+            historyPending = false;
+        }
+    }
+
     bool render(const FrameRef& sourceFrame) {
         const bool captureCpu =
             sourceFrame->cpuProfile && sourceFrame->cpuProfile->request > lastCpuProfileRequest;
@@ -395,10 +404,8 @@ struct Renderer::Impl {
             throw std::runtime_error("Scene capacity exceeded");
         {
             CpuScope scope("Wait / Previous GPU Fence");
-            execution->wait();
+            retireFrame();
         }
-        collectAuditReadback();
-        renderTargets->collect();
         if (!frame.input.width || !frame.input.height)
             return true;
         gpuMs = execution->gpuMilliseconds();
@@ -506,7 +513,6 @@ struct Renderer::Impl {
         setup.scene = scene.get();
         setup.denoiser = denoiser.get();
         setup.ui = uiRenderer.get();
-        setup.profiler = profiler;
         setup.frameNumber = frameNumber;
         setup.frameMs = frameMs;
         setup.reset = reset;
@@ -534,6 +540,7 @@ struct Renderer::Impl {
         CpuScope submitScope("Queue Submit");
         rc::VulkanAccess::submit(*execution, {acquired, VK_PIPELINE_STAGE_TRANSFER_BIT, finished[swapIndex]});
         renderTargets->submitted();
+        historyPending = true;
         submitScope.finish();
         prepareScope.finish();
         // Measure CPU preparation/recording/submission directly, never Frame minus GPU.
@@ -549,7 +556,7 @@ struct Renderer::Impl {
         VkResult result;
         {
             CpuScope scope("Wait / Present");
-            result = vkQueuePresentKHR(vk.queue, &present);
+            result = vk.present(present);
         }
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
             resizePending = true;
@@ -558,16 +565,11 @@ struct Renderer::Impl {
         previous = frameRef;
         historyValid = true;
         frameNumber++;
-        // Both halves of every history resource change role now, which is the whole of
-        // what used to be the end-of-frame copy pass.
-        execution->advanceHistory();
         auditReadbackPending = auditFrame;
         updateStatistics(cpuMs);
         if (last) {
             CpuScope scope("Final Frame / Wait and Capture");
-            execution->wait();
-            collectAuditReadback();
-            renderTargets->collect();
+            retireFrame();
             if (audit) {
                 CpuScope auditScope("Audit / Drain Worker and Save");
                 const auto output = std::filesystem::path(WHIMSICAL_ROOT) / "captures" / options.audit;

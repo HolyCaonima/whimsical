@@ -11,11 +11,16 @@ struct PassContext {
     VkDescriptorSet descriptors = VK_NULL_HANDLE;
     VkPipelineLayout layout = VK_NULL_HANDLE;
     uint32_t width = 0, height = 0;
+    Image& image(ResourceRef) const;
+    Buffer& buffer(ResourceRef) const;
+    const Declaration& declaration(ResourceId) const;
+    GpuProfiler& profiler() const { return *profiler_; }
+  private:
+    friend class RenderGraph;
     ResourcePool* pool = nullptr;
     const RenderGraph* graph = nullptr;
     uint32_t pass = 0;
-    Image& image(ResourceRef) const;
-    Buffer& buffer(ResourceRef) const;
+    GpuProfiler* profiler_ = nullptr;
 };
 struct GraphAccess {
     static void execute(RenderGraph&, VkCommandBuffer, GpuProfiler&);

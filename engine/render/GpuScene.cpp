@@ -48,8 +48,8 @@ GpuScene::~GpuScene() {
     destroyAS(tlas);
 }
 
-void GpuScene::bind(rg::ResourcePool& pool, const SceneResources& ids) {
-    pool_ = &pool;
+void GpuScene::bind(rc::NativeResources pool, const SceneResources& ids) {
+    pool_.emplace(pool);
     ids_ = &ids;
     rebind();
 }
@@ -190,10 +190,10 @@ void GpuScene::uploadGeometry(const std::vector<uint32_t>& added) {
                         geometryIndices.data() + range.firstIndex, range.indexCount * sizeof(uint32_t));
     }
     if (!added.empty()) {
-        auto c = vk.beginOneTime();
-        for (auto m : added)
-            buildMeshAS(c, m, false);
-        vk.endOneTime(c);
+        vk.execute([&](VkCommandBuffer command) {
+            for (auto m : added)
+                buildMeshAS(command, m, false);
+        });
     }
 }
 
@@ -349,51 +349,8 @@ void GpuScene::updateTextures(const std::vector<std::shared_ptr<const TextureAss
                                  VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                      VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                                  levels);
-        auto staging =
-            vk.buffer(VkDeviceSize(w) * h * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, BufferMemory::Upload);
-        std::memcpy(staging.mapped, pixels, size_t(staging.size));
-        auto c = vk.beginOneTime();
-        vk.transition(c, texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-        VkBufferImageCopy copy{};
-        copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        copy.imageExtent = {w, h, 1};
-        vkCmdCopyBufferToImage(c, staging.handle, texture.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
-                               &copy);
-        auto mipBarrier = [&](uint32_t level, VkImageLayout before, VkImageLayout after) {
-            VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-            barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
-            barrier.oldLayout = before;
-            barrier.newLayout = after;
-            barrier.image = texture.handle;
-            barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, level, 1, 0, 1};
-            VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-            dependency.imageMemoryBarrierCount = 1;
-            dependency.pImageMemoryBarriers = &barrier;
-            vkCmdPipelineBarrier2(c, &dependency);
-        };
-        int32_t mw = int32_t(w), mh = int32_t(h);
-        for (uint32_t level = 1; level < levels; ++level) {
-            mipBarrier(level - 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-            VkImageBlit region{};
-            region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level - 1, 0, 1};
-            region.srcOffsets[1] = {mw, mh, 1};
-            region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, 1};
-            region.dstOffsets[1] = {std::max(1, mw / 2), std::max(1, mh / 2), 1};
-            vkCmdBlitImage(c, texture.handle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, texture.handle,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, VK_FILTER_LINEAR);
-            mipBarrier(level - 1, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            mw = std::max(1, mw / 2);
-            mh = std::max(1, mh / 2);
-        }
-        mipBarrier(levels - 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        texture.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        vk.endOneTime(c);
-        vk.destroy(staging);
+        vk.uploadImage(texture, pixels, size_t(w) * h * 4,
+                       VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
         materialTextures.push_back(texture);
     };
     for (const auto& texture : textures) {

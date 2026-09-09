@@ -310,26 +310,102 @@ void VulkanContext::destroy(Image& i) {
         vkFreeMemory(device, i.memory, nullptr);
     i = {};
 }
-VkCommandBuffer VulkanContext::beginOneTime() {
-    VkCommandBufferAllocateInfo ai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-    ai.commandPool = commandPool;
-    ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    ai.commandBufferCount = 1;
-    VkCommandBuffer c;
-    VK_CHECK(vkAllocateCommandBuffers(device, &ai, &c));
-    VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    VK_CHECK(vkBeginCommandBuffer(c, &bi));
-    return c;
+VkCommandBuffer VulkanContext::allocateCommand() {
+    VkCommandBufferAllocateInfo info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    info.commandPool = commandPool;
+    info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    info.commandBufferCount = 1;
+    VkCommandBuffer command;
+    VK_CHECK(vkAllocateCommandBuffers(device, &info, &command));
+    return command;
 }
-void VulkanContext::endOneTime(VkCommandBuffer c) {
-    VK_CHECK(vkEndCommandBuffer(c));
-    VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-    si.commandBufferCount = 1;
-    si.pCommandBuffers = &c;
-    VK_CHECK(vkQueueSubmit(queue, 1, &si, VK_NULL_HANDLE));
-    VK_CHECK(vkQueueWaitIdle(queue));
-    vkFreeCommandBuffers(device, commandPool, 1, &c);
+void VulkanContext::freeCommand(VkCommandBuffer command) {
+    vkFreeCommandBuffers(device, commandPool, 1, &command);
+}
+void VulkanContext::submit(const VkSubmitInfo& info, VkFence fence) {
+    VK_CHECK(vkQueueSubmit(queue, 1, &info, fence));
+}
+VkResult VulkanContext::present(const VkPresentInfoKHR& info) { return vkQueuePresentKHR(queue, &info); }
+void VulkanContext::execute(const std::function<void(VkCommandBuffer)>& record) {
+    VkFence fence;
+    VkFenceCreateInfo fenceInfo{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    VK_CHECK(vkCreateFence(device, &fenceInfo, nullptr, &fence));
+    VkCommandBuffer command = VK_NULL_HANDLE;
+    try {
+        command = allocateCommand();
+        VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        VK_CHECK(vkBeginCommandBuffer(command, &begin));
+        record(command);
+        VK_CHECK(vkEndCommandBuffer(command));
+        VkSubmitInfo info{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        info.commandBufferCount = 1;
+        info.pCommandBuffers = &command;
+        submit(info, fence);
+        VK_CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX));
+    } catch (...) {
+        if (command) freeCommand(command);
+        vkDestroyFence(device, fence, nullptr);
+        throw;
+    }
+    freeCommand(command);
+    vkDestroyFence(device, fence, nullptr);
+}
+void VulkanContext::uploadImage(Image& image, const void* pixels, size_t bytes,
+                                VkPipelineStageFlags2 consumerStage, VkAccessFlags2 consumerAccess,
+                                VkImageLayout finalLayout, VkFilter mipFilter) {
+    auto staging = buffer(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, BufferMemory::Upload);
+    std::memcpy(staging.mapped, pixels, bytes);
+    try {
+        execute([&](VkCommandBuffer command) {
+            transition(command, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                       VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+            VkBufferImageCopy copy{};
+            copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            copy.imageExtent = {image.width, image.height, 1};
+            vkCmdCopyBufferToImage(command, staging.handle, image.handle,
+                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+            auto barrier = [&](uint32_t level, VkImageLayout before, VkImageLayout after,
+                               VkPipelineStageFlags2 stage, VkAccessFlags2 access) {
+                VkImageMemoryBarrier2 info{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+                info.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+                info.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
+                info.dstStageMask = stage;
+                info.dstAccessMask = access;
+                info.oldLayout = before;
+                info.newLayout = after;
+                info.image = image.handle;
+                info.srcQueueFamilyIndex = info.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, level, 1, 0, 1};
+                VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+                dependency.imageMemoryBarrierCount = 1;
+                dependency.pImageMemoryBarriers = &info;
+                vkCmdPipelineBarrier2(command, &dependency);
+            };
+            int32_t width = int32_t(image.width), height = int32_t(image.height);
+            for (uint32_t level = 1; level < image.mipLevels; ++level) {
+                barrier(level - 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+                VkImageBlit region{};
+                region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level - 1, 0, 1};
+                region.srcOffsets[1] = {width, height, 1};
+                region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, 1};
+                region.dstOffsets[1] = {std::max(1, width / 2), std::max(1, height / 2), 1};
+                vkCmdBlitImage(command, image.handle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image.handle,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, mipFilter);
+                barrier(level - 1, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, finalLayout, consumerStage, consumerAccess);
+                width = std::max(1, width / 2);
+                height = std::max(1, height / 2);
+            }
+            barrier(image.mipLevels - 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, finalLayout,
+                    consumerStage, consumerAccess);
+        });
+        image.layout = finalLayout;
+    } catch (...) {
+        destroy(staging);
+        throw;
+    }
+    destroy(staging);
 }
 void VulkanContext::transition(VkCommandBuffer c, Image& i, VkImageLayout next, VkPipelineStageFlags2 stage,
                                VkAccessFlags2 access) {

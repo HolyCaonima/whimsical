@@ -5,6 +5,7 @@
 #include "navigation/Navigation.h"
 #include "scene/ScenePersistence.h"
 #include "UiBindings.h"
+#include "xpbd/adapter/ScriptBindings.h"
 #include "uiCore/UiCore.h"
 #include <iostream>
 #include <stdexcept>
@@ -1015,6 +1016,7 @@ void ScriptRuntime::createContext() {
     duk_put_prop_string(context_, -2, "content");
     duk_put_global_string(context_, "Engine");
     installRuntimeBindings(context_);
+    if(host_)xpbdBindings_=std::make_unique<xpbd::ScriptBindings>(context_,host_->xpbdMailbox());
     if (ui_) {
         uiBindings_ = std::make_unique<UiBindings>(
             context_, *ui_, [this](const auto& text) { log(text); },
@@ -1027,6 +1029,7 @@ void ScriptRuntime::createContext() {
     }
 }
 ScriptRuntime::~ScriptRuntime() {
+    xpbdBindings_.reset();
     uiBindings_.reset();
     for (const auto& request : pixelReads_)
         world_.renderTargets.discard(request);

@@ -4,45 +4,51 @@
 #include "graph/RenderGraph.h"
 #include "graph/ImageReadback.h"
 #include "vulkan/VulkanAccess.h"
-#include "vulkan/ProgramStorage.h"
+#include "vulkan/Programs.h"
 #include <cstring>
 #include <algorithm>
 
 namespace whimsical::rc {
 struct RenderCore::Impl {
     VulkanContext vk;
+    ShaderCompiler compiler;
 };
 RenderCore::RenderCore(const DeviceOptions& options) : impl_(std::make_unique<Impl>()) {
-    impl_->vk.initialize(static_cast<HWND>(options.presentationWindow), options.validation, options.rayQueries);
+    impl_->vk.initialize(static_cast<HWND>(options.presentationWindow), options.validation,
+                         options.rayQueries);
 }
 RenderCore::~RenderCore() = default;
-void RenderCore::waitIdle() { VK_CHECK(vkDeviceWaitIdle(impl_->vk.device)); }
-uint32_t RenderCore::errors() const { return impl_->vk.validationErrors.load(); }
-VulkanContext& VulkanAccess::device(RenderCore& core) { return core.impl_->vk; }
+void RenderCore::waitIdle() {
+    VK_CHECK(vkDeviceWaitIdle(impl_->vk.device));
+}
+uint32_t RenderCore::errors() const {
+    return impl_->vk.validationErrors.load();
+}
+VulkanContext& VulkanAccess::device(RenderCore& core) {
+    return core.impl_->vk;
+}
 
 struct GraphContext::Impl {
     VulkanContext& vk;
     rg::ResourcePool pool;
     rg::RenderGraph graph;
     GpuProfiler profiler;
-    ShaderCompiler compiler;
+    ShaderCompiler& compiler;
     std::map<std::vector<uint32_t>, rg::Program> programs;
     VkCommandBuffer command = VK_NULL_HANDLE;
     VkFence fence = VK_NULL_HANDLE;
     bool pending = false, recorded = false, completed = false;
 
     Impl(RenderCore& core, const rg::Registry& registry)
-        : vk(VulkanAccess::device(core)), pool(vk, registry), graph(pool), profiler(vk) {
+        : vk(VulkanAccess::device(core)), pool(vk, registry), graph(pool), profiler(vk),
+          compiler(core.impl_->compiler) {
         VkFenceCreateInfo info{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
         VK_CHECK(vkCreateFence(vk.device, &info, nullptr, &fence));
-        VkCommandBufferAllocateInfo allocation{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-        allocation.commandPool = vk.commandPool;
-        allocation.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocation.commandBufferCount = 1;
-        auto result = vkAllocateCommandBuffers(vk.device, &allocation, &command);
-        if (result != VK_SUCCESS) {
+        try {
+            command = vk.allocateCommand();
+        } catch (...) {
             vkDestroyFence(vk.device, fence, nullptr);
-            VK_CHECK(result);
+            throw;
         }
     }
     ~Impl() {
@@ -50,12 +56,13 @@ struct GraphContext::Impl {
         // after its own submission, without stalling unrelated contexts with DeviceWaitIdle.
         if (pending)
             vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-        vkFreeCommandBuffers(vk.device, vk.commandPool, 1, &command);
+        vk.freeCommand(command);
         vkDestroyFence(vk.device, fence, nullptr);
     }
     void writable() const {
         if (pending)
-            throw std::logic_error("Complete this graph's submission before changing its resources or passes");
+            throw std::logic_error(
+                "Complete this graph's submission before changing its resources or passes");
     }
     void submit(const SubmissionSync& sync) {
         writable();
@@ -74,7 +81,7 @@ struct GraphContext::Impl {
             info.pSignalSemaphores = &sync.signal;
         }
         VK_CHECK(vkResetFences(vk.device, 1, &fence));
-        VK_CHECK(vkQueueSubmit(vk.queue, 1, &info, fence));
+        vk.submit(info, fence);
         pending = true;
         recorded = false;
     }
@@ -92,25 +99,9 @@ const rg::Program& GraphContext::compute(const std::vector<uint32_t>& code) {
     if (found != impl_->programs.end())
         return found->second;
     rg::Program program;
-    auto storage = std::make_shared<rg::ProgramStorage>(impl_->vk);
     program.accesses = rg::reflect(impl_->pool.registry(), code.data(), code.size());
     program.localSize = rg::reflectLocalSize(code.data(), code.size());
-    VkShaderModuleCreateInfo moduleInfo{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-    moduleInfo.codeSize = code.size() * sizeof(uint32_t);
-    moduleInfo.pCode = code.data();
-    VkShaderModule module;
-    VK_CHECK(vkCreateShaderModule(impl_->vk.device, &moduleInfo, nullptr, &module));
-    VkComputePipelineCreateInfo pipelineInfo{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
-    pipelineInfo.layout = impl_->pool.pipelineLayout();
-    pipelineInfo.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
-    pipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    pipelineInfo.stage.module = module;
-    pipelineInfo.stage.pName = "main";
-    auto result = vkCreateComputePipelines(impl_->vk.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
-                                           &storage->pipeline);
-    vkDestroyShaderModule(impl_->vk.device, module, nullptr);
-    VK_CHECK(result);
-    program.storage = std::move(storage);
+    program.storage = computeProgram(impl_->vk, impl_->pool.pipelineLayout(), ShaderCode(code));
     return impl_->programs.emplace(code, std::move(program)).first->second;
 }
 const rg::Program& GraphContext::compute(const std::string& name, const std::string& source) {
@@ -134,6 +125,45 @@ void GraphContext::upload(rg::ResourceRef target, std::vector<uint8_t> bytes) {
             }
         });
 }
+void GraphContext::uploadRange(rg::ResourceRef target, uint64_t offset, std::vector<uint8_t> bytes) {
+    impl_->writable();
+    if (impl_->pool.registry()[target.id].kind != rg::Kind::Buffer || bytes.empty() || offset % 4 ||
+        bytes.size() % 4)
+        throw std::invalid_argument("Range upload requires aligned buffer bytes");
+    impl_->graph.add("Update " + impl_->pool.registry()[target.id].name)
+        .modify(target, rg::Access::Transfer)
+        .record([target, offset, bytes = std::move(bytes)](const rg::PassContext& context) {
+            const auto& buffer = context.buffer(target);
+            if (offset > buffer.size || bytes.size() > buffer.size - offset)
+                throw std::out_of_range("Upload range exceeds buffer size");
+            for (size_t at = 0; at < bytes.size(); at += 65536)
+                vkCmdUpdateBuffer(context.command, buffer.handle, offset + at,
+                                  std::min(size_t(65536), bytes.size() - at), bytes.data() + at);
+        });
+}
+void GraphContext::copyBuffer(rg::ResourceRef source, rg::ResourceRef destination, uint64_t sourceOffset,
+                              uint64_t destinationOffset, uint64_t bytes) {
+    impl_->writable();
+    const auto& registry = impl_->pool.registry();
+    if (registry[source.id].kind != rg::Kind::Buffer || registry[destination.id].kind != rg::Kind::Buffer ||
+        !bytes)
+        throw std::invalid_argument("Copy requires two buffers and a nonempty range");
+    impl_->graph.add("Copy " + registry[source.id].name)
+        .read(source, rg::Access::Transfer)
+        .modify(destination, rg::Access::Transfer)
+        .record([=](const rg::PassContext& context) {
+            const auto& input = context.buffer(source);
+            const auto& output = context.buffer(destination);
+            if (sourceOffset > input.size || bytes > input.size - sourceOffset ||
+                destinationOffset > output.size || bytes > output.size - destinationOffset)
+                throw std::out_of_range("Copy range exceeds buffer size");
+            if (input.handle == output.handle && sourceOffset < destinationOffset + bytes &&
+                destinationOffset < sourceOffset + bytes)
+                throw std::invalid_argument("Buffer copy ranges overlap");
+            VkBufferCopy region{sourceOffset, destinationOffset, bytes};
+            vkCmdCopyBuffer(context.command, input.handle, output.handle, 1, &region);
+        });
+}
 void GraphContext::readback(rg::ResourceRef source, rg::ResourceId destination) {
     impl_->writable();
     const auto& registry = impl_->pool.registry();
@@ -145,14 +175,18 @@ void GraphContext::readback(rg::ResourceRef source, rg::ResourceId destination) 
     }
     if (registry[source.id].kind != rg::Kind::Buffer)
         throw std::invalid_argument("Readback source must be a buffer or image");
-    impl_->graph.add("Readback " + registry[source.id].name)
+    copyBuffer(source, destination);
+}
+void GraphContext::copyBuffer(rg::ResourceRef source, rg::ResourceRef destination) {
+    impl_->writable();
+    impl_->graph.add("Copy buffer")
         .read(source, rg::Access::Transfer)
         .overwrite(destination, rg::Access::Transfer)
         .record([source, destination](const rg::PassContext& context) {
             const auto& input = context.buffer(source);
             const auto& output = context.buffer(destination);
             if (input.size != output.size)
-                throw std::invalid_argument("Readback source and destination byte sizes must match");
+                throw std::invalid_argument("Copy source and destination byte sizes must match");
             VkBufferCopy region{0, 0, input.size};
             vkCmdCopyBuffer(context.command, input.handle, output.handle, 1, &region);
         });
@@ -180,13 +214,16 @@ void GraphContext::record(const ProfileRequest& profile) {
     VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     VK_CHECK(vkBeginCommandBuffer(impl_->command, &begin));
-    impl_->profiler.beginFrame(impl_->command, profile.request, profile.sequence, profile.width, profile.height);
+    impl_->profiler.beginFrame(impl_->command, profile.request, profile.sequence, profile.width,
+                               profile.height);
     rg::GraphAccess::execute(impl_->graph, impl_->command, impl_->profiler);
     impl_->profiler.endFrame(impl_->command);
     VK_CHECK(vkEndCommandBuffer(impl_->command));
     impl_->recorded = true;
 }
-void GraphContext::submit() { impl_->submit({}); }
+void GraphContext::submit() {
+    impl_->submit({});
+}
 bool GraphContext::poll() {
     if (!impl_->pending)
         return true;
@@ -207,10 +244,73 @@ void GraphContext::wait() {
     impl_->pending = false;
     impl_->completed = true;
 }
-void GraphContext::advanceHistory() { impl_->pool.flip(); }
-double GraphContext::gpuMilliseconds() const { return impl_->profiler.frameMs(); }
-std::optional<GpuProfile> GraphContext::takeProfile() { return impl_->profiler.takeResult(); }
-rg::ResourcePool& VulkanAccess::resources(GraphContext& context) { return context.impl_->pool; }
-GpuProfiler& VulkanAccess::profiler(GraphContext& context) { return context.impl_->profiler; }
-void VulkanAccess::submit(GraphContext& context, const SubmissionSync& sync) { context.impl_->submit(sync); }
+void GraphContext::advanceHistory() {
+    impl_->writable();
+    impl_->pool.flip();
+}
+double GraphContext::gpuMilliseconds() const {
+    return impl_->profiler.frameMs();
+}
+std::optional<GpuProfile> GraphContext::takeProfile() {
+    return impl_->profiler.takeResult();
+}
+void NativeResources::importImage(rg::ResourceId id, Image& image) {
+    context_.impl_->writable();
+    context_.impl_->pool.importImage(id, image);
+}
+void NativeResources::importImage(rg::ResourceId id, Image& image, rg::AccessState& state) {
+    context_.impl_->writable();
+    context_.impl_->pool.importImage(id, image, state);
+}
+void NativeResources::importBuffer(rg::ResourceId id, Buffer& buffer) {
+    context_.impl_->writable();
+    context_.impl_->pool.importBuffer(id, buffer);
+}
+void NativeResources::importBuffer(rg::ResourceId id, Buffer& buffer, rg::AccessState& state,
+                                   std::shared_ptr<void> owner) {
+    context_.impl_->writable();
+    context_.impl_->pool.importBuffer(id, buffer, state, std::move(owner));
+}
+void NativeResources::clearImport(rg::ResourceId id) {
+    context_.impl_->writable();
+    context_.impl_->pool.clearImport(id);
+}
+rg::AccessState NativeResources::bufferState(rg::ResourceRef ref) const {
+    context_.impl_->writable();
+    return context_.impl_->pool.state(context_.impl_->pool.physical(ref));
+}
+void NativeResources::importTlas(rg::ResourceId id, VkAccelerationStructureKHR handle, uint64_t generation) {
+    context_.impl_->writable();
+    context_.impl_->pool.importTlas(id, handle, generation);
+}
+void NativeResources::importSamplers(rg::ResourceId id, std::vector<VkDescriptorImageInfo> images) {
+    context_.impl_->writable();
+    context_.impl_->pool.importSamplers(id, std::move(images));
+}
+void NativeResources::syncImports() {
+    context_.impl_->writable();
+    context_.impl_->pool.syncImports();
+}
+const rg::Registry& NativeResources::registry() const {
+    return context_.impl_->pool.registry();
+}
+VkPipelineLayout NativeResources::pipelineLayout() const {
+    return context_.impl_->pool.pipelineLayout();
+}
+const Buffer& NativeResources::buffer(rg::ResourceRef ref) const {
+    context_.impl_->writable();
+    return context_.impl_->pool.buffer(ref);
+}
+uint64_t NativeResources::ownedBytes() const {
+    return context_.impl_->pool.ownedBytes();
+}
+uint64_t NativeResources::declaredBytes() const {
+    return context_.impl_->pool.declaredBytes();
+}
+uint64_t NativeResources::descriptorWrites() const {
+    return context_.impl_->pool.descriptorWrites();
+}
+void VulkanAccess::submit(GraphContext& context, const SubmissionSync& sync) {
+    context.impl_->submit(sync);
+}
 } // namespace whimsical::rc

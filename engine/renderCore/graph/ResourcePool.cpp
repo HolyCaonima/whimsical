@@ -49,8 +49,7 @@ uint64_t storageSignature(const Declaration& declaration, uint32_t width, uint32
         return (uint64_t(1) << 63) | (declaration.bufferBytes(width, height) << 1) |
                uint64_t(hostRead(declaration));
     return (uint64_t(declaration.extentWidth(width)) << 40) |
-           (uint64_t(declaration.extentHeight(height)) << 12) |
-           (uint64_t(declaration.format) << 1) | 1;
+           (uint64_t(declaration.extentHeight(height)) << 12) | (uint64_t(declaration.format) << 1) | 1;
 }
 
 ResourcePool::ResourcePool(VulkanContext& vk, const Registry& registry) : vk_(vk), registry_(registry) {
@@ -85,8 +84,9 @@ void ResourcePool::createLayout() {
             return;
         auto type = descriptorType(view.type);
         auto stages = declaration.stages == ShaderStages::All ? VkShaderStageFlags(VK_SHADER_STAGE_ALL)
-                    : declaration.stages == ShaderStages::Graphics ? VkShaderStageFlags(VK_SHADER_STAGE_ALL_GRAPHICS)
-                    : VkShaderStageFlags(VK_SHADER_STAGE_COMPUTE_BIT);
+                      : declaration.stages == ShaderStages::Graphics
+                          ? VkShaderStageFlags(VK_SHADER_STAGE_ALL_GRAPHICS)
+                          : VkShaderStageFlags(VK_SHADER_STAGE_COMPUTE_BIT);
         bindings.push_back({view.binding, type, view.count, stages, nullptr});
     };
     for (uint16_t i = 0; i < registry_.size(); ++i) {
@@ -101,6 +101,13 @@ void ResourcePool::createLayout() {
     VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     pl.setLayoutCount = 1;
     pl.pSetLayouts = &setLayout_;
+    VkPushConstantRange constants{VK_SHADER_STAGE_ALL, 0, registry_.pushConstantBytes()};
+    if (constants.size) {
+        if (constants.size % 4 || constants.size > vk_.properties.limits.maxPushConstantsSize)
+            throw std::invalid_argument("Push constant range exceeds device limits or is unaligned");
+        pl.pushConstantRangeCount = 1;
+        pl.pPushConstantRanges = &constants;
+    }
     VK_CHECK(vkCreatePipelineLayout(vk_.device, &pl, nullptr, &pipelineLayout_));
 }
 
@@ -164,7 +171,23 @@ void ResourcePool::syncImports() {
 }
 
 void ResourcePool::importBuffer(ResourceId id, Buffer& buffer) {
+    slots_[base(id)].importOwner.reset();
     slots_[base(id)].host = &buffer;
+    slots_[base(id)].importedState = nullptr;
+}
+
+void ResourcePool::importBuffer(ResourceId id, Buffer& buffer, AccessState& state,
+                                std::shared_ptr<void> owner) {
+    importBuffer(id, buffer);
+    slots_[base(id)].importedState = &state;
+    slots_[base(id)].importOwner = std::move(owner);
+}
+void ResourcePool::clearImport(ResourceId id) {
+    auto& slot = slots_[base(id)];
+    slot.host = nullptr;
+    slot.external = nullptr;
+    slot.importedState = nullptr;
+    slot.importOwner.reset();
 }
 
 void ResourcePool::importTlas(ResourceId id, VkAccelerationStructureKHR handle, uint64_t generation) {
@@ -248,8 +271,8 @@ void ResourcePool::realize(uint32_t width, uint32_t height, const std::vector<Re
             } else {
                 auto usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
                              VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-                slot.buffer = vk_.buffer(bytes, usage,
-                                         hostRead(declaration) ? BufferMemory::Readback : BufferMemory::Device);
+                slot.buffer = vk_.buffer(
+                    bytes, usage, hostRead(declaration) ? BufferMemory::Readback : BufferMemory::Device);
             }
             slot.signature = signature;
             slot.bytes = bytes;

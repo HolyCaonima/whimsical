@@ -45,6 +45,7 @@ struct RenderGraph::Impl {
         float depthClear = 1.f;
         bool depthLoad = false;
         std::shared_ptr<const ProgramStorage> program;
+        std::vector<uint8_t> constants;
         Extent3D elements, localSize;
         ResourceId dispatchExtent;
         bool sideEffect = false;

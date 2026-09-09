@@ -21,7 +21,7 @@ inline void addImageReadback(RenderGraph& graph, const char* name, ResourceId de
                 auto& image = c.image(copy.source);
                 VkBufferImageCopy region{};
                 region.bufferOffset = copy.offset == VK_WHOLE_SIZE ? nextOffset : copy.offset;
-                const auto format = c.pool->declaration(copy.source.id).format;
+                const auto format = c.declaration(copy.source.id).format;
                 region.imageSubresource = {
                     VkImageAspectFlags(format == Format::D32 ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT),
                     0, 0, 1};

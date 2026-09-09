@@ -114,20 +114,9 @@ NrdDenoiser::NrdDenoiser(VulkanContext& v) : vk_(v) {
         VK_CHECK(vkCreatePipelineLayout(vk_.device, &pl, nullptr, &out.layout));
         if (!p.computeShaderSPIRV.bytecode || !p.computeShaderSPIRV.size)
             throw std::runtime_error("NRD SPIR-V was not embedded");
-        VkShaderModuleCreateInfo sm{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-        sm.codeSize = size_t(p.computeShaderSPIRV.size);
-        sm.pCode = static_cast<const uint32_t*>(p.computeShaderSPIRV.bytecode);
-        VkShaderModule module;
-        VK_CHECK(vkCreateShaderModule(vk_.device, &sm, nullptr, &module));
-        VkComputePipelineCreateInfo cp{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
-        cp.layout = out.layout;
-        cp.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
-        cp.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-        cp.stage.module = module;
-        cp.stage.pName = desc_->shaderEntryPoint;
-        auto result = vkCreateComputePipelines(vk_.device, VK_NULL_HANDLE, 1, &cp, nullptr, &out.handle);
-        vkDestroyShaderModule(vk_.device, module, nullptr);
-        VK_CHECK(result);
+        out.program = rc::computeProgram(vk_, out.layout,
+            rc::ShaderCode(static_cast<const uint32_t*>(p.computeShaderSPIRV.bytecode),
+                           size_t(p.computeShaderSPIRV.size), desc_->shaderEntryPoint));
         pipelines_.push_back(out);
     }
     VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 8192},
@@ -165,7 +154,7 @@ NrdDenoiser::~NrdDenoiser() {
     if (pool_)
         vkDestroyDescriptorPool(vk_.device, pool_, nullptr);
     for (auto& p : pipelines_) {
-        vkDestroyPipeline(vk_.device, p.handle, nullptr);
+        p.program.reset();
         vkDestroyPipelineLayout(vk_.device, p.layout, nullptr);
         vkDestroyDescriptorSetLayout(vk_.device, p.resources, nullptr);
     }
@@ -306,7 +295,7 @@ void NrdDenoiser::dispatch(VkCommandBuffer command,
         writes.push_back(write);
         cursor = (cursor + bytes + alignment - 1) / alignment * alignment;
         vkUpdateDescriptorSets(vk_.device, uint32_t(writes.size()), writes.data(), 0, nullptr);
-        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.handle);
+        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.program->pipeline);
         vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.layout, 0, 2, sets, 0,
                                 nullptr);
         vkCmdDispatch(command, job.gridWidth, job.gridHeight, 1);

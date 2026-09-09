@@ -94,13 +94,26 @@ if (execution.poll()) {
 - CPU 数据和算法状态仍由 system 拥有。GPU 设备与上下文操作在所属 GPU 线程执行，不能把活动 World/JS 对象捕获到跨线程命令中。
 - `submit()` 不知道模拟 tick 或渲染帧，也不翻转历史；所有者显式调用 `advanceHistory()`。不同 GraphContext 的 history 奇偶与完成状态互不影响。
 - 合作的 system 可以共同声明 Registry、向同一个 GraphContext 填图，并传递 ResourceRef。保持已有构图语义：消费者声明在生产者之后，编译器推导依赖、同步和裁剪；同一资源的后续写入建立后续内容版本。
-- ResourceId 属于其 Registry，资源的物理存储属于 GraphContext。不能把另一个上下文的整数 ID 当作共享 GPU 分配；当前没有增加跨图资源发布或跨线程任务调度协议。
-- 帧快照的 latest-wins 策略仍属于渲染宿主，未放入 Core。未来模拟 GPU 后端必须按自己的 tick 提交，不能把可靠任务塞入 FrameMailbox。
+- ResourceId 属于其 Registry，资源的物理存储属于 GraphContext。不能把另一个上下文的整数 ID 当作共享 GPU 分配。原生 buffer 导入可携带所有者和访问状态，使消费者保留其生命周期；解除导入仍须经过完成边界。
+- 帧快照的 latest-wins 策略属于渲染宿主。XPBD 的可靠 tick 通道由其接入层管理，不使用 FrameMailbox。
 
-当前变更建立了模块边界和可复用 GPU 构图执行入口，没有将物理算法迁移到 GPU，也没有引入独立 compute 队列、GPU 调度线程或另一个图模型。
+[XPBD](xpbd.md) 已作为平级 GPU system 使用这套接口。现有 CPU PhysicsScene 的碰撞查询与 XPBD 各自独立；没有引入独立 compute 队列或 GPU 调度线程。
+
+`Registry(pushConstantBytes)` 声明通用 push constant 范围，pass 的 `constants(bytes)` 提供本次 dispatch 参数。`uploadRange` 更新 buffer 子范围，`copyBuffer` 支持整块及范围复制。它们都形成图内 transfer 节点，不包含 XPBD 概念。完整源码编译缓存属于 RenderCore 设备，GraphContext 保留按自身 layout 建立的程序。
 
 ## 渲染侧保留什么
 
-`RenderResources` 声明 GBuffer、光照等资源；`RenderPipeline` 组织具体的渲染 pass。材质 shader 拼装仍在 `render/ShaderCompiler`，完整源码编译交给 `renderCore/ShaderCompiler`。compute program 的创建与寿命由 GraphContext 管理；原生 raster 状态、材质绑定、场景 GPU 镜像、NRD 集成以及呈现流程属于渲染系统。
+`RenderResources` 声明 GBuffer、光照等资源；`RenderPipeline` 组织具体的渲染 pass。材质 shader 拼装仍在 `render/ShaderCompiler`，完整源码编译交给 `renderCore/ShaderCompiler`。GraphContext 管理图内 compute program 的缓存；graphics 和 NRD compute 也复用 Core 的程序工厂与 RAII 句柄。Rendering 选择材质、顶点布局、attachment 格式、混合/深度状态以及缓存键；Vulkan shader module、pipeline 创建和销毁由 Core 实现。场景 GPU 镜像、NRD 集成以及呈现策略属于渲染系统。
 
 新增其他 GPU system 应链接 `whimsical_rendercore`，声明自己的资源和 kernel，然后构图。无需修改 `RenderResources`、`RenderPipeline` 或 `Renderer`。
+
+## 原生接入的收敛边界
+
+- `vulkan/Programs.h` 接收通用 graphics 描述或 compute 字节码与 pipeline layout。它不认识 GBuffer、Material、UI 或 NRD；这些使用者都不再自行创建、销毁 shader module 和 pipeline。程序句柄及其使用者必须先于设备销毁，GPU 执行结束后才能释放最后一个句柄。
+- `NativeResources` 是按 GraphContext 绑定的原生导入入口。导入和同步动态 import 都检查在途提交已完成；它不开放 pool 的分配、alias、descriptor 写入或 history 翻转。原生 pass 只通过 `PassContext::image/buffer` 取得已声明资源，资源池和图的内部指针不再公开。profile 通过当前 pass 上下文取得。
+- 队列与 command pool 句柄在 Vulkan 后端内部。图提交与原生同步工作共享后端提交入口；呈现系统通过后端 `present` 发起呈现。
+- `VulkanContext::uploadImage` 管理 staging、复制、mip 生成和消费前的同步。它接收调用方选择的格式、尺寸及消费阶段；场景纹理和 UI 共用该实现。原生 AS 初始化通过 `execute` 提供录制回调，由 Core 管理 command 和 fence。
+- `execute/uploadImage` 当前是同步完成接口，等待本次提交的 fence，不调用 `vkQueueWaitIdle`。由于共用单队列，仍可能等待排在它之前的其他任务；跨上下文的 buffer 共享使用显式导入、访问状态和所有者引用，没有自动跨队列调度。
+- Renderer 在帧提交完成、读回收集之后显式推进 history。Core 不自动推进 system 的时钟，也不允许在途执行期间改变上下文的 history 角色。
+
+原生扩展仍允许 SDK descriptor、加速结构和 swapchain 集成使用 Vulkan 类型；这里是明确的后端接入面，并非另一套后端无关图形 API。

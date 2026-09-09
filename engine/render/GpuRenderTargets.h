@@ -1,4 +1,5 @@
 #pragma once
+#include "renderCore/vulkan/VulkanAccess.h"
 #include "core/RenderTarget.h"
 #include "renderCore/vulkan/GraphAccess.h"
 
@@ -10,7 +11,7 @@ class GpuRenderTargets {
     struct RasterOutput {
         rg::ResourceId color, depth;
     };
-    GpuRenderTargets(VulkanContext&, rg::Registry&, rg::ResourcePool&);
+    GpuRenderTargets(VulkanContext&, rg::Registry&, rc::NativeResources);
     ~GpuRenderTargets();
     void prepare(const std::vector<std::shared_ptr<RenderTargetResource>>& outputs,
                  const std::vector<std::shared_ptr<PixelReadRequest>>& requests, uint32_t width,
@@ -46,7 +47,7 @@ class GpuRenderTargets {
     };
     VulkanContext& vk_;
     rg::Registry& registry_;
-    rg::ResourcePool& pool_;
+    rc::NativeResources pool_;
     const size_t fixedResources_;
     std::map<RenderTargetResource*, Target> targets_;
     std::vector<RasterOutput> outputs_;

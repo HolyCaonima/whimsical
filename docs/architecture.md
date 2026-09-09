@@ -4,6 +4,8 @@
 
 应用与场景的组合由 `RuntimeHost` 管理：常驻应用 realm 与场景 realm 独立，`ScenePersistence` 只装载数据，`ScriptRuntime` 只执行代码，模拟调度和视图由宿主控制。完整接口与保存边界见 [运行宿主与视图](runtime-host.md)。
 
+GPU 数学约束求解由独立的 [XPBD system](xpbd.md) 提供：Model 描述变量和关系，Compiler 生成批量计划，Runtime 持有状态并使用 RenderCore 执行。脚本前端与 GPU 服务之间采用可靠请求通道，独立于渲染 FrameMailbox 的快照替换。
+
 ## 线程所有权
 
 引擎主线程拥有 Win32 窗口消息、Input、World、PhysicsScene、Navigation 查询及宿主/场景 JS heap。simulation 使用 60 Hz 固定步长，长帧最多补进 100 ms。输入按下边沿、滚轮和鼠标 delta 仅由第一个 simulation tick 消费，补帧不会重复点击。

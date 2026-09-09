@@ -41,6 +41,7 @@ class RenderGraph {
         Builder& bind(ResourceRef shaderSlot, ResourceRef resource);
         Builder& dispatch(const Program&, Extent3D elements);
         Builder& dispatch(const Program&, ResourceId extentOf);
+        Builder& constants(std::vector<uint8_t> bytes);
         // Native backends opt into renderCore/vulkan/GraphAccess.h for PassContext.
         Builder& record(std::function<void(const PassContext&)>);
         Builder& sideEffect(); // effects on state the graph does not own

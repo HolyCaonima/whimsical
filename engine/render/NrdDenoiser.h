@@ -1,5 +1,5 @@
 #pragma once
-#include "renderCore/vulkan/VulkanContext.h"
+#include "renderCore/vulkan/Programs.h"
 #include "core/Types.h"
 #include <NRD.h>
 #include <array>
@@ -12,7 +12,7 @@ class NrdDenoiser {
     struct Pipeline {
         VkDescriptorSetLayout resources = VK_NULL_HANDLE;
         VkPipelineLayout layout = VK_NULL_HANDLE;
-        VkPipeline handle = VK_NULL_HANDLE;
+        rc::Pipeline program;
     };
     std::vector<Pipeline> pipelines_;
     std::vector<Image> permanent_, transient_;
