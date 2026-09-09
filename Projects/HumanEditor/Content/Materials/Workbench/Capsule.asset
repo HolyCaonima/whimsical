@@ -1,5 +1,5 @@
 ALAS1
-{"id": "efd67ab5704256889e43ef0da77662cf", "type": "Material", "name": "Capsule", "version": 1, "storage": "embedded", "metadata": {}}
+{"id":"efd67ab5704256889e43ef0da77662cf","type":"Material","name":"Capsule","version":1,"storage":"embedded","metadata":{}}
 {
   "shader": {
     "id": "05cd212aed9371ff84b25eaeee7a5501",

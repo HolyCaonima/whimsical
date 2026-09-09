@@ -1,0 +1,33 @@
+ALAS1
+{"id":"0a5bde584ec33e7f9e1d89fb37a3ea4b","type":"Material","name":"HelperIconActive","version":1,"storage":"embedded","metadata":{}}
+{
+  "shader": {
+    "id": "970917e6cbc60930a620d1265890d2b3",
+    "path": "/Game/shaders/Icon"
+  },
+  "properties": {
+    "tint": [
+      1,
+      1,
+      1
+    ],
+    "opacity": 1
+  },
+  "textures": {
+    "sprite": {
+      "id": "e91441f0d081259380de959d05bc082b",
+      "path": "/Game/Textures/LightIcons"
+    }
+  },
+  "renderState": {
+    "domain": "display",
+    "layer": 0,
+    "cull": "none",
+    "surface": "masked",
+    "alphaCutoff": 0.06,
+    "blend": "alpha",
+    "rayVisible": false,
+    "depthTest": true,
+    "depthWrite": false
+  }
+}

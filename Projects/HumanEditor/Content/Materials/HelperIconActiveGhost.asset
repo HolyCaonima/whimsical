@@ -1,0 +1,33 @@
+ALAS1
+{"id":"d9d75fe5cdfeff1a6fe10c64eb4ee9e3","type":"Material","name":"HelperIconActiveGhost","version":1,"storage":"embedded","metadata":{}}
+{
+  "shader": {
+    "id": "970917e6cbc60930a620d1265890d2b3",
+    "path": "/Game/shaders/Icon"
+  },
+  "properties": {
+    "tint": [
+      1,
+      1,
+      1
+    ],
+    "opacity": 0.45
+  },
+  "textures": {
+    "sprite": {
+      "id": "e91441f0d081259380de959d05bc082b",
+      "path": "/Game/Textures/LightIcons"
+    }
+  },
+  "renderState": {
+    "domain": "display",
+    "layer": 1,
+    "cull": "none",
+    "surface": "masked",
+    "alphaCutoff": 0.02,
+    "blend": "alpha",
+    "rayVisible": false,
+    "depthTest": true,
+    "depthWrite": false
+  }
+}

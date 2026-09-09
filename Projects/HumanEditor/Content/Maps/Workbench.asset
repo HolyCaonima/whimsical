@@ -21,13 +21,13 @@ ALAS1
           ]
         },
         "render": {
-          "material": {
-            "id": "16fe63cacf5050968fe022f38413bd82",
-            "path": "/Game/Materials/Workbench/Ground"
-          },
           "mesh": {
             "id": "e6200869191f5c6598e77505b5a0681f",
             "path": "/Engine/Meshes/Box"
+          },
+          "material": {
+            "id": "16fe63cacf5050968fe022f38413bd82",
+            "path": "/Game/Materials/Workbench/Ground"
           }
         }
       }
@@ -50,13 +50,13 @@ ALAS1
           ]
         },
         "render": {
-          "material": {
-            "id": "4b2b3a55b71f5546badaef763f235b7f",
-            "path": "/Game/Materials/Workbench/Cube"
-          },
           "mesh": {
             "id": "e6200869191f5c6598e77505b5a0681f",
             "path": "/Engine/Meshes/Box"
+          },
+          "material": {
+            "id": "4b2b3a55b71f5546badaef763f235b7f",
+            "path": "/Game/Materials/Workbench/Cube"
           }
         }
       }
@@ -79,13 +79,13 @@ ALAS1
           ]
         },
         "render": {
-          "material": {
-            "id": "efd67ab5704256889e43ef0da77662cf",
-            "path": "/Game/Materials/Workbench/Capsule"
-          },
           "mesh": {
             "id": "1c72ab38c08e5b51919d224c934807d0",
             "path": "/Engine/Meshes/Capsule"
+          },
+          "material": {
+            "id": "efd67ab5704256889e43ef0da77662cf",
+            "path": "/Game/Materials/Workbench/Capsule"
           }
         }
       }
@@ -100,11 +100,6 @@ ALAS1
             1,
             5,
             3
-          ],
-          "scale": [
-            1,
-            1,
-            1
           ]
         },
         "light": {
@@ -129,11 +124,6 @@ ALAS1
             -4,
             3,
             -2
-          ],
-          "scale": [
-            1,
-            1,
-            1
           ]
         },
         "light": {

@@ -1,0 +1,7 @@
+ALAS1
+{"id":"970917e6cbc60930a620d1265890d2b3","type":"Shader","name":"Icon","version":1,"storage":"embedded","metadata":{"materialModel":"metallicRoughness","properties":[{"name":"tint","type":"vec3","default":[1,1,1]},{"name":"opacity","type":"float","default":1}],"textures":["sprite"]}}
+vec4 sprite = SampleTexture(ctx, textures.sprite, ctx.uv);
+SurfaceData s = DefaultSurface(ctx);
+s.albedo = sprite.rgb * properties.tint * ctx.vertexColor;
+s.opacity = sprite.a * properties.opacity;
+return s;

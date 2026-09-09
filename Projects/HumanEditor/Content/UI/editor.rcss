@@ -238,6 +238,8 @@ scrollbarcorner { background-color:#1a1a1a; }
 #viewbar .view-value.off { color:#6a6a6a; }
 #viewbar .view-toggle:hover, #viewbar .view-value:hover { background-color:#3a3a3a; color:#ffffff; }
 #viewbar .view-toggle.active { background-color:#2a5574; color:#e6f3fb; }
+#viewbar .view-game { position:absolute; right:108px; top:2px; height:24px; box-sizing:border-box; margin:0; padding:0 8px; font-size:11px; line-height:22px; background-color:#282828; border-width:0; color:#8d8d8d; }
+#viewbar .view-game.active { background-color:#2a5574; color:#e6f3fb; }
 #viewbar .view-speed { position:absolute; right:34px; top:2px; height:24px; box-sizing:border-box; margin:0; padding:0 8px; font-size:11px; line-height:22px; background-color:#282828; border-width:0; }
 #viewbar #maximize-view { position:absolute; right:4px; top:2px; width:26px; height:24px; box-sizing:border-box; margin:0; padding:0; }
 .viewport-icon { position:absolute; left:6px; top:5px; width:12px; height:12px; pointer-events:none; }

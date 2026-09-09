@@ -1,5 +1,5 @@
 ALAS1
-{"id": "4b2b3a55b71f5546badaef763f235b7f", "type": "Material", "name": "Cube", "version": 1, "storage": "embedded", "metadata": {}}
+{"id":"4b2b3a55b71f5546badaef763f235b7f","type":"Material","name":"Cube","version":1,"storage":"embedded","metadata":{}}
 {
   "shader": {
     "id": "05cd212aed9371ff84b25eaeee7a5501",

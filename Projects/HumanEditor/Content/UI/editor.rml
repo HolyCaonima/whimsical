@@ -19,12 +19,13 @@
       <button id="snap-scale" class="view-toggle active" title="Scale snap">Scale</button>
       <button id="snap-scale-value" class="view-value" title="Scale snap increment">0.1</button>
     </span>
+    <button id="game-view" class="view-game" title="Game view (G)">Game</button>
     <button id="camera-speed" class="view-speed" title="Camera speed">Speed <span id="camera-speed-label">1x</span></button>
     <button id="maximize-view" title="Maximize viewport"><span class="viewport-icon"><span class="corner tl"/><span class="corner tr"/><span class="corner bl"/><span class="corner br"/></span></button>
     <span id="pick-info"/>
   </div>
   <div id="viewport"/>
-  <div id="viewhint">W Move / E Rotate / R Scale   |   RMB + WASD fly   |   MMB pan   |   Wheel zoom   |   Ctrl+click multi-select</div>
+  <div id="viewhint">W Move / E Rotate / R Scale   |   RMB + WASD fly   |   MMB pan   |   Wheel zoom   |   G game view   |   Ctrl+click multi-select</div>
   <div id="gizmo" class="move"><div id="gizmo-mode"/></div>
   <div id="outliner" class="panel"><div class="tab">World Outliner</div><div class="searchbar"><span>Search</span><input id="tree-search" type="text"/></div><div class="tree-header">Actor label <span>Component</span></div><div id="tree"/><div id="actor-count" class="foot"/></div>
   <div id="details" class="panel"><div class="tab">Details <span id="selection-count"/></div><div class="searchbar"><span>Filter</span><input id="details-search" type="text" placeholder="Search properties..."/></div><div id="inspector"/></div>

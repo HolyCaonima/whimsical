@@ -1,5 +1,5 @@
 ALAS1
-{"id": "16fe63cacf5050968fe022f38413bd82", "type": "Material", "name": "Ground", "version": 1, "storage": "embedded", "metadata": {}}
+{"id":"16fe63cacf5050968fe022f38413bd82","type":"Material","name":"Ground","version":1,"storage":"embedded","metadata":{}}
 {
   "shader": {
     "id": "05cd212aed9371ff84b25eaeee7a5501",

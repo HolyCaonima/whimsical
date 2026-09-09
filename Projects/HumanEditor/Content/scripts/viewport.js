@@ -16,7 +16,7 @@ HE.pointerDown=function(ev){
             var axis=HE.gizmoAxis(entity);
             if(axis){
                 if(HE.pointer.left){HE.beginDrag(axis,p.mouse_x,p.mouse_y);HE.dragTo(HE.pointer.x,HE.pointer.y);}
-            }else HE.select(entity,!!p.ctrl_key);
+            }else HE.select(HE.helperTarget(entity),!!p.ctrl_key);
         });
     }
     HE.editingText=false;HE.el('viewport').focus();
@@ -30,7 +30,7 @@ HE.pointerUp=function(ev){
     HE.rightGesture=null;
     if(g&&!g.moved&&Math.abs(p.mouse_x-g.x)+Math.abs(p.mouse_y-g.y)<=4){
         HE.navigationEnded=null;HE.pointer.dx=HE.pointer.dy=0;
-        HE.pick(p.mouse_x,p.mouse_y,false,function(entity){HE.actorContext(HE.gizmoAxis(entity)?HE.selected[HE.selected.length-1]:entity,p.mouse_x,p.mouse_y);});
+        HE.pick(p.mouse_x,p.mouse_y,false,function(entity){HE.actorContext(HE.gizmoAxis(entity)?HE.selected[HE.selected.length-1]:HE.helperTarget(entity),p.mouse_x,p.mouse_y);});
     }
 };
 HE.pointerWheel=function(ev){HE.pointer.wheel-=ev.parameters.wheel_delta_y;ev.stopPropagation();};
@@ -48,6 +48,7 @@ HE.createTools = function () {
     HE.rt = Engine.renderTarget(asset);
     HE.writer = Engine.create({name:'HumanEditor ID output',persistent:false,components:{drawEntityID:{target:asset}}});
     HE.createGizmo();
+    HE.createHelpers();
 };
 HE.pick = function (x,y,additive,callback) {
     HE.cancelPick();
@@ -58,7 +59,7 @@ HE.pick = function (x,y,additive,callback) {
     HE.pickAdditive = additive;
     HE.pickCallback=callback;
     // Small screen-space tolerance for thin mesh handles. Colour and ID use identical geometry.
-    var radius=HE.gizmo&&HE.gizmo.visible?4:0,left=Math.max(0,p.x-radius),top=Math.max(0,p.y-radius);
+    var radius=(HE.gizmo&&HE.gizmo.visible)||HE.helpersVisible?4:0,left=Math.max(0,p.x-radius),top=Math.max(0,p.y-radius);
     var width=Math.min(info.width,p.x+radius+1)-left,height=Math.min(info.height,p.y+radius+1)-top;
     HE.pickRegion={x:p.x-left,y:p.y-top,width:width};
     HE.pickTicket = Engine.readPixels(HE.rt,{x:left,y:top,width:width,height:height,rtVersion:info.rtVersion});
@@ -72,7 +73,7 @@ HE.pollPick = function () {
         var region=HE.pickRegion,entity=result.data[region.y*region.width+region.x],nearest=Infinity;
         for(var i=0;i<result.data.length;i++){
             var dx=i%region.width-region.x,dy=Math.floor(i/region.width)-region.y,distance=dx*dx+dy*dy;
-            if(HE.gizmoAxis(result.data[i])&&distance<nearest){nearest=distance;entity=result.data[i];}
+            if((HE.gizmoAxis(result.data[i])||HE.helperHandle(result.data[i]))&&distance<nearest){nearest=distance;entity=result.data[i];}
         }
         HE.lastPick = {entity:entity,frame:result.renderFrame,tick:result.sourceTick};
         var callback=HE.pickCallback;HE.pickCallback=null;
@@ -165,10 +166,10 @@ HE.input = function(dt,i){
     motion.dx=motion.dy=motion.wheel=0;HE.pressed={};
     var playing=Engine.simulation.state().running;
     if(HE.wasPlaying!==playing){HE.el('viewport').setProperty('pointer-events',playing?'none':'auto');HE.wasPlaying=playing;HE.doc.show();}
-    if(playing){HE.updateGizmo();return;}
-    if(!i.focused){HE.closeContext();HE.rightGesture=null;HE.navigation=null;HE.panelDrag=null;HE.keys={};HE.pointer.left=false;HE.endDrag(false);return;}
-    if(HE.contextDoc)return;
-    if(HE.drag){if(pressed[27])HE.endDrag(true);HE.updateGizmo();return;}
+    if(playing){HE.updateGizmo();HE.updateHelpers();return;}
+    if(!i.focused){HE.closeContext();HE.rightGesture=null;HE.navigation=null;HE.panelDrag=null;HE.keys={};HE.pointer.left=false;HE.endDrag(false);HE.updateHelpers();return;}
+    if(HE.contextDoc){HE.updateHelpers();return;}
+    if(HE.drag){if(pressed[27])HE.endDrag(true);HE.updateGizmo();HE.updateHelpers();return;}
     var nav=HE.navigation||HE.navigationEnded,b=HE.basis(),c=HE.camera,changed=false;HE.navigationEnded=null;
     if(nav){
         if(nav==='orbit'){if(HE.rightGesture&&!HE.rightGesture.moved)dx=dy=0;c.yaw-=dx*0.006;c.pitch=Math.max(-1.5,Math.min(1.5,c.pitch+dy*0.006));}
@@ -194,9 +195,11 @@ HE.input = function(dt,i){
         if(ctrl&&pressed[86])HE.paste();
         if(pressed[46])HE.remove();
         if(pressed[70])HE.focus();
+        if(pressed[71]&&!ctrl)HE.toggleHelpers();
         if(pressed[27]){if(HE.drag)HE.endDrag(true);else HE.select(0);}
         if(!ctrl&&!nav){if(pressed[87])HE.setMode('move');if(pressed[69])HE.setMode('rotate');if(pressed[82])HE.setMode('scale');}
     }
     HE.updateGizmo();
     HE.updateGizmoHover();
+    HE.updateHelpers();
 };

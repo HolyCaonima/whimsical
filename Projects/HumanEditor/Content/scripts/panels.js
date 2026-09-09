@@ -95,6 +95,7 @@ HE.paintViewbar=function(){
     snap('snap-rotate',!!HE.rotationSnapEnabled,HE.rotationSnap+'\u00b0');
     snap('snap-scale',!!HE.scaleSnapEnabled,String(HE.scaleSnap));
     HE.el('camera-speed-label').setText(HE.cameraSpeed+'x');
+    HE.el('game-view').setClass('active',!HE.helpersVisible);
     HE.el('space').setText(HE.space==='world'?'World':'Local');
 };
 HE.paintSelection = function(){

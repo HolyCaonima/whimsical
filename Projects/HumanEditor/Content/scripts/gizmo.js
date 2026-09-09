@@ -4,6 +4,10 @@ HE.cross=function(a,b){return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]
 HE.unit=function(v){var length=Math.sqrt(HE.dot(v,v));return v.map(function(x){return x/length;});};
 HE.qaxis=function(v,angle){var s=Math.sin(angle/2);return [v[0]*s,v[1]*s,v[2]*s,Math.cos(angle/2)];};
 HE.qfromZ=function(v){return v[2]<-0.999999?[1,0,0,0]:HE.unit4([-v[1],v[0],0,1+v[2]]);};
+HE.qfromY=function(v){return v[1]<-0.999999?[0,0,1,0]:HE.unit4([v[2],0,-v[0],1+v[1]]);};
+// Screen aligned rather than merely camera facing: the minimal rotation onto the view axis
+// rolls a sprite as the camera tips over, and the orbit angles already say which way is up.
+HE.billboard=function(){return HE.qmul(HE.qaxis([0,1,0],HE.camera.yaw),HE.qaxis([1,0,0],-HE.camera.pitch));};
 HE.unit4=function(q){var n=Math.sqrt(q[0]*q[0]+q[1]*q[1]+q[2]*q[2]+q[3]*q[3]);return q.map(function(v){return v/n;});};
 HE.pose=function(p,q){return {position:{x:p[0],y:p[1],z:p[2]},rotation:{x:q[0],y:q[1],z:q[2],w:q[3]}};};
 HE.eye=function(){var b=HE.basis(),c=HE.camera;return c.target.map(function(v,i){return v-b.forward[i]*c.distance;});};

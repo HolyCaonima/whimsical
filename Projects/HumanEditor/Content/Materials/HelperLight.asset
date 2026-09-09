@@ -1,0 +1,24 @@
+ALAS1
+{"id":"b2c3d4e5f60718293a4b5c6d7e8f901a","type":"Material","name":"HelperLight","version":1,"storage":"embedded","metadata":{}}
+{
+  "shader": {
+    "id": "45c52a2c1f355e5f9b4b4a4365f3c1a0",
+    "path": "/Game/shaders/Gizmo"
+  },
+  "properties": {
+    "baseColor": [
+      0.42,
+      0.96,
+      0.82
+    ]
+  },
+  "textures": {},
+  "renderState": {
+    "domain": "display",
+    "layer": 0,
+    "cull": "none",
+    "rayVisible": false,
+    "depthTest": true,
+    "depthWrite": false
+  }
+}

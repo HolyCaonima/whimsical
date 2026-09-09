@@ -36,6 +36,8 @@ Content 路径和公共脚本从项目文件读取，无需手填。启动地图
 | 吸附 | 视口工具栏分别开关网格 / 旋转 / 缩放吸附；点数值打开步长菜单。默认 0.25 米 / 10 度 / 0.1 |
 | 对象右键菜单 | 视口右键单击对象或右键 Outliner 条目；包含聚焦、复制粘贴、副本、删除、启停和父级操作；右键已选对象保留多选，Esc 或点击菜单外关闭 |
 | 相机 | 右键拖动环绕，右键按住配合 WASD / Q / E 移动，Shift 加速；中键平移；滚轮缩放 |
+| 游戏视图 | G 或视口栏右侧 Game：隐藏海平面网格和灯光图标；再按一次恢复 |
+| 灯光图标 | 按灯类型显示不同字形（point / spot / directional / rect / capsule），朝向相机、屏幕尺寸恒定，点击选中该灯 |
 | 聚焦 / 重置相机 | F / 右键 Focus selected；Perspective 恢复地图相机 |
 | 添加实体 | Place Actors 的 Basic / Shapes / Lights 分类；搜索覆盖全部类别，点击放置在相机观察目标处 |
 | 重命名 / 启停 | Details 的 Rename / Enabled；多选启停使用右键 Toggle enabled |
@@ -95,6 +97,8 @@ Content Browser 获得焦点时，Delete / Ctrl+D 等演员快捷键不会操作
 - `Content/scripts/editor.js`：文档状态、命令、历史、层级、Content 与模拟生命周期。
 - `Content/scripts/viewport.js`：UI 输入、相机、ID 回读、投影与轴向变换。
 - `Content/scripts/gizmo.js`：临时实体 gizmo、屏幕尺寸、半圆朝向、悬停、旋转与变换事务；颜色及选轴共用 GPU 网格和深度排序。
+- `Content/scripts/helpers.js`：海平面网格、灯光图标与 Game 视图（G）。
+- `tools/helper-meshes.mjs`：生成网格线与灯光图标网格；运行 `node Projects/HumanEditor/tools/helper-meshes.mjs` 可重新生成。
 - `tools/gizmo-meshes.mjs`：生成普通 STM1 格式的箭头、缩放手柄、平面方块、半圆环与整圆环网格；运行 `node Projects/HumanEditor/tools/gizmo-meshes.mjs` 可重新生成。
 - `Content/scripts/panels.js`：对象树、视口工具栏、对象右键菜单与通用对话框。
 - `Content/scripts/inspector.js`：属性布局、嵌套字段、组件草稿、筛选及编辑交互。
