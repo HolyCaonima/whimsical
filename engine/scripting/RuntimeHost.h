@@ -4,7 +4,7 @@
 #include "scene/SceneAsset.h"
 #include "platform/FileDialog.h"
 #include <deque>
-#include "xpbd/adapter/Mailbox.h"
+#include "dynamics/adapter/Mailbox.h"
 
 namespace whimsical {
 // Application composition for one active scene. Realms execute code; the host owns
@@ -13,7 +13,7 @@ class RuntimeHost {
     World& world_;
     AssetManager& assets_;
     ui::UiCore* ui_;
-    std::shared_ptr<xpbd::Mailbox> xpbd_ = std::make_shared<xpbd::Mailbox>();
+    std::shared_ptr<dynamics::Mailbox> dynamics_ = std::make_shared<dynamics::Mailbox>();
     std::unique_ptr<ScriptRuntime> application_, simulation_;
     ContentSourceRef projectOrigin_;
     std::vector<AssetRef> projectScripts_, hostScripts_;
@@ -43,7 +43,7 @@ class RuntimeHost {
     void changed();
 
   public:
-    const std::shared_ptr<xpbd::Mailbox>& xpbdMailbox()const{return xpbd_;}
+    const std::shared_ptr<dynamics::Mailbox>& dynamicsMailbox()const{return dynamics_;}
     RenderView view;
     RenderView renderView() const;
     RuntimeHost(World&, AssetManager&, ui::UiCore* = nullptr);

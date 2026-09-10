@@ -2,7 +2,7 @@
 
 一个使用 **C++ / JavaScript / Vulkan** 的 Windows 游戏引擎。用 JavaScript 编写玩法和工具，用独立项目组织场景与资产，运行时提供光追渲染、角色动画、场景编辑和 GPU 约束求解。
 
-仓库附带 **5 个可运行项目**：人犬神经网络动画、街机赛车、场景编辑器、通用 GPU XPBD 和像素拾取示例。可以先运行体验，再从项目脚本开始修改。
+仓库附带 **5 个可运行项目**：人犬神经网络动画、街机赛车、场景编辑器、通用 GPU Dynamics 和像素拾取示例。可以先运行体验，再从项目脚本开始修改。
 
 [快速开始](#快速开始) · [项目与截图](#项目与截图) · [常用操作](#常用操作) · [引擎开发指南](engine.md)
 
@@ -85,17 +85,17 @@ powershell -ExecutionPolicy Bypass -File tools/build.ps1
 
 [查看编辑器操作与保存说明](Projects/HumanEditor/README.md)
 
-### ConstraintLab — 动态编译执行图的通用 GPU XPBD
+### ConstraintLab — 动态编译执行图的通用 GPU Dynamics
 
 通过 JavaScript 定义数学空间、变量和约束关系，在运行时编译成 GPU 求解执行图。编译器自动生成 Jacobian、安排求解顺序，并根据依赖与容量融合执行区域；运行时支持数值参数更新、拓扑变更后的重新编译与状态迁移，以及异步提交和结果读取。
 
-[![ConstraintLab：通用 GPU XPBD 方案的绳索交互示例](docs/screenshots/constraint-lab.png)](docs/screenshots/constraint-lab.png)
+[![ConstraintLab：通用 GPU Dynamics 方案的绳索交互示例](docs/screenshots/constraint-lab.png)](docs/screenshots/constraint-lab.png)
 
 当前画面用绳索演示这套流程：距离、球面碰撞、地面碰撞和阻尼都由项目数学表达式定义。可以修改柔顺度、释放端点，或切换规模与求解策略，观察同一通用编译与运行方案下的结果。
 
 **先试试：** 切换 Hybrid / Jacobi 和 1 / 16 / 64 条示例，比较求解效果；I 施加扰动，C 释放端点，Space 暂停，N 单步。数学定义入口是项目的 `Content/scripts/model.js`。
 
-[查看方案与示例操作](Projects/ConstraintLab/README.md) · [数学接口与运行时](docs/xpbd.md) · [执行图编译与优化](docs/xpbd-compiler-optimization.md)
+[查看方案与示例操作](Projects/ConstraintLab/README.md) · [数学接口与运行时](docs/dynamics.md) · [执行图编译与优化](docs/dynamics-compiler-optimization.md)
 
 ### EntityID — 像素拾取示例
 
@@ -136,6 +136,6 @@ powershell -ExecutionPolicy Bypass -File tools/build.ps1
 - [Project / Asset / Scene](docs/projects-assets-scenes.md)：创建和组织项目、虚拟路径、资产与场景保存。
 - [JavaScript 宿主与视图](docs/runtime-host.md)：脚本生命周期、场景运行与编辑器视图。
 - [UI Core](docs/ui-core.md)：通过项目脚本创建和操作界面。
-- [GPU XPBD](docs/xpbd.md)：定义数学空间、关系与 GPU 求解任务。
+- [GPU Dynamics](docs/dynamics.md)：定义数学空间、关系与 GPU 求解任务。
 
 当前没有音频系统和 3D 透明混合；各演示场景的模型范围见对应项目说明。更完整的能力边界和第三方依赖说明集中在 [engine.md](engine.md)。

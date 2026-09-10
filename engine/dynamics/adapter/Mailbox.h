@@ -1,0 +1,48 @@
+#pragma once
+#include "dynamics/compiler/CompiledPlan.h"
+#include "dynamics/runtime/State.h"
+#include <mutex>
+namespace whimsical::dynamics {
+enum class Operation { Install, Apply, Step, Read };
+struct Request {
+    Operation operation;
+    PlanRef plan;
+    ModelCommit commit;
+    TickInput tick;
+    StateField field = StateField::Value;
+    SetId set = 0;
+    uint32_t first = 0, count = 0;
+};
+struct Reply {
+    CompletedState completed;
+    std::vector<float> values;
+    std::string error;
+};
+// Reliable single-flight channel per model. A second operation returns Busy until
+// the caller consumes the first reply; replacing a render Frame never drops a tick.
+class Channel {
+    std::mutex mutex_;
+    std::optional<Request> request_;
+    std::optional<Reply> reply_;
+    bool busy_ = false, retired_ = false;
+
+  public:
+    void submit(Request);
+    std::optional<Reply> receive();
+    std::optional<Request> take();
+    void complete(Reply);
+    void retire();
+    bool retired();
+    bool busy();
+};
+class Mailbox {
+    std::mutex mutex_;
+    std::vector<std::shared_ptr<Channel>> new_;
+    bool closed_ = false;
+
+  public:
+    std::shared_ptr<Channel> attach();
+    std::vector<std::shared_ptr<Channel>> take();
+    void close();
+};
+} // namespace whimsical::dynamics

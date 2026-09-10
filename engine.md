@@ -12,7 +12,7 @@ powershell -ExecutionPolicy Bypass -File tools/build.ps1 -Test
 .\Run.cmd
 ```
 
-依赖全部位于 `third_party/`，不需要系统安装 Vulkan SDK。bootstrap 使用固定版本和 `tools/dependencies.lock.json` 中的 SHA-256 校验下载。CMake、GLSL 编译器、DXC 也随工程依赖下载，来源见 [固定依赖](docs/third-party.md)。`-Test` 运行 CMake 当前注册的 3 组 CTest：`xpbd_solver`、`console_system` 与 `content_mounts`。历史文档可能引用清理前的 ECS、玩法、物理、动画、Shader 与渲染审计测试数量，应按对应记录的日期与命令理解。
+依赖全部位于 `third_party/`，不需要系统安装 Vulkan SDK。bootstrap 使用固定版本和 `tools/dependencies.lock.json` 中的 SHA-256 校验下载。CMake、GLSL 编译器、DXC 也随工程依赖下载，来源见 [固定依赖](docs/third-party.md)。`-Test` 运行 CMake 当前注册的 3 组 CTest：`dynamics_solver`、`console_system` 与 `content_mounts`。历史文档可能引用清理前的 ECS、玩法、物理、动画、Shader 与渲染审计测试数量，应按对应记录的日期与命令理解。
 
 表面 Shader 由随附 glslang 在运行时按 pass 编译，因此当前开发运行时需要源码树在位；离线 cook 与持久二进制缓存是后续工作。
 
@@ -44,7 +44,7 @@ Release 构建默认**关闭** validation（每帧约 1 ms CPU，足以把贴着
 
 按 **~ 或 F10** 打开游戏内控制台：支持 CVar 查询/修改、类型与范围校验、多关键词模糊补全、上下键选择候选、命令历史、配置保存。可试 `r.Exposure 1.4`、`r.Hud 0`、`r.DebugView 1`、`t.TimeScale 0`、`help`。控制台打开时接管游戏输入，关闭 HUD 后仍可使用。变量、启动覆盖及开发接口见 [CVar 与控制台](docs/console.md)。
 
-输入 `profileGPU` 采集随后约一秒内同一 RenderCore 的 GPU 提交，包含渲染、XPBD、RenderGraph、加速结构、NRD 子阶段和拷贝；结果输出到控制台及 `captures/gpu-profile.json` / `.txt`。启动时也可传 `--profile-gpu`。见 [GPU 分阶段计时](docs/gpu-profiling.md)。
+输入 `profileGPU` 采集随后约一秒内同一 RenderCore 的 GPU 提交，包含渲染、Dynamics、RenderGraph、加速结构、NRD 子阶段和拷贝；结果输出到控制台及 `captures/gpu-profile.json` / `.txt`。启动时也可传 `--profile-gpu`。见 [GPU 分阶段计时](docs/gpu-profiling.md)。
 
 输入 `profileCPU` 抓取 Game / Render 线程的 CPU 阶段耗时，包含独立标注的等待阶段，以及 inclusive / self 读数；`profileCPU last` 查看最近报告，结果保存在 `captures/cpu-profile.json` / `.txt`。启动参数为 `--profile-cpu`。见 [CPU 分阶段计时](docs/cpu-profiling.md)。
 
@@ -68,7 +68,7 @@ engine/
   debug/                  物理线框、ECS 生命周期 smoke 等诊断入口
   Content/UI/             引擎 RML / RCSS
   renderCore/             GPU 资源、RenderGraph、Vulkan 执行、同步与计时
-  xpbd/                   数学模型、求解编译器、GPU 运行时与脚本适配
+  dynamics/                   数学模型、求解编译器、GPU 运行时与脚本适配
   render/                 几何、BLAS/TLAS、光照、NRD、运行时 Shader 编译与材质绑定
     shaders/              surface 契约、G-buffer / DI / GI / reuse / resolve / composite
 Projects/                 独立项目；编辑器可显式挂载其他项目的 Content
@@ -89,8 +89,8 @@ Projects/                 独立项目；编辑器可显式挂载其他项目的
   MapleCircuit/           赛车项目：赛道数据、车辆／AI／比赛 JS、天空 Shader、生成器与项目测试
   HumanEditor/            场景编辑器、资产浏览、变换工具与 Play/Pause/Stop
   EntityID/               整数渲染目标与异步像素回读示例
-  ConstraintLab/          通用 GPU XPBD 的动态编译与运行示例
-tests/                    XPBD、控制台与 Content 挂载的原生验证
+  ConstraintLab/          通用 GPU Dynamics 的动态编译与运行示例
+tests/                    Dynamics、控制台与 Content 挂载的原生验证
 tools/                    固定依赖下载、构建、迁移与 GPU 诊断脚本
 docs/                     架构、渲染约定、第三方来源、验证记录
 third_party/              可重新获取的外部依赖，不放自有 gameplay
@@ -147,21 +147,21 @@ NRD 4.17.3 实际参与 GPU 计算，使用 RELAX 的原生 SPIR-V、资源池�
 
 渲染场景是常驻的：`RenderScene` 给物体分配稳定槽位，ECS 以增删改事件发布变化，渲染器上传脏槽位；变换变化还有只写实例前 128 字节的快速路径。场景同步与上传成本跟随变化量，绘制和光追成本仍受场景规模影响。同步架构见 [RenderCore](docs/render-core.md) 与 [RenderGraph](docs/render-graph.md)。
 
-Afterlight 项目中的 3C 包含加速、刹车、原地转向、行走、跑步、蹲行速度与物理净空、交互。`PhysicsScene` 当前为查询／运动学后端，未提供刚体堆叠和 ragdoll；独立 GPU XPBD 模块支持通过数学状态与关系定义求解，不会自动为场景实体生成动力学模型。楼梯、跳跃／翻越、坡面、多层导航、动画图混合和多角色控制仍需扩展。当前双足模型尚未接入蹲姿动画。Maple Circuit 的车辆是平面街机模型，没有悬挂或动力学。
+Afterlight 项目中的 3C 包含加速、刹车、原地转向、行走、跑步、蹲行速度与物理净空、交互。`PhysicsScene` 当前为查询／运动学后端，未提供刚体堆叠和 ragdoll；独立 GPU Dynamics 模块支持通过数学状态与关系定义求解，不会自动为场景实体生成动力学模型。楼梯、跳跃／翻越、坡面、多层导航、动画图混合和多角色控制仍需扩展。当前双足模型尚未接入蹲姿动画。Maple Circuit 的车辆是平面街机模型，没有悬挂或动力学。
 
 ECS 侧当前是单 World、单已加载 Map，尚未引入 streaming、同一 Map 多实例或跨 Map 活实体解析。Map v3/v4 只在读取边界迁移，v1/v2 明确拒绝。
 
 排查闪烁时可运行 `Whimsical.exe --audit NAME --view 1 --capture`：固定场景，预热 64 帧后统计连续帧；加 `--audit-motion` 使用固定的镜头旋转轨迹。结果在 `captures/NAME/`。使用控制台 `r.DebugView 0..7` 设置诊断视图，1 为 ALBEDO；DIRECT RT (RAW) / INDIRECT RT (RAW) 是降噪前的光照信号。资源和同步边界见 [RenderCore](docs/render-core.md)。
 
-## GPU XPBD 与编译器
+## GPU Dynamics 与编译器
 
-GPU XPBD 分为 Model、Compiler、Runtime 和 Adapter。项目定义数学空间、变量、残差、乘子投影与 history；编译器负责 SoA、着色、Jacobi 关联结构及执行映射，运行时通过 RenderCore 提交计算。
+GPU Dynamics 分为 Model、Compiler、Runtime 和 Adapter。项目定义数学空间、变量、残差、等式 / 不等式条件与关系自身的 history；编译器负责 GLSL 生成、求解乘子处理、SoA、着色、Jacobi 关联结构及执行映射，运行时通过 RenderCore 提交计算。模型与用户表达式不访问求解乘子。
 
 默认 Auto 执行模式识别静态封闭组件，按容量打包到工作组，在共享内存内保留子步与迭代循环。大型组件、动态端点模型或超预算程序保留全局路径。`execution:'global'` 可显式选择全局执行；这与 Colored / Jacobi / Hybrid 数值方法独立。
 
-2026-09-09，同一 Release 构建、RTX 3080、ConstraintLab 64 变量 / 255 关系、4 子步 × 12 迭代的分别采样中，每步计算 dispatch 从 400 降为 1，计算阶段区间总和从 2.493 ms 降为 0.840 ms。此数据不代表整帧或所有模型的加速比。现有 XPBD 验证通过，没有为该次优化新增测试。
+2026-09-09，同一 Release 构建、RTX 3080、ConstraintLab 64 变量 / 255 关系、4 子步 × 12 迭代的分别采样中，每步计算 dispatch 从 400 降为 1，计算阶段区间总和从 2.493 ms 降为 0.840 ms。此数据不代表整帧或所有模型的加速比。现有 Dynamics 验证通过，没有为该次优化新增测试。
 
-接口与生命周期见 [GPU XPBD](docs/xpbd.md)，预算、同步语义、测量口径与尚未实现的优化见 [编译器优化说明](docs/xpbd-compiler-optimization.md)。
+接口与生命周期见 [GPU Dynamics](docs/dynamics.md)，预算、同步语义、测量口径与尚未实现的优化见 [编译器优化说明](docs/dynamics-compiler-optimization.md)。
 
 ## 项目实践与记录
 
@@ -216,8 +216,8 @@ GPU XPBD 分为 Model、Compiler、Runtime 和 Adapter。项目定义数学空�
 | [固定依赖](docs/third-party.md) | `third_party/` 的版本、用途与许可 |
 | [运行宿主与视图](docs/runtime-host.md) | 常驻脚本、场景加载与独立视图、Play/Pause/Stop |
 | [RenderTarget](docs/render-targets.md) | 离屏输出、整数 ID、异步像素读取 |
-| [GPU XPBD](docs/xpbd.md) | 数学接口、模型变化、GPU 状态与结果消费 |
-| [XPBD 编译器优化](docs/xpbd-compiler-optimization.md) | 区域分析、共享状态融合、预算与实测 |
+| [GPU Dynamics](docs/dynamics.md) | 数学接口、模型变化、GPU 状态与结果消费 |
+| [Dynamics 编译器优化](docs/dynamics-compiler-optimization.md) | 区域分析、共享状态融合、预算与实测 |
 | [RenderCore](docs/render-core.md) / [RenderGraph](docs/render-graph.md) | GPU 资源、计算图、访问声明与同步 |
 | [变换 TRS](docs/transform-trs.md) | 局部与世界变换、父子层级和缩放 |
 | [材质渲染策略](docs/material-render-policy.md) | 材质域、深度层和光追可见性 |

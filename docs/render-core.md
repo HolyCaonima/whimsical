@@ -95,11 +95,11 @@ if (execution.poll()) {
 - `submit()` 不知道模拟 tick 或渲染帧，也不翻转历史；所有者显式调用 `advanceHistory()`。不同 GraphContext 的 history 奇偶与完成状态互不影响。
 - 合作的 system 可以共同声明 Registry、向同一个 GraphContext 填图，并传递 ResourceRef。保持已有构图语义：消费者声明在生产者之后，编译器推导依赖、同步和裁剪；同一资源的后续写入建立后续内容版本。
 - ResourceId 属于其 Registry，资源的物理存储属于 GraphContext。不能把另一个上下文的整数 ID 当作共享 GPU 分配。原生 buffer 导入可携带所有者和访问状态，使消费者保留其生命周期；解除导入仍须经过完成边界。
-- 帧快照的 latest-wins 策略属于渲染宿主。XPBD 的可靠 tick 通道由其接入层管理，不使用 FrameMailbox。
+- 帧快照的 latest-wins 策略属于渲染宿主。Dynamics 的可靠 tick 通道由其接入层管理，不使用 FrameMailbox。
 
-[XPBD](xpbd.md) 已作为平级 GPU system 使用这套接口。现有 CPU PhysicsScene 的碰撞查询与 XPBD 各自独立；没有引入独立 compute 队列或 GPU 调度线程。
+[Dynamics](dynamics.md) 已作为平级 GPU system 使用这套接口。现有 CPU PhysicsScene 的碰撞查询与 Dynamics 各自独立；没有引入独立 compute 队列或 GPU 调度线程。
 
-`Registry(pushConstantBytes)` 声明通用 push constant 范围，pass 的 `constants(bytes)` 提供本次 dispatch 参数。`uploadRange` 更新 buffer 子范围，`copyBuffer` 支持整块及范围复制。它们都形成图内 transfer 节点，不包含 XPBD 概念。完整源码编译缓存属于 RenderCore 设备，GraphContext 保留按自身 layout 建立的程序。
+`Registry(pushConstantBytes)` 声明通用 push constant 范围，pass 的 `constants(bytes)` 提供本次 dispatch 参数。`uploadRange` 更新 buffer 子范围，`copyBuffer` 支持整块及范围复制。它们都形成图内 transfer 节点，不包含 Dynamics 概念。完整源码编译缓存属于 RenderCore 设备，GraphContext 保留按自身 layout 建立的程序。
 
 ## 渲染侧保留什么
 

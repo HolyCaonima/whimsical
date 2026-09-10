@@ -3,16 +3,16 @@ var Lab={count:64,copies:1,stiffness:2,mode:'hybrid',paused:false,drive:false,cu
     stage:'',handle:0,tick:0,time:0,gpu:0,invalid:0,singular:0,dirty:false,kick:false,
     oneStep:false,error:'',readAge:0,readInterval:0.07,sample:null,from:null,displayed:null,
     reads:0,right:[3.5,5,0],anchorDirty:false,resetPending:false};
-Lab.X=Engine.xpbd;
+Lab.X=Engine.dynamics;
 Lab.definitions=function(){
     var X=Lab.X;Lab.space=X.space(3);
     Lab.distance=X.defineRelation({name:'distance',spaces:[Lab.space,Lab.space],parameters:1},function(e){
         return {residual:[e.sub(e.length(e.vsub(e.endpoints[0],e.endpoints[1])),e.parameter(0))]};
     });
-    Lab.floor=X.defineRelation({name:'ground half space',spaces:[Lab.space],domain:'nonnegative'},function(e){
+    Lab.floor=X.defineRelation({name:'ground half space',spaces:[Lab.space],kind:'greaterEqual'},function(e){
         return {residual:[e.sub(e.endpoints[0][1],0.06)]};
     });
-    Lab.sphere=X.defineRelation({name:'sphere exterior',spaces:[Lab.space],domain:'nonnegative'},function(e){
+    Lab.sphere=X.defineRelation({name:'sphere exterior',spaces:[Lab.space],kind:'greaterEqual'},function(e){
         return {residual:[e.sub(e.length(e.vsub(e.endpoints[0],[0,1.8,0])),1.16)]};
     });
     Lab.damping=X.defineRelation({name:'displacement resistance',spaces:[Lab.space],rows:3,history:3},function(e){

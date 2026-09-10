@@ -1,6 +1,6 @@
 # GPU 分阶段计时
 
-控制台输入 `profileGPU`，采集随后约 1 秒内通过同一个 RenderCore 的所有 GraphContext 记录并提交的 GPU 工作。渲染、XPBD 和其他计算图自动参与，不需要把请求逐个转发给子系统。
+控制台输入 `profileGPU`，采集随后约 1 秒内通过同一个 RenderCore 的所有 GraphContext 记录并提交的 GPU 工作。渲染、Dynamics 和其他计算图自动参与，不需要把请求逐个转发给子系统。
 
 ```text
 profileGPU
@@ -15,7 +15,7 @@ profileGPU last
 - 占所有被采集提交的区间总和的比例。
 - 执行次数，以及每次的平均区间耗时。
 
-同名阶段按父级路径归并，所以多次迭代的 `Colored distance` 会显示累计耗时和实际调度次数，不会打印数百行重复名称。子阶段已包含在父阶段中，不能再次累加。渲染帧、模拟步和回读的提交频率不同，不能把执行图平均提交耗时直接当成每帧成本。XPBD 图同时包含求解和回读提交，可通过 `Predict` 等阶段的次数进一步区分。
+同名阶段按父级路径归并，所以多次迭代的 `Colored distance` 会显示累计耗时和实际调度次数，不会打印数百行重复名称。子阶段已包含在父阶段中，不能再次累加。渲染帧、模拟步和回读的提交频率不同，不能把执行图平均提交耗时直接当成每帧成本。Dynamics 图同时包含求解和回读提交，可通过 `Predict` 等阶段的次数进一步区分。
 
 根节点显示的是 **GPU 提交区间的总和**，不是现实经过的时间或 GPU 利用率。时间戳区间包含 GPU 同步和流水线影响，不代表隔离 shader 的纯运算成本。CPU 等待、Present，以及绕过 GraphContext 的原生上传 / 资源构建提交不在报告内。
 
@@ -40,7 +40,7 @@ rc::GraphContext work(core, registry, "My compute system");
 // Participation in a RenderCore capture is automatic.
 ```
 
-RenderGraph 自动为命名 pass 加入 `GpuScope`，原生图内扩展可创建嵌套 scope。报告因此包含 Renderer 的 GBuffer、TLAS、ReSTIR、NRD 子阶段，以及 XPBD 的预测、约束迭代、速度恢复、历史提交、数据传输等实际执行分支。
+RenderGraph 自动为命名 pass 加入 `GpuScope`，原生图内扩展可创建嵌套 scope。报告因此包含 Renderer 的 GBuffer、TLAS、ReSTIR、NRD 子阶段，以及 Dynamics 的预测、约束迭代、速度恢复、历史提交、数据传输等实际执行分支。
 
 各 GraphContext 仍拥有独立 query pool 和 fence；RenderCore 负责采样决策、完成收集和汇总，不把不同系统的执行节奏绑在一起。查询池按页增长，不再因超过 256 个 scope 截断报告。普通运行仅记录每次提交的首尾两个时间戳，详细阶段标记只在采样窗口或显式局部请求时启用。
 

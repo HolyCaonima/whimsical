@@ -1,6 +1,6 @@
 <rml><head><title>Constraint Lab</title><link type="text/rcss" href="lab.rcss"/></head>
 <body>
-  <div id="header"><div class="brand-mark">~</div><div class="brand">CONSTRAINT LAB<span>GPU XPBD / 变量与关系实验室</span></div><div id="status">COMPILING</div></div>
+  <div id="header"><div class="brand-mark">~</div><div class="brand">CONSTRAINT LAB<span>GPU Dynamics / 变量与关系实验室</span></div><div id="status">COMPILING</div></div>
   <div id="viewport"><div class="view-heading"><div class="eyebrow">EXPERIMENT 01</div><div class="view-title">绳索实验</div><div class="view-subtitle">重力下垂 · 端点控制 · 球面碰撞</div></div><button id="camera">重置视角</button><div id="formula"><div id="equation">C(q) = ‖qᵢ − qⱼ‖ − L</div><div id="sample-note">一条绳子 · 64 个节点</div></div><div class="legend"><span class="teal">■</span> 绳子 <span class="gold">■</span> 固定端点</div></div>
   <div id="sidebar">
     <div class="section"><div class="eyebrow">SOLVER POPULATION</div><div id="population">64</div><div class="muted">参与求解的变量</div><div class="sizes"><button id="size-1" class="active">1 条</button><button id="size-16">16 条</button><button id="size-64">64 条</button></div><div class="metric"><span>关系实例</span><b id="relation-count">255</b></div></div>

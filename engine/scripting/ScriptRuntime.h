@@ -11,7 +11,7 @@ class UiCore;
 }
 class UiBindings;
 class RuntimeHost;
-namespace xpbd { class ScriptBindings; }
+namespace dynamics { class ScriptBindings; }
 // One realm has a fixed Content origin. It executes callbacks but never advances a
 // World or owns scene transitions; RuntimeHost composes those independent operations.
 class ScriptRuntime {
@@ -25,7 +25,7 @@ class ScriptRuntime {
     ui::UiCore* ui_ = nullptr;
     bool hudEnabled_ = true;
     std::unique_ptr<UiBindings> uiBindings_;
-    std::unique_ptr<xpbd::ScriptBindings> xpbdBindings_;
+    std::unique_ptr<dynamics::ScriptBindings> dynamicsBindings_;
     std::function<void(const std::string&)> logSink_;
     std::set<std::string> pixelReads_;
     bool started_ = false;
