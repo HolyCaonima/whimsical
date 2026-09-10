@@ -407,16 +407,16 @@ int main(int argc, char** argv) {
                                                  : PresentMode::Immediate;
         options.fullUpload = false; // The live Frame value is the single source of truth.
         variables.finishStartup();
-        std::string renderError;
+        std::string renderError, dynamicsError;
+        deviceOptions.presentationWindow = window.handle();
+        deviceOptions.rayQueries = true;
+        rc::RenderCore renderCore(deviceOptions);
+        scripts.dynamicsMailbox()->wakeOnCompletion([&]{window.wake();});
         uint32_t validationErrors = 0;
         std::promise<void> producerStopped;
         auto producerCompletion = producerStopped.get_future();
         std::thread renderThread([&] {
             try {
-                deviceOptions.presentationWindow = window.handle();
-                deviceOptions.rayQueries = true;
-                rc::RenderCore renderCore(deviceOptions);
-                dynamics::GpuService dynamicsService(renderCore,scripts.dynamicsMailbox());
                 try {
                     Renderer renderer(renderCore, options);
                     FrameRef frame;
@@ -430,7 +430,6 @@ int main(int argc, char** argv) {
                             renderCore.requestProfile(frame->gpuProfileRequest);
                             lastGpuRequest = frame->gpuProfileRequest;
                         }
-                        dynamicsService.drain();
                         bool more = renderer.render(frame);
                         if (auto result = renderer.takeCpuProfile()) {
                             std::lock_guard<std::mutex> lock(cpuProfileMutex);
@@ -471,6 +470,14 @@ int main(int argc, char** argv) {
             finished.store(true);
             mailbox.close();
             window.wake(); // Release the simulation thread from its pacing wait at once.
+        });
+        std::thread dynamicsThread([&] {
+            try {
+                dynamics::GpuService service(renderCore,scripts.dynamicsMailbox());
+                service.run();
+            } catch(const std::exception& error) {
+                dynamicsError=error.what();finished.store(true);mailbox.close();window.wake();
+            }
         });
         using Clock = std::chrono::steady_clock;
         auto previous = Clock::now(), lastTitle = previous;
@@ -521,7 +528,8 @@ int main(int argc, char** argv) {
                 auto now = Clock::now();
                 accumulator += std::min(std::chrono::duration<double>(now - previous).count(), .1);
                 previous = now;
-                bool changed = collectGpuProfile();
+                bool changed = scripts.pollGpu();
+                changed = collectGpuProfile() || changed;
                 changed = collectCpuProfile() || changed;
                 if (accumulator >= step)
                     prepareCpuProfile();
@@ -647,6 +655,11 @@ int main(int argc, char** argv) {
         producerStopped.set_value();
         mailbox.close();
         renderThread.join();
+        scripts.dynamicsMailbox()->close();
+        dynamicsThread.join();
+        validationErrors=renderCore.errors();
+        renderCore.endProfile();
+        if(auto result=renderCore.takeProfile())gpuProfileResult=std::move(result);
         gameCpuProfiler.reset();
         collectGpuProfile();
         collectCpuProfile();
@@ -656,6 +669,8 @@ int main(int argc, char** argv) {
             std::cout << "[ProfileGPU] Pending request was not captured before shutdown.\n";
         if (!mainError.empty())
             throw std::runtime_error(mainError);
+        if (!dynamicsError.empty())
+            throw std::runtime_error(dynamicsError);
         if (!renderError.empty())
             throw std::runtime_error(renderError);
         if (smoke && smokeStage != 7)

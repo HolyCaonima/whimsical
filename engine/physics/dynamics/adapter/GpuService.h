@@ -2,7 +2,7 @@
 #include "Mailbox.h"
 #include "physics/dynamics/runtime/Instance.h"
 namespace whimsical::dynamics {
-// Created/drained/destroyed on the application's existing GPU owner thread.
+// One owner thread per service, independent of rendering/presentation.
 class GpuService {
     struct Entry {
         std::shared_ptr<Channel> channel;
@@ -17,5 +17,6 @@ class GpuService {
         : core_(core), mailbox_(std::move(mailbox)) {}
     ~GpuService();
     void drain();
+    void run(); // Event-driven owner loop; returns when the mailbox closes.
 };
 } // namespace whimsical::dynamics

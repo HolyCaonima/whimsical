@@ -13,8 +13,9 @@ std::string read(const std::filesystem::path& path) {
         throw std::runtime_error("Cannot read shader file: " + path.string());
     return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
 }
-}
+} // namespace
 const std::vector<uint32_t>& ShaderCompiler::compile(const std::string& name, const std::string& source) {
+    std::lock_guard<std::mutex> lock(mutex_);
     const auto stage = std::filesystem::path(name).extension().string();
     if (stage != ".comp" && stage != ".vert" && stage != ".frag")
         throw std::invalid_argument("Shader name must specify .comp, .vert or .frag");

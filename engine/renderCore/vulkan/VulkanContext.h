@@ -6,6 +6,8 @@
 #include <stdexcept>
 #include <atomic>
 #include <functional>
+#include <mutex>
+#include <map>
 namespace whimsical {
 inline void vkCheck(VkResult r, const char* operation) {
     if (r != VK_SUCCESS)
@@ -61,15 +63,16 @@ class VulkanContext {
     void destroy(Image&);
     VkCommandBuffer allocateCommand();
     void freeCommand(VkCommandBuffer);
-    void submit(const VkSubmitInfo&, VkFence);
+    void submit(const VkSubmitInfo&, VkFence, bool compute = false);
+    void waitIdle();
     VkResult present(const VkPresentInfoKHR&);
     // Synchronous native work: this scope owns command/fence lifetime and waits only
     // for its submission. Resources referenced by the callback remain valid on return.
     void execute(const std::function<void(VkCommandBuffer)>&);
     // Upload mip zero and generate the image's remaining mip levels. The caller
     // supplies tightly packed pixels, image format/usage and the consuming access.
-    void uploadImage(Image&, const void* pixels, size_t bytes,
-                     VkPipelineStageFlags2 consumerStage, VkAccessFlags2 consumerAccess,
+    void uploadImage(Image&, const void* pixels, size_t bytes, VkPipelineStageFlags2 consumerStage,
+                     VkAccessFlags2 consumerAccess,
                      VkImageLayout finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                      VkFilter mipFilter = VK_FILTER_LINEAR);
     void transition(VkCommandBuffer, Image&, VkImageLayout,
@@ -77,8 +80,11 @@ class VulkanContext {
                     VkAccessFlags2 dstAccess = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
     static void barrier(VkCommandBuffer);
     uint32_t memoryType(uint32_t, VkMemoryPropertyFlags required, VkMemoryPropertyFlags preferred = 0) const;
+
   private:
-    VkQueue queue = VK_NULL_HANDLE;
-    VkCommandPool commandPool = VK_NULL_HANDLE;
+    VkQueue queues_[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    uint32_t queueCount_ = 1;
+    std::mutex queueMutex_[2], commandMutex_;
+    std::map<VkCommandBuffer, VkCommandPool> commandPools_;
 };
 } // namespace whimsical

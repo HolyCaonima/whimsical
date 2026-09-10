@@ -50,7 +50,7 @@ class DynamicsSystem {
     const std::shared_ptr<Mailbox>& mailbox() const {
         return mailbox_;
     }
-    void update(World&, float dt);
+    bool update(World&, float dt); // Returns whether GPU completions were consumed.
     Json state(Entity) const;
     std::vector<float> values(Entity, SetId, uint32_t first, uint32_t count) const;
     void control(Entity, bool paused, bool step);

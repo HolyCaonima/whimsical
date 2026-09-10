@@ -121,8 +121,8 @@ struct Instance::Storage {
         auto remap = declaration("migration", 4, true);
         remap.lifetime = rg::Lifetime::External;
         migration = registry.declare(std::move(remap));
-        execution = std::make_unique<rc::GraphContext>(core, registry,
-                                                       "Dynamics model " + std::to_string(plan->model.model));
+        execution = std::make_unique<rc::GraphContext>(
+            core, registry, "Dynamics model " + std::to_string(plan->model.model), rc::QueueClass::Compute);
         interface = "#version 450\n" + registry.glsl().at("graph.compute.glsl") + plan->interface();
         for (const auto& kernel : plan->kernels)
             programs.push_back(&execution->compute(kernel.name + ".comp", interface + kernel.source));
@@ -304,7 +304,14 @@ void PublishedState::import(rc::GraphContext& consumer, rg::ResourceId target, S
     const auto& d = imports.registry()[target];
     if (d.kind != rg::Kind::Buffer || d.lifetime != rg::Lifetime::Imported || !d.view.readOnly)
         throw std::invalid_argument("Published state requires a read-only imported buffer declaration");
-    imports.importBuffer(target, storage_->buffers[index], storage_->states[index], storage_);
+    // The snapshot is immutable; access tracking belongs to each consumer, not
+    // to shared snapshot storage that other context threads may also import.
+    struct Binding {
+        std::shared_ptr<Storage> snapshot;
+        rg::AccessState state;
+    };
+    auto binding = std::make_shared<Binding>(Binding{storage_, storage_->states[index]});
+    imports.importBuffer(target, storage_->buffers[index], binding->state, binding);
 }
 PublishedState Instance::publish() {
     idle();
@@ -321,7 +328,8 @@ PublishedState Instance::publish() {
         d.name += " source";
         copy->source[i] = copy->registry.declare(d);
     }
-    copy->execution = std::make_unique<rc::GraphContext>(core_, copy->registry, "Dynamics snapshot");
+    copy->execution = std::make_unique<rc::GraphContext>(core_, copy->registry, "Dynamics snapshot",
+                                                         rc::QueueClass::Compute);
     rc::NativeResources from(*storage_->execution), to(*copy->execution);
     std::array<Buffer, 3> sources;
     std::array<rg::AccessState, 3> states;

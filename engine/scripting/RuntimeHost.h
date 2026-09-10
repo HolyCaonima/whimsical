@@ -85,6 +85,7 @@ class RuntimeHost {
         tick(dt, input, dt);
     }
     void tick(float realDt, const Input&, float simulationDt);
+    bool pollGpu() { return running_ && !paused_ && world_.dynamics.update(world_, 0); }
     void updateUi(float);
     void processUiInput(Input&);
     void setHudEnabled(bool);

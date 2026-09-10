@@ -4,6 +4,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <mutex>
 
 namespace whimsical::rc {
 // Compiles a complete GPU program. Material linking and application include generation
@@ -11,9 +12,13 @@ namespace whimsical::rc {
 class ShaderCompiler {
   public:
     const std::vector<uint32_t>& compile(const std::string& name, const std::string& source);
-    size_t compilationCount() const { return programs_.size(); }
+    size_t compilationCount() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return programs_.size();
+    }
 
   private:
+    mutable std::mutex mutex_;
     std::map<std::string, std::vector<uint32_t>> programs_;
     std::filesystem::path directory_;
 };

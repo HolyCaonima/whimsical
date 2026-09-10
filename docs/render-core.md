@@ -25,7 +25,7 @@ RenderCore 是所有 GPU system 的基础层。RenderingSystem 是使用它生�
 | `rg::ResourceId/ResourceRef` | 图的使用者 | 逻辑资源及 history 角色，不是 VkBuffer/VkImage |
 | Vulkan 分配和 program | RenderCore 后端 | 按图的活跃资源分配、复用并在执行结束后回收 |
 
-应用先创建 RenderCore，再创建使用它的 system。当前主程序在 GPU/渲染线程建立 RenderCore，将引用传给 Renderer；Renderer 不再创建或销毁设备。
+应用先创建 RenderCore，再启动使用它的 system。当前主程序拥有设备，Render 和 Dynamics 分别在自己的线程创建／使用／销毁 GraphContext；Renderer 不创建或销毁设备，也不负责推进 Dynamics。
 
 Registry 必须比 GraphContext 活得久，RenderCore 必须比全部 GraphContext 活得久。GraphContext 析构等待自己的在途提交；呈现系统在回收 swapchain 时通过 Core 等待设备空闲。
 
@@ -91,13 +91,21 @@ if (execution.poll()) {
 ## 时间、线程与组合
 
 - 一个 GraphContext 当前允许一个在途提交。`poll()` 或 `wait()` 完成后再重建图、改资源或重新录制；缓存下来的 builder/reference 同样遵守这条规则。
-- CPU 数据和算法状态仍由 system 拥有。GPU 设备与上下文操作在所属 GPU 线程执行，不能把活动 World/JS 对象捕获到跨线程命令中。
+- CPU 数据和算法状态仍由 system 拥有。每个 GraphContext 始终由一个线程操作，不同上下文可以并发使用同一 RenderCore。不能把活动 World/JS 对象捕获到跨线程命令中。
 - `submit()` 不知道模拟 tick 或渲染帧，也不翻转历史；所有者显式调用 `advanceHistory()`。不同 GraphContext 的 history 奇偶与完成状态互不影响。
 - 合作的 system 可以共同声明 Registry、向同一个 GraphContext 填图，并传递 ResourceRef。保持已有构图语义：消费者声明在生产者之后，编译器推导依赖、同步和裁剪；同一资源的后续写入建立后续内容版本。
 - ResourceId 属于其 Registry，资源的物理存储属于 GraphContext。不能把另一个上下文的整数 ID 当作共享 GPU 分配。原生 buffer 导入可携带所有者和访问状态，使消费者保留其生命周期；解除导入仍须经过完成边界。
 - 帧快照的 latest-wins 策略属于渲染宿主。Dynamics 的可靠 tick 通道由其接入层管理，不使用 FrameMailbox。
 
-[Dynamics](dynamics.md) 已作为平级 GPU system 使用这套接口。现有 CPU PhysicsScene 的碰撞查询与 Dynamics 各自独立；没有引入独立 compute 队列或 GPU 调度线程。
+[Dynamics](dynamics.md) 与 Rendering 是平级使用者。Dynamics 的服务循环通过条件变量等待请求，通过自己的 fence 等待 GPU 完成，再通知主线程；不由 render/present 轮询，也不使用固定毫秒轮询定时器。主线程在普通消息循环消费 GPU 完成，模拟时间仍只在固定更新中累积。
+
+`GraphContext(core, registry, name, QueueClass::Compute)` 声明计算队列偏好，默认 `General`。当前 Vulkan 后端从同一个 graphics/compute 队列族申请最多两条队列，General/Present 使用第一条，Compute 在可用时使用第二条。设备只有一条队列时同步访问同一队列；逻辑系统仍独立，但单队列的提交／呈现调用可能互相等待。队列数量不意味着硬件吞吐翻倍，也不保证物理并行。
+
+每个执行上下文和原生命令 scope 使用独立命令池；录制期间不用全局锁。Core 对各条队列、着色器编译缓存及跨上下文性能采集分别同步，不用一个大锁包住整个 GPU 工作。`waitIdle()` 同步设备级队列访问，适用于重建与退出，不用于正常求解推进。
+
+跨上下文资源使用仍要求明确的完成边界和所有权。不可把正在写入的 buffer 直接交给另一个线程／队列。当前 Dynamics 的不可变发布快照在发布时已等待复制完成；消费者持有快照到解除导入。未来重叠生产／消费需要显式的 GPU 依赖接口，不能依赖不同队列的提交顺序。参考 [Vulkan 同步契约](https://docs.vulkan.org/spec/latest/chapters/fundamentals.html)。
+
+跨系统 GPU profile 由 Core 聚合，各上下文所有者通过 `poll()/wait()` 解析自己的完成数据；`takeProfile()` 不再跨线程轮询别人的上下文。退出时先停止输入，等待系统执行循环结束，再回收设备。
 
 `Registry(pushConstantBytes)` 声明通用 push constant 范围，pass 的 `constants(bytes)` 提供本次 dispatch 参数。`uploadRange` 更新 buffer 子范围，`copyBuffer` 支持整块及范围复制。它们都形成图内 transfer 节点，不包含 Dynamics 概念。完整源码编译缓存属于 RenderCore 设备，GraphContext 保留按自身 layout 建立的程序。
 

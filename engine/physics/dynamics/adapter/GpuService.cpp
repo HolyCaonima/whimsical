@@ -7,6 +7,22 @@ GpuService::~GpuService() {
     for (auto& e : entries_)
         e.channel->retire();
 }
+void GpuService::run() {
+    uint64_t revision = 0;
+    while (mailbox_->wait(revision)) {
+        drain();
+        // All ready models have been submitted. Wait for their own fences, not
+        // a display frame; no polling timer or renderer callback drives completion.
+        for (auto& e : entries_)
+            if (e.instance && e.instance->pending()) {
+                e.instance->wait();
+                Reply reply;
+                reply.completed = e.instance->completed();
+                reply.samples = e.instance->takeSamples();
+                e.channel->complete(std::move(reply));
+            }
+    }
+}
 void GpuService::drain() {
     for (auto& channel : mailbox_->take())
         entries_.push_back({std::move(channel), {}});

@@ -141,6 +141,7 @@ void VulkanContext::initialize(HWND hwnd, bool validation, bool rayQueries) {
                 (queues[q].queueFlags & VK_QUEUE_COMPUTE_BIT)) {
                 physical = gpu;
                 family = q;
+                queueCount_ = std::min(2u, queues[q].queueCount);
                 break;
             }
         }
@@ -156,11 +157,11 @@ void VulkanContext::initialize(HWND hwnd, bool validation, bool rayQueries) {
     vkGetPhysicalDeviceProperties2(physical, &props2);
     std::cout << "GPU: " << properties.deviceName << " | Vulkan " << VK_VERSION_MAJOR(properties.apiVersion)
               << "." << VK_VERSION_MINOR(properties.apiVersion) << "\n";
-    float priority = 1;
+    float priorities[] = {1, 1};
     VkDeviceQueueCreateInfo q{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
     q.queueFamilyIndex = family;
-    q.queueCount = 1;
-    q.pQueuePriorities = &priority;
+    q.queueCount = queueCount_;
+    q.pQueuePriorities = priorities;
     VkPhysicalDeviceVulkan12Features f12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     f12.bufferDeviceAddress = VK_TRUE;
     f12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
@@ -187,17 +188,15 @@ void VulkanContext::initialize(HWND hwnd, bool validation, bool rayQueries) {
     dc.pEnabledFeatures = &base;
     VK_CHECK(vkCreateDevice(physical, &dc, nullptr, &device));
     volkLoadDevice(device);
-    vkGetDeviceQueue(device, family, 0, &queue);
-    VkCommandPoolCreateInfo cp{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-    cp.queueFamilyIndex = family;
-    cp.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    VK_CHECK(vkCreateCommandPool(device, &cp, nullptr, &commandPool));
+    for (uint32_t i = 0; i < queueCount_; ++i)
+        vkGetDeviceQueue(device, family, i, &queues_[i]);
+    std::cout << "GPU execution queues: " << queueCount_ << " (shared family)\n";
 }
 VulkanContext::~VulkanContext() {
     if (device) {
         vkDeviceWaitIdle(device);
-        if (commandPool)
-            vkDestroyCommandPool(device, commandPool, nullptr);
+        for (const auto& entry : commandPools_)
+            vkDestroyCommandPool(device, entry.second, nullptr);
         vkDestroyDevice(device, nullptr);
     }
     if (surface)
@@ -208,7 +207,7 @@ VulkanContext::~VulkanContext() {
         vkDestroyInstance(instance, nullptr);
 }
 uint32_t VulkanContext::memoryType(uint32_t mask, VkMemoryPropertyFlags required,
-                                 VkMemoryPropertyFlags preferred) const {
+                                   VkMemoryPropertyFlags preferred) const {
     uint32_t fallback = UINT32_MAX;
     for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
         const auto flags = memoryProperties.memoryTypes[i].propertyFlags;
@@ -242,8 +241,9 @@ Buffer VulkanContext::buffer(VkDeviceSize size, VkBufferUsageFlags usage, Buffer
     ma.allocationSize = req.size;
     const auto required = host ? (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
                                : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    ma.memoryTypeIndex = memoryType(req.memoryTypeBits, required,
-                                   memory == BufferMemory::Readback ? VK_MEMORY_PROPERTY_HOST_CACHED_BIT : 0);
+    ma.memoryTypeIndex =
+        memoryType(req.memoryTypeBits, required,
+                   memory == BufferMemory::Readback ? VK_MEMORY_PROPERTY_HOST_CACHED_BIT : 0);
     ma.pNext = &flags;
     VK_CHECK(vkAllocateMemory(device, &ma, nullptr, &b.memory));
     VK_CHECK(vkBindBufferMemory(device, b.handle, b.memory, 0));
@@ -311,21 +311,49 @@ void VulkanContext::destroy(Image& i) {
     i = {};
 }
 VkCommandBuffer VulkanContext::allocateCommand() {
+    // Recording a command buffer externally synchronizes its pool. Give each
+    // execution context/native scope a pool, rather than locking whole recordings.
+    VkCommandPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+    poolInfo.queueFamilyIndex = family;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    VkCommandPool pool;
+    VK_CHECK(vkCreateCommandPool(device, &poolInfo, nullptr, &pool));
     VkCommandBufferAllocateInfo info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-    info.commandPool = commandPool;
+    info.commandPool = pool;
     info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     info.commandBufferCount = 1;
     VkCommandBuffer command;
-    VK_CHECK(vkAllocateCommandBuffers(device, &info, &command));
+    auto result = vkAllocateCommandBuffers(device, &info, &command);
+    if (result != VK_SUCCESS) {
+        vkDestroyCommandPool(device, pool, nullptr);
+        VK_CHECK(result);
+    }
+    std::lock_guard<std::mutex> lock(commandMutex_);
+    commandPools_.emplace(command, pool);
     return command;
 }
 void VulkanContext::freeCommand(VkCommandBuffer command) {
-    vkFreeCommandBuffers(device, commandPool, 1, &command);
+    VkCommandPool pool;
+    {
+        std::lock_guard<std::mutex> lock(commandMutex_);
+        pool = commandPools_.at(command);
+        commandPools_.erase(command);
+    }
+    vkDestroyCommandPool(device, pool, nullptr);
 }
-void VulkanContext::submit(const VkSubmitInfo& info, VkFence fence) {
-    VK_CHECK(vkQueueSubmit(queue, 1, &info, fence));
+void VulkanContext::submit(const VkSubmitInfo& info, VkFence fence, bool compute) {
+    auto index = compute ? queueCount_ - 1 : 0;
+    std::lock_guard<std::mutex> lock(queueMutex_[index]);
+    VK_CHECK(vkQueueSubmit(queues_[index], 1, &info, fence));
 }
-VkResult VulkanContext::present(const VkPresentInfoKHR& info) { return vkQueuePresentKHR(queue, &info); }
+VkResult VulkanContext::present(const VkPresentInfoKHR& info) {
+    std::lock_guard<std::mutex> lock(queueMutex_[0]);
+    return vkQueuePresentKHR(queues_[0], &info);
+}
+void VulkanContext::waitIdle() {
+    std::scoped_lock lock(queueMutex_[0], queueMutex_[1]);
+    VK_CHECK(vkDeviceWaitIdle(device));
+}
 void VulkanContext::execute(const std::function<void(VkCommandBuffer)>& record) {
     VkFence fence;
     VkFenceCreateInfo fenceInfo{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
@@ -344,7 +372,8 @@ void VulkanContext::execute(const std::function<void(VkCommandBuffer)>& record) 
         submit(info, fence);
         VK_CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX));
     } catch (...) {
-        if (command) freeCommand(command);
+        if (command)
+            freeCommand(command);
         vkDestroyFence(device, fence, nullptr);
         throw;
     }
@@ -358,8 +387,8 @@ void VulkanContext::uploadImage(Image& image, const void* pixels, size_t bytes,
     std::memcpy(staging.mapped, pixels, bytes);
     try {
         execute([&](VkCommandBuffer command) {
-            transition(command, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                       VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+            transition(command, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                       VK_ACCESS_2_TRANSFER_WRITE_BIT);
             VkBufferImageCopy copy{};
             copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
             copy.imageExtent = {image.width, image.height, 1};
@@ -393,12 +422,13 @@ void VulkanContext::uploadImage(Image& image, const void* pixels, size_t bytes,
                 region.dstOffsets[1] = {std::max(1, width / 2), std::max(1, height / 2), 1};
                 vkCmdBlitImage(command, image.handle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image.handle,
                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, mipFilter);
-                barrier(level - 1, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, finalLayout, consumerStage, consumerAccess);
+                barrier(level - 1, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, finalLayout, consumerStage,
+                        consumerAccess);
                 width = std::max(1, width / 2);
                 height = std::max(1, height / 2);
             }
-            barrier(image.mipLevels - 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, finalLayout,
-                    consumerStage, consumerAccess);
+            barrier(image.mipLevels - 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, finalLayout, consumerStage,
+                    consumerAccess);
         });
         image.layout = finalLayout;
     } catch (...) {

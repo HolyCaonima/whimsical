@@ -15,7 +15,7 @@ Dynamics 当前采用 XPBD 求解算法。用户只定义数学状态空间、�
 | `physics/dynamics/runtime` | GPU 当前状态、执行上下文、提交/完成、状态迁移、范围回读与结果发布 | Compiler、RenderCore |
 | `physics/dynamics/adapter` | 脚本定义入口、模型句柄、可靠请求通道、GPU 宿主服务 | 按前端和 GPU 服务分开链接 |
 
-`whimsical_core` 只链接前端 `whimsical_dynamics_adapter`，不因此依赖 GPU Runtime。`Whimsical` 在现有 GPU 线程创建 `GpuService`，与 Renderer 共用应用拥有的 RenderCore。Runtime 不创建线程，不依赖 World、Rendering 或脚本。
+`whimsical_core` 只链接前端 `whimsical_dynamics_adapter`，不因此依赖 GPU Runtime。`Whimsical` 为 `GpuService` 和 Renderer 分别提供执行线程，二者共用应用拥有的 RenderCore。GpuService 通过请求唤醒与自身 GPU fence 推进，不依赖显示刷新。Runtime 本身不创建线程，不依赖 World、Rendering 或脚本。
 
 四个契约是 `ModelSnapshot`、`ChangeSet`、`CompiledPlan` 和 `CompletedState`。同一个不可变计划可以实例化多份独立状态。数值参数存在 Model，当前值、速度、加速度、乘子及用户持久状态存在 Runtime；修改初始值不会悄悄重置当前求解结果。
 
@@ -148,7 +148,7 @@ instance.step(input);
 
 `CompletedState` 携带模型身份、版本、tick、时间和诊断。`read` 只回读指定字段的指定行。
 
-`publish()` 显式复制值、速度与持久状态到不可变 GPU 快照。消费者在同一 RenderCore/GPU 线程上声明只读 Imported buffer，再使用 `PublishedState::import` 绑定。快照的 `plan` 提供 SoA 偏移和步幅。消费者保留资源所有权到解除或替换导入；即使调用方释放快照，正在使用它的上下文仍保持数据有效。发布有 GPU 复制和显存成本，不会自动在每 tick 产生一个副本。RenderCore 必须晚于所有实例、快照和消费者销毁。
+`publish()` 显式复制值、速度与持久状态到不可变 GPU 快照。消费者在同一 RenderCore 的自身上下文线程上声明只读 Imported buffer，再使用 `PublishedState::import` 绑定。快照的 `plan` 提供 SoA 偏移和步幅。消费者保留资源所有权到解除或替换导入；即使调用方释放快照，正在使用它的上下文仍保持数据有效。发布有 GPU 复制和显存成本，不会自动在每 tick 产生一个副本。RenderCore 必须晚于所有实例、快照和消费者销毁。
 
 ## JavaScript
 

@@ -11,6 +11,7 @@ class RenderGraph;
 struct Program;
 } // namespace rg
 namespace rc {
+enum class QueueClass { General, Compute };
 struct VulkanAccess;
 class NativeResources;
 
@@ -26,7 +27,8 @@ struct DeviceOptions {
 
 // Owned by the application, not a rendering system. All GPU systems use this device;
 // their execution contexts have independent resources, submissions and history clocks.
-// Device/context operations run on their owning GPU thread, including native extensions.
+// Each context has one owner thread; separate contexts may run concurrently.
+// Device-level caches, queue access and profiling are synchronized by RenderCore.
 class RenderCore {
     struct Impl;
     std::unique_ptr<Impl> impl_;
@@ -64,7 +66,8 @@ class GraphContext {
     friend class NativeResources;
 
   public:
-    GraphContext(RenderCore&, const rg::Registry&, std::string name = "Graph");
+    GraphContext(RenderCore&, const rg::Registry&, std::string name = "Graph",
+                 QueueClass queue = QueueClass::General);
     ~GraphContext();
     GraphContext(const GraphContext&) = delete;
     GraphContext& operator=(const GraphContext&) = delete;

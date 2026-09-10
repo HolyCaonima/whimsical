@@ -6,7 +6,7 @@
 
 ## 组件与生命周期
 
-`physics/dynamics/scene` 编入 Core，依赖 World 和 Adapter。数学 Model、Compiler 和 GPU Runtime 仍不依赖 ECS。World 与独立脚本模型共用宿主 GPU 服务，但各自拥有通道和实例。
+`physics/dynamics/scene` 编入 Core，依赖 World 和 Adapter。数学 Model、Compiler 和 GPU Runtime 仍不依赖 ECS。World 与独立脚本模型共用宿主 GPU 服务，但各自拥有通道和实例。该服务与 Renderer 平级，拥有独立执行线程与计算上下文；请求到达时唤醒，GPU fence 完成后通知主线程，不再通过显示帧轮询。主线程也在固定更新之外消费完成通知，固定更新只负责累积模拟时间和提供输入。
 
 组件保存数学定义、初始数据、策略和引用，不保存脚本句柄或 GPU 当前状态。加载时在隔离 World 编译模型，GPU 通道在活动 World 首次更新时接入；删除或替换模型组件会退休旧通道。保存／恢复从初始数据重新开始，不是求解中途快照。数值 `patch` 会反映在保存描述中，瞬时 `write` 不会。
 

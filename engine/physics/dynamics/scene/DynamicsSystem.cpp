@@ -91,19 +91,19 @@ void submit(SceneInstance& s, Request request) {
     s.pending = request.operation;
     s.channel->submit(std::move(request));
 }
-void receive(SceneInstance& s) {
+bool receive(SceneInstance& s) {
     if (!s.channel)
-        return;
+        return false;
     auto reply = s.channel->receive();
     if (!reply) {
         if (s.channel->retired())
             s.error = "Dynamics GPU service has stopped";
-        return;
+        return false;
     }
     s.completed = reply->completed;
     if (!reply->error.empty()) {
         s.error = reply->error;
-        return;
+        return true;
     }
     if (s.pending == Operation::Install)
         s.installed = true;
@@ -114,10 +114,16 @@ void receive(SceneInstance& s) {
         s.samplesTick = s.completed.tick;
         s.reading.clear();
     }
+    return true;
 }
 } // namespace
-void DynamicsSystem::update(World& world, float dt) {
+bool DynamicsSystem::update(World& world, float dt) {
     auto entities = storage_.registry.view<DynamicsModel>();
+    bool changed = false;
+    for (auto e : entities)
+        changed = receive(instance(storage_, e)) || changed;
+    if (dt == 0 && !changed)
+        return false;
     auto bindings = storage_.registry.view<DynamicsBinding, Transform>();
     std::map<Entity, std::vector<Entity>> byModel;
     for (auto e : bindings)
@@ -135,7 +141,6 @@ void DynamicsSystem::update(World& world, float dt) {
                 s.debt = std::min(s.stepDt, s.debt + dt);
             else
                 s.debt = 0;
-            receive(s);
             if (!s.error.empty())
                 continue;
             if (s.channel && s.channel->busy())
@@ -247,6 +252,7 @@ void DynamicsSystem::update(World& world, float dt) {
         }
     }
     batch.commit();
+    return changed;
 }
 Json DynamicsSystem::state(Entity e) const {
     const auto& s = instance(storage_, e);
