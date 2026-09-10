@@ -95,7 +95,8 @@ struct Renderer::Impl {
     void initialize() {
         if (!vk.surface)
             throw std::invalid_argument("Rendering presentation requires a RenderCore with a surface");
-        execution = std::make_unique<rc::GraphContext>(core, resources.registry, "Renderer");
+        execution = std::make_unique<rc::GraphContext>(core, resources.registry, "Renderer",
+                                                     rc::QueueClass::General, "Render");
         pool.emplace(*execution);
         graph = &execution->graph();
         renderTargets = std::make_unique<GpuRenderTargets>(vk, resources.registry, *pool);

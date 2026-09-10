@@ -105,7 +105,7 @@ if (execution.poll()) {
 
 跨上下文资源使用仍要求明确的完成边界和所有权。不可把正在写入的 buffer 直接交给另一个线程／队列。当前 Dynamics 的不可变发布快照在发布时已等待复制完成；消费者持有快照到解除导入。未来重叠生产／消费需要显式的 GPU 依赖接口，不能依赖不同队列的提交顺序。参考 [Vulkan 同步契约](https://docs.vulkan.org/spec/latest/chapters/fundamentals.html)。
 
-跨系统 GPU profile 由 Core 聚合，各上下文所有者通过 `poll()/wait()` 解析自己的完成数据；`takeProfile()` 不再跨线程轮询别人的上下文。退出时先停止输入，等待系统执行循环结束，再回收设备。
+GPU profile 由 Core 按诊断分组收集，每个选中上下文只抓下一次提交，系统分别显示耗时与占比，各上下文所有者通过 `poll()/wait()` 解析自己的完成数据；`takeProfile()` 不再跨线程轮询别人的上下文。退出时先停止输入，等待系统执行循环结束，再回收设备。
 
 `Registry(pushConstantBytes)` 声明通用 push constant 范围，pass 的 `constants(bytes)` 提供本次 dispatch 参数。`uploadRange` 更新 buffer 子范围，`copyBuffer` 支持整块及范围复制。它们都形成图内 transfer 节点，不包含 Dynamics 概念。完整源码编译缓存属于 RenderCore 设备，GraphContext 保留按自身 layout 建立的程序。
 

@@ -122,7 +122,8 @@ struct Instance::Storage {
         remap.lifetime = rg::Lifetime::External;
         migration = registry.declare(std::move(remap));
         execution = std::make_unique<rc::GraphContext>(
-            core, registry, "Dynamics model " + std::to_string(plan->model.model), rc::QueueClass::Compute);
+            core, registry, "Dynamics model " + std::to_string(plan->model.model), rc::QueueClass::Compute,
+            "Dynamics");
         interface = "#version 450\n" + registry.glsl().at("graph.compute.glsl") + plan->interface();
         for (const auto& kernel : plan->kernels)
             programs.push_back(&execution->compute(kernel.name + ".comp", interface + kernel.source));

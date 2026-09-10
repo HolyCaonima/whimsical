@@ -32,7 +32,7 @@ quit                        # 关闭引擎
 
 控制台显示命令结果、配置加载诊断以及 `Engine.log` 的脚本消息；不是操作系统 shell，也不转发任意 shell 命令。原有 Vulkan/驱动启动诊断继续写标准输出。
 
-`profileGPU` 输出可嵌套的 GPU 阶段耗时和整帧占比，同时保存 `captures/gpu-profile.txt` 与 `captures/gpu-profile.json`。也可通过 `--profile-gpu` 或 `--exec "profileGPU"` 从启动命令行抓取。范围与扩展方式见 [GPU 分阶段计时](gpu-profiling.md)。
+`profileGPU` 各抓一次 Render 与 Dynamics 的提交，分系统输出 GPU 阶段耗时和占比；`profileGPU render` / `profileGPU dynamics` 可单独选择系统，同时保存 `captures/gpu-profile.txt` 与 `captures/gpu-profile.json`。也可通过 `--profile-gpu` 或 `--exec "profileGPU"` 从启动命令行抓取。范围与扩展方式见 [GPU 分阶段计时](gpu-profiling.md)。
 
 `profileCPU` 分别输出 Game / Render 线程的 inclusive 与 self 耗时，包含显式标注的等待阶段，保存 `captures/cpu-profile.txt` 与 `captures/cpu-profile.json`。也支持 `--profile-cpu` 和 `--exec "profileCPU"`。详细范围见 [CPU 分阶段计时](cpu-profiling.md)。
 

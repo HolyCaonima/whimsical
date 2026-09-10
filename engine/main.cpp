@@ -257,6 +257,7 @@ int main(int argc, char** argv) {
         std::atomic<double> renderFps{-1}, renderFrameMs{0}, renderCpuMs{0}, renderGpuMs{0};
         std::atomic<bool> renderVsync{true};
         uint64_t gpuProfileRequest = 0, gpuProfileCompleted = 0;
+        std::string gpuProfileGroup;
         std::mutex gpuProfileMutex;
         std::optional<GpuProfile> gpuProfileResult, lastGpuProfile;
         uint64_t cpuProfileRequest = 0, cpuProfilePrepared = 0, cpuProfileCompleted = 0;
@@ -316,18 +317,20 @@ int main(int argc, char** argv) {
             return true;
         };
         variables.command(
-            "profileGPU", "profileGPU [last]: capture one second of RenderCore GPU submissions, or show the last report",
+            "profileGPU", "profileGPU [render|dynamics|last]: capture one submission per context, grouped by system",
             [&](const auto& args) {
                 if (args.size() == 1 && args[0] == "last")
                     return lastGpuProfile ? lastGpuProfile->text()
                                           : std::string("No GPU profile captured yet.");
-                if (!args.empty())
-                    throw std::runtime_error("Usage: profileGPU [last]");
+                if (args.size() > 1 || (!args.empty() && args[0] != "render" && args[0] != "dynamics"))
+                    throw std::runtime_error("Usage: profileGPU [render|dynamics|last]");
                 if (gpuProfileRequest != gpuProfileCompleted)
                     return std::string("GPU profile already pending; collecting RenderCore submissions.");
+                gpuProfileGroup = args.empty() ? "" : args[0] == "render" ? "Render" : "Dynamics";
                 ++gpuProfileRequest;
                 return "GPU profile request " + std::to_string(gpuProfileRequest) +
-                       " queued for a one-second RenderCore capture.";
+                       " queued: next submission per context (" +
+                       (gpuProfileGroup.empty() ? "Render + Dynamics" : gpuProfileGroup) + ").";
             });
         auto collectGpuProfile = [&] {
             std::optional<GpuProfile> result;
@@ -427,7 +430,7 @@ int main(int argc, char** argv) {
                         if (mailbox.acquire(frame, seen) == FrameStatus::Closed)
                             break;
                         if (frame->gpuProfileRequest > lastGpuRequest) {
-                            renderCore.requestProfile(frame->gpuProfileRequest);
+                            renderCore.requestProfile(frame->gpuProfileRequest, frame->gpuProfileGroup);
                             lastGpuRequest = frame->gpuProfileRequest;
                         }
                         bool more = renderer.render(frame);
@@ -498,6 +501,7 @@ int main(int argc, char** argv) {
                                        settings.physicsDebug(), &view);
                 settings.decorate(frame);
                 frame.gpuProfileRequest = gpuProfileRequest;
+                frame.gpuProfileGroup = gpuProfileGroup;
                 frame.console = console.view();
                 RenderStatistics statistics;
                 statistics.fps = renderFps.load();

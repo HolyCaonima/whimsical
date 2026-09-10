@@ -7,17 +7,17 @@
 #include "vulkan/Programs.h"
 #include <cstring>
 #include <algorithm>
-#include <chrono>
-#include <cmath>
+#include <set>
 #include <mutex>
 
 namespace whimsical::rc {
 struct RenderCore::Impl {
     VulkanContext vk;
     ShaderCompiler compiler;
-    using Clock = std::chrono::steady_clock;
+    uint64_t nextContext = 0;
+    std::map<uint64_t, std::string> contexts;
     struct Capture {
-        Clock::time_point start, end;
+        std::set<uint64_t> waiting;
         GpuProfile report;
         uint64_t pending = 0;
         std::map<std::pair<int, std::string>, int> scopes;
@@ -31,20 +31,21 @@ struct RenderCore::Impl {
             scopes.emplace(std::move(key), index);
             return index;
         }
-        void append(const std::string& name, const GpuProfile& value) {
+        void append(const std::string& group, const std::string& name, const GpuProfile& value) {
             --pending;
             ++report.submissions;
             if (!value.error.empty())
                 report.error += name + ": " + value.error + "\n";
             if (value.scopes.empty())
                 return;
-            auto root = scope(-1, "RenderCore GPU submissions");
+            auto root = scope(-1, group);
             report.scopes[root].milliseconds += value.scopes.front().milliseconds;
             ++report.scopes[root].samples;
             std::vector<int> mapping;
             for (const auto& row : value.scopes) {
                 int parent = row.parent < 0 ? root : mapping.at(row.parent);
-                int index = scope(parent, row.parent < 0 ? name : row.name);
+                int index = scope(parent, row.parent < 0 ? name + " | sequence " + std::to_string(value.frame)
+                                                         : row.name);
                 mapping.push_back(index);
                 report.scopes[index].milliseconds += row.milliseconds;
                 report.scopes[index].samples += row.samples;
@@ -53,9 +54,12 @@ struct RenderCore::Impl {
     };
     std::optional<Capture> capture;
     mutable std::mutex profileMutex;
-    uint64_t profileRequest() const {
+    uint64_t profileRequest(uint64_t context) {
         std::lock_guard<std::mutex> lock(profileMutex);
-        return capture && Clock::now() < capture->end ? capture->report.request : 0;
+        if (!capture || !capture->waiting.erase(context))
+            return 0;
+        ++capture->pending;
+        return capture->report.request;
     }
 };
 RenderCore::RenderCore(const DeviceOptions& options) : impl_(std::make_unique<Impl>()) {
@@ -69,28 +73,26 @@ void RenderCore::waitIdle() {
 uint32_t RenderCore::errors() const {
     return impl_->vk.validationErrors.load();
 }
-void RenderCore::requestProfile(uint64_t request, double windowMilliseconds) {
+void RenderCore::requestProfile(uint64_t request, const std::string& group) {
     std::lock_guard<std::mutex> lock(impl_->profileMutex);
     if (impl_->capture)
         throw std::logic_error("A RenderCore GPU capture is already pending");
-    if (!request || !std::isfinite(windowMilliseconds) || windowMilliseconds <= 0)
-        throw std::invalid_argument("GPU capture needs a request id and positive sampling window");
+    if (!request)
+        throw std::invalid_argument("GPU capture needs a request id");
     auto& capture = impl_->capture.emplace();
-    capture.start = Impl::Clock::now();
-    capture.end = capture.start + std::chrono::duration_cast<Impl::Clock::duration>(
-                                      std::chrono::duration<double, std::milli>(windowMilliseconds));
     capture.report.request = request;
-    capture.report.windowMilliseconds = windowMilliseconds;
+    capture.report.group = group.empty() ? "All" : group;
     capture.report.device = impl_->vk.properties.deviceName;
+    for (const auto& [id, label] : impl_->contexts)
+        if (!label.empty() && (group.empty() || label == group))
+            capture.waiting.insert(id);
 }
 void RenderCore::endProfile() {
     std::lock_guard<std::mutex> lock(impl_->profileMutex);
-    if (!impl_->capture)
-        return;
-    auto& capture = *impl_->capture;
-    capture.end = std::min(capture.end, Impl::Clock::now());
-    capture.report.windowMilliseconds =
-        std::chrono::duration<double, std::milli>(capture.end - capture.start).count();
+    if (impl_->capture && !impl_->capture->waiting.empty()) {
+        impl_->capture->report.error += "Capture ended before all contexts submitted work.\n";
+        impl_->capture->waiting.clear();
+    }
 }
 std::optional<GpuProfile> RenderCore::takeProfile() {
     std::lock_guard<std::mutex> lock(impl_->profileMutex);
@@ -98,7 +100,7 @@ std::optional<GpuProfile> RenderCore::takeProfile() {
         return {};
     // Owners resolve their own fences; never touch another thread's context here.
     auto& capture = *impl_->capture;
-    if (Impl::Clock::now() < capture.end || capture.pending)
+    if (!capture.waiting.empty() || capture.pending)
         return {};
     auto result = std::move(capture.report);
     // Later submissions may introduce new children below an existing context.
@@ -107,6 +109,9 @@ std::optional<GpuProfile> RenderCore::takeProfile() {
     std::vector<std::vector<int>> children(rows.size() + 1);
     for (int i = 0; i < int(rows.size()); ++i)
         children[rows[i].parent + 1].push_back(i);
+    // Group order must not depend on which GPU queue completes first.
+    std::sort(children[0].begin(), children[0].end(),
+              [&](int a, int b) { return rows[a].name < rows[b].name; });
     auto append = [&](auto&& self, int oldParent, int parent) -> void {
         for (auto child : children[oldParent + 1]) {
             int index = int(result.scopes.size());
@@ -127,7 +132,8 @@ VulkanContext& VulkanAccess::device(RenderCore& core) {
 
 struct GraphContext::Impl {
     RenderCore& core;
-    std::string name;
+    std::string name, profileGroup;
+    uint64_t contextId;
     uint64_t captureRequest = 0;
     bool localProfile = false;
     std::optional<GpuProfile> profileResult;
@@ -142,9 +148,11 @@ struct GraphContext::Impl {
     bool pending = false, recorded = false, completed = false;
     QueueClass queue;
 
-    Impl(RenderCore& owner, const rg::Registry& registry, std::string label, QueueClass target)
-        : core(owner), name(std::move(label)), vk(VulkanAccess::device(owner)), pool(vk, registry),
-          graph(pool), profiler(vk), compiler(owner.impl_->compiler), queue(target) {
+    Impl(RenderCore& owner, const rg::Registry& registry, std::string label, QueueClass target,
+         std::string group)
+        : core(owner), name(std::move(label)), profileGroup(std::move(group)),
+          vk(VulkanAccess::device(owner)), pool(vk, registry), graph(pool), profiler(vk),
+          compiler(owner.impl_->compiler), queue(target) {
         VkFenceCreateInfo info{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
         VK_CHECK(vkCreateFence(vk.device, &info, nullptr, &fence));
         try {
@@ -153,12 +161,25 @@ struct GraphContext::Impl {
             vkDestroyFence(vk.device, fence, nullptr);
             throw;
         }
+        std::lock_guard<std::mutex> lock(core.impl_->profileMutex);
+        contextId = ++core.impl_->nextContext;
+        core.impl_->contexts.emplace(contextId, profileGroup);
     }
     ~Impl() {
         // Resource owners may disappear while work is in flight. Reclaim this scope only
         // after its own submission, without stalling unrelated contexts with DeviceWaitIdle.
         if (pending)
             vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
+        {
+            std::lock_guard<std::mutex> lock(core.impl_->profileMutex);
+            core.impl_->contexts.erase(contextId);
+            if (auto& capture = core.impl_->capture) {
+                if (capture->waiting.erase(contextId) || captureRequest)
+                    capture->report.error += name + ": context closed before sample completed\n";
+                if (captureRequest)
+                    --capture->pending;
+            }
+        }
         vk.freeCommand(command);
         vkDestroyFence(vk.device, fence, nullptr);
     }
@@ -169,7 +190,7 @@ struct GraphContext::Impl {
         if (auto result = profiler.takeResult()) {
             if (captureRequest) {
                 std::lock_guard<std::mutex> lock(core.impl_->profileMutex);
-                core.impl_->capture->append(name, *result);
+                core.impl_->capture->append(profileGroup, name, *result);
             }
             if (localProfile)
                 profileResult = std::move(result);
@@ -201,16 +222,11 @@ struct GraphContext::Impl {
         vk.submit(info, fence, queue == QueueClass::Compute);
         pending = true;
         recorded = false;
-        std::lock_guard<std::mutex> lock(core.impl_->profileMutex);
-        auto& capture = core.impl_->capture;
-        if (captureRequest && capture && capture->report.request == captureRequest)
-            ++capture->pending;
-        else
-            captureRequest = 0;
     }
 };
-GraphContext::GraphContext(RenderCore& core, const rg::Registry& registry, std::string name, QueueClass queue)
-    : impl_(std::make_unique<Impl>(core, registry, std::move(name), queue)) {}
+GraphContext::GraphContext(RenderCore& core, const rg::Registry& registry, std::string name, QueueClass queue,
+                           std::string profileGroup)
+    : impl_(std::make_unique<Impl>(core, registry, std::move(name), queue, std::move(profileGroup))) {}
 GraphContext::~GraphContext() {
     wait();
 }
@@ -339,7 +355,8 @@ void GraphContext::record(const ProfileRequest& profile) {
     VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     VK_CHECK(vkBeginCommandBuffer(impl_->command, &begin));
-    impl_->captureRequest = impl_->core.impl_->profileRequest();
+    if (!impl_->captureRequest)
+        impl_->captureRequest = impl_->core.impl_->profileRequest(impl_->contextId);
     impl_->localProfile = profile.request != 0;
     impl_->profiler.beginFrame(impl_->command, profile.request ? profile.request : impl_->captureRequest,
                                profile.sequence, profile.width, profile.height);

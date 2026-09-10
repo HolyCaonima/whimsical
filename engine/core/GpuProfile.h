@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 namespace whimsical {
-// Value-only report crossing from the render thread to the console.
+// Value-only report crossing from GPU owners to the console.
 struct GpuScopeTiming {
     std::string name;
     int parent = -1;
@@ -15,7 +15,7 @@ struct GpuProfile {
     uint32_t width = 0, height = 0;
     std::string device, error;
     std::vector<GpuScopeTiming> scopes;
-    double windowMilliseconds = 0;
+    std::string group;
     uint64_t submissions = 0;
     std::string text() const;
     std::string json() const;

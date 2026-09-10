@@ -13,44 +13,52 @@ double gpuTimestampMilliseconds(uint64_t begin, uint64_t end, uint32_t validBits
 std::string GpuProfile::text() const {
     std::ostringstream out;
     out << "ProfileGPU | request " << request;
-    if (windowMilliseconds > 0)
-        out << " | RenderCore window " << windowMilliseconds << " ms | " << submissions << " submissions";
+    if (!group.empty())
+        out << " | " << group << " | " << submissions << " submissions";
     else
         out << " | frame " << frame << " | " << width << "x" << height;
     out << " | " << device << '\n';
     if (!error.empty())
         out << "Error: " << error << '\n';
-    out << (windowMilliseconds > 0
-                ? "GPU timestamp intervals (sum ms / % of sum / count / mean ms); children are included in parents.\n"
-                : "GPU timestamp intervals (inclusive ms / % of frame); child times are included in parents.\n");
-    const double total = scopes.empty() ? 0 : scopes.front().milliseconds;
+    if (scopes.empty())
+        out << "No GPU submissions captured for this selection.\n";
+    out << "GPU timestamp intervals (inclusive ms / % of system); children are included in parents.\n";
+    double total = 0;
     std::vector<int> depths;
     for (const auto& scope : scopes) {
         int depth = scope.parent < 0 ? 0 : depths.at(scope.parent) + 1;
         depths.push_back(depth);
+        if (scope.parent < 0) {
+            total = scope.milliseconds;
+            if (!group.empty()) {
+                out << "\n[" << scope.name << "] " << std::fixed << std::setprecision(3) << total << " ms | "
+                    << scope.samples << " submission(s)\n";
+                continue;
+            }
+        }
         out << std::fixed << std::setprecision(3) << std::setw(9) << scope.milliseconds << " ms  "
             << std::setprecision(1) << std::setw(5) << (total > 0 ? scope.milliseconds / total * 100 : 0)
-            << "%  ";
-        if (windowMilliseconds > 0)
-            out << std::setw(6) << scope.samples << " x " << std::setprecision(3) << std::setw(8)
-                << (scope.samples ? scope.milliseconds / scope.samples : 0) << " ms  ";
-        out << std::string(size_t(depth) * 2, ' ') << scope.name << '\n';
+            << "%  " << std::string(size_t(depth) * 2, ' ') << scope.name;
+        if (scope.samples > 1)
+            out << " (" << scope.samples << " calls, " << std::setprecision(3)
+                << scope.milliseconds / scope.samples << " ms mean)";
+        out << '\n';
     }
-    if (windowMilliseconds > 0)
-        out << "All GraphContext submissions recorded in the sampling window; per-context counts may differ.\n"
-               "Sum of GPU intervals, not wall-clock duration or device utilization. Excludes CPU waits, "
-               "Present and native submissions outside execution graphs.\n";
-    else
-        out << "One graph submission. Excludes CPU work, Present and other graph submissions.\n";
+    out << "One submission per selected context; percentages are local to each system.\n"
+           "Systems are sampled independently. Excludes CPU work and Present; totals are not device "
+           "utilization.\n";
     return out.str();
 }
 std::string GpuProfile::json() const {
     Json::Array rows;
     for (const auto& scope : scopes)
-        rows.push_back({{"name", scope.name}, {"parent", scope.parent}, {"inclusiveMs", scope.milliseconds}, {"samples", double(scope.samples)}});
+        rows.push_back({{"name", scope.name},
+                        {"parent", scope.parent},
+                        {"inclusiveMs", scope.milliseconds},
+                        {"samples", double(scope.samples)}});
     return Json{{"request", double(request)},
                 {"frame", double(frame)},
-                {"windowMs", windowMilliseconds},
+                {"group", group},
                 {"submissions", double(submissions)},
                 {"width", width},
                 {"height", height},

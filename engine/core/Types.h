@@ -139,6 +139,7 @@ struct Frame {
     std::vector<std::shared_ptr<PixelReadRequest>> pixelReads;
     std::shared_ptr<const ui::UiFrame> ui;
     uint64_t gpuProfileRequest = 0;
+    std::string gpuProfileGroup;
     std::shared_ptr<const CpuProfile> cpuProfile;
     ConsoleView console;
     bool hudEnabled = true, statsEnabled = false, forceFullUpload = false;
