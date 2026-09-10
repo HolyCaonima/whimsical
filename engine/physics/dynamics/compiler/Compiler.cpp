@@ -170,8 +170,9 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         int32_t color;
         uint32_t endpoints, arity;
     };
-    // Endpoint columns are already O(E). Temporary compiler instances keep only their
-    // endpoint references; no quadratic constraint-conflict graph is materialized.
+    // Declarative endpoint sources reach this lowering boundary intact. The current
+    // execution ABI uses explicit endpoint rows, so only Compiler materializes them;
+    // no quadratic constraint-conflict graph is created.
     std::vector<Instance> instances;
     for (uint32_t setId = 0; setId < model.data->relations.size(); ++setId) {
         const auto& set = model.data->relations[setId];
@@ -209,7 +210,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
                 checked(instances.size()),    setId, row, type, -1, checked(endpointData.size()),
                 checked(set.endpoints.size())};
             for (uint32_t e = 0; e < set.endpoints.size(); ++e) {
-                auto ref = set.endpoints[e]->at(row);
+                auto ref = set.endpoints[e].at(row);
                 if (ref.set >= p->variables.size() || ref.index >= p->variables[ref.set].count)
                     throw std::invalid_argument("Relation references a missing variable: " + set.name);
                 if (p->variables[ref.set].space != endpointSpaces[e])

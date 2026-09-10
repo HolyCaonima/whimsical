@@ -90,6 +90,17 @@ Field field(duk_context* c, int object, const char* name, uint32_t count, uint32
         return Field::uniform(count, std::move(values));
     return Field::dense(count, width, values);
 }
+std::vector<VariableRef> endpointReferences(duk_context* c, int column) {
+    column = duk_normalize_index(c, column);
+    auto ids = property<uint32_t>(c, column, "indices"), sets = property<uint32_t>(c, column, "sets");
+    auto set = number(c, column, "set");
+    if (!sets.empty() && sets.size() != ids.size())
+        throw std::invalid_argument("Endpoint set/index column sizes differ");
+    std::vector<VariableRef> result(ids.size());
+    for (uint32_t i = 0; i < ids.size(); ++i)
+        result[i] = {sets.empty() ? set : sets[i], ids[i]};
+    return result;
+}
 std::vector<std::vector<VariableRef>> endpoints(duk_context* c, int object) {
     duk_get_prop_string(c, object, "endpoints");
     auto list = duk_normalize_index(c, -1);
@@ -98,13 +109,49 @@ std::vector<std::vector<VariableRef>> endpoints(duk_context* c, int object) {
     std::vector<std::vector<VariableRef>> result(duk_get_length(c, list));
     for (uint32_t e = 0; e < result.size(); ++e) {
         duk_get_prop_index(c, list, e);
-        auto ids = property<uint32_t>(c, -1, "indices"), sets = property<uint32_t>(c, -1, "sets");
-        auto set = number(c, -1, "set");
-        if (!sets.empty() && sets.size() != ids.size())
-            throw std::invalid_argument("Endpoint set/index column sizes differ");
-        result[e].resize(ids.size());
-        for (uint32_t i = 0; i < ids.size(); ++i)
-            result[e][i] = {sets.empty() ? set : sets[i], ids[i]};
+        result[e] = endpointReferences(c, -1);
+        duk_pop(c);
+    }
+    duk_pop(c);
+    return result;
+}
+std::vector<EndpointSource> endpointSources(duk_context* c, int object, const Model& model) {
+    duk_get_prop_string(c, object, "endpoints");
+    auto list = duk_normalize_index(c, -1);
+    if (!duk_is_array(c, list))
+        throw std::invalid_argument("Expected endpoint sources");
+    std::vector<EndpointSource> result;
+    result.reserve(duk_get_length(c, list));
+    for (uint32_t e = 0; e < duk_get_length(c, list); ++e) {
+        duk_get_prop_index(c, list, e);
+        auto source = duk_normalize_index(c, -1);
+        duk_get_prop_string(c, source, "kind");
+        auto kind = duk_is_undefined(c, -1) ? std::string() : string(c, -1);
+        duk_pop(c);
+        if (kind.empty()) {
+            auto refs = std::make_shared<std::vector<VariableRef>>(endpointReferences(c, source));
+            result.emplace_back(std::move(refs));
+        } else if (kind == "object") {
+            result.push_back(
+                EndpointSource::object({number(c, source, "set"), number(c, source, "index")}));
+        } else if (kind == "collection") {
+            auto set = number(c, source, "set"), first = number(c, source, "first");
+            auto stride = number(c, source, "stride", 1);
+            duk_get_prop_string(c, source, "count");
+            const bool specified = !duk_is_undefined(c, -1);
+            auto count = specified ? integer(c, -1) : 0;
+            duk_pop(c);
+            if (!specified) {
+                const auto variables = model.snapshot().data->variables.at(set).count;
+                if (first > variables)
+                    throw std::out_of_range("Endpoint collection starts beyond its variable set");
+                if (!stride)
+                    throw std::invalid_argument("Endpoint collection stride must be positive");
+                count = first == variables ? 0 : 1 + (variables - first - 1) / stride;
+            }
+            result.push_back(EndpointSource::collection(set, first, count, stride));
+        } else
+            throw std::invalid_argument("Unknown endpoint source kind");
         duk_pop(c);
     }
     duk_pop(c);
@@ -294,12 +341,19 @@ __declspec(noinline) duk_ret_t ScriptBindings::dispatch(duk_context* c, int op) 
         set.type = types_.at(integer(c, 1));
         set.name = "relations";
         set.dynamicEndpoints = boolean(c, 2, "dynamicEndpoints");
-        auto columns = endpoints(c, 2);
-        if (columns.empty())
+        set.endpoints = endpointSources(c, 2, e.model);
+        if (set.endpoints.empty())
             throw std::invalid_argument("Relationship needs endpoints");
-        set.count = uint32_t(columns[0].size());
-        for (auto& column : columns)
-            set.endpoints.push_back(std::make_shared<const std::vector<VariableRef>>(std::move(column)));
+        bool countKnown = false;
+        for (const auto& source : set.endpoints)
+            if (!source.broadcast()) {
+                if (countKnown && source.rows() != set.count)
+                    throw std::invalid_argument("Relation endpoint sources have different row counts");
+                set.count = source.rows();
+                countKnown = true;
+            }
+        if (!countKnown)
+            set.count = 1;
         set.parameters = field(c, 2, "parameters", set.count, set.type->parameters);
         set.compliance = field(c, 2, "compliance", set.count, set.type->rows);
         set.initialHistory = field(c, 2, "history", set.count, set.type->history);

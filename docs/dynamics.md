@@ -163,6 +163,8 @@ instance.step(input);
 | `defineRelation(definition, build)` | 定义残差、等式 / 不等式条件和关系自身的持久状态更新 |
 | `model()` | 创建模型句柄 |
 | `variables(model, space, fields)` | 添加变量集合；包含 `count`、`initial`，可选 `velocity`、`inverseMetric`、`enabled`、`readOnly` |
+| `object(set, index)` | 声明一个作为 relation 端点广播的变量对象 |
+| `collection(set, range?)` | 声明一个有序变量集合；范围可包含 `first`、`count`、`stride` |
 | `relations(model, type, fields)` | 添加关系集合；包含 `endpoints`，可选 `parameters`、`compliance`、`history`、`enabled`、`dynamicEndpoints` |
 | `patch(model, field, set, first, data)` | 修改数值模型字段 |
 | `compile(model, policy?)` | 提交模型；根据变更应用参数或安装新计划 |
@@ -172,7 +174,19 @@ instance.step(input);
 | `appendVariables` / `appendRelations` / `replaceEndpoints` | 修改模型拓扑，之后调用 `compile` |
 | `destroy(model)` | 退役所属 GPU 实例 |
 
-创建集合时，一个字段可用单行数组表达统一值，也可提供完整逐行数据。追加接口要求完整的新增数据。每个端点列为 `{set, indices}`；跨集合端点用 `{sets, indices}`，两个数组逐项对应。状态写入格式为 `{field, set, first, values}`；动态连接写入为 `{set, first, endpoints}`。
+创建集合时，一个字段可用单行数组表达统一值，也可提供完整逐行数据。追加接口要求完整的新增数据。Relation 端点可以保留为声明式来源：
+
+```js
+var anchor = X.object(points, 0);
+var allPoints = X.collection(points);
+var interior = X.collection(points, {first:1, count:99});
+X.relations(model, distance, {endpoints:[anchor, interior], parameters:[1]});
+X.relations(model, distance, {endpoints:[allPoints, X.collection(targets)]});
+```
+
+`object` 在 relation 的所有行广播同一个变量；一个或多个 `collection` 按行配对，并且行数必须相同。省略范围时集合覆盖变量集的全部当前行，`stride` 默认为 1。这些来源以对象／集合形式保存在 `ModelSnapshot` 和场景文档中，进入 Compiler 后才降低为执行端点，因此前端不丢失集合关系语义。
+
+任意稀疏拓扑继续使用显式端点列 `{set, indices}`；跨变量集端点用 `{sets, indices}`，两个数组逐项对应。声明式 relation 集合不能通过 `appendRelations` 混入显式行，可创建另一个 relation 集合。状态写入格式为 `{field, set, first, values}`；动态连接写入为 `{set, first, endpoints}`，运行时替换仍使用显式端点列。
 
 数值模型字段名为 `inverseMetric`、`variableEnabled`、`parameters`、`compliance`、`relationEnabled`。公开运行状态字段名为 `value`、`velocity`、`acceleration`、`history`。乘子仅保存在内部求解计划与运行时中，不提供用户读写接口。
 

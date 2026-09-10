@@ -34,6 +34,17 @@ R"JS(
         };
         return e;
     };
+    X.object = function (set, index) {
+        return {kind:'object', set:set, index:index};
+    };
+    X.collection = function (set, range) {
+        range=range||{};
+        var source={kind:'collection',set:set};
+        ['first','count','stride'].forEach(function(k){
+            if(range[k]!==undefined)source[k]=range[k];
+        });
+        return source;
+    };
     X.defineRelation = function (definition, build) {
         var sizes=definition.spaces.map(function(s){return X.spaceInfo(s).stateSize;}), total=0;
         sizes.forEach(function(n){total+=n;});

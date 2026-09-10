@@ -12,6 +12,26 @@ struct VariableRef {
         return set == other.set && index == other.index;
     }
 };
+// A relation endpoint can be an arbitrary explicit column, one broadcast
+// object, or an ordered collection. Declarative sources remain intact in a
+// ModelSnapshot and are lowered only by Compiler.
+struct EndpointSource {
+    enum class Kind { Explicit, Object, Collection };
+    Kind kind = Kind::Explicit;
+    std::shared_ptr<const std::vector<VariableRef>> references;
+    VariableRef first;
+    uint32_t count = 0, stride = 1;
+
+    EndpointSource() = default;
+    EndpointSource(std::shared_ptr<const std::vector<VariableRef>>);
+    static EndpointSource object(VariableRef);
+    static EndpointSource collection(SetId, uint32_t first, uint32_t count, uint32_t stride = 1);
+    bool broadcast() const {
+        return kind == Kind::Object;
+    }
+    uint32_t rows() const;
+    VariableRef at(uint32_t row) const;
+};
 
 // Immutable pages plus a uniform fallback. Editing a small range copies only its
 // pages; snapshots and unchanged fields share storage. Public arrays are row-major.
@@ -98,8 +118,9 @@ struct RelationSet {
     std::string name;
     RelationRef type;
     uint32_t count = 0;
-    // One endpoint column per declared slot; all instances share the mathematical type.
-    std::vector<std::shared_ptr<const std::vector<VariableRef>>> endpoints;
+    // One endpoint source per declared slot; all instances share the mathematical type.
+    // Object sources broadcast, while collection and explicit sources have count rows.
+    std::vector<EndpointSource> endpoints;
     Field parameters, compliance, initialHistory, enabled;
     // Fixed capacity, runtime endpoint columns. Compiler schedules these through
     // GPU-built Jacobi incidence; changing their endpoints does not rebuild a plan.

@@ -110,6 +110,41 @@ Field fieldFrom(const Json& j, uint32_t count, uint32_t width) {
         return {};
     return v.size() == width ? Field::uniform(count, std::move(v)) : Field::dense(count, width, v);
 }
+Json endpointDocument(const EndpointSource& source) {
+    if (source.kind == EndpointSource::Kind::Object)
+        return {{"kind", "object"}, {"set", source.first.set}, {"index", source.first.index}};
+    if (source.kind == EndpointSource::Kind::Collection)
+        return {{"kind", "collection"},
+                {"set", source.first.set},
+                {"first", source.first.index},
+                {"count", source.count},
+                {"stride", source.stride}};
+    auto sets = Json::array(), indices = Json::array();
+    for (auto value : *source.references) {
+        sets.push(value.set);
+        indices.push(value.index);
+    }
+    return {{"sets", sets}, {"indices", indices}};
+}
+EndpointSource endpointFrom(const Json& value) {
+    if (value.contains("kind")) {
+        auto kind = value.at("kind").string();
+        if (kind == "object")
+            return EndpointSource::object({value.at("set").uint(), value.at("index").uint()});
+        if (kind == "collection")
+            return EndpointSource::collection(value.at("set").uint(), value.at("first").uint(),
+                                              value.at("count").uint(), value.at("stride").uint());
+        throw std::invalid_argument("Unknown endpoint source kind");
+    }
+    auto refs = std::make_shared<std::vector<VariableRef>>();
+    auto& sets = value.at("sets").elements();
+    auto& indices = value.at("indices").elements();
+    if (sets.size() != indices.size())
+        throw std::invalid_argument("Endpoint column sizes differ");
+    for (size_t i = 0; i < sets.size(); ++i)
+        refs->push_back({sets[i].uint(), indices[i].uint()});
+    return EndpointSource(std::move(refs));
+}
 } // namespace
 Json document(const ModelSnapshot& snapshot) {
     Json spaces = Json::array(), types = Json::array(), variables = Json::array(), relations = Json::array();
@@ -156,14 +191,8 @@ Json document(const ModelSnapshot& snapshot) {
             types.push(std::move(type));
         }
         auto endpoints = Json::array();
-        for (const auto& column : r.endpoints) {
-            auto sets = Json::array(), indices = Json::array();
-            for (auto e : *column) {
-                sets.push(e.set);
-                indices.push(e.index);
-            }
-            endpoints.push({{"sets", sets}, {"indices", indices}});
-        }
+        for (const auto& source : r.endpoints)
+            endpoints.push(endpointDocument(source));
         relations.push({{"name", r.name},
                         {"type", it->second},
                         {"count", r.count},
@@ -227,16 +256,8 @@ std::unique_ptr<Model> modelFromDocument(const Json& j) {
         s.type = types.at(v.at("type").uint());
         s.count = v.at("count").uint();
         s.dynamicEndpoints = v.at("dynamicEndpoints").boolean();
-        for (const auto& column : v.at("endpoints").elements()) {
-            auto refs = std::make_shared<std::vector<VariableRef>>();
-            auto& sets = column.at("sets").elements();
-            auto& indices = column.at("indices").elements();
-            if (sets.size() != indices.size())
-                throw std::invalid_argument("Endpoint column sizes differ");
-            for (size_t i = 0; i < sets.size(); ++i)
-                refs->push_back({sets[i].uint(), indices[i].uint()});
-            s.endpoints.push_back(refs);
-        }
+        for (const auto& source : v.at("endpoints").elements())
+            s.endpoints.push_back(endpointFrom(source));
         s.parameters = fieldFrom(v.at("parameters"), s.count, s.type->parameters);
         s.compliance = fieldFrom(v.at("compliance"), s.count, s.type->rows);
         s.initialHistory = fieldFrom(v.at("history"), s.count, s.type->history);

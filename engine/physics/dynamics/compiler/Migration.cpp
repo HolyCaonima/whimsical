@@ -43,7 +43,7 @@ StateMigration Compiler::migration(const CompiledPlan& previous, const CompiledP
         for (uint32_t i = 0; i < std::min(a.count, b.count); ++i) {
             bool same = true;
             for (size_t e = 0; e < before.endpoints.size(); ++e)
-                same = same && before.endpoints[e]->at(i) == after.endpoints[e]->at(i);
+                same = same && before.endpoints[e].at(i) == after.endpoints[e].at(i);
             if (same)
                 for (uint32_t c = 0; c < type.history; ++c)
                     mapping.insert(mapping.end(),

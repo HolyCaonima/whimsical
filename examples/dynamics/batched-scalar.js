@@ -1,17 +1,18 @@
-// One mathematical definition, 100,000 instances. No World or rendering dependency.
+// One broadcast object and two paired collections define 100,000 relation instances.
+// No endpoint index arrays, World or rendering dependency.
 var X = Engine.dynamics;
 var scalar = X.space(1);
 var sum = X.defineRelation({
-    name: 'sum', spaces: [scalar, scalar], parameters: 1
+    name: 'sum', spaces: [scalar, scalar, scalar], parameters: 1
 }, function (e) {
-    return { residual: [e.sub(e.add(e.endpoints[0][0], e.endpoints[1][0]), e.parameter(0))] };
+    return { residual: [e.sub(e.add(e.add(e.endpoints[0][0], e.endpoints[1][0]), e.endpoints[2][0]), e.parameter(0))] };
 });
 var model = X.model();
+var anchor = X.variables(model, scalar, { count: 1, initial: [0], readOnly: true });
 var variables = X.variables(model, scalar, { count: 100000, initial: [0] });
-var indices = new Uint32Array(100000);
-for (var i = 0; i < indices.length; ++i) indices[i] = i;
+var offsets = X.variables(model, scalar, { count: 100000, initial: [2], readOnly: true });
 var relations = X.relations(model, sum, {
-    endpoints: [{ set: variables, indices: indices }, { set: variables, indices: indices }],
+    endpoints: [X.object(anchor, 0), X.collection(variables), X.collection(offsets)],
     parameters: [4], compliance: [0]
 });
 X.compile(model, { substeps: 1, iterations: 1, mode: 'hybrid' });

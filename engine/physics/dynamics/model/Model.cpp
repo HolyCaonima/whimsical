@@ -93,7 +93,7 @@ void defaults(RelationSet& set) {
     if (set.endpoints.size() != set.type->spaces.size())
         throw std::invalid_argument("Relation endpoint arity mismatch");
     for (const auto& column : set.endpoints)
-        if (!column || column->size() != set.count)
+        if (!column.broadcast() && column.rows() != set.count)
             throw std::invalid_argument("Relation endpoint column length mismatch");
 }
 uint32_t totalState(const std::vector<SpaceRef>& spaces) {
@@ -106,6 +106,48 @@ uint32_t totalState(const std::vector<SpaceRef>& spaces) {
     return size;
 }
 } // namespace
+EndpointSource::EndpointSource(std::shared_ptr<const std::vector<VariableRef>> values)
+    : references(std::move(values)) {
+    if (references)
+        count = uint32_t(references->size());
+}
+EndpointSource EndpointSource::object(VariableRef value) {
+    EndpointSource result;
+    result.kind = Kind::Object;
+    result.first = value;
+    result.count = 1;
+    result.stride = 0;
+    return result;
+}
+EndpointSource EndpointSource::collection(SetId set, uint32_t first, uint32_t count, uint32_t stride) {
+    if (!stride)
+        throw std::invalid_argument("Endpoint collection stride must be positive");
+    if (count && uint64_t(first) + uint64_t(count - 1) * stride > UINT32_MAX)
+        throw std::overflow_error("Endpoint collection exceeds 32-bit indices");
+    EndpointSource result;
+    result.kind = Kind::Collection;
+    result.first = {set, first};
+    result.count = count;
+    result.stride = stride;
+    return result;
+}
+uint32_t EndpointSource::rows() const {
+    if (kind == Kind::Explicit) {
+        if (!references)
+            throw std::invalid_argument("Explicit endpoint source requires references");
+        return uint32_t(references->size());
+    }
+    return count;
+}
+VariableRef EndpointSource::at(uint32_t row) const {
+    if (kind == Kind::Explicit)
+        return references->at(row);
+    if (kind == Kind::Object)
+        return first;
+    if (row >= count)
+        throw std::out_of_range("Endpoint collection row");
+    return {first.set, uint32_t(uint64_t(first.index) + uint64_t(row) * stride)};
+}
 Field Field::uniform(uint32_t count, std::vector<float> value) {
     finite(value);
     Field result;
@@ -340,7 +382,8 @@ void Model::replaceEndpoints(SetId id, uint32_t endpoint, std::vector<VariableRe
     auto& set = data_->relations.at(id);
     if (values.size() != set.count)
         throw std::invalid_argument("Endpoint replacement count mismatch");
-    set.endpoints.at(endpoint) = std::make_shared<const std::vector<VariableRef>>(std::move(values));
+    set.endpoints.at(endpoint) =
+        EndpointSource(std::make_shared<const std::vector<VariableRef>>(std::move(values)));
     pending_.topology = true;
 }
 void Model::appendVariables(SetId id, uint32_t count, const std::vector<float>& initial,
@@ -367,9 +410,11 @@ void Model::appendRelations(SetId id, std::vector<std::vector<VariableRef>> endp
     for (size_t e = 0; e < endpoints.size(); ++e) {
         if (endpoints[e].size() != count)
             throw std::invalid_argument("Append endpoint count mismatch");
-        auto column = std::make_shared<std::vector<VariableRef>>(*next.endpoints[e]);
+        if (next.endpoints[e].kind != EndpointSource::Kind::Explicit)
+            throw std::invalid_argument("Cannot append explicit rows to a declarative relation set");
+        auto column = std::make_shared<std::vector<VariableRef>>(*next.endpoints[e].references);
         column->insert(column->end(), endpoints[e].begin(), endpoints[e].end());
-        next.endpoints[e] = std::move(column);
+        next.endpoints[e] = EndpointSource(std::move(column));
     }
     next.parameters.append(count, parameters);
     next.compliance.append(count, compliance);
