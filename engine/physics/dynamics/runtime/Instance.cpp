@@ -474,8 +474,6 @@ void Instance::step(const TickInput& input) {
         float time = float(completed_.time) + h * (substep + 1);
         for (const auto& batch : s.plan->predict)
             s.batch(batch, h, time, input.tick, 0);
-        s.dispatch(*s.programs[s.plan->resetKernel], "Reset XPBD multipliers",
-                   {0, s.plan->multiplierCount, h, time, uint32_t(input.tick), 0, 1});
         for (uint32_t iteration = 0; iteration < s.plan->policy.iterations; ++iteration) {
             for (const auto& batch : s.plan->solve)
                 s.batch(batch, h, time, input.tick, iteration);
@@ -487,8 +485,7 @@ void Instance::step(const TickInput& input) {
         for (const auto& batch : s.plan->update)
             s.batch(batch, h, time, input.tick, 0);
     }
-    // Global reset touches all multipliers. Run closed regions afterwards so their
-    // multiplier state is not overwritten after their solve.
+    // Closed regions are incidence-independent from the remaining global work.
     for (const auto& batch : s.plan->local)
         s.batch(batch, h, float(completed_.time), input.tick, 0);
     s.recordReads(input.reads, readSize);

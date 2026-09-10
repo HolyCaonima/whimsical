@@ -49,7 +49,7 @@ KernelFunction variableFunction(const Space& space, const char* operation, const
     const auto S = space.stateSize, T = space.tangentSize;
     s << emitGlsl(space.retract, name + "_retractValue") << emitGlsl(space.difference, name + "_differenceValue");
     s << "void " << name
-      << "(uint id,float h,float time,float relaxation,float inverseH2){Variable v=variable(id);\n";
+      << "(uint id,float h,float time,float relaxation,float inverseH2,uint iteration){Variable v=variable(id);\n";
     if (op == "predict") {
         local(s, "inputValue", S + T);
         local(s, "outputValue", S);
@@ -138,7 +138,12 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
         }
     }
     s << "void " << name
-      << "(uint id,float h,float time,float relaxation,float inverseH2){Relation r=relation(id);\n";
+      << "(uint id,float h,float time,float relaxation,float inverseH2,uint iteration){Relation r=relation(id);\n";
+    // A relation owns its multiplier rows and is scheduled exactly once per
+    // iteration. Initialize them in its first solve to avoid a full-buffer pass.
+    if (!update)
+        for (uint32_t row = 0; row < M; ++row)
+            s << "if(iteration==0u)storeMultiplier(r," << row << "u,0.0);\n";
     if (jacobi)
         for (uint32_t c = 0; c < D; ++c)
             s << "x_contributions[r.c+" << c << "u*r.cs]=0.0;\n";
@@ -454,9 +459,10 @@ KernelFunction relationDispatchFunction(
     for (const auto& item : functions)
         s << item.second.source;
     s << "void " << name
-      << "(uint id,float h,float time,float relaxation,float inverseH2){switch(relation(id).type){\n";
+      << "(uint id,float h,float time,float relaxation,float inverseH2,uint iteration){switch(relation(id).type){\n";
     for (const auto& [type, function] : functions)
-        s << "case " << type << "u:" << function.entry << "(id,h,time,relaxation,inverseH2);break;\n";
+        s << "case " << type << "u:" << function.entry
+          << "(id,h,time,relaxation,inverseH2,iteration);break;\n";
     s << "}}\n";
     return {name, s.str(), BufferRole::RelationWork, jacobi};
 }
@@ -486,7 +492,7 @@ std::string globalKernel(const KernelFunction& function) {
     const char* work = function.work == BufferRole::VariableWork ? "variableWork" : "relationWork";
     return stateAccess(false) + function.source + "void main(){uint lane=invocation();if(lane>=step.count)return;" +
            function.entry + "(x_" + work +
-           "[step.first+lane],step.h,step.time,step.relaxation,1.0/(step.h*step.h)); }\n";
+           "[step.first+lane],step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration); }\n";
 }
 std::string stateAccess(bool localState, uint32_t variableCount) {
     struct FieldAccess {

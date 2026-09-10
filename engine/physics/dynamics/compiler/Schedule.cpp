@@ -32,8 +32,9 @@ uint64_t dispatchCount(const CompiledPlan& p) {
     };
     if (!count(p.predict))
         return 0;
-    return p.policy.substeps * (count(p.predict) + (p.multiplierCount ? 1 : 0) +
-        p.policy.iterations * (count(p.solve) + count(p.apply)) + count(p.recover) + count(p.update));
+    return p.policy.substeps *
+           (count(p.predict) + p.policy.iterations * (count(p.solve) + count(p.apply)) +
+            count(p.recover) + count(p.update));
 }
 struct Components {
     std::vector<uint32_t> parent, size;
@@ -194,7 +195,7 @@ void fuseColorWindows(CompiledPlan& p, const std::vector<KernelFunction>& functi
                   "uint first=x_regionRanges[at+phase*2u],count=x_regionRanges[at+phase*2u+1u];"
                   "for(uint j=lane;j<count;j+=128u)"
                << functions[function].entry
-               << "(x_relationWork[first+j],step.h,step.time,step.relaxation,inverseH2);"
+               << "(x_relationWork[first+j],step.h,step.time,step.relaxation,inverseH2,step.iteration);"
                   "if(phase+1u<phases){memoryBarrierBuffer();barrier();}}}\n";
         auto kernel = uint32_t(p.kernels.size());
         p.kernels.push_back({"Solve color windows", source.str()});
@@ -259,7 +260,6 @@ void pruneKernels(CompiledPlan& p) {
         for (const auto& batch : batches)
             used[batch.kernel] = true;
     };
-    used[p.resetKernel] = true;
     used[p.stateWriteKernel] = true;
     mark(p.predict);
     mark(p.solve);
@@ -289,7 +289,6 @@ void pruneKernels(CompiledPlan& p) {
         if (id != UINT32_MAX)
             id = mapping[id];
     };
-    p.resetKernel = mapping[p.resetKernel];
     p.stateWriteKernel = mapping[p.stateWriteKernel];
     remapOptional(p.coloredDispatchKernel);
     remapOptional(p.jacobiDispatchKernel);
@@ -531,16 +530,6 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
                       batches.end());
     };
     lower(p.predict);
-    std::vector<std::vector<uint32_t>> reset(regionCount);
-    for (const auto& layout : p.relations)
-        for (uint32_t id = layout.first; id < layout.first + layout.count; ++id) {
-            auto owner = relationOwner[id];
-            if (owner != NoRegion)
-                for (uint32_t row = 0; row < p.types[layout.type]->rows; ++row)
-                    reset[owner].push_back(localOffsets[size_t(variableCount) * 3 + size_t(id) * 2 + 1] + row);
-        }
-    const auto resetPhase = uint32_t(phases.size());
-    phase(NoRegion, reset, variableWork);
     const auto iterationBegin = uint32_t(phases.size());
     // Local lanes call homogeneous mathematical functions directly. Batches in one
     // dependency color need no barrier between types; the color boundary remains.
@@ -584,18 +573,15 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
         source << "{uint at=(" << uint64_t(i) * regionCount << "u+region)*2u;"
                   "uint first=x_regionRanges[at],count=x_regionRanges[at+1u];"
                   "for(uint j=lane;j<count;j+=128u){";
-        if (i == resetPhase)
-            source << "regionState[x_variableWork[first+j]]=0.0;";
-        else {
-            const auto& function = functions[phases[i].kernel];
-            source << function.entry << "(x_"
-                   << (function.work == BufferRole::VariableWork ? "variableWork" : "relationWork")
-                   << "[first+j],h,time,step.relaxation,inverseH2);";
-        }
+        const auto& function = functions[phases[i].kernel];
+        source << function.entry << "(x_"
+               << (function.work == BufferRole::VariableWork ? "variableWork" : "relationWork")
+               << "[first+j],h,time,step.relaxation,inverseH2,"
+               << (i >= iterationBegin && i < iterationEnd ? "iteration" : "0u") << ");";
         source << "}}";
         // Jacobi contributions retain their global CSR layout. All other iterative
         // state is shared, so its phase boundary needs only workgroup synchronization.
-        if (phases[i].synchronize && i != resetPhase && functions[phases[i].kernel].writesContributions)
+        if (phases[i].synchronize && functions[phases[i].kernel].writesContributions)
             source << "memoryBarrierBuffer();";
         if (phases[i].synchronize)
             source << "barrier();";

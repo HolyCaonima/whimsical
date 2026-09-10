@@ -173,10 +173,6 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     // Endpoint columns are already O(E). Temporary compiler instances keep only their
     // endpoint references; no quadratic constraint-conflict graph is materialized.
     std::vector<Instance> instances;
-    std::vector<uint64_t> used(writable.size());
-    std::vector<uint32_t> degree(writable.size());
-    const uint64_t allowed =
-        policy.colorBudget == 64 ? UINT64_MAX : ((uint64_t(1) << policy.colorBudget) - 1);
     for (uint32_t setId = 0; setId < model.data->relations.size(); ++setId) {
         const auto& set = model.data->relations[setId];
         set.type->validate();
@@ -212,7 +208,6 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             Instance instance{
                 checked(instances.size()),    setId, row, type, -1, checked(endpointData.size()),
                 checked(set.endpoints.size())};
-            uint64_t conflict = 0;
             for (uint32_t e = 0; e < set.endpoints.size(); ++e) {
                 auto ref = set.endpoints[e]->at(row);
                 if (ref.set >= p->variables.size() || ref.index >= p->variables[ref.set].count)
@@ -221,37 +216,10 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
                     throw std::invalid_argument("Relation endpoint space mismatch: " + set.name);
                 auto id = p->variables[ref.set].first + ref.index;
                 endpointData.push_back(id);
-                if (writable[id])
-                    conflict |= used[id];
             }
             for (uint32_t r = 0; r < set.type->rows; ++r)
                 if (set.compliance.at(row, r) < 0)
                     throw std::invalid_argument("Compliance must be nonnegative: " + set.name);
-            auto available = allowed & ~conflict;
-            if (policy.mode != SolveMode::Jacobi && !set.dynamicEndpoints && available) {
-                uint32_t color = 0;
-                while (!(available & (uint64_t(1) << color)))
-                    ++color;
-                instance.color = int32_t(color);
-                p->statistics.colors = std::max(p->statistics.colors, color + 1);
-                for (uint32_t e = 0; e < instance.arity; ++e) {
-                    auto id = endpointData[instance.endpoints + e];
-                    if (writable[id])
-                        used[id] |= uint64_t(1) << color;
-                }
-                ++p->statistics.coloredRelations;
-            } else {
-                if (policy.mode == SolveMode::Colored)
-                    throw std::runtime_error(
-                        "Color budget exhausted; choose Hybrid/Jacobi or increase the budget");
-                for (uint32_t e = 0; e < instance.arity; ++e) {
-                    auto id = endpointData[instance.endpoints + e];
-                    auto begin = endpointData.begin() + instance.endpoints;
-                    if (writable[id] && std::find(begin, begin + e, id) == begin + e)
-                        ++degree[id];
-                }
-                ++p->statistics.jacobiRelations;
-            }
             auto end = instance.endpoints;
             relationMeta.insert(relationMeta.end(),
                                 {end, layout.parameters + row, layout.compliance + row, layout.history + row,
@@ -260,11 +228,87 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             instances.push_back(std::move(instance));
         }
     }
+    auto writableEndpoints = [&](const Instance& instance, auto&& visit) {
+        for (uint32_t endpoint = 0; endpoint < instance.arity; ++endpoint) {
+            const auto id = endpointData[instance.endpoints + endpoint];
+            bool repeated = false;
+            for (uint32_t before = 0; before < endpoint; ++before)
+                repeated = repeated || endpointData[instance.endpoints + before] == id;
+            if (writable[id] && !repeated)
+                visit(id);
+        }
+    };
+    struct ColorPriority {
+        uint32_t endpoints, rows, nodes, tangent, id;
+    };
+    std::vector<ColorPriority> priorities;
+    std::vector<uint32_t> coloringOrder;
+    if (policy.mode != SolveMode::Jacobi) {
+        priorities.resize(instances.size());
+        coloringOrder.reserve(instances.size());
+        for (const auto& instance : instances) {
+            if (model.data->relations[instance.set].dynamicEndpoints)
+                continue;
+            auto& priority = priorities[instance.id];
+            writableEndpoints(instance, [&](uint32_t) { ++priority.endpoints; });
+            const auto& type = *p->types[instance.type];
+            priority.rows = type.rows;
+            priority.nodes = uint32_t(type.residual.nodes.size());
+            priority.tangent = type.tangentSize();
+            priority.id = instance.id;
+            coloringOrder.push_back(instance.id);
+        }
+    }
+    // A color consumes one slot at every writable endpoint. Place relations with
+    // fewer slots first, then prefer numerically heavier work when slot cost ties.
+    // This maximizes useful colored work under the user's fixed color budget.
+    std::sort(coloringOrder.begin(), coloringOrder.end(), [&](uint32_t a, uint32_t b) {
+        const auto& x = priorities[a];
+        const auto& y = priorities[b];
+        if (x.endpoints != y.endpoints)
+            return x.endpoints < y.endpoints;
+        if (x.rows != y.rows)
+            return x.rows > y.rows;
+        if (x.nodes != y.nodes)
+            return x.nodes > y.nodes;
+        if (x.tangent != y.tangent)
+            return x.tangent > y.tangent;
+        return x.id < y.id;
+    });
+    std::vector<uint64_t> used(writable.size());
+    const uint64_t allowed =
+        policy.colorBudget == 64 ? UINT64_MAX : ((uint64_t(1) << policy.colorBudget) - 1);
+    for (auto id : coloringOrder) {
+        auto& instance = instances[id];
+        uint64_t conflict = 0;
+        writableEndpoints(instance, [&](uint32_t variable) { conflict |= used[variable]; });
+        const auto available = allowed & ~conflict;
+        if (!available) {
+            if (policy.mode == SolveMode::Colored)
+                throw std::runtime_error(
+                    "Color budget exhausted; choose Hybrid/Jacobi or increase the budget");
+            continue;
+        }
+        uint32_t color = 0;
+        while (!(available & (uint64_t(1) << color)))
+            ++color;
+        instance.color = int32_t(color);
+        p->statistics.colors = std::max(p->statistics.colors, color + 1);
+        writableEndpoints(instance,
+                          [&](uint32_t variable) { used[variable] |= uint64_t(1) << color; });
+    }
+    std::vector<uint32_t> degree(writable.size());
+    for (const auto& instance : instances)
+        if (instance.color >= 0)
+            ++p->statistics.coloredRelations;
+        else {
+            writableEndpoints(instance, [&](uint32_t id) { ++degree[id]; });
+            ++p->statistics.jacobiRelations;
+        }
     append(buffer(BufferRole::Endpoints), endpointData);
     append(buffer(BufferRole::Relations), relationMeta);
     buffer(BufferRole::Diagnostics).initial.resize(8);
     p->statistics.relations = instances.size();
-    p->multiplierCount = checked(buffer(BufferRole::Multipliers).initial.size() / 4);
     std::vector<uint32_t> offsets(writable.size() + 1);
     for (size_t i = 0; i < degree.size(); ++i)
         offsets[i + 1] = checked(uint64_t(offsets[i]) + degree[i]);
@@ -397,8 +441,6 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
                            relationFunction(*p->types[type], false, true, "commit" + std::to_string(type))),
                  append(buffer(BufferRole::RelationWork), work), checked(work.size())});
         }
-    p->resetKernel =
-        kernel("Reset multipliers", "void main(){uint i=invocation();if(i<step.count)x_lambda[i]=0.0;}\n");
     const std::array<BufferRole, 4> stateFields = {
         BufferRole::Values, BufferRole::Velocity, BufferRole::Acceleration, BufferRole::History};
     uint64_t stateWords = 0;

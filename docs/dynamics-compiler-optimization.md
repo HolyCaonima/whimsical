@@ -39,9 +39,9 @@ CompiledPlan → Runtime → RenderCore
 
 每个区域在 tick 开始时加载值、前值、速度、history 和乘子到共享内存，执行完整子步与迭代循环，结束后写回原 SoA 地址。加速度、逆度量、参数、compliance、enabled 和端点表继续使用当前 GPU 数据，不按初始数值折叠。
 
-阶段顺序保持为预测 → 乘子清零 → 多轮约束求解 / Jacobi 归并 → 速度恢复 → 历史提交。同一颜色 / 类型中的原有工作顺序不变。所有 lane 都经过区域屏障；某个数学操作中的奇异或非有限诊断只退出该操作。
+阶段顺序保持为预测 → 乘子清零 → 多轮约束求解 / Jacobi 归并 → 速度恢复 → 历史提交；乘子清零后来融合进第一次关系求解，不再形成独立阶段。所有 lane 都经过区域屏障；某个数学操作中的奇异或非有限诊断只退出该操作。
 
-Jacobi 贡献保留全局 CSR 布局，使用 coherent 访问与贡献阶段后的 buffer barrier；其余迭代状态使用共享内存和工作组 barrier。融合与全局组件没有端点交叉。全局部分先执行，融合部分随后执行，避免原有全局乘子清零覆盖融合区域的最终乘子。
+Jacobi 贡献保留全局 CSR 布局，使用 coherent 访问与贡献阶段后的 buffer barrier；其余迭代状态使用共享内存和工作组 barrier。融合与全局组件没有端点交叉，两条执行路径的先后顺序不形成数据依赖。
 
 变量 / 关系集合的稳定 ID、公开字段偏移、范围更新、回读和迁移契约保持一致。新增三个固定 buffer 角色保存区域阶段范围、共享状态布局和局部偏移；buffer 数量不随组件数量增长。被完整吸收的独立 kernel 不再编译。
 
@@ -144,3 +144,27 @@ Global 与 Auto 在模拟时间 1.000000052 s 的结构应变和抽取的 12 个
 `FormulaGlsl` 在每个输出的反向传播图上进一步做静态可达性分析，只为能够到达所请求输入的节点分配 adjoint 并生成传播指令。分支选择、非光滑操作的导数约定和未选分支的惰性求值保持不变。输出 Jacobian 改为紧凑行主序，relation 和 retract 的局部临时数组及下标随之收缩；`Schedule` 的临时空间成本估算使用同一投影形状，避免因已不存在的导数列错误拒绝局部区域融合。
 
 这一层只有 `Formula + requested derivative inputs → specialized kernel`，没有关系名称、项目类型或高层对象判断。Release 编译、现有 `dynamics_tests` GPU 数值检查以及 ConstraintLab 真实运行均通过；后者完成 333 个模拟 tick，诊断为 0 / 0，Vulkan validation errors 为 0。
+
+## 成本感知着色与乘子初始化融合（2026-09-10）
+
+本轮借鉴 Taichi 将前端数学定义先降为 IR、再按状态访问关系形成后端任务的分层方式。可迁移的是状态流、任务融合和无用全局访存消除，而不是任何项目对象语义。编译器仍只接收 `Formula`、可写端点 incidence、数值规模和用户给定预算；高层对象名称与用途不会进入排序、着色或 kernel 生成。
+
+关系实例现在先完整 lower，再执行有界着色。Hybrid 的确定性优先级依次为：唯一可写端点较少、残差行数较多、公式 DAG 较大、切空间较大、稳定 relation ID 较小。随后仍使用 `colorBudget` 内的 first-fit；无法放入的实例继续进入 Jacobi，动态端点和显式 Jacobi 不参与静态着色。这样把有限颜色优先留给单位 incidence 成本较低、数值工作较重的关系，并保持同一输入必然生成同一计划。该顺序是通用后端成本启发式，会改变 Hybrid 的 Gauss-Seidel/Jacobi 划分，但不改变公式、端点、子步或迭代次数。
+
+XPBD 乘子清零不再是每个子步一次的独立全 buffer kernel。每个非 history-update 的关系函数在第一次迭代、enabled 判断之前清零自己的乘子行，因此禁用关系也维持原清零语义；全局批次、颜色窗口和共享区域使用同一个生成函数。关系在计划中恰好属于一个 solve 路径，且求解公式不会读取其他关系的乘子，所以这项 task fusion 删除了全局写 pass 及其 dispatch，而没有引入关系间依赖。
+
+实测使用 ConstraintLab 的 32×32 stage：1,024 variables / 8,898 relations，Hybrid、4 子步 × 12 迭代、`colorBudget=12`，Release、RTX 3080、Vulkan validation、immediate present。每次运行 480 个渲染帧，统计完成 tick 5–40 的 `gpuMilliseconds`；它是一次 dynamics 提交的 GPU 时间戳区间，不是隔离 shader 或整帧时间。
+
+- 原计划：6,318 colored / 2,580 Jacobi，reference / actual dispatch 为 1,792 / 400，均值 5.390273 ms。
+- 成本感知着色：7,578 colored / 1,320 Jacobi，688 / 352 dispatch；重复均值 3.983035 / 4.012119 ms。
+- 再融合乘子初始化：684 / 348 dispatch；重复均值 3.570301 / 3.479593 ms。
+
+最终两次均值为 3.524947 ms，相对原样本减少约 34.6%；实际计算 dispatch 减少 13%。两次最终运行的 diagnostics 均为 0 / 0，Vulkan validation errors 为 0。运行间存在 GPU 队列波动，因此这些数字只说明记录设备和模型上的收益，不作为跨模型保证。
+
+没有保留两项负收益实验：把整个大连通分量放入单个 persistent workgroup 的均值为 11.749680 ms；放大颜色窗口预算也没有稳定收益。后端预算继续保持有界，不为某种高层对象硬编码特例。
+
+参考的 Taichi 资料：
+
+- <https://docs.taichi-lang.org/docs/compilation>
+- <https://docs.taichi-lang.org/docs/performance>
+- <https://arxiv.org/abs/2012.08141>
