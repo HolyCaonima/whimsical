@@ -1,4 +1,4 @@
-#include "dynamics/compiler/FormulaGlsl.h"
+#include "physics/dynamics/compiler/FormulaGlsl.h"
 #include "Schedule.h"
 #include <sstream>
 #include <algorithm>

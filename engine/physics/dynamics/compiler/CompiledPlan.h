@@ -1,5 +1,5 @@
 #pragma once
-#include "dynamics/model/Model.h"
+#include "physics/dynamics/model/Model.h"
 #include <array>
 
 namespace whimsical::dynamics {

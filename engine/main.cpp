@@ -2,7 +2,7 @@
 #include "assets/EngineAssets.h"
 #include "core/FrameMailbox.h"
 #include "scripting/RuntimeHost.h"
-#include "dynamics/adapter/GpuService.h"
+#include "physics/dynamics/adapter/GpuService.h"
 #include "platform/Window.h"
 #include "render/Renderer.h"
 #include "renderCore/RenderCore.h"

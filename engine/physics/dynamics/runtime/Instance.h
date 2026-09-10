@@ -1,5 +1,5 @@
 #pragma once
-#include "dynamics/compiler/CompiledPlan.h"
+#include "physics/dynamics/compiler/CompiledPlan.h"
 #include "renderCore/RenderCore.h"
 #include "State.h"
 

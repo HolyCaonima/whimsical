@@ -1,6 +1,6 @@
 #pragma once
 #include "Mailbox.h"
-#include "dynamics/runtime/Instance.h"
+#include "physics/dynamics/runtime/Instance.h"
 namespace whimsical::dynamics {
 // Created/drained/destroyed on the application's existing GPU owner thread.
 class GpuService {

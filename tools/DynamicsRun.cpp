@@ -1,5 +1,5 @@
-#include "dynamics/adapter/GpuService.h"
-#include "dynamics/adapter/ScriptBindings.h"
+#include "physics/dynamics/adapter/GpuService.h"
+#include "physics/dynamics/adapter/ScriptBindings.h"
 #include <fstream>
 #include <iostream>
 #include <iterator>

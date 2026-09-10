@@ -4,12 +4,14 @@ Dynamics 当前采用 XPBD 求解算法。用户只定义数学状态空间、�
 
 ## 模块与所有权
 
+源码归属 `engine/physics/dynamics`，保留独立构建模块与 `Engine.dynamics` 接口。Dynamics 不依赖 `PhysicsScene`，可以脱离场景运行。
+
 | 模块 | 拥有的内容 | 依赖 |
 | --- | --- | --- |
-| `dynamics/model` | 数学表达式、空间、集合、稳定索引、初始数据、不可变快照与变更 | C++ 标准库 |
-| `dynamics/compiler` | GLSL 与 Jacobian 生成、SoA 布局、求解阶段、区域分析与融合、Jacobi 关联表、迁移映射 | Model |
-| `dynamics/runtime` | GPU 当前状态、执行上下文、提交/完成、状态迁移、范围回读与结果发布 | Compiler、RenderCore |
-| `dynamics/adapter` | 脚本定义入口、模型句柄、可靠请求通道、GPU 宿主服务 | 按前端和 GPU 服务分开链接 |
+| `physics/dynamics/model` | 数学表达式、空间、集合、稳定索引、初始数据、不可变快照与变更 | C++ 标准库 |
+| `physics/dynamics/compiler` | GLSL 与 Jacobian 生成、SoA 布局、求解阶段、区域分析与融合、Jacobi 关联表、迁移映射 | Model |
+| `physics/dynamics/runtime` | GPU 当前状态、执行上下文、提交/完成、状态迁移、范围回读与结果发布 | Compiler、RenderCore |
+| `physics/dynamics/adapter` | 脚本定义入口、模型句柄、可靠请求通道、GPU 宿主服务 | 按前端和 GPU 服务分开链接 |
 
 `whimsical_core` 只链接前端 `whimsical_dynamics_adapter`，不因此依赖 GPU Runtime。`Whimsical` 在现有 GPU 线程创建 `GpuService`，与 Renderer 共用应用拥有的 RenderCore。Runtime 不创建线程，不依赖 World、Rendering 或脚本。
 

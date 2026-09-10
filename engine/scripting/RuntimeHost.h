@@ -4,7 +4,7 @@
 #include "scene/SceneAsset.h"
 #include "platform/FileDialog.h"
 #include <deque>
-#include "dynamics/adapter/Mailbox.h"
+#include "physics/dynamics/adapter/Mailbox.h"
 
 namespace whimsical {
 // Application composition for one active scene. Realms execute code; the host owns

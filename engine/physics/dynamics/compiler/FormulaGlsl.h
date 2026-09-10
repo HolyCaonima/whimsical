@@ -1,5 +1,5 @@
 #pragma once
-#include "dynamics/model/Expression.h"
+#include "physics/dynamics/model/Expression.h"
 
 namespace whimsical::dynamics {
 // GPU code generation belongs to the compiler; Formula remains mathematical data.

@@ -5,7 +5,7 @@
 #include "navigation/Navigation.h"
 #include "scene/ScenePersistence.h"
 #include "UiBindings.h"
-#include "dynamics/adapter/ScriptBindings.h"
+#include "physics/dynamics/adapter/ScriptBindings.h"
 #include "uiCore/UiCore.h"
 #include <iostream>
 #include <stdexcept>

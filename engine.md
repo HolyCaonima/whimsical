@@ -61,6 +61,7 @@ engine/
   platform/               Win32 窗口、输入、焦点／尺寸事件
   navigation/             膨胀障碍栅格 A*、路径平滑、连续碰撞移动
   physics/                独占形状与句柄、动态 AABB Tree、运动学扫掠／滑移
+    dynamics/             数学模型、求解编译器、GPU 运行时与脚本适配
   animation/              统一骨架/姿态/求解器框架、AI4Animation 原生运行时和 ONNX 推理
   scripting/              Duktape runtime 和 C++ ↔ JS binding
   uiCore/                 RmlUi Context、输入、文档与不可变 UI 绘制快照
@@ -68,7 +69,6 @@ engine/
   debug/                  物理线框、ECS 生命周期 smoke 等诊断入口
   Content/UI/             引擎 RML / RCSS
   renderCore/             GPU 资源、RenderGraph、Vulkan 执行、同步与计时
-  dynamics/                   数学模型、求解编译器、GPU 运行时与脚本适配
   render/                 几何、BLAS/TLAS、光照、NRD、运行时 Shader 编译与材质绑定
     shaders/              surface 契约、G-buffer / DI / GI / reuse / resolve / composite
 Projects/                 独立项目；编辑器可显式挂载其他项目的 Content

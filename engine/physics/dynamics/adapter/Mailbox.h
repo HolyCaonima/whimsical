@@ -1,6 +1,6 @@
 #pragma once
-#include "dynamics/compiler/CompiledPlan.h"
-#include "dynamics/runtime/State.h"
+#include "physics/dynamics/compiler/CompiledPlan.h"
+#include "physics/dynamics/runtime/State.h"
 #include <mutex>
 namespace whimsical::dynamics {
 enum class Operation { Install, Apply, Step, Read };
