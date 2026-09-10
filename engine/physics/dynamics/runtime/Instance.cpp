@@ -130,6 +130,53 @@ struct Instance::Storage {
     rg::ResourceId id(BufferRole role) const {
         return resources[size_t(role)];
     }
+    uint32_t readSize(const std::vector<StateRange>& ranges) const {
+        uint64_t total = 0;
+        for (auto r : ranges) {
+            auto source = range(*plan, r.field, r.set);
+            if (r.first > source.count || r.count > source.count - r.first)
+                throw std::out_of_range("Dynamics readback range");
+            total += uint64_t(r.count) * source.width;
+        }
+        if (total > UINT32_MAX)
+            throw std::length_error("Dynamics readback exceeds buffer extent");
+        return uint32_t(total);
+    }
+    void recordReads(const std::vector<StateRange>& ranges, uint32_t total) {
+        if (!total)
+            return;
+        // Pack only requested columns; sparse observers never force a full-model copy.
+        execution->upload(readback, std::vector<uint8_t>(size_t(total) * sizeof(float)));
+        uint64_t offset = 0;
+        for (auto r : ranges) {
+            auto source = range(*plan, r.field, r.set);
+            if (r.count)
+                for (uint32_t c = 0; c < source.width; ++c)
+                    execution->copyBuffer(id(source.role), readback,
+                                          uint64_t(source.first + r.first + c * source.stride) * 4,
+                                          (offset + uint64_t(c) * r.count) * 4, uint64_t(r.count) * 4);
+            offset += uint64_t(r.count) * source.width;
+        }
+    }
+    std::vector<std::vector<float>> decodeReads(const std::vector<StateRange>& ranges) {
+        std::vector<std::vector<float>> result(ranges.size());
+        if (!readSize(ranges))
+            return result;
+        auto data = execution->readbackData(readback);
+        uint64_t offset = 0;
+        for (size_t k = 0; k < ranges.size(); ++k) {
+            auto r = ranges[k];
+            auto source = range(*plan, r.field, r.set);
+            auto& values = result[k];
+            values.resize(size_t(r.count) * source.width);
+            for (uint32_t i = 0; i < r.count; ++i)
+                for (uint32_t c = 0; c < source.width; ++c)
+                    std::memcpy(&values[size_t(i) * source.width + c],
+                                data.data() + (offset + size_t(c) * r.count + i) * 4, 4);
+            offset += values.size();
+        }
+        return result;
+    }
     void initialize() {
         auto& graph = execution->graph();
         graph.reset();
@@ -322,6 +369,7 @@ void Instance::step(const TickInput& input) {
         throw std::invalid_argument(
             "Dynamics tick requires the current model version, advancing tick and positive dt");
     auto& s = *storage_;
+    auto readSize = s.readSize(input.reads);
     s.execution->graph().reset();
     for (const auto& write : input.writes) {
         s.write(range(*s.plan, write.field, write.set), write.first, write.values);
@@ -352,7 +400,10 @@ void Instance::step(const TickInput& input) {
     // multiplier state is not overwritten after their solve.
     for (const auto& batch : s.plan->local)
         s.batch(batch, h, float(completed_.time), input.tick, 0);
-    s.submit(input.tick, input.profileRequest);
+    s.recordReads(input.reads, readSize);
+    s.submit(input.tick, input.profileRequest, std::max(1u, readSize), 1);
+    submittedReads_ = input.reads;
+    samples_.clear();
     submitted_ = {model_.model, model_.version, input.tick, completed_.time + input.dt};
     pending_ = true;
 }
@@ -363,6 +414,7 @@ void Instance::complete() {
     std::memcpy(&submitted_.invalidEvaluations, result.data(), 4);
     std::memcpy(&submitted_.singularSystems, result.data() + 4, 4);
     submitted_.gpuMilliseconds = storage_->execution->gpuMilliseconds();
+    samples_ = storage_->decodeReads(submittedReads_);
     completed_ = submitted_;
     pending_ = false;
 }
@@ -452,47 +504,14 @@ std::vector<float> Instance::read(StateField field, SetId set, uint32_t first, u
 std::vector<std::vector<float>> Instance::read(const std::vector<StateRange>& ranges) {
     idle();
     auto& s = *storage_;
-    uint64_t total = 0;
-    for (auto r : ranges) {
-        auto source = range(*s.plan, r.field, r.set);
-        if (r.first > source.count || r.count > source.count - r.first)
-            throw std::out_of_range("Dynamics readback range");
-        total += uint64_t(r.count) * source.width;
-    }
-    if (total > UINT32_MAX)
-        throw std::length_error("Dynamics readback exceeds buffer extent");
-    std::vector<std::vector<float>> result(ranges.size());
+    auto total = s.readSize(ranges);
     if (!total)
-        return result;
+        return std::vector<std::vector<float>>(ranges.size());
     s.execution->graph().reset();
-    // Pack only requested columns; sparse observers never force a full-model copy.
-    s.execution->upload(s.readback, std::vector<uint8_t>(size_t(total) * sizeof(float)));
-    uint64_t offset = 0;
-    for (auto r : ranges) {
-        auto source = range(*s.plan, r.field, r.set);
-        if (r.count)
-            for (uint32_t c = 0; c < source.width; ++c)
-                s.execution->copyBuffer(s.id(source.role), s.readback,
-                                        uint64_t(source.first + r.first + c * source.stride) * 4,
-                                        (offset + uint64_t(c) * r.count) * 4, uint64_t(r.count) * 4);
-        offset += uint64_t(r.count) * source.width;
-    }
-    s.submit(completed_.tick, 0, uint32_t(total), 1);
+    s.recordReads(ranges, total);
+    s.submit(completed_.tick, 0, total, 1);
     s.execution->wait();
-    auto data = s.execution->readbackData(s.readback);
-    offset = 0;
-    for (size_t k = 0; k < ranges.size(); ++k) {
-        auto r = ranges[k];
-        auto source = range(*s.plan, r.field, r.set);
-        auto& values = result[k];
-        values.resize(size_t(r.count) * source.width);
-        for (uint32_t i = 0; i < r.count; ++i)
-            for (uint32_t c = 0; c < source.width; ++c)
-                std::memcpy(&values[size_t(i) * source.width + c],
-                            data.data() + (offset + size_t(c) * r.count + i) * 4, 4);
-        offset += values.size();
-    }
-    return result;
+    return s.decodeReads(ranges);
 }
 void Instance::install(PlanRef next) {
     idle();

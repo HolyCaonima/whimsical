@@ -107,7 +107,7 @@ void receive(SceneInstance& s) {
     }
     if (s.pending == Operation::Install)
         s.installed = true;
-    if (s.pending == Operation::Read) {
+    if (s.pending == Operation::Step && !s.reading.empty()) {
         s.samples.clear();
         for (size_t i = 0; i < s.reading.size(); ++i)
             s.samples.push_back({s.reading[i], std::move(reply->samples.at(i))});
@@ -135,32 +135,11 @@ void DynamicsSystem::update(World& world, float dt) {
                 s.debt = std::min(s.stepDt, s.debt + dt);
             else
                 s.debt = 0;
-            bool finishedStep = s.channel && s.channel->busy() && s.pending == Operation::Step;
             receive(s);
             if (!s.error.empty())
                 continue;
             if (s.channel && s.channel->busy())
                 continue;
-            if (finishedStep) {
-                auto ranges = s.observe;
-                for (auto binding : byModel[e]) {
-                    auto& b = storage_.registry.get<DynamicsBinding>(binding);
-                    if (!b.input)
-                        for (auto v : b.variables)
-                            ranges.push_back({v.set, v.index, 1});
-                }
-                for (auto r : ranges)
-                    checkRange(s, r);
-                s.reading = mergeRanges(std::move(ranges));
-            }
-            if (!s.reading.empty()) {
-                Request request{};
-                request.operation = Operation::Read;
-                for (auto r : s.reading)
-                    request.ranges.push_back({StateField::Value, r.set, r.first, r.count});
-                submit(s, std::move(request));
-                continue;
-            }
             if (!enabled)
                 continue;
             if (!s.channel)
@@ -182,10 +161,22 @@ void DynamicsSystem::update(World& world, float dt) {
             }
             if (!s.oneStep && (s.paused || s.debt < s.stepDt))
                 continue;
+            auto ranges = s.observe;
+            for (auto binding : byModel[e]) {
+                auto& b = storage_.registry.get<DynamicsBinding>(binding);
+                if (!b.input)
+                    for (auto v : b.variables)
+                        ranges.push_back({v.set, v.index, 1});
+            }
+            for (auto r : ranges)
+                checkRange(s, r);
+            s.reading = mergeRanges(std::move(ranges));
             Request request{};
             request.operation = Operation::Step;
             request.tick = {s.completed.tick + 1, s.completed.modelVersion, s.stepDt};
             request.tick.writes = std::move(s.writes);
+            for (auto r : s.reading)
+                request.tick.reads.push_back({StateField::Value, r.set, r.first, r.count});
             for (auto binding : byModel[e]) {
                 auto& b = storage_.registry.get<DynamicsBinding>(binding);
                 if (!b.input)

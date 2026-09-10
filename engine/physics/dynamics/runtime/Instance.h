@@ -26,6 +26,8 @@ class Instance {
     ModelSnapshot model_;
     CompletedState completed_, submitted_;
     bool pending_ = false;
+    std::vector<StateRange> submittedReads_;
+    std::vector<std::vector<float>> samples_;
     void idle() const;
     void complete();
 
@@ -43,6 +45,9 @@ class Instance {
     }
     void step(const TickInput&);
     bool poll();
+    std::vector<std::vector<float>> takeSamples() {
+        return std::move(samples_);
+    }
     const CompletedState& wait();
     // Numeric-only commit retains programs/layout/state. Topology changes use install.
     void apply(const ModelCommit&);

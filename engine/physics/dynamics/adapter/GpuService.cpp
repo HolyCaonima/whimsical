@@ -15,8 +15,12 @@ void GpuService::drain() {
         entries_.end());
     for (auto& e : entries_) {
         if (e.instance && e.instance->pending()) {
-            if (e.instance->poll())
-                e.channel->complete({e.instance->completed()});
+            if (e.instance->poll()) {
+                Reply reply;
+                reply.completed = e.instance->completed();
+                reply.samples = e.instance->takeSamples();
+                e.channel->complete(std::move(reply));
+            }
             continue;
         }
         auto request = e.channel->take();

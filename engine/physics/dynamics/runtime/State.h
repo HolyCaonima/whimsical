@@ -25,6 +25,8 @@ struct TickInput {
     };
     // Supplied dynamic rows reset their persistent history at the tick boundary.
     std::vector<Endpoints> endpoints;
+    // Optional observations copied after solving, in the same submission.
+    std::vector<StateRange> reads;
 };
 struct CompletedState {
     uint64_t model = 0, modelVersion = 0, tick = 0;
