@@ -9,6 +9,7 @@
     "/Game/scripts/cloth",
     "/Game/scripts/woven",
     "/Game/scripts/threaded",
+    "/Game/scripts/clockwork",
     "/Game/scripts/main"
   ]
 }
