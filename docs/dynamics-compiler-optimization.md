@@ -168,3 +168,28 @@ XPBD 乘子清零不再是每个子步一次的独立全 buffer kernel。每个�
 - <https://docs.taichi-lang.org/docs/compilation>
 - <https://docs.taichi-lang.org/docs/performance>
 - <https://arxiv.org/abs/2012.08141>
+
+## Newton 对照后的 Hybrid 调度（2026-09-10）
+
+Newton 的 VBD 路径在 model finalize 后使用预计算颜色组，支持颜色组均衡与 CUDA tile solve；CUDA graph capture 则用于固定工作流的重复提交。可迁移到 Dynamics 的原则是：拓扑元数据在编译期确定、GPU 工作组保持足够饱和、不要让颜色同步成本掩盖关系求值本身。不能迁移的是 Newton 求解器中的 particle、mesh、contact 等对象分类；Dynamics compiler 仍只观察 `Space`、`RelationType`、唯一可写端点 incidence 和 `SolverPolicy`。
+
+实际 profile 表明当前 Runtime 已把一个 model tick 记录到单个 command buffer 并单次提交，CPU 提交不是本轮主瓶颈。32×32 ConstraintLab 模型（1,024 variables / 8,898 relations，4 子步 × 12 迭代，`colorBudget=12`）中，原计划每步有 192 次颜色窗口调用；它们占一次详细 profile 的约 67%。盲目切到全 Jacobi 虽把稳定 GPU 区间降到约 1.11 ms，但同一 tick 的结构应变从 `0.00429` 增至 `0.03404`，因此没有采用。
+
+Hybrid 现在把 `colorBudget` 明确作为上限。first-fit 先照常产生候选颜色；如果静态拓扑已经必然存在 Jacobi overflow，compiler 再选择满足以下条件的最短颜色前缀：每个参与关系的可写自由度，至少一半静态 incidence 仍由原位 Colored 更新。余下候选颜色并入已经存在的 Jacobi relation/gather 阶段。若用户选择 Colored、拓扑可动态变化、没有既存 overflow，或给定预算无法达到覆盖条件，计划完全保留原颜色结果。
+
+这个截止规则只使用端点 incidence，不读取关系名称、项目名称、初始数值或 enabled 当前值。关系公式、导数、compliance、迭代数、子步数和颜色内依赖规则不变。`PlanStatistics::candidateColors` 记录截止前颜色数，`colors` 记录实际执行颜色数，便于检查计划选择。
+
+在上述模型上，计划自然从 12 个候选颜色选择 8 个执行颜色：
+
+- Colored / Jacobi relation 从 `7,578 / 1,320` 调整为 `5,624 / 3,274`。
+- 颜色窗口调用从每步 192 次降为 96 次，计算 dispatch 从 348 降为 252。
+- 完成 tick 的稳定 GPU 区间约从 3.01 ms 降至 2.15 ms，减少约 28.6%。
+- 同一 tick 的结构应变为 `0.00410`，未劣于原 12 色样本；diagnostics 为 0 / 0，Vulkan validation errors 为 0。
+
+共享内存 tile 版本也按相同端点组件实现并实测，但在当前生成 kernel 上增加了共享内存占用和状态搬运，原 `colorBudget=12` 场景反而约为 3.74 ms，因此未保留。编译器不能仅因另一个系统默认启用 tile solve 就复制该策略；后续若引入设备能力 / occupancy cost model，应在 Schedule 后端统一选择，而不是把项目对象泄漏进 Compiler。
+
+Newton / Warp 对照资料：
+
+- <https://github.com/newton-physics/newton/blob/v1.5.0/newton/_src/solvers/vbd/solver_vbd.py>
+- <https://github.com/newton-physics/newton/blob/main/newton/_src/sim/graph_coloring.py>
+- <https://github.com/NVIDIA/warp/blob/34e627b9/warp/_src/coloring.py>

@@ -261,7 +261,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     }
     // A color consumes one slot at every writable endpoint. Place relations with
     // fewer slots first, then prefer numerically heavier work when slot cost ties.
-    // This maximizes useful colored work under the user's fixed color budget.
+    // This maximizes useful candidate work under the user's color upper bound.
     std::sort(coloringOrder.begin(), coloringOrder.end(), [&](uint32_t a, uint32_t b) {
         const auto& x = priorities[a];
         const auto& y = priorities[b];
@@ -296,6 +296,54 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         p->statistics.colors = std::max(p->statistics.colors, color + 1);
         writableEndpoints(instance,
                           [&](uint32_t variable) { used[variable] |= uint64_t(1) << color; });
+    }
+    p->statistics.candidateColors = p->statistics.colors;
+    if (policy.mode == SolveMode::Hybrid && !p->dynamicTopology && p->statistics.colors > 1) {
+        std::vector<uint32_t> incidence(writable.size());
+        bool hasOverflow = false;
+        for (const auto& instance : instances) {
+            uint32_t endpoints = 0;
+            writableEndpoints(instance, [&](uint32_t variable) {
+                ++incidence[variable];
+                ++endpoints;
+            });
+            hasOverflow = hasOverflow || (endpoints && instance.color < 0);
+        }
+        if (hasOverflow) {
+            // Gather is already mandatory. Tail colors then add graph-wide
+            // synchronization while doing work the Jacobi path can absorb. Retain
+            // the shortest prefix that still updates at least half of every
+            // variable's static incidence in place; colorBudget remains an upper
+            // bound, and models that cannot reach this coverage keep every color.
+            std::vector<std::vector<uint32_t>> colorIncidence(p->statistics.colors);
+            for (const auto& instance : instances)
+                if (instance.color >= 0)
+                    writableEndpoints(instance, [&](uint32_t variable) {
+                        colorIncidence[uint32_t(instance.color)].push_back(variable);
+                    });
+            std::vector<uint32_t> covered(writable.size());
+            uint32_t selected = p->statistics.colors;
+            for (uint32_t color = 0; color < p->statistics.colors; ++color) {
+                for (auto variable : colorIncidence[color])
+                    ++covered[variable];
+                bool sufficient = true;
+                for (uint32_t variable = 0; variable < incidence.size(); ++variable)
+                    if (uint64_t(covered[variable]) * 2 < incidence[variable]) {
+                        sufficient = false;
+                        break;
+                    }
+                if (sufficient) {
+                    selected = color + 1;
+                    break;
+                }
+            }
+            if (selected < p->statistics.colors) {
+                for (auto& instance : instances)
+                    if (instance.color >= int32_t(selected))
+                        instance.color = -1;
+                p->statistics.colors = selected;
+            }
+        }
     }
     std::vector<uint32_t> degree(writable.size());
     for (const auto& instance : instances)

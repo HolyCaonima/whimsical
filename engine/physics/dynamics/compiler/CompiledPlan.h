@@ -64,7 +64,7 @@ struct Batch {
 struct PlanStatistics {
     uint64_t variables = 0, relations = 0, endpointReferences = 0;
     uint64_t coloredRelations = 0, jacobiRelations = 0, incidenceEntries = 0;
-    uint32_t colors = 0;
+    uint32_t colors = 0, candidateColors = 0;
     uint64_t storageBytes = 0;
     uint32_t components = 0, localRegions = 0;
     uint32_t localSharedBytes = 0;
