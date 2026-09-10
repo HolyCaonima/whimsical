@@ -89,11 +89,13 @@ powershell -ExecutionPolicy Bypass -File tools/build.ps1
 
 通过 JavaScript 定义数学空间、变量和约束关系，在运行时编译成 GPU 求解执行图。编译器自动生成 Jacobian、安排求解顺序，并根据依赖与容量融合执行区域；运行时支持数值参数更新、拓扑变更后的重新编译与状态迁移，以及异步提交和结果读取。
 
-[![ConstraintLab：通用 GPU Dynamics 方案的绳索交互示例](docs/screenshots/constraint-lab.png)](docs/screenshots/constraint-lab.png)
+[![ConstraintLab：四根角绳悬挂的绳布拼接网，全部位于同一自由度空间和关系图](docs/screenshots/constraint-lab.png)](docs/screenshots/constraint-lab.png)
 
-当前画面用绳索演示这套流程：距离、球面碰撞、地面碰撞和阻尼都由项目数学表达式定义。可以修改柔顺度、释放端点，或切换规模与求解策略，观察同一通用编译与运行方案下的结果。
+当前画面由 16 块布片、72 根短连接绳和 4 根角绳组成，但它们不是分别模拟后粘合的对象：704 个 R3 变量与 4,136 个关系属于同一个自由度空间和同一张连通关系图。Compiler 只编译空间、端点和数学关系，并不知道绳子或布料类型。
 
-**先试试：** 切换 Hybrid / Jacobi 和 1 / 16 / 64 条示例，比较求解效果；I 施加扰动，C 释放端点，Space 暂停，N 单步。数学定义入口是项目的 `Content/scripts/model.js`。
+项目还包含“棘轮差动星仪”：历史棘轮、非圆传动与三索差动由用户关系定义在同一个 R1 变量集上，形成一条可观察的状态与运动传播链，而不是三个并排运行的专用组件。
+
+**先试试：** 切换到“绳布拼接网”，用 W 摆动四个吊点、C 施加风力、I 施加冲量；再切换“棘轮星仪”，用 I 上弦、C 脱开棘轮观察整套机构回程。数学定义入口是 `Projects/ConstraintLab/Content/scripts/woven.js` 与 `Projects/ConstraintLab/Content/scripts/clockwork.js`。
 
 [查看方案与示例操作](Projects/ConstraintLab/README.md) · [数学接口与运行时](docs/dynamics.md) · [执行图编译与优化](docs/dynamics-compiler-optimization.md)
 
