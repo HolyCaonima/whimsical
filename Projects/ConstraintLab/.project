@@ -4,8 +4,9 @@
   "name": "Constraint Lab",
   "startupMap": null,
   "scripts": [
-    "/Game/scripts/model",
-    "/Game/scripts/view",
+    "/Game/scripts/lab",
+    "/Game/scripts/rope",
+    "/Game/scripts/cloth",
     "/Game/scripts/main"
   ]
 }

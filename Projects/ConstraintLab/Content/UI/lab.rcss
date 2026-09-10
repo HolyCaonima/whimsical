@@ -10,6 +10,8 @@ button.primary:hover { background-color:#9befdc; }
 .brand-mark { position:absolute; left:28px; top:15px; font-size:44px; color:#69d7c2; }
 .brand { position:absolute; left:87px; top:18px; font-size:22px; font-weight:bold; letter-spacing:2px; }
 .brand span { display:block; font-size:11px; font-weight:normal; letter-spacing:1px; color:#7798a9; margin-top:5px; }
+#tabs { position:absolute; left:390px; top:24px; }
+#tabs button { min-width:84px; margin-right:7px; text-align:center; padding:9px 13px; }
 #status { position:absolute; right:28px; top:26px; padding:8px 14px; border:1px #245650; border-radius:5px; background-color:#12322f; color:#8ae1ce; font-size:11px; font-weight:bold; letter-spacing:1px; }
 #status.warning { background-color:#4b201d; color:#ffb391; border-color:#884237; }
 #viewport { position:absolute; left:18px; top:100px; right:330px; bottom:62px; border:1px #243d48; border-radius:4px; }
@@ -22,18 +24,18 @@ button.primary:hover { background-color:#9befdc; }
 #equation { font-size:16px; color:#c9e7e6; }
 #sample-note { margin-top:8px; font-size:11px; color:#7e9aa8; }
 .legend { position:absolute; right:23px; bottom:29px; color:#8ca7b3; font-size:11px; }
-.teal { color:#69d7c2; margin-left:10px; }.gold { color:#ffc66c; margin-left:15px; }
+.teal { color:#69d7c2; margin-left:10px; }.gold { color:#ffc66c; margin-left:15px; }.rose { color:#e07a68; margin-left:10px; }
 #sidebar { position:absolute; top:100px; right:18px; bottom:62px; width:294px; background-color:#0e1c28; border:1px #243d48; border-radius:4px; overflow:auto; pointer-events:auto; }
-.section { padding:10px 19px; border-bottom:1px #243641; }
-#population { font-size:39px; font-weight:bold; color:#eff9fb; margin:6px 0 1px; }
+.section { padding:9px 19px; border-bottom:1px #243641; }
+#population { font-size:36px; font-weight:bold; color:#eff9fb; margin:4px 0 1px; }
 .muted { font-size:11px; color:#7794a3; }
-.sizes { margin:10px 0 10px; }.sizes button { width:55px; margin-right:4px; text-align:center; padding:7px 9px; }
-.section-title { font-weight:bold; font-size:13px; color:#d0e1e7; margin-bottom:9px; }
-.buttons { margin-bottom:8px; }.buttons button { margin-right:5px; }
-.wide { display:block; width:226px; text-align:center; margin-top:8px; }
-.metric { margin-top:10px; font-size:12px; }.metric span { color:#7795a6; }.metric b { float:right; color:#c9e0e7; font-weight:normal; }
-.control-row { height:35px; margin-top:8px; font-size:12px; }.control-row span { display:inline-block; width:93px; padding-top:8px; color:#8eacbc; }.control-row button { padding:6px 10px; font-size:12px; }.control-row b { display:inline-block; min-width:41px; text-align:center; font-weight:normal; }
-.telemetry { border-bottom:0px; }.telemetry .metric { margin-top:9px; }
+.sizes { margin:9px 0 8px; }.sizes button { width:55px; margin-right:4px; text-align:center; padding:7px 9px; }
+.section-title { font-weight:bold; font-size:13px; color:#d0e1e7; margin-bottom:8px; }
+.buttons { margin-bottom:6px; }.buttons button { margin-right:5px; }
+.wide { display:block; width:226px; text-align:center; margin-top:7px; }
+.metric { margin-top:9px; font-size:12px; }.metric span { color:#7795a6; }.metric b { float:right; color:#c9e0e7; font-weight:normal; }
+.control-row { height:33px; margin-top:6px; font-size:12px; }.control-row span { display:inline-block; width:93px; padding-top:8px; color:#8eacbc; }.control-row button { padding:6px 10px; font-size:12px; }.control-row b { display:inline-block; min-width:41px; text-align:center; font-weight:normal; }
+.telemetry { border-bottom:0px; }.telemetry .metric { margin-top:8px; }
 .meter-track { height:3px; margin-top:10px; background-color:#233b48; }#meter { width:0%; height:3px; background-color:#65d3be; }
 .diagnostics { padding-top:9px; border-top:1px #243641; }
 #footer { position:absolute; bottom:0; left:0; width:100%; height:45px; background-color:#0c1721; border-top:1px #263946; font-size:11px; color:#7c9aa9; }

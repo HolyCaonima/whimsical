@@ -41,13 +41,15 @@ for direction in [-1,1]:
 box([-3.5,5,0],[0.22,0.22,0.22])
 write('Stand',v,ids)
 # Keep material ids stable when regenerating geometry.
-for name,color,emission in [('Node',[0.72,0.40,0.13],[0,0,0]),('Edge',[0.78,0.45,0.17],[0,0,0]),('Obstacle',[0.07,0.36,0.38],[0.005,0.02,0.02])]:
+for name,color,emission,roughness in [('Node',[0.72,0.40,0.13],[0,0,0],0.75),('Edge',[0.78,0.45,0.17],[0,0,0],0.75),
+                                      ('Obstacle',[0.07,0.36,0.38],[0.005,0.02,0.02],0.75),
+                                      ('Cloth',[0.66,0.24,0.19],[0.012,0.003,0.002],0.92)]:
     path=root/'Materials'/(name+'.asset')
     if path.exists():
         lines=path.read_text(encoding='utf-8-sig').splitlines();header=json.loads(lines[1]);body=json.loads('\n'.join(lines[2:]))
     else:
         header=dict(id=hashlib.md5(('ConstraintLab/material/'+name).encode()).hexdigest(),type='Material',name=name,version=1,storage='embedded',metadata={})
         body=json.loads('\n'.join((root/'Materials/Node.asset').read_text().splitlines()[2:]))
-    body['properties'].update(baseColor=color,emission=emission,roughness=0.75)
+    body['properties'].update(baseColor=color,emission=emission,roughness=roughness)
     path.write_text('ALAS1\n'+json.dumps(header)+'\n'+json.dumps(body,indent=2)+'\n',encoding='utf-8')
-print('Rope meshes generated.')
+print('Lab meshes and materials generated.')

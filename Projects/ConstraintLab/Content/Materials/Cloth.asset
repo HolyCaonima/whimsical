@@ -1,0 +1,22 @@
+ALAS1
+{"id": "011ca35f78c69e1be4b9398b842beb5b", "type": "Material", "name": "Cloth", "version": 1, "storage": "embedded", "metadata": {}}
+{
+  "shader": {
+    "id": "09ea3e8ad6a24bb8a7cdf45a42a418aa",
+    "path": "/Game/shaders/Surface"
+  },
+  "properties": {
+    "baseColor": [
+      0.66,
+      0.24,
+      0.19
+    ],
+    "roughness": 0.92,
+    "emission": [
+      0.012,
+      0.003,
+      0.002
+    ]
+  },
+  "textures": {}
+}
