@@ -7,6 +7,8 @@
     "/Game/scripts/lab",
     "/Game/scripts/rope",
     "/Game/scripts/cloth",
+    "/Game/scripts/woven",
+    "/Game/scripts/threaded",
     "/Game/scripts/main"
   ]
 }
