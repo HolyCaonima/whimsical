@@ -90,6 +90,11 @@ void defaults(RelationSet& set) {
         for (uint32_t c = 0; c < set.type->rows; ++c)
             if (set.compliance.at(i, c) < 0)
                 throw std::invalid_argument("Compliance must be nonnegative");
+    if (set.pairs) {
+        if (set.type->objects.size() != 2 || !set.endpoints.empty() || set.dynamicEndpoints)
+            throw std::invalid_argument("Object pairs require two formal objects and static object bindings");
+        return;
+    }
     if (set.endpoints.size() != set.type->spaces.size())
         throw std::invalid_argument("Relation endpoint arity mismatch");
     for (const auto& column : set.endpoints)
@@ -276,6 +281,16 @@ void RelationType::validate() const {
         throw std::invalid_argument("Relation requires name, endpoints and residual rows");
     for (const auto& s : spaces)
         s->validate();
+    if (!objects.empty()) {
+        if (objects.size() != 2 || objects[0].size() + objects[1].size() != spaces.size())
+            throw std::invalid_argument("Relation requires exactly two named object schemas");
+        for (const auto& fields : objects) {
+            auto names = fields;
+            std::sort(names.begin(), names.end());
+            if (std::adjacent_find(names.begin(), names.end()) != names.end())
+                throw std::invalid_argument("Duplicate formal object DOF field");
+        }
+    }
     residual.validate();
     if (residual.inputs != inputSize() || residual.outputs.size() != rows)
         throw std::invalid_argument("Residual dimension mismatch");
@@ -337,7 +352,60 @@ SetId Model::variables(VariableSet set) {
     pending_.topology = true;
     return id;
 }
+uint32_t Model::object(Object object) {
+    if (object.kind == Object::Kind::Single && object.count != 1)
+        throw std::invalid_argument("A single object has exactly one member");
+    for (const auto& [name, source] : object.dofs) {
+        if (name.empty() || source.rows() != object.count)
+            throw std::invalid_argument("Object DOF fields must match its declared shape");
+        for (uint32_t i = 0; i < source.rows(); ++i) {
+            const auto ref = source.at(i);
+            if (ref.set >= data_->variables.size() || ref.index >= data_->variables[ref.set].count)
+                throw std::invalid_argument("Object references a missing DOF");
+        }
+    }
+    writable();
+    auto id = uint32_t(data_->objects.size());
+    data_->objects.push_back(std::move(object));
+    pending_.topology = true;
+    return id;
+}
+uint32_t Model::member(uint32_t id, uint32_t index) {
+    const auto& parent = data_->objects.at(id);
+    if (parent.kind != Object::Kind::Collection || index >= parent.count)
+        throw std::invalid_argument("Member requires a collection and an in-range index");
+    Object child;
+    child.name = parent.name + "[" + std::to_string(index) + "]";
+    child.member = Object::Member{id, index};
+    for (const auto& [name, source] : parent.dofs)
+        child.dofs.emplace(name, EndpointSource::object(source.at(index)));
+    return object(std::move(child));
+}
+uint32_t pairCount(const ModelData& data, const PairBinding& pair) {
+    const auto& a = data.objects.at(pair.a);
+    const auto& b = data.objects.at(pair.b);
+    uint64_t count = uint64_t(a.count) * b.count;
+    if (pair.a == pair.b && a.kind == Object::Kind::Collection) {
+        if (pair.self == PairBinding::Self::Unspecified)
+            throw std::invalid_argument("A collection paired with itself requires directed/undirected and includeSelf rules");
+        if (!pair.includeSelf)
+            count -= a.count;
+        if (pair.self == PairBinding::Self::Undirected)
+            count = pair.includeSelf ? (count + a.count) / 2 : count / 2;
+    } else if (pair.self != PairBinding::Self::Unspecified)
+        throw std::invalid_argument("Self-pair rules apply only to the same collection object");
+    if (count > UINT32_MAX)
+        throw std::overflow_error("Expanded pair count exceeds 32-bit addressing");
+    return uint32_t(count);
+}
 SetId Model::relations(RelationSet set) {
+    if (set.pairs) {
+        uint64_t count = 0;
+        for (const auto& pair : *set.pairs)
+            count += pairCount(*data_, pair);
+        if (count != set.count)
+            throw std::invalid_argument("Expanded pair field count mismatch");
+    }
     defaults(set);
     writable();
     auto id = uint32_t(data_->relations.size());
@@ -380,6 +448,8 @@ void Model::patch(FieldKind kind, SetId set, uint32_t first, const std::vector<f
 void Model::replaceEndpoints(SetId id, uint32_t endpoint, std::vector<VariableRef> values) {
     writable();
     auto& set = data_->relations.at(id);
+    if (set.pairs)
+        throw std::invalid_argument("Object pair topology cannot be edited as endpoint columns");
     if (values.size() != set.count)
         throw std::invalid_argument("Endpoint replacement count mismatch");
     set.endpoints.at(endpoint) =
@@ -404,6 +474,8 @@ void Model::appendRelations(SetId id, std::vector<std::vector<VariableRef>> endp
                             const std::vector<float>& history) {
     writable();
     auto next = data_->relations.at(id);
+    if (next.pairs)
+        throw std::invalid_argument("Object pairs cannot append endpoint columns");
     if (endpoints.size() != next.endpoints.size())
         throw std::invalid_argument("Append relation arity mismatch");
     const auto count = uint32_t(endpoints[0].size());

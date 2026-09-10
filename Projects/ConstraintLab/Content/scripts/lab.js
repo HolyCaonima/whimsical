@@ -13,21 +13,30 @@ Lab.add=function(test){Lab.experiments[test.id]=test;Lab.order.push(test.id);if(
 
 // A small library of parameterised relations. Experiments reach for these; they do not redefine them.
 Lab.definitions=function(){
-    var X=Lab.X,space=Lab.space=X.space(3);
-    Lab.distance=X.defineRelation({name:'distance',spaces:[space,space],parameters:1},function(e){
-        return {residual:[e.sub(e.length(e.vsub(e.endpoints[0],e.endpoints[1])),e.parameter(0))]};
+    var X=Lab.X,space=Lab.space=X.space(3),scalar=Lab.scalar=X.space(1);
+    Lab.distance=X.defineRelation({name:'distance',objects:[{position:space},{position:space}],parameters:1},function(op,a,b){
+        return {residual:[op.sub(op.length(op.vsub(a.position,b.position)),op.parameter(0))]};
     });
-    Lab.floor=X.defineRelation({name:'ground half space',spaces:[space],parameters:1,kind:'greaterEqual'},function(e){
-        return {residual:[e.sub(e.endpoints[0][1],e.parameter(0))]};
+    Lab.floor=X.defineRelation({name:'ground half space',objects:[{position:space},{height:scalar}],
+        parameters:1,kind:'greaterEqual'},function(op,a,b){
+        return {residual:[op.sub(op.sub(a.position[1],b.height[0]),op.parameter(0))]};
     });
-    Lab.sphere=X.defineRelation({name:'sphere exterior',spaces:[space],parameters:4,kind:'greaterEqual'},function(e){
-        var centre=[e.parameter(0),e.parameter(1),e.parameter(2)];
-        return {residual:[e.sub(e.length(e.vsub(e.endpoints[0],centre)),e.parameter(3))]};
+    Lab.sphere=X.defineRelation({name:'sphere exterior',objects:[{position:space},{position:space,radius:scalar}],
+        parameters:1,kind:'greaterEqual'},function(op,a,b){
+        return {residual:[op.sub(op.length(op.vsub(a.position,b.position)),op.add(b.radius[0],op.parameter(0)))]};
     });
-    Lab.damping=X.defineRelation({name:'displacement resistance',spaces:[space],rows:3,history:3},function(e){
-        return {residual:e.vsub(e.endpoints[0],[e.state(0),e.state(1),e.state(2)]),update:e.endpoints[0]};
+    Lab.damping=X.defineRelation({name:'displacement resistance',objects:[{position:space},{}],rows:3,history:3},function(op,a,b){
+        return {residual:op.vsub(a.position,[op.state(0),op.state(1),op.state(2)]),update:a.position};
     });
     Lab.order.forEach(function(id){if(Lab.experiments[id].define)Lab.experiments[id].define();});
+};
+// The stage is one explicit, stationary object exposing several named DOFs.
+Lab.environment=function(model){
+    var X=Lab.X;
+    var centre=X.defineDofs(model,{name:'obstacle centre',space:Lab.space,count:1,initial:[0,1.8,0],readOnly:true});
+    var dimensions=X.defineDofs(model,{name:'stage dimensions',space:Lab.scalar,count:2,initial:[0,1.1],readOnly:true});
+    return X.defineObject(model,{name:'stage',kind:'single',dofs:{
+        position:centre,height:X.dof(dimensions,0),radius:X.dof(dimensions,1)}});
 };
 Lab.compliance=function(){return [0.0005,0.00001,0.0000001][Lab.stiffness];};
 

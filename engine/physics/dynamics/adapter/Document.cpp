@@ -146,8 +146,47 @@ EndpointSource endpointFrom(const Json& value) {
     return EndpointSource(std::move(refs));
 }
 } // namespace
+Object objectFromDocument(const Json& j) {
+    Object object;
+    object.name = j.at("name").string();
+    auto kind = j.at("kind").string();
+    if (kind != "single" && kind != "collection")
+        throw std::invalid_argument("Object kind must be single or collection");
+    object.kind = kind == "single" ? Object::Kind::Single : Object::Kind::Collection;
+    object.count = j.at("count").uint();
+    for (const auto& field : j.at("dofs").elements())
+        if (!object.dofs.emplace(field.at("name").string(), endpointFrom(field.at("source"))).second)
+            throw std::invalid_argument("Duplicate object DOF field");
+    if (j.contains("member"))
+        object.member = Object::Member{j.at("member").at(0).uint(), j.at("member").at(1).uint()};
+    return object;
+}
+PairBinding pairFromDocument(const Json& j) {
+    PairBinding pair;
+    pair.a = j.at("a").uint();
+    pair.b = j.at("b").uint();
+    if (j.contains("self")) {
+        const auto rule = j.at("self").string();
+        if (rule != "directed" && rule != "undirected")
+            throw std::invalid_argument("Self-pair rule must be directed or undirected");
+        pair.self = rule == "directed" ? PairBinding::Self::Directed : PairBinding::Self::Undirected;
+        pair.includeSelf = j.at("includeSelf").boolean();
+    }
+    return pair;
+}
 Json document(const ModelSnapshot& snapshot) {
     Json spaces = Json::array(), types = Json::array(), variables = Json::array(), relations = Json::array();
+    Json objects = Json::array();
+    for (const auto& object : snapshot.data->objects) {
+        auto fields = Json::array();
+        for (const auto& [name, source] : object.dofs)
+            fields.push({{"name", name}, {"source", endpointDocument(source)}});
+        Json value = {{"name", object.name}, {"kind", object.kind == Object::Kind::Single ? "single" : "collection"},
+                      {"count", object.count}, {"dofs", fields}};
+        if (object.member)
+            value["member"] = Json::array({object.member->object, object.member->index});
+        objects.push(std::move(value));
+    }
     std::map<const Space*, uint32_t> spaceIds;
     auto spaceId = [&](const SpaceRef& s) {
         auto it = spaceIds.find(s.get());
@@ -188,12 +227,22 @@ Json document(const ModelSnapshot& snapshot) {
                          {"residual", document(t.residual)}};
             if (t.update)
                 type["update"] = document(*t.update);
+            if (!t.objects.empty()) {
+                auto schemas = Json::array();
+                for (const auto& fields : t.objects) {
+                    auto names = Json::array();
+                    for (const auto& name : fields)
+                        names.push(name);
+                    schemas.push(std::move(names));
+                }
+                type["objects"] = std::move(schemas);
+            }
             types.push(std::move(type));
         }
         auto endpoints = Json::array();
         for (const auto& source : r.endpoints)
             endpoints.push(endpointDocument(source));
-        relations.push({{"name", r.name},
+        Json relation = {{"name", r.name},
                         {"type", it->second},
                         {"count", r.count},
                         {"dynamicEndpoints", r.dynamicEndpoints},
@@ -201,9 +250,22 @@ Json document(const ModelSnapshot& snapshot) {
                         {"parameters", fieldDocument(r.parameters)},
                         {"compliance", fieldDocument(r.compliance)},
                         {"history", fieldDocument(r.initialHistory)},
-                        {"enabled", fieldDocument(r.enabled)}});
+                        {"enabled", fieldDocument(r.enabled)}};
+        if (r.pairs) {
+            auto pairs = Json::array();
+            for (const auto& pair : *r.pairs) {
+                Json binding = {{"a", pair.a}, {"b", pair.b}};
+                if (pair.self != PairBinding::Self::Unspecified) {
+                    binding["self"] = pair.self == PairBinding::Self::Directed ? "directed" : "undirected";
+                    binding["includeSelf"] = pair.includeSelf;
+                }
+                pairs.push(std::move(binding));
+            }
+            relation["pairs"] = std::move(pairs);
+        }
+        relations.push(std::move(relation));
     }
-    return {{"spaces", spaces}, {"types", types}, {"variables", variables}, {"relations", relations}};
+    return {{"spaces", spaces}, {"types", types}, {"variables", variables}, {"objects", objects}, {"relations", relations}};
 }
 std::unique_ptr<Model> modelFromDocument(const Json& j) {
     std::vector<SpaceRef> spaces;
@@ -233,6 +295,12 @@ std::unique_ptr<Model> modelFromDocument(const Json& j) {
         t->residual = formula(v.at("residual"));
         if (v.contains("update"))
             t->update = formula(v.at("update"));
+        if (v.contains("objects"))
+            for (const auto& fields : v.at("objects").elements()) {
+                t->objects.emplace_back();
+                for (const auto& name : fields.elements())
+                    t->objects.back().push_back(name.string());
+            }
         t->validate();
         types.push_back(t);
     }
@@ -250,6 +318,14 @@ std::unique_ptr<Model> modelFromDocument(const Json& j) {
         s.enabled = fieldFrom(v.at("enabled"), s.count, 1);
         model->variables(std::move(s));
     }
+    if (j.contains("objects"))
+        for (const auto& v : j.at("objects").elements()) {
+            auto object = objectFromDocument(v);
+            if (object.member)
+                model->member(object.member->object, object.member->index);
+            else
+                model->object(std::move(object));
+        }
     for (const auto& v : j.at("relations").elements()) {
         RelationSet s;
         s.name = v.at("name").string();
@@ -258,6 +334,11 @@ std::unique_ptr<Model> modelFromDocument(const Json& j) {
         s.dynamicEndpoints = v.at("dynamicEndpoints").boolean();
         for (const auto& source : v.at("endpoints").elements())
             s.endpoints.push_back(endpointFrom(source));
+        if (v.contains("pairs")) {
+            s.pairs.emplace();
+            for (const auto& pair : v.at("pairs").elements())
+                s.pairs->push_back(pairFromDocument(pair));
+        }
         s.parameters = fieldFrom(v.at("parameters"), s.count, s.type->parameters);
         s.compliance = fieldFrom(v.at("compliance"), s.count, s.type->rows);
         s.initialHistory = fieldFrom(v.at("history"), s.count, s.type->history);

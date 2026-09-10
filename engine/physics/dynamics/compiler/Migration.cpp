@@ -38,12 +38,14 @@ StateMigration Compiler::migration(const CompiledPlan& previous, const CompiledP
         const auto& before = previous.model.data->relations[id];
         const auto& after = next.model.data->relations[id];
         if (before.dynamicEndpoints || after.dynamicEndpoints ||
-            before.endpoints.size() != after.endpoints.size())
+            oldType.spaces.size() != type.spaces.size())
             continue;
         for (uint32_t i = 0; i < std::min(a.count, b.count); ++i) {
             bool same = true;
-            for (size_t e = 0; e < before.endpoints.size(); ++e)
-                same = same && before.endpoints[e].at(i) == after.endpoints[e].at(i);
+            for (size_t e = 0; e < type.spaces.size(); ++e) {
+                auto slot = size_t(i) * type.spaces.size() + e;
+                same = same && previous.relationDofs[id][slot] == next.relationDofs[id][slot];
+            }
             if (same)
                 for (uint32_t c = 0; c < type.history; ++c)
                     mapping.insert(mapping.end(),

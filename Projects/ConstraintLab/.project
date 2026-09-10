@@ -10,6 +10,7 @@
     "/Game/scripts/woven",
     "/Game/scripts/threaded",
     "/Game/scripts/clockwork",
+    "/Game/scripts/particles",
     "/Game/scripts/main"
   ]
 }

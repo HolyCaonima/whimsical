@@ -31,11 +31,13 @@ cloth.keys={14:'grip',34:'wind',91:function(){cloth.raise(0.4);},93:function(){c
 // Friction is not a solver concept: the sheet keeps its own displacement resistance,
 // and that resistance grows wherever it lies against the obstacle or the floor.
 cloth.define=function(){
-    cloth.contact=Lab.X.defineRelation({name:'contact grip',spaces:[Lab.space],parameters:6,rows:3,history:3},function(e){
-        var q=e.endpoints[0],centre=[e.parameter(0),e.parameter(1),e.parameter(2)];
-        var gap=e.min(e.sub(e.length(e.vsub(q,centre)),e.parameter(3)),e.sub(q[1],e.parameter(4)));
-        var weight=e.add(1,e.mul(e.parameter(5),e.min(1,e.max(0,e.sub(1,e.div(gap,0.1))))));
-        return {residual:e.scale(e.vsub(q,[e.state(0),e.state(1),e.state(2)]),weight),update:q};
+    cloth.contact=Lab.X.defineRelation({name:'contact grip',
+        objects:[{position:Lab.space},{position:Lab.space,radius:Lab.scalar,height:Lab.scalar}],parameters:3,rows:3,history:3},function(op,a,b){
+        var q=a.position;
+        var gap=op.min(op.sub(op.length(op.vsub(q,b.position)),op.add(b.radius[0],op.parameter(0))),
+            op.sub(q[1],op.add(b.height[0],op.parameter(1))));
+        var weight=op.add(1,op.mul(op.parameter(2),op.min(1,op.max(0,op.sub(1,op.div(gap,0.1))))));
+        return {residual:op.scale(op.vsub(q,[op.state(0),op.state(1),op.state(2)]),weight),update:q};
     });
 };
 cloth.layout=function(){return String(cloth.side);};
@@ -56,7 +58,7 @@ cloth.build=function(model){
     cloth.forceInput=true;cloth.gripDirty=false;cloth.base=null;
     cloth.corners=[0,n-1,(n-1)*n,total-1];
     var initial=new Float32Array(total*3),metric=new Float32Array(total*9),
-        enabled=new Float32Array(total),ids=new Uint32Array(total);
+        enabled=new Float32Array(total);
     cloth.acceleration=new Float32Array(total*3);
     for(j=0;j<n;++j)for(i=0;i<n;++i){
         k=j*n+i;
@@ -65,27 +67,29 @@ cloth.build=function(model){
         initial[k*3+1]=cloth.height+0.01*Math.sin(i*1.7)*Math.cos(j*2.3);
         initial[k*3+2]=(j/(n-1)-0.5)*cloth.span;
         metric[k*9]=metric[k*9+4]=metric[k*9+8]=1;
-        cloth.acceleration[k*3+1]=-9.81;enabled[k]=1;ids[k]=k;}
-    Lab.variables=X.variables(model,Lab.space,{count:total,initial:initial,inverseMetric:metric});
+        cloth.acceleration[k*3+1]=-9.81;enabled[k]=1;}
+    var dofs=X.defineDofs(model,{name:'cloth positions',space:Lab.space,count:total,initial:initial,inverseMetric:metric});
+    Lab.variables=dofs.set;
+    var particles=X.defineObject(model,{name:'cloth nodes',kind:'collection',dofs:{position:dofs}});
+    var environment=Lab.environment(model), members=[];
+    for(i=0;i<total;++i)members.push(X.defineMember(particles,i));
     function links(steps){
-        var rows=0,s,a,b,at=0;
+        var rows=0,s,pairs=[];
         for(s=0;s<steps.length;++s)rows+=(n-Math.abs(steps[s][0]))*(n-Math.abs(steps[s][1]));
-        a=new Uint32Array(rows);b=new Uint32Array(rows);
         for(s=0;s<steps.length;++s)for(j=0;j<n;++j)for(i=0;i<n;++i){
             var i2=i+steps[s][0],j2=j+steps[s][1];
             if(i2<0||i2>=n||j2<0||j2>=n)continue;
-            a[at]=j*n+i;b[at]=j2*n+i2;++at;}
-        return {rows:rows,columns:[{set:Lab.variables,indices:a},{set:Lab.variables,indices:b}]};
+            pairs.push([members[j*n+i],members[j2*n+i2]]);}
+        return {rows:rows,pairs:pairs};
     }
     var structure=links([[1,0],[0,1]]),shear=links([[1,1],[1,-1]]),bend=links([[2,0],[0,2]]);
     cloth.structureRows=structure.rows;cloth.shearRows=shear.rows;cloth.bendRows=bend.rows;
-    cloth.structure=X.relations(model,Lab.distance,{endpoints:structure.columns,parameters:[cell],compliance:[Lab.compliance()]});
-    cloth.shear=X.relations(model,Lab.distance,{endpoints:shear.columns,parameters:[cell*Math.SQRT2],compliance:[0.00005]});
-    cloth.bend=X.relations(model,Lab.distance,{endpoints:bend.columns,parameters:[2*cell],compliance:[0.0002]});
-    var points=[{set:Lab.variables,indices:ids}];
-    cloth.floorSet=X.relations(model,Lab.floor,{endpoints:points,parameters:[0.03],enabled:enabled});
-    cloth.sphereSet=X.relations(model,Lab.sphere,{endpoints:points,parameters:[0,1.8,0,1.13],enabled:enabled});
-    cloth.gripSet=X.relations(model,cloth.contact,{endpoints:points,parameters:[0,1.8,0,1.13,0.03,10],
+    cloth.structure=X.pairs(Lab.distance,structure.pairs,[cell],{compliance:[Lab.compliance()]});
+    cloth.shear=X.pairs(Lab.distance,shear.pairs,[cell*Math.SQRT2],{compliance:[0.00005]});
+    cloth.bend=X.pairs(Lab.distance,bend.pairs,[2*cell],{compliance:[0.0002]});
+    cloth.floorSet=X.pair(Lab.floor,particles,environment,[0.03],{enabled:enabled});
+    cloth.sphereSet=X.pair(Lab.sphere,particles,environment,[0.03],{enabled:enabled});
+    cloth.gripSet=X.pair(cloth.contact,particles,environment,[0.03,0.03,10],{
         history:initial,compliance:[0.02,0.02,0.02],enabled:enabled});
     Lab.total=total;Lab.relations=structure.rows+shear.rows+bend.rows+3*total;
     return initial;

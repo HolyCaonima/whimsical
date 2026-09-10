@@ -91,24 +91,28 @@ thread.build=function(model){
     thread.anchorIndices=[thread.leftAnchor,thread.rightAnchor];
 
     var total=positions.length,initial=new Float32Array(total*3),metric=new Float32Array(total*9),
-        enabled=new Float32Array(total),ids=new Uint32Array(total);
+        enabled=new Float32Array(total);
     thread.acceleration=new Float32Array(total*3);thread.movable=new Float32Array(total);
     for(i=0;i<total;++i){
-        initial[i*3]=positions[i][0];initial[i*3+1]=positions[i][1];initial[i*3+2]=positions[i][2];ids[i]=i;
+        initial[i*3]=positions[i][0];initial[i*3+1]=positions[i][1];initial[i*3+2]=positions[i][2];
         if(!fixed[i]){
             metric[i*9]=metric[i*9+4]=metric[i*9+8]=1;
             thread.acceleration[i*3+1]=-9.81;thread.movable[i]=1;enabled[i]=1;
         }
     }
-    Lab.variables=X.variables(model,Lab.space,{count:total,initial:initial,inverseMetric:metric});
+    var dofs=X.defineDofs(model,{name:'threaded positions',space:Lab.space,count:total,initial:initial,inverseMetric:metric});
+    Lab.variables=dofs.set;
+    var particles=X.defineObject(model,{name:'threaded nodes',kind:'collection',dofs:{position:dofs}});
+    var environment=Lab.environment(model), members=[];
+    for(i=0;i<total;++i)members.push(X.defineMember(particles,i));
     function links(steps){
-        var a=[],b=[],step;
+        var a=[],b=[],pairs=[],step;
         for(step=0;step<steps.length;++step)for(j=0;j<n;++j)for(i=0;i<n;++i){
             var i2=i+steps[step][0],j2=j+steps[step][1];
-            if(i2>=0&&i2<n&&j2>=0&&j2<n){a.push(j*n+i);b.push(j2*n+i2);}
+            if(i2>=0&&i2<n&&j2>=0&&j2<n){a.push(j*n+i);b.push(j2*n+i2);pairs.push([members[j*n+i],members[j2*n+i2]]);}
         }
         return {rows:a.length,a:new Uint32Array(a),b:new Uint32Array(b),
-                columns:[{set:Lab.variables,indices:new Uint32Array(a)},{set:Lab.variables,indices:new Uint32Array(b)}]};
+                pairs:pairs};
     }
     var structure=links([[1,0],[0,1]]),shear=links([[1,1],[1,-1]]),bend=links([[2,0],[0,2]]);
     thread.structureRows=structure.rows;thread.structureA=structure.a;thread.structureB=structure.b;
@@ -118,12 +122,9 @@ thread.build=function(model){
     var horizontalRows=n*(n-1),horizontalBend=n*(n-2);
     for(i=0;i<structure.rows;++i)thread.structureRests[i]=i<horizontalRows?cellX:cellY;
     for(i=0;i<bend.rows;++i)thread.bendRests[i]=i<horizontalBend?2*cellX:2*cellY;
-    thread.structureSet=X.relations(model,Lab.distance,{endpoints:structure.columns,
-        parameters:thread.structureRests,compliance:[Lab.compliance()]});
-    thread.shearSet=X.relations(model,Lab.distance,{endpoints:shear.columns,
-        parameters:[Math.sqrt(cellX*cellX+cellY*cellY)],compliance:[0.00005]});
-    thread.bendSet=X.relations(model,Lab.distance,{endpoints:bend.columns,
-        parameters:thread.bendRests,compliance:[0.0002]});
+    thread.structureSet=X.pairs(Lab.distance,structure.pairs,thread.structureRests,{compliance:[Lab.compliance()]});
+    thread.shearSet=X.pairs(Lab.distance,shear.pairs,[Math.sqrt(cellX*cellX+cellY*cellY)],{compliance:[0.00005]});
+    thread.bendSet=X.pairs(Lab.distance,bend.pairs,thread.bendRests,{compliance:[0.0002]});
 
     thread.ropeRows=thread.path.length-1;
     thread.ropeA=new Uint32Array(thread.ropeRows);thread.ropeB=new Uint32Array(thread.ropeRows);
@@ -135,12 +136,11 @@ thread.build=function(model){
         thread.baseRests[k]=Math.sqrt(dx*dx+dy*dy+dz*dz);
         thread.currentRests[k]=thread.baseRests[k]*thread.ropeScale;
     }
-    thread.ropeSet=X.relations(model,Lab.distance,{endpoints:[
-        {set:Lab.variables,indices:thread.ropeA},{set:Lab.variables,indices:thread.ropeB}],
-        parameters:thread.currentRests,compliance:[Lab.compliance()]});
-    var points=[{set:Lab.variables,indices:ids}];
-    thread.floorSet=X.relations(model,Lab.floor,{endpoints:points,parameters:[0.04],enabled:enabled});
-    thread.dampingSet=X.relations(model,Lab.damping,{endpoints:points,history:initial,
+    var ropePairs=[];
+    for(i=0;i<thread.ropeRows;++i)ropePairs.push([members[thread.ropeA[i]],members[thread.ropeB[i]]]);
+    thread.ropeSet=X.pairs(Lab.distance,ropePairs,thread.currentRests,{compliance:[Lab.compliance()]});
+    thread.floorSet=X.pair(Lab.floor,particles,environment,[0.04],{enabled:enabled});
+    thread.dampingSet=X.pair(Lab.damping,particles,environment,[],{history:initial,
         compliance:[0.04,0.04,0.04],enabled:enabled});
     thread.wind=false;thread.drive=false;thread.phase=0;thread.kick=false;
     thread.forceInput=true;thread.anchorDirty=true;

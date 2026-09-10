@@ -2,6 +2,7 @@
 #include "Expression.h"
 #include <map>
 #include <optional>
+#include <array>
 
 namespace whimsical::dynamics {
 using SetId = uint32_t;
@@ -12,9 +13,8 @@ struct VariableRef {
         return set == other.set && index == other.index;
     }
 };
-// A relation endpoint can be an arbitrary explicit column, one broadcast
-// object, or an ordered collection. Declarative sources remain intact in a
-// ModelSnapshot and are lowered only by Compiler.
+// DOF-reference storage for named object fields and the native endpoint API.
+// These are reference columns, not the user-facing Object abstraction.
 struct EndpointSource {
     enum class Kind { Explicit, Object, Collection };
     Kind kind = Kind::Explicit;
@@ -69,6 +69,22 @@ struct Space {
     static std::shared_ptr<const Space> rotation();
 };
 using SpaceRef = std::shared_ptr<const Space>;
+// Objects only organize references; they never own or duplicate mathematical state.
+struct Object {
+    enum class Kind { Single, Collection };
+    std::string name;
+    Kind kind = Kind::Single;
+    uint32_t count = 1;
+    std::map<std::string, EndpointSource> dofs;
+    struct Member { uint32_t object, index; };
+    std::optional<Member> member;
+};
+struct PairBinding {
+    uint32_t a = 0, b = 0;
+    enum class Self { Unspecified, Directed, Undirected };
+    Self self = Self::Unspecified;
+    bool includeSelf = false;
+};
 // Conditions on each residual row C, independent of solver multiplier conventions.
 enum class RelationKind { Equality, GreaterEqual, LessEqual };
 struct RelationType {
@@ -79,6 +95,9 @@ struct RelationType {
     // Inputs: endpoint states, parameters, history, dt, time. No solver state.
     Formula residual;
     std::optional<Formula> update;
+    // Named DOF fields of exactly two formal objects, in flattened input order.
+    // Empty only for the native endpoint-level construction API.
+    std::vector<std::vector<std::string>> objects;
     uint32_t stateSize() const;
     uint32_t tangentSize() const;
     uint32_t inputSize() const {
@@ -125,11 +144,15 @@ struct RelationSet {
     // Fixed capacity, runtime endpoint columns. Compiler schedules these through
     // GPU-built Jacobi incidence; changing their endpoints does not rebuild a plan.
     bool dynamicEndpoints = false;
+    // High-level object bindings remain intact until compiler lowering.
+    std::optional<std::vector<PairBinding>> pairs;
 };
 struct ModelData {
     std::vector<VariableSet> variables;
     std::vector<RelationSet> relations;
+    std::vector<Object> objects;
 };
+uint32_t pairCount(const ModelData&, const PairBinding&);
 struct ModelSnapshot {
     uint64_t model = 0, version = 0;
     std::shared_ptr<const ModelData> data;
@@ -160,6 +183,8 @@ class Model {
     Model(const Model&) = delete;
     Model& operator=(const Model&) = delete;
     SetId variables(VariableSet);
+    uint32_t object(Object);
+    uint32_t member(uint32_t object, uint32_t index);
     SetId relations(RelationSet);
     void patch(FieldKind, SetId, uint32_t first, const std::vector<float>&);
     // Topology changes are committed atomically with all other pending edits.

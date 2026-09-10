@@ -115,48 +115,6 @@ std::vector<std::vector<VariableRef>> endpoints(duk_context* c, int object) {
     duk_pop(c);
     return result;
 }
-std::vector<EndpointSource> endpointSources(duk_context* c, int object, const Model& model) {
-    duk_get_prop_string(c, object, "endpoints");
-    auto list = duk_normalize_index(c, -1);
-    if (!duk_is_array(c, list))
-        throw std::invalid_argument("Expected endpoint sources");
-    std::vector<EndpointSource> result;
-    result.reserve(duk_get_length(c, list));
-    for (uint32_t e = 0; e < duk_get_length(c, list); ++e) {
-        duk_get_prop_index(c, list, e);
-        auto source = duk_normalize_index(c, -1);
-        duk_get_prop_string(c, source, "kind");
-        auto kind = duk_is_undefined(c, -1) ? std::string() : string(c, -1);
-        duk_pop(c);
-        if (kind.empty()) {
-            auto refs = std::make_shared<std::vector<VariableRef>>(endpointReferences(c, source));
-            result.emplace_back(std::move(refs));
-        } else if (kind == "object") {
-            result.push_back(
-                EndpointSource::object({number(c, source, "set"), number(c, source, "index")}));
-        } else if (kind == "collection") {
-            auto set = number(c, source, "set"), first = number(c, source, "first");
-            auto stride = number(c, source, "stride", 1);
-            duk_get_prop_string(c, source, "count");
-            const bool specified = !duk_is_undefined(c, -1);
-            auto count = specified ? integer(c, -1) : 0;
-            duk_pop(c);
-            if (!specified) {
-                const auto variables = model.snapshot().data->variables.at(set).count;
-                if (first > variables)
-                    throw std::out_of_range("Endpoint collection starts beyond its variable set");
-                if (!stride)
-                    throw std::invalid_argument("Endpoint collection stride must be positive");
-                count = first == variables ? 0 : 1 + (variables - first - 1) / stride;
-            }
-            result.push_back(EndpointSource::collection(set, first, count, stride));
-        } else
-            throw std::invalid_argument("Unknown endpoint source kind");
-        duk_pop(c);
-    }
-    duk_pop(c);
-    return result;
-}
 } // namespace
 ScriptBindings::ScriptBindings(duk_context* c, std::shared_ptr<Mailbox> mailbox)
     : mailbox_(std::move(mailbox)) {
@@ -167,21 +125,21 @@ ScriptBindings::ScriptBindings(duk_context* c, std::shared_ptr<Mailbox> mailbox)
     duk_get_global_string(c, "Engine");
     duk_push_object(c);
     const char* names[] = {"space",
-                           "relation",
+                           "_relation",
                            "model",
-                           "variables",
-                           "relations",
+                           "_dofs",
+                           "_pairs",
                            "patch",
                            "compile",
                            "step",
                            "read",
                            "poll",
                            "destroy",
-                           "appendVariables",
-                           "appendRelations",
-                           "replaceEndpoints",
-                           "spaceInfo", "describe"};
-    for (int i = 0; i < 16; ++i) {
+                           nullptr, nullptr, nullptr,
+                           "spaceInfo", "describe", "_object", "_member"};
+    for (int i = 0; i < 18; ++i) {
+        if (!names[i])
+            continue;
         duk_push_c_function(c, call, DUK_VARARGS);
         duk_set_magic(c, -1, i);
         duk_put_prop_string(c, -2, names[i]);
@@ -249,6 +207,11 @@ __declspec(noinline) duk_ret_t ScriptBindings::dispatch(duk_context* c, int op) 
         t->name = def.at("name").string();
         for (auto& id : def.at("spaces").elements())
             t->spaces.push_back(spaces_.at(id.uint()));
+        for (const auto& fields : def.at("objects").elements()) {
+            t->objects.emplace_back();
+            for (const auto& name : fields.elements())
+                t->objects.back().push_back(name.string());
+        }
         t->parameters = def.contains("parameters") ? def.at("parameters").uint() : 0;
         t->history = def.contains("history") ? def.at("history").uint() : 0;
         t->rows = def.contains("rows") ? def.at("rows").uint() : 1;
@@ -322,11 +285,21 @@ __declspec(noinline) duk_ret_t ScriptBindings::dispatch(duk_context* c, int op) 
         duk_put_prop_string(c, -2, "values");
         return 1;
     }
+    if (op == 16) {
+        duk_push_uint(c, e.model.object(objectFromDocument(json(c, 1))));
+        return 1;
+    }
+    if (op == 17) {
+        duk_push_uint(c, e.model.member(integer(c, 1), integer(c, 2)));
+        return 1;
+    }
     if (op == 3) {
         VariableSet set;
         set.space = spaces_.at(integer(c, 1));
         set.count = number(c, 2, "count");
-        set.name = "variables";
+        duk_get_prop_string(c, 2, "name");
+        set.name = duk_is_undefined(c, -1) ? "dofs" : string(c, -1);
+        duk_pop(c);
         set.readOnly = boolean(c, 2, "readOnly");
         set.initial = field(c, 2, "initial", set.count, set.space->stateSize, true);
         set.velocity = field(c, 2, "velocity", set.count, set.space->tangentSize);
@@ -339,21 +312,22 @@ __declspec(noinline) duk_ret_t ScriptBindings::dispatch(duk_context* c, int op) 
     if (op == 4) {
         RelationSet set;
         set.type = types_.at(integer(c, 1));
-        set.name = "relations";
-        set.dynamicEndpoints = boolean(c, 2, "dynamicEndpoints");
-        set.endpoints = endpointSources(c, 2, e.model);
-        if (set.endpoints.empty())
-            throw std::invalid_argument("Relationship needs endpoints");
-        bool countKnown = false;
-        for (const auto& source : set.endpoints)
-            if (!source.broadcast()) {
-                if (countKnown && source.rows() != set.count)
-                    throw std::invalid_argument("Relation endpoint sources have different row counts");
-                set.count = source.rows();
-                countKnown = true;
-            }
-        if (!countKnown)
-            set.count = 1;
+        duk_get_prop_string(c, 2, "name");
+        set.name = duk_is_undefined(c, -1) ? set.type->name : string(c, -1);
+        duk_pop(c);
+        duk_get_prop_string(c, 2, "pairs");
+        auto bindings = json(c, -1);
+        duk_pop(c);
+        set.pairs.emplace();
+        uint64_t count = 0;
+        for (const auto& value : bindings.elements()) {
+            auto pair = pairFromDocument(value);
+            count += pairCount(*e.model.snapshot().data, pair);
+            set.pairs->push_back(pair);
+        }
+        if (count > UINT32_MAX)
+            throw std::overflow_error("Expanded pairs exceed 32-bit addressing");
+        set.count = uint32_t(count);
         set.parameters = field(c, 2, "parameters", set.count, set.type->parameters);
         set.compliance = field(c, 2, "compliance", set.count, set.type->rows);
         set.initialHistory = field(c, 2, "history", set.count, set.type->history);
@@ -363,23 +337,6 @@ __declspec(noinline) duk_ret_t ScriptBindings::dispatch(duk_context* c, int op) 
     }
     if (op == 5) {
         e.model.patch(modelField(string(c, 1)), integer(c, 2), integer(c, 3), array<float>(c, 4));
-        return 0;
-    }
-    if (op == 11) {
-        e.model.appendVariables(integer(c, 1), number(c, 2, "count"), property<float>(c, 2, "initial"),
-                                property<float>(c, 2, "velocity"), property<float>(c, 2, "inverseMetric"));
-        return 0;
-    }
-    if (op == 12) {
-        e.model.appendRelations(integer(c, 1), endpoints(c, 2), property<float>(c, 2, "parameters"),
-                                property<float>(c, 2, "compliance"), property<float>(c, 2, "history"));
-        return 0;
-    }
-    if (op == 13) {
-        auto columns = endpoints(c, 3);
-        if (columns.size() != 1)
-            throw std::invalid_argument("Replace one endpoint column at a time");
-        e.model.replaceEndpoints(integer(c, 1), integer(c, 2), std::move(columns[0]));
         return 0;
     }
     if (e.channel->busy())

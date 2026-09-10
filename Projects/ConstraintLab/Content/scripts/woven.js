@@ -111,50 +111,51 @@ net.build=function(model){
     net.cornerNodes=cornerNodes;net.cornerRows=ropeA.length-net.shortRows;
 
     var total=positions.length,initial=new Float32Array(total*3),metric=new Float32Array(total*9),
-        enabled=new Float32Array(total),ids=new Uint32Array(total);
+        enabled=new Float32Array(total);
     net.acceleration=new Float32Array(total*3);net.movable=new Float32Array(total);
     for(i=0;i<total;++i){
-        initial[i*3]=positions[i][0];initial[i*3+1]=positions[i][1];initial[i*3+2]=positions[i][2];ids[i]=i;
+        initial[i*3]=positions[i][0];initial[i*3+1]=positions[i][1];initial[i*3+2]=positions[i][2];
         if(!fixed[i]){
             metric[i*9]=metric[i*9+4]=metric[i*9+8]=1;
             net.acceleration[i*3+1]=-9.81;net.movable[i]=1;enabled[i]=1;
         }
     }
-    Lab.variables=X.variables(model,Lab.space,{count:total,initial:initial,inverseMetric:metric});
+    var dofs=X.defineDofs(model,{name:'woven positions',space:Lab.space,count:total,initial:initial,inverseMetric:metric});
+    Lab.variables=dofs.set;
+    var particles=X.defineObject(model,{name:'woven nodes',kind:'collection',dofs:{position:dofs}});
+    var environment=Lab.environment(model), members=[];
+    for(i=0;i<total;++i)members.push(X.defineMember(particles,i));
 
     function clothLinks(steps){
-        var a=[],b=[],step;
+        var a=[],b=[],pairs=[],step;
         for(tz=0;tz<t;++tz)for(tx=0;tx<t;++tx)
             for(step=0;step<steps.length;++step)for(v=0;v<r;++v)for(u=0;u<r;++u){
                 var u2=u+steps[step][0],v2=v+steps[step][1];
                 if(u2>=0&&u2<r&&v2>=0&&v2<r){
                     a.push(net.node(tx,tz,u,v));b.push(net.node(tx,tz,u2,v2));
+                    pairs.push([members[a[a.length-1]],members[b[b.length-1]]]);
                 }
             }
         return {rows:a.length,a:new Uint32Array(a),b:new Uint32Array(b),
-                columns:[{set:Lab.variables,indices:new Uint32Array(a)},{set:Lab.variables,indices:new Uint32Array(b)}]};
+                pairs:pairs};
     }
     var structure=clothLinks([[1,0],[0,1]]),shear=clothLinks([[1,1],[1,-1]]),
         bend=clothLinks([[2,0],[0,2]]),cell=net.tileSize/(r-1);
     net.structureRows=structure.rows;net.structureA=structure.a;net.structureB=structure.b;
     net.shearRows=shear.rows;net.bendRows=bend.rows;
-    net.structureSet=X.relations(model,Lab.distance,{endpoints:structure.columns,
-        parameters:[cell],compliance:[Lab.compliance()]});
-    net.shearSet=X.relations(model,Lab.distance,{endpoints:shear.columns,
-        parameters:[cell*Math.SQRT2],compliance:[0.00005]});
-    net.bendSet=X.relations(model,Lab.distance,{endpoints:bend.columns,
-        parameters:[2*cell],compliance:[0.0002]});
+    net.structureSet=X.pairs(Lab.distance,structure.pairs,[cell],{compliance:[Lab.compliance()]});
+    net.shearSet=X.pairs(Lab.distance,shear.pairs,[cell*Math.SQRT2],{compliance:[0.00005]});
+    net.bendSet=X.pairs(Lab.distance,bend.pairs,[2*cell],{compliance:[0.0002]});
 
     net.ropeRows=ropeA.length;net.ropeA=new Uint32Array(ropeA);net.ropeB=new Uint32Array(ropeB);
     net.baseRests=new Float32Array(ropeRest);net.currentRests=new Float32Array(ropeRest.length);
     for(i=0;i<net.ropeRows;++i)
         net.currentRests[i]=net.baseRests[i]*(i<net.shortRows?net.shortScale:1);
-    net.ropeSet=X.relations(model,Lab.distance,{endpoints:[
-        {set:Lab.variables,indices:net.ropeA},{set:Lab.variables,indices:net.ropeB}],
-        parameters:net.currentRests,compliance:[Lab.compliance()]});
-    var points=[{set:Lab.variables,indices:ids}];
-    net.floorSet=X.relations(model,Lab.floor,{endpoints:points,parameters:[0.04],enabled:enabled});
-    net.dampingSet=X.relations(model,Lab.damping,{endpoints:points,history:initial,
+    var ropePairs=[];
+    for(i=0;i<net.ropeRows;++i)ropePairs.push([members[net.ropeA[i]],members[net.ropeB[i]]]);
+    net.ropeSet=X.pairs(Lab.distance,ropePairs,net.currentRests,{compliance:[Lab.compliance()]});
+    net.floorSet=X.pair(Lab.floor,particles,environment,[0.04],{enabled:enabled});
+    net.dampingSet=X.pair(Lab.damping,particles,environment,[],{history:initial,
         compliance:[0.035,0.035,0.035],enabled:enabled});
     net.wind=false;net.drive=false;net.phase=0;net.kick=false;
     net.forceInput=true;net.anchorDirty=true;

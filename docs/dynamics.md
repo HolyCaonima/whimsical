@@ -2,7 +2,7 @@
 
 场景组件、输入／输出绑定与十万级模型的组织边界见 [Dynamics 与 ECS](dynamics-ecs.md)。
 
-Dynamics 当前采用 XPBD 求解算法。用户只定义数学状态空间、变量集合、关系条件和端点连接。关系的残差及自身持久状态更新由用户编写；表达式不能读取求解器乘子、访问 GPU 资源或产生全局副作用。乘子的计算、投影与生命周期完全属于求解器。
+Dynamics 当前采用 XPBD 求解算法。用户按四层定义模型：自由度、对象、两个形式对象之间的数学关系、绑定关系与具体对象的 pair。关系的残差及自身持久状态更新由用户编写；表达式不能读取求解器乘子、访问 GPU 资源或产生全局副作用。乘子的计算、投影与生命周期完全属于求解器。
 
 ## 模块与所有权
 
@@ -30,7 +30,7 @@ difference(qNew, qOld) -> delta
 
 内置 `Space::euclidean(n)` 和四元数 `[w,x,y,z]` 表示的 `Space::rotation()`。后者使用归一化的一阶局部旋转回缩和最短旋转差；它不包含物体、惯性或碰撞语义。自定义空间采用同一个表达式接口。
 
-关系可以包含多个端点、多个残差行、参数和用户持久状态。所有关系阶段的输入顺序统一为：
+DSL 中每个关系定义恰好接收两个形式对象。每个对象可以暴露多个具名自由度，因此两个对象仍可表达原来的多端点数学；关系也可以包含多个残差行、参数和用户持久状态。Compiler 将具名自由度依次降低为求解器端点，内部公式的输入顺序统一为：
 
 ```text
 [各端点存储坐标, 参数, 持久状态, 子步 dt, 子步结束时间]
@@ -51,7 +51,9 @@ difference(qNew, qOld) -> delta
 
 一个关系多次引用同一变量时，先合并该变量的梯度，再形成局部矩阵与修正，保留交叉项。奇异局部系统不会被隐式添加柔顺度：该次修正被跳过，并计入诊断。非有限的残差、修正、空间运算和持久状态输出也会计入诊断。
 
-## C++ 使用
+## C++ 底层构造接口
+
+C++ 保留端点级构造接口供底层调用方使用。DSL 的对象和 pair 存在同一个 Model 中，Compiler 将它们展开后进入相同的求解管线。
 
 ```cpp
 using namespace whimsical::dynamics;
@@ -150,56 +152,93 @@ instance.step(input);
 
 `publish()` 显式复制值、速度与持久状态到不可变 GPU 快照。消费者在同一 RenderCore 的自身上下文线程上声明只读 Imported buffer，再使用 `PublishedState::import` 绑定。快照的 `plan` 提供 SoA 偏移和步幅。消费者保留资源所有权到解除或替换导入；即使调用方释放快照，正在使用它的上下文仍保持数据有效。发布有 GPU 复制和显存成本，不会自动在每 tick 产生一个副本。RenderCore 必须晚于所有实例、快照和消费者销毁。
 
-## JavaScript
+## JavaScript：四层声明语言
 
-引擎宿主中的脚本使用 `Engine.dynamics`，句柄属于创建它的 realm。关系通过 `defineRelation(definition, build)` 构建一次；批量实例数据使用普通数组、`Float32Array` 和 `Uint32Array`，无需每行创建对象。
+`Engine.dynamics` 的建模入口固定为 **自由度 → 对象 → 关系定义 → pair 绑定**。数学空间不是物体类型，批量自由度存储也不会自动成为集合对象。对象声明、成员声明、关系的两个具名字段接口和高层 pair 均保存在 ModelSnapshot / 场景文档中，只有 Compiler 枚举成员组合并生成显式求解端点。
 
-主要接口：
+```js
+var X = Engine.dynamics, model = X.model(), R3 = X.space(3);
+
+// 1. 自由度：状态及其数学空间。
+var q = X.defineDofs(model, {
+    name: 'positions', space: R3, count: 100, initial: initialPositions
+});
+
+// 2. 对象：显式选择单体或集合。成员引用现有状态，不复制自由度。
+var particles = X.defineObject(model, {
+    name: 'particles', kind: 'collection', dofs: {position: q}
+});
+var p0 = X.defineMember(particles, 0);
+var p1 = X.defineMember(particles, 1);
+
+// 3. 关系：两个形式对象之间的任意 op 数学。
+var separation = X.defineRelation({
+    name: 'minimum separation',
+    objects: [{position: R3}, {position: R3}],
+    parameters: {diameter: 'scalar'}, kind: 'greaterEqual'
+}, function(op, a, b, p) {
+    var delta = op.vsub(a.position, b.position);
+    return {residual: [op.sub(op.dot(delta, delta), op.mul(p.diameter, p.diameter))]};
+});
+
+// 4. pair：引用已定义的关系和两个对象。
+var contact = X.pair(separation, particles, particles, {diameter: 0.36}, {
+    self: 'undirected', includeSelf: false
+});
+// 若只需要明确连接，可改为：
+// var contact = X.pair(separation, p0, p1, {diameter: 0.36});
+```
+
+`objects` 中的两个 schema 只声明形式对象需要暴露的字段及空间；不引用真实对象，不选择集合成员。`op` 包含标量 / 向量运算、`parameter(i)`、`state(i)`、`dt`、`time`。`build(op,a,b,p)` 返回 `residual`，以及可选的 `update`；`rows`、`history`、`kind` 与此前的数学含义一致。没有引擎内置的 Distance、Floor、Water 等关系类型。
+
+`parameters` 可以是分量数，此时绑定提供平铺数组、数学使用 `op.parameter(i)`；也可以是具名 schema，如 `{diameter:'scalar', centre:3}`，此时绑定提供 `{diameter:0.36, centre:[0,1,0]}`，数学通过 `p.diameter`、`p.centre` 引用。具名参数当前用于统一值；逐行参数使用分量数及平铺数组。
+
+### 对象及绑定语义
+
+| 两侧对象 | 展开结果与行顺序 |
+| --- | --- |
+| 单体、单体 | 一个关系实例 |
+| 单体、集合 | 按右侧成员顺序应用 |
+| 集合、单体 | 按左侧成员顺序应用 |
+| 不同集合 | 完整笛卡尔积，左侧成员为外层、右侧为内层 |
+| 同一集合，`directed` | 上述顺序；`includeSelf:false` 排除 `i == j` |
+| 同一集合，`undirected` | 上述顺序，仅保留 `i < j`；`includeSelf:true` 时保留 `i <= j` |
+
+同一集合必须显式提供 `self:'directed'/'undirected'` 和 `includeSelf:true/false`。单体和自身绑定仍是一个实例。不做按自由度地址的隐式去重；不同对象即便引用相同状态，仍按声明的组合规则处理。无向表示只保留上述一种参数顺序，并不自动对关系数学做对称化。
+
+一个单体可以暴露多个具名自由度，甚至引用其他对象已有的自由度。例如星仪用一个对象暴露三个相位，另一个对象暴露三个载荷高度；一个 pair 保留六个变量、三行残差。单体字段用 `X.dof(q,index)` 选取一个自由度，或者直接引用 `count:1` 的自由度集合。集合各字段的成员数必须一致，且一一对应。`dofs:{}` 的单体可表示没有演化状态的参考框架；关系可以只需要另一侧的自由度及自身 history。
+
+明确连接使用 `X.pairs(relation, [[a,b],[c,d]], parameters, options)`。它只批量提交同一种 pair 声明，各条绑定的展开行依次拼接；不会把两个集合偷偷变成逐行 zip。布料和绳网从集合显式提取成员，再列出相连对象对。`pair` 与 `pairs` 返回可用于 `patch` / history 读写的稳定关系集合索引。
+
+### API 与字段
 
 | 调用 | 含义 |
 | --- | --- |
-| `space(n)` / `space({kind:'rotation'})` | 定义数学空间 |
+| `space(n)` / `space({kind:'rotation'})` | 数学空间 |
 | `space({name,stateSize,tangentSize,retract,difference})` | 自定义空间；公式可用 `expression(inputs)` 构建 |
-| `defineRelation(definition, build)` | 定义残差、等式 / 不等式条件和关系自身的持久状态更新 |
 | `model()` | 创建模型句柄 |
-| `variables(model, space, fields)` | 添加变量集合；包含 `count`、`initial`，可选 `velocity`、`inverseMetric`、`enabled`、`readOnly` |
-| `object(set, index)` | 声明一个作为 relation 端点广播的变量对象 |
-| `collection(set, range?)` | 声明一个有序变量集合；范围可包含 `first`、`count`、`stride` |
-| `relations(model, type, fields)` | 添加关系集合；包含 `endpoints`，可选 `parameters`、`compliance`、`history`、`enabled`、`dynamicEndpoints` |
-| `patch(model, field, set, first, data)` | 修改数值模型字段 |
-| `compile(model, policy?)` | 提交模型；根据变更应用参数或安装新计划 |
-| `step(model, tick, dt, writes?, endpoints?)` | 提交一个求解步 |
-| `read(model, field, set, first, count)` | 请求范围回读 |
-| `poll(model)` | 消费完成结果；未完成返回 `null` |
-| `appendVariables` / `appendRelations` / `replaceEndpoints` | 修改模型拓扑，之后调用 `compile` |
-| `destroy(model)` | 退役所属 GPU 实例 |
+| `defineDofs(model, {space,count,initial,...})` | 声明自由度；可选 `name`、`velocity`、`inverseMetric`、`enabled`、`readOnly`，返回含 `.set` 的自由度句柄 |
+| `dof(dofs, index)` | 引用一个已有自由度，用于单体的具名字段 |
+| `defineObject(model, {kind,dofs,name?})` | `kind` 必须为 `single` 或 `collection`，返回对象句柄 |
+| `defineMember(collection, index)` | 显式声明集合成员为单体对象，保留对原自由度的引用 |
+| `defineRelation(definition, build)` | 声明两个形式对象之间的任意数学关系 |
+| `pair(relation,a,b,parameters?,options?)` | 绑定关系与两个已声明对象 |
+| `pairs(relation,bindings,parameters?,options?)` | 批量声明显式对象对 |
+| `describe(model)` | 输出包含四层信息的场景文档 |
+| `patch(model,field,set,first,data)` | 修改数值字段，pair 字段索引使用上述展开行顺序 |
+| `compile(model,policy?)` | 提交模型，应用数值变更或安装新计划 |
+| `step(model,tick,dt,writes?)` / `read(model,field,set,first,count)` / `poll(model)` | 提交求解步、范围回读、消费完成结果 |
+| `destroy(model)` | 退役实例 |
 
-创建集合时，一个字段可用单行数组表达统一值，也可提供完整逐行数据。追加接口要求完整的新增数据。Relation 端点可以保留为声明式来源：
+`options` 可包含 `name`、`compliance`、`history`、`enabled`，以及同一集合的组合规则。数值字段可用单行数组表达统一值，或提供与完整展开行数相符的逐行数组。字段数组不参与选择成员。当前对象形状固定，增加对象或 pair 属于拓扑变更；没有 DSL 层的端点列替换或动态 pair 接口。C++ 原有动态端点接口仍供底层调用方使用。
 
-```js
-var anchor = X.object(points, 0);
-var allPoints = X.collection(points);
-var interior = X.collection(points, {first:1, count:99});
-X.relations(model, distance, {endpoints:[anchor, interior], parameters:[1]});
-X.relations(model, distance, {endpoints:[allPoints, X.collection(targets)]});
-```
+旧的 `variables`、`object`、`collection`、`relations`、`appendVariables`、`appendRelations`、`replaceEndpoints` 不再作为脚本建模入口；`defineRelation` 也不再接受 `spaces` 或 `op.endpoints`。状态写入仍使用 `{field,set,first,values}`，其中自由度的 `set` 取自 `defineDofs` 返回的 `.set`。
 
-`object` 在 relation 的所有行广播同一个变量；一个或多个 `collection` 按行配对，并且行数必须相同。省略范围时集合覆盖变量集的全部当前行，`stride` 默认为 1。这些来源以对象／集合形式保存在 `ModelSnapshot` 和场景文档中，进入 Compiler 后才降低为执行端点，因此前端不丢失集合关系语义。
+模型字段名为 `inverseMetric`、`variableEnabled`、`parameters`、`compliance`、`relationEnabled`。运行状态字段名为 `value`、`velocity`、`acceleration`、`history`；乘子只属于求解器。
 
-任意稀疏拓扑继续使用显式端点列 `{set, indices}`；跨变量集端点用 `{sets, indices}`，两个数组逐项对应。声明式 relation 集合不能通过 `appendRelations` 混入显式行，可创建另一个 relation 集合。状态写入格式为 `{field, set, first, values}`；动态连接写入为 `{set, first, endpoints}`，运行时替换仍使用显式端点列。
+`compile`、`step`、`read` 使用单请求通道：每个模型最多一个未消费结果；`poll` 返回版本、tick、诊断、`error` 和 `Float32Array values`。处理完成后才能提交下一项操作。场景用法见 [Dynamics 与 ECS](dynamics-ecs.md)。
 
-数值模型字段名为 `inverseMetric`、`variableEnabled`、`parameters`、`compliance`、`relationEnabled`。公开运行状态字段名为 `value`、`velocity`、`acceleration`、`history`。乘子仅保存在内部求解计划与运行时中，不提供用户读写接口。
-
-`compile`、`step`、`read` 是可靠的单请求通道：每个模型最多一个未消费结果，再次提交会报告 Busy。`poll` 返回版本、tick、诊断、`error` 和 `Float32Array values`。脚本应先处理错误、消费结果，再提交下一项操作；宿主不会丢弃或合并 tick。Model 编辑可先积累，但新结构必须安装后才能用于求解。场景 realm 销毁时自动退役其全部模型。
-
-完整示例见 [batched-scalar.js](../examples/dynamics/batched-scalar.js)，可脱离 World 和 Rendering 运行：
-
-```powershell
-.\third_party\cmake\bin\cmake.exe --build build --config Release --target dynamics_run
-.\build\bin\Release\dynamics_run.exe examples/dynamics/batched-scalar.js
-```
-
-独立宿主持续调用脚本的 `update()`，返回 `false` 时结束。示例创建十万个变量和关系，只回读最后四个值。
+可运行示例位于 [ConstraintLab](../Projects/ConstraintLab/README.md)：布料、绳索、绳网、穿绳布幕、星仪，以及集合粒子示例。粒子示例只声明三条高层绑定，Compiler 完整展开为 4,950 个无向粒子组合、500 个粒子—边界组合和 100 个阻力实例。当前没有邻域查询、剪枝或集合归约，展开成本按成员组合数增长。
 
 ## 重点验证
 

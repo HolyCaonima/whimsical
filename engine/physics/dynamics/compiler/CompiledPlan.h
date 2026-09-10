@@ -83,6 +83,8 @@ struct CompiledPlan {
     std::vector<RelationRef> types;
     std::vector<VariableLayout> variables;
     std::vector<RelationLayout> relations;
+    // Compiler-owned explicit DOF references, row-major per binding set.
+    std::vector<std::vector<VariableRef>> relationDofs;
     std::vector<Kernel> kernels;
     std::vector<Batch> predict, solve, apply, recover, update;
     // Closed regions execute the same substep/iteration schedule inside a workgroup.

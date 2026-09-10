@@ -39,39 +39,40 @@ clock.define=function(){
     var X=Lab.X;
     clock.scalar=X.space(1);
     clock.transmission=X.defineRelation({
-        name:'noncircular phase transmission',spaces:[clock.scalar,clock.scalar,clock.scalar],parameters:4,rows:2
-    },function(e){
-        var a=e.endpoints[0][0],b=e.endpoints[1][0],c=e.endpoints[2][0];
+        name:'noncircular phase transmission',objects:[{input:clock.scalar},{middle:clock.scalar,output:clock.scalar}],
+        parameters:4,rows:2
+    },function(op,driver,followers){
+        var a=driver.input[0],b=followers.middle[0],c=followers.output[0];
         return {residual:[
-            e.sub(e.sub(b,e.mul(e.parameter(0),a)),e.mul(e.parameter(2),e.sin(e.mul(2,a)))),
-            e.sub(e.sub(c,e.mul(e.parameter(1),b)),e.mul(e.parameter(3),e.sin(e.mul(3,b))))
+            op.sub(op.sub(b,op.mul(op.parameter(0),a)),op.mul(op.parameter(2),op.sin(op.mul(2,a)))),
+            op.sub(op.sub(c,op.mul(op.parameter(1),b)),op.mul(op.parameter(3),op.sin(op.mul(3,b))))
         ]};
     });
     clock.differential=X.defineRelation({
         name:'phase driven cable differential',
-        spaces:[clock.scalar,clock.scalar,clock.scalar,clock.scalar,clock.scalar,clock.scalar],
-        parameters:6,rows:3
-    },function(e){
-        var a=e.parameter(0),r=e.parameter(1),s=e.parameter(2),
-            l0=e.sub(a,e.endpoints[3][0]),l1=e.sub(a,e.endpoints[4][0]),l2=e.sub(a,e.endpoints[5][0]);
+        objects:[{input:clock.scalar,middle:clock.scalar,output:clock.scalar},
+                 {left:clock.scalar,centre:clock.scalar,right:clock.scalar}],parameters:6,rows:3
+    },function(op,phases,payloads){
+        var a=op.parameter(0),r=op.parameter(1),s=op.parameter(2),
+            l0=op.sub(a,payloads.left[0]),l1=op.sub(a,payloads.centre[0]),l2=op.sub(a,payloads.right[0]);
         return {residual:[
-            e.sub(e.add(e.add(l0,e.mul(r,l1)),e.mul(s,e.endpoints[1][0])),e.parameter(3)),
-            e.sub(e.add(e.add(l1,e.mul(r,l2)),e.mul(s,e.endpoints[2][0])),e.parameter(4)),
-            e.sub(e.add(e.add(e.add(l0,l1),l2),e.mul(s,e.endpoints[0][0])),e.parameter(5))
+            op.sub(op.add(op.add(l0,op.mul(r,l1)),op.mul(s,phases.middle[0])),op.parameter(3)),
+            op.sub(op.add(op.add(l1,op.mul(r,l2)),op.mul(s,phases.output[0])),op.parameter(4)),
+            op.sub(op.add(op.add(op.add(l0,l1),l2),op.mul(s,phases.input[0])),op.parameter(5))
         ]};
     });
     clock.ratchet=X.defineRelation({
-        name:'phase history ratchet',spaces:[clock.scalar],history:1,kind:'greaterEqual'
-    },function(e){
-        var angle=e.endpoints[0][0];
-        return {residual:[e.sub(angle,e.state(0))],update:[e.max(e.state(0),angle)]};
+        name:'phase history ratchet',objects:[{value:clock.scalar},{}],history:1,kind:'greaterEqual'
+    },function(op,a,b){
+        var angle=a.value[0];
+        return {residual:[op.sub(angle,op.state(0))],update:[op.max(op.state(0),angle)]};
     });
     clock.lower=X.defineRelation({
-        name:'scalar lower bound',spaces:[clock.scalar],parameters:1,kind:'greaterEqual'
-    },function(e){return {residual:[e.sub(e.endpoints[0][0],e.parameter(0))]};});
+        name:'scalar lower bound',objects:[{value:clock.scalar},{value:clock.scalar}],kind:'greaterEqual'
+    },function(op,a,b){return {residual:[op.sub(a.value[0],b.value[0])]};});
     clock.upper=X.defineRelation({
-        name:'scalar upper bound',spaces:[clock.scalar],parameters:1,kind:'greaterEqual'
-    },function(e){return {residual:[e.sub(e.parameter(0),e.endpoints[0][0])]};});
+        name:'scalar upper bound',objects:[{value:clock.scalar},{value:clock.scalar}],kind:'lessEqual'
+    },function(op,a,b){return {residual:[op.sub(a.value[0],b.value[0])]};});
 };
 clock.layout=function(){return String(clock.profile);};
 clock.camera=function(){return {target:[0,3.15,0],yaw:0.12,pitch:0.12,distance:12.7,fov:0.61};};
@@ -88,24 +89,37 @@ clock.build=function(model){
         initial=new Float32Array([0,0,0,1.80,2.30,1.50]),
         metric=new Float32Array([0.52,0.78,0.92,1,0.82,1.16]),
         acceleration=new Float32Array([-1.25,0,0,-9.81,-9.81,-9.81]);
-    Lab.variables=X.variables(model,clock.scalar,{count:6,initial:initial,inverseMetric:metric});
+    var dofs=X.defineDofs(model,{name:'mechanism coordinates',space:clock.scalar,count:6,initial:initial,inverseMetric:metric});
+    Lab.variables=dofs.set;
+    var coordinates=X.defineObject(model,{name:'coordinates',kind:'collection',dofs:{value:dofs}});
+    var input=X.defineMember(coordinates,0);
+    var driver=X.defineObject(model,{name:'input shaft',kind:'single',dofs:{input:X.dof(dofs,0)}});
+    var followers=X.defineObject(model,{name:'follower shafts',kind:'single',dofs:{
+        middle:X.dof(dofs,1),output:X.dof(dofs,2)}});
+    var phases=X.defineObject(model,{name:'phase train',kind:'single',dofs:{
+        input:X.dof(dofs,0),middle:X.dof(dofs,1),output:X.dof(dofs,2)}});
+    var payloads=X.defineObject(model,{name:'three payloads',kind:'single',dofs:{
+        left:X.dof(dofs,3),centre:X.dof(dofs,4),right:X.dof(dofs,5)}});
+    // The frame has no evolving DOF; the ratchet keeps history on its pair.
+    var frame=X.defineObject(model,{name:'ratchet frame',kind:'single',dofs:{}});
+    var limits=X.defineDofs(model,{name:'travel limits',space:clock.scalar,count:3,initial:[0,0.42,clock.maxTheta],readOnly:true});
+    var lowerAngle=X.defineObject(model,{name:'angle lower stop',kind:'single',dofs:{value:X.dof(limits,0)}});
+    var lowerHeight=X.defineObject(model,{name:'height lower stop',kind:'single',dofs:{value:X.dof(limits,1)}});
+    var upperAngle=X.defineObject(model,{name:'angle upper stop',kind:'single',dofs:{value:X.dof(limits,2)}});
     clock.gearParameters=new Float32Array(p.gear);
-    clock.gearSet=X.relations(model,clock.transmission,{endpoints:[
-        {set:Lab.variables,indices:[0]},{set:Lab.variables,indices:[1]},{set:Lab.variables,indices:[2]}],
-        parameters:clock.gearParameters,compliance:[Lab.compliance(),Lab.compliance()]});
+    // Both sides may expose several named DOFs, including aliases used elsewhere.
+    clock.gearSet=X.pair(clock.transmission,driver,followers,clock.gearParameters,
+        {compliance:[Lab.compliance(),Lab.compliance()]});
     var l0=clock.anchorY-initial[3],l1=clock.anchorY-initial[4],l2=clock.anchorY-initial[5];
     clock.diffParameters=new Float32Array([
         clock.anchorY,p.ratio,p.spool,l0+p.ratio*l1,l1+p.ratio*l2,l0+l1+l2]);
-    clock.diffSet=X.relations(model,clock.differential,{endpoints:[
-        {set:Lab.variables,indices:[0]},{set:Lab.variables,indices:[1]},{set:Lab.variables,indices:[2]},
-        {set:Lab.variables,indices:[3]},{set:Lab.variables,indices:[4]},{set:Lab.variables,indices:[5]}],
-        parameters:clock.diffParameters,compliance:[Lab.compliance(),Lab.compliance(),Lab.compliance()]});
-    clock.ratchetSet=X.relations(model,clock.ratchet,{endpoints:[{set:Lab.variables,indices:[0]}],
-        history:[0],compliance:[Lab.compliance()]});
-    clock.lowerSet=X.relations(model,clock.lower,{endpoints:[{set:Lab.variables,indices:[0,3,4,5]}],
-        parameters:[0,0.42,0.42,0.42],compliance:[0]});
-    clock.upperSet=X.relations(model,clock.upper,{endpoints:[{set:Lab.variables,indices:[0]}],
-        parameters:[clock.maxTheta],compliance:[0]});
+    clock.diffSet=X.pair(clock.differential,phases,payloads,clock.diffParameters,
+        {compliance:[Lab.compliance(),Lab.compliance(),Lab.compliance()]});
+    clock.ratchetSet=X.pair(clock.ratchet,input,frame,[],{history:[0],compliance:[Lab.compliance()]});
+    clock.lowerSet=X.pairs(clock.lower,[[input,lowerAngle],
+        [X.defineMember(coordinates,3),lowerHeight],[X.defineMember(coordinates,4),lowerHeight],
+        [X.defineMember(coordinates,5),lowerHeight]],[]);
+    clock.upperSet=X.pair(clock.upper,input,upperAngle,[]);
     clock.acceleration=acceleration;clock.auto=true;clock.engaged=true;clock.kick=false;
     clock.nextPump=24;clock.forceInput=true;clock.lastTheta=0;clock.observedHistory=0;
     Lab.total=6;Lab.relations=8;

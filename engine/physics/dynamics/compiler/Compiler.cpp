@@ -86,6 +86,40 @@ std::string signature(const RelationType& t) {
         s += emitGlsl(*t.update, "u");
     return s;
 }
+std::vector<VariableRef> lowerPairs(const ModelData& model, const RelationSet& set) {
+    std::vector<VariableRef> refs;
+    refs.reserve(size_t(set.count) * set.type->spaces.size());
+    if (!set.pairs) {
+        for (uint32_t row = 0; row < set.count; ++row)
+            for (const auto& source : set.endpoints)
+                refs.push_back(source.at(row));
+        return refs;
+    }
+    auto emitObject = [&](const Object& object, uint32_t member, uint32_t side) {
+        for (const auto& name : set.type->objects[side]) {
+            auto found = object.dofs.find(name);
+            if (found == object.dofs.end())
+                throw std::invalid_argument("Object '" + object.name + "' lacks DOF field '" + name + "'");
+            refs.push_back(found->second.at(member));
+        }
+    };
+    // Full expansion is intentional. There is no neighbor search, pruning or zip
+    // interpretation: the mathematical residual decides what each pair does.
+    for (const auto& pair : *set.pairs) {
+        const auto& a = model.objects.at(pair.a);
+        const auto& b = model.objects.at(pair.b);
+        const bool self = pair.a == pair.b && a.kind == Object::Kind::Collection;
+        for (uint32_t i = 0; i < a.count; ++i)
+            for (uint32_t j = 0; j < b.count; ++j) {
+                if (self && ((!pair.includeSelf && i == j) ||
+                    (pair.self == PairBinding::Self::Undirected && j < i)))
+                    continue;
+                emitObject(a, i, 0);
+                emitObject(b, j, 1);
+            }
+    }
+    return refs;
+}
 } // namespace
 std::string CompiledPlan::interface() const {
     return R"(
@@ -177,6 +211,8 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     for (uint32_t setId = 0; setId < model.data->relations.size(); ++setId) {
         const auto& set = model.data->relations[setId];
         set.type->validate();
+        p->relationDofs.push_back(lowerPairs(*model.data, set));
+        const auto& dofs = p->relationDofs.back();
         auto key = signature(*set.type);
         auto it = typeIds.find(key);
         uint32_t type;
@@ -208,9 +244,9 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         for (uint32_t row = 0; row < set.count; ++row) {
             Instance instance{
                 checked(instances.size()),    setId, row, type, -1, checked(endpointData.size()),
-                checked(set.endpoints.size())};
-            for (uint32_t e = 0; e < set.endpoints.size(); ++e) {
-                auto ref = set.endpoints[e].at(row);
+                checked(set.type->spaces.size())};
+            for (uint32_t e = 0; e < instance.arity; ++e) {
+                auto ref = dofs[size_t(row) * instance.arity + e];
                 if (ref.set >= p->variables.size() || ref.index >= p->variables[ref.set].count)
                     throw std::invalid_argument("Relation references a missing variable: " + set.name);
                 if (p->variables[ref.set].space != endpointSpaces[e])

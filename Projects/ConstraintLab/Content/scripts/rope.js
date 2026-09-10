@@ -59,21 +59,23 @@ rope.build=function(model){
     var X=Lab.X,n=rope.count*rope.copies,i;
     rope.shape();
     rope.cut=false;rope.right=[3.5,5,0];rope.anchorDirty=true;rope.forceInput=true;rope.kick=false;
-    var initial=new Float32Array(n*3),metric=new Float32Array(n*9),enabled=new Float32Array(n),ids=new Uint32Array(n);
+    var initial=new Float32Array(n*3),metric=new Float32Array(n*9),enabled=new Float32Array(n);
     rope.acceleration=new Float32Array(n*3);
     for(i=0;i<n;++i){var local=i%rope.count,p=rope.initial(local),free=local!==0&&local!==rope.count-1;
-        initial[i*3]=p[0];initial[i*3+1]=p[1];initial[i*3+2]=p[2];ids[i]=i;
+        initial[i*3]=p[0];initial[i*3+1]=p[1];initial[i*3+2]=p[2];
         if(free){metric[i*9]=metric[i*9+4]=metric[i*9+8]=1;rope.acceleration[i*3+1]=-9.81;enabled[i]=1;}}
-    Lab.variables=X.variables(model,Lab.space,{count:n,initial:initial,inverseMetric:metric});
-    var m=(rope.count-1)*rope.copies,a=new Uint32Array(m),b=new Uint32Array(m);
-    for(i=0;i<m;++i){a[i]=Math.floor(i/(rope.count-1))*rope.count+i%(rope.count-1);b[i]=a[i]+1;}
-    rope.links=X.relations(model,Lab.distance,{endpoints:[{set:Lab.variables,indices:a},{set:Lab.variables,indices:b}],
-        parameters:[rope.rest],compliance:[Lab.compliance()]});
-    var points=[{set:Lab.variables,indices:ids}];
-    rope.floorSet=X.relations(model,Lab.floor,{endpoints:points,parameters:[0.06],enabled:enabled});
-    rope.sphereSet=X.relations(model,Lab.sphere,{endpoints:points,parameters:[0,1.8,0,1.16],enabled:enabled});
+    var dofs=X.defineDofs(model,{name:'rope positions',space:Lab.space,count:n,initial:initial,inverseMetric:metric});
+    Lab.variables=dofs.set;
+    var particles=X.defineObject(model,{name:'rope nodes',kind:'collection',dofs:{position:dofs}});
+    var environment=Lab.environment(model), members=[];
+    for(i=0;i<n;++i)members.push(X.defineMember(particles,i));
+    var m=(rope.count-1)*rope.copies,links=[];
+    for(i=0;i<m;++i){var a=Math.floor(i/(rope.count-1))*rope.count+i%(rope.count-1);links.push([members[a],members[a+1]]);}
+    rope.links=X.pairs(Lab.distance,links,[rope.rest],{compliance:[Lab.compliance()]});
+    rope.floorSet=X.pair(Lab.floor,particles,environment,[0.06],{enabled:enabled});
+    rope.sphereSet=X.pair(Lab.sphere,particles,environment,[0.06],{enabled:enabled});
     // Retained relation history resists displacement, updated by the solver itself.
-    rope.dampingSet=X.relations(model,Lab.damping,{endpoints:points,history:initial,compliance:[0.025,0.025,0.025],enabled:enabled});
+    rope.dampingSet=X.pair(Lab.damping,particles,environment,[],{history:initial,compliance:[0.025,0.025,0.025],enabled:enabled});
     Lab.total=n;Lab.relations=m+3*n;
     return initial;
 };

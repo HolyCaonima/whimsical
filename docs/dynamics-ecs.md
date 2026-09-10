@@ -4,6 +4,8 @@
 
 `dynamicsBinding` 是可选的实体交互／姿态映射，不是模型内部的拓扑表示。显示十万个网格顶点不应创建十万个 Transform 绑定，整体网格应通过 GPU 几何接入。当前场景层实现了 Transform 输入／输出与显式范围观察，尚未添加布料网格组件。Runtime 已有 `PublishedState::import` 的 GPU 消费契约；后续网格接入应沿该边界扩展，不向数学后端添加布料语义。
 
+建模使用 `defineDofs → defineObject / defineMember → defineRelation → pair / pairs`。`X.describe` 保存对象声明、成员引用、两个形式对象的具名自由度接口和高层绑定；ECS 加载文档后由 Compiler 完整展开集合组合。`dynamicsBinding.variables` 仍是显示 / 输入映射的自由度地址，取 `defineDofs` 返回句柄的 `.set`，不承担数学对象或关系绑定语义。
+
 ## 组件与生命周期
 
 `physics/dynamics/scene` 编入 Core，依赖 World 和 Adapter。数学 Model、Compiler 和 GPU Runtime 仍不依赖 ECS。World 与独立脚本模型共用宿主 GPU 服务，但各自拥有通道和实例。该服务与 Renderer 平级，拥有独立执行线程与计算上下文；请求到达时唤醒，GPU fence 完成后通知主线程，不再通过显示帧轮询。主线程也在固定更新之外消费完成通知，固定更新只负责累积模拟时间和提供输入。
