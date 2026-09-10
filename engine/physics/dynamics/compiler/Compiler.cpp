@@ -35,13 +35,16 @@ constexpr const char* Names[] = {"q",
                                  "diagnostics",
                                  "scanScratch",
                                  "adjCursors",
-                                 "regionRanges", "regionState", "localOffsets"};
+                                 "regionRanges", "regionState", "localOffsets", "stateWrites"};
+static_assert(sizeof(Names) / sizeof(*Names) == BufferCount);
+// Bounded transient input table; larger updates retain the direct upload path.
+constexpr uint32_t StateWriteCapacity = 4096;
 bool integer(BufferRole r) {
     return r == BufferRole::Variables || r == BufferRole::VariableWork || r == BufferRole::Relations ||
            r == BufferRole::Endpoints || r == BufferRole::RelationWork || r == BufferRole::AdjacencyOffsets ||
            r == BufferRole::AdjacencyEntries || r == BufferRole::Diagnostics ||
            r == BufferRole::ScanScratch || r == BufferRole::AdjacencyCursors || r == BufferRole::RegionRanges ||
-           r == BufferRole::RegionState || r == BufferRole::LocalOffsets;
+           r == BufferRole::RegionState || r == BufferRole::LocalOffsets || r == BufferRole::StateWrites;
 }
 uint32_t checked(size_t n) {
     if (n > UINT32_MAX)
@@ -396,6 +399,20 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         }
     p->resetKernel =
         kernel("Reset multipliers", "void main(){uint i=invocation();if(i<step.count)x_lambda[i]=0.0;}\n");
+    const std::array<BufferRole, 4> stateFields = {
+        BufferRole::Values, BufferRole::Velocity, BufferRole::Acceleration, BufferRole::History};
+    uint64_t stateWords = 0;
+    for (const auto& field : stateFields)
+        stateWords += buffer(field).initial.size() / 4;
+    const auto stateWriteCapacity = uint32_t(std::min<uint64_t>(stateWords, StateWriteCapacity));
+    buffer(BufferRole::StateWrites).initial.resize(std::max(1u, stateWriteCapacity * 3) * sizeof(uint32_t));
+    p->stateWriteKernel = kernel("Scatter Dynamics state", R"(
+void main(){uint i=invocation();if(i>=step.count)return;uint record=(step.first+i)*3u;
+uint field=x_stateWrites[record],at=x_stateWrites[record+1u];
+float value=uintBitsToFloat(x_stateWrites[record+2u]);
+if(field==0u)x_q[at]=value;else if(field==1u)x_velocity[at]=value;
+else if(field==2u)x_acceleration[at]=value;else x_history[at]=value;}
+)");
     if (p->dynamicTopology) {
         p->resetTopologyKernel = kernel("Reset incidence counts", R"(
 void main(){uint i=invocation();if(i>=step.count)return;x_scanScratch[i]=0u;if(i+1u<step.count)x_adjCursors[i]=0u;}

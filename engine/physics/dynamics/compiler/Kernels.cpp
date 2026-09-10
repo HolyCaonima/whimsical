@@ -1,6 +1,9 @@
 #include "physics/dynamics/compiler/FormulaGlsl.h"
 #include "Schedule.h"
 #include <algorithm>
+#include <cmath>
+#include <iomanip>
+#include <locale>
 #include <numeric>
 #include <sstream>
 
@@ -12,6 +15,14 @@ void local(std::ostringstream& s, const char* name, uint32_t n) {
 void finite(std::ostringstream& s, const std::string& name, uint32_t n) {
     s << "for(int k=0;k<" << n << ";++k)if(isnan(" << name << "[k])||isinf(" << name
       << "[k])){atomicAdd(x_diagnostics[0],1u);return;}\n";
+}
+std::string literal(float value) {
+    if (value == 0)
+        return "0.0";
+    std::ostringstream s;
+    s.imbue(std::locale::classic());
+    s << std::scientific << std::setprecision(9) << value;
+    return s.str();
 }
 void relationInputs(std::ostringstream& s, const RelationType& t) {
     const auto n = t.inputSize();
@@ -37,7 +48,8 @@ KernelFunction variableFunction(const Space& space, const char* operation, const
     std::ostringstream s;
     const auto S = space.stateSize, T = space.tangentSize;
     s << emitGlsl(space.retract, name + "_retractValue") << emitGlsl(space.difference, name + "_differenceValue");
-    s << "void " << name << "(uint id,float h,float time,float relaxation){Variable v=variable(id);\n";
+    s << "void " << name
+      << "(uint id,float h,float time,float relaxation,float inverseH2){Variable v=variable(id);\n";
     if (op == "predict") {
         local(s, "inputValue", S + T);
         local(s, "outputValue", S);
@@ -86,20 +98,47 @@ KernelFunction variableFunction(const Space& space, const char* operation, const
 KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update, const std::string& name) {
     std::ostringstream s;
     const auto Q = t.stateSize(), D = t.tangentSize(), M = t.rows;
+    std::optional<std::vector<float>> residualConstants;
+    std::vector<std::optional<std::vector<float>>> tangentConstants;
+    std::optional<std::vector<float>> singleJacobian;
     if (update) {
         s << emitGlsl(*t.update, name + "_commitHistory");
     } else {
         std::vector<uint32_t> residualInputs(Q);
         std::iota(residualInputs.begin(), residualInputs.end(), 0u);
-        s << emitGlslDerivative(t.residual, name + "_residual", residualInputs);
+        residualConstants = constantJacobian(t.residual, residualInputs);
+        if (residualConstants)
+            s << emitGlsl(t.residual, name + "_residual");
+        else
+            s << emitGlslDerivative(t.residual, name + "_residual", residualInputs);
         for (uint32_t e = 0; e < t.spaces.size(); ++e) {
             const auto& space = *t.spaces[e];
             std::vector<uint32_t> tangentInputs(space.tangentSize);
             std::iota(tangentInputs.begin(), tangentInputs.end(), space.stateSize);
-            s << emitGlslDerivative(space.retract, name + "_retract" + std::to_string(e), tangentInputs);
+            auto prefix = name + "_retract" + std::to_string(e);
+            tangentConstants.push_back(constantJacobian(space.retract, tangentInputs));
+            if (!tangentConstants.back())
+                s << emitGlslJacobian(space.retract, prefix + "Tangent", tangentInputs);
+            s << emitGlsl(space.retract, prefix + "Value");
+        }
+        if (t.spaces.size() == 1 && residualConstants && tangentConstants[0]) {
+            const auto S = t.spaces[0]->stateSize, T = t.spaces[0]->tangentSize;
+            std::vector<float> composed(size_t(M) * T);
+            bool finite = true;
+            for (uint32_t row = 0; row < M; ++row)
+                for (uint32_t col = 0; col < T; ++col)
+                    for (uint32_t k = 0; k < S; ++k)
+                        finite = std::isfinite(
+                                     composed[row * T + col] +=
+                                         (*residualConstants)[row * S + k] *
+                                         (*tangentConstants[0])[k * T + col]) &&
+                                 finite;
+            if (finite)
+                singleJacobian = std::move(composed);
         }
     }
-    s << "void " << name << "(uint id,float h,float time,float relaxation){Relation r=relation(id);\n";
+    s << "void " << name
+      << "(uint id,float h,float time,float relaxation,float inverseH2){Relation r=relation(id);\n";
     if (jacobi)
         for (uint32_t c = 0; c < D; ++c)
             s << "x_contributions[r.c+" << c << "u*r.cs]=0.0;\n";
@@ -115,26 +154,86 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
         return {name, s.str(), BufferRole::RelationWork};
     }
     local(s, "c", M);
-    local(s, "rawJ", M * Q);
-    local(s, "j", M * D);
+    if (!residualConstants)
+        local(s, "rawJ", M * Q);
+    if (!singleJacobian)
+        local(s, "j", M * D);
     local(s, "wjt", D * M);
-    s << name << "_residual(x,c,rawJ);\n";
+    s << name << "_residual(x,c" << (residualConstants ? "" : ",rawJ") << ");\n";
     uint32_t qo = 0, vo = 0;
     for (uint32_t e = 0; e < t.spaces.size(); ++e) {
         const auto S = t.spaces[e]->stateSize, T = t.spaces[e]->tangentSize;
-        s << "float input" << e << "[" << S + T << "], output" << e << "[" << S << "], tangent" << e << "["
-          << S * T << "];\n";
+        s << "float input" << e << "[" << S + T << "], output" << e << "[" << S << "];\n";
+        if (!tangentConstants[e])
+            s << "float tangent" << e << "[" << S * T << "];\n";
         for (uint32_t a = 0; a < S; ++a)
             s << "input" << e << "[" << a << "]=x[" << qo + a << "];\n";
         for (uint32_t a = 0; a < T; ++a)
             s << "input" << e << "[" << S + a << "]=0.0;\n";
-        s << name << "_retract" << e << "(input" << e << ",output" << e << ",tangent" << e << ");\n";
-        for (uint32_t row = 0; row < M; ++row)
-            for (uint32_t col = 0; col < T; ++col) {
-                s << "j[" << row * D + vo + col << "]=0.0";
-                for (uint32_t k = 0; k < S; ++k)
-                    s << "+rawJ[" << row * Q + qo + k << "]*tangent" << e << "[" << k * T + col
-                      << "]";
+        if (!tangentConstants[e])
+            s << name << "_retract" << e << "Tangent(input" << e << ",tangent" << e << ");\n";
+        if (!singleJacobian)
+            for (uint32_t row = 0; row < M; ++row)
+                for (uint32_t col = 0; col < T; ++col) {
+                s << "j[" << row * D + vo + col << "]=";
+                if (residualConstants && tangentConstants[e]) {
+                    float value = 0;
+                    for (uint32_t k = 0; k < S; ++k)
+                        value += (*residualConstants)[row * Q + qo + k] *
+                                 (*tangentConstants[e])[k * T + col];
+                    if (std::isfinite(value))
+                        s << literal(value);
+                    else {
+                        s << "0.0";
+                        for (uint32_t k = 0; k < S; ++k)
+                            if ((*residualConstants)[row * Q + qo + k] != 0 &&
+                                (*tangentConstants[e])[k * T + col] != 0)
+                                s << "+(" << literal((*residualConstants)[row * Q + qo + k]) << "*"
+                                  << literal((*tangentConstants[e])[k * T + col]) << ")";
+                    }
+                } else if (tangentConstants[e]) {
+                    bool emitted = false;
+                    for (uint32_t k = 0; k < S; ++k) {
+                        const auto coefficient = (*tangentConstants[e])[k * T + col];
+                        if (coefficient == 0)
+                            continue;
+                        if (emitted && coefficient > 0)
+                            s << "+";
+                        if (coefficient == 1)
+                            s << "rawJ[" << row * Q + qo + k << "]";
+                        else if (coefficient == -1)
+                            s << "-rawJ[" << row * Q + qo + k << "]";
+                        else
+                            s << literal(coefficient) << "*rawJ[" << row * Q + qo + k << "]";
+                        emitted = true;
+                    }
+                    if (!emitted)
+                        s << "0.0";
+                } else if (residualConstants) {
+                    bool emitted = false;
+                    for (uint32_t k = 0; k < S; ++k) {
+                        const auto coefficient = (*residualConstants)[row * Q + qo + k];
+                        if (coefficient == 0)
+                            continue;
+                        if (emitted && coefficient > 0)
+                            s << "+";
+                        if (coefficient == 1)
+                            s << "tangent" << e << "[" << k * T + col << "]";
+                        else if (coefficient == -1)
+                            s << "-tangent" << e << "[" << k * T + col << "]";
+                        else
+                            s << literal(coefficient) << "*tangent" << e << "[" << k * T + col
+                              << "]";
+                        emitted = true;
+                    }
+                    if (!emitted)
+                        s << "0.0";
+                } else {
+                    s << "0.0";
+                    for (uint32_t k = 0; k < S; ++k)
+                        s << "+rawJ[" << row * Q + qo + k << "]*tangent" << e << "["
+                          << k * T + col << "]";
+                }
                 s << ";\n";
             }
         qo += S;
@@ -169,9 +268,28 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
                 s << "wjt[" << (vo + col) * M + row << "]=0.0;\nif(v" << e
                   << ".flags==0u && x_variableEnabled[id" << e << "]!=0.0)wjt[" << (vo + col) * M + row
                   << "]=";
-                for (uint32_t k = 0; k < T; ++k)
-                    s << (k ? "+" : "") << "x_metric[v" << e << ".m+" << col * T + k << "u*v" << e
-                      << ".stride]*j[" << row * D + vo + k << "]";
+                if (singleJacobian) {
+                    bool emitted = false;
+                    for (uint32_t k = 0; k < T; ++k) {
+                        const auto coefficient = (*singleJacobian)[row * T + k];
+                        if (coefficient == 0)
+                            continue;
+                        if (emitted && coefficient > 0)
+                            s << "+";
+                        if (coefficient == -1)
+                            s << "-";
+                        else if (coefficient != 1)
+                            s << literal(coefficient) << "*";
+                        s << "x_metric[v" << e << ".m+" << col * T + k << "u*v" << e
+                          << ".stride]";
+                        emitted = true;
+                    }
+                    if (!emitted)
+                        s << "0.0";
+                } else
+                    for (uint32_t k = 0; k < T; ++k)
+                        s << (k ? "+" : "") << "x_metric[v" << e << ".m+" << col * T + k << "u*v"
+                          << e << ".stride]*j[" << row * D + vo + k << "]";
                 s << ";\n";
             }
         vo += T;
@@ -180,13 +298,26 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
     local(s, "rhs", M);
     local(s, "dl", M);
     for (uint32_t row = 0; row < M; ++row) {
-        s << "float alpha" << row << "=x_compliance[r.a+" << row << "u*r.stride]/(h*h);\n";
+        s << "float alpha" << row << "=x_compliance[r.a+" << row << "u*r.stride]*inverseH2;\n";
         s << "rhs[" << row << "]=-c[" << row << "]-alpha" << row << "*loadMultiplier(r," << row
           << "u);\n";
         for (uint32_t col = 0; col < M; ++col) {
             s << "a[" << row * M + col << "]=" << (row == col ? "alpha" + std::to_string(row) : "0.0");
-            for (uint32_t k = 0; k < D; ++k)
-                s << "+j[" << row * D + k << "]*wjt[" << k * M + col << "]";
+            for (uint32_t k = 0; k < D; ++k) {
+                if (singleJacobian) {
+                    const auto coefficient = (*singleJacobian)[row * D + k];
+                    if (coefficient == 0)
+                        continue;
+                    if (coefficient == 1)
+                        s << "+";
+                    else if (coefficient == -1)
+                        s << "-";
+                    else
+                        s << (coefficient > 0 ? "+" : "") << literal(coefficient) << "*";
+                    s << "wjt[" << k * M + col << "]";
+                } else
+                    s << "+j[" << row * D + k << "]*wjt[" << k * M + col << "]";
+            }
             s << ";\n";
         }
     }
@@ -287,7 +418,7 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
             for (uint32_t b = 0; b < e; ++b)
                 s << " && id" << e << "!=id" << b;
             s << ") {\n";
-            s << name << "_retract" << e << "(input" << e << ",output" << e << ",tangent" << e << ");\n";
+            s << name << "_retract" << e << "Value(input" << e << ",output" << e << ");\n";
             finite(s, "output" + std::to_string(e), S);
             s << "}\n";
         }
@@ -322,9 +453,10 @@ KernelFunction relationDispatchFunction(
     std::ostringstream s;
     for (const auto& item : functions)
         s << item.second.source;
-    s << "void " << name << "(uint id,float h,float time,float relaxation){switch(relation(id).type){\n";
+    s << "void " << name
+      << "(uint id,float h,float time,float relaxation,float inverseH2){switch(relation(id).type){\n";
     for (const auto& [type, function] : functions)
-        s << "case " << type << "u:" << function.entry << "(id,h,time,relaxation);break;\n";
+        s << "case " << type << "u:" << function.entry << "(id,h,time,relaxation,inverseH2);break;\n";
     s << "}}\n";
     return {name, s.str(), BufferRole::RelationWork, jacobi};
 }
@@ -353,7 +485,8 @@ std::string incidenceKernel(const RelationType& t, bool scatter) {
 std::string globalKernel(const KernelFunction& function) {
     const char* work = function.work == BufferRole::VariableWork ? "variableWork" : "relationWork";
     return stateAccess(false) + function.source + "void main(){uint lane=invocation();if(lane>=step.count)return;" +
-           function.entry + "(x_" + work + "[step.first+lane],step.h,step.time,step.relaxation); }\n";
+           function.entry + "(x_" + work +
+           "[step.first+lane],step.h,step.time,step.relaxation,1.0/(step.h*step.h)); }\n";
 }
 std::string stateAccess(bool localState, uint32_t variableCount) {
     struct FieldAccess {

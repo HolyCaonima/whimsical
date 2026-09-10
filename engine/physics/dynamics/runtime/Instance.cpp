@@ -7,6 +7,7 @@
 #include <cstring>
 #include <map>
 #include <stdexcept>
+#include <unordered_map>
 
 namespace whimsical::dynamics {
 namespace {
@@ -29,6 +30,7 @@ std::vector<uint8_t> bytes(const Constants& data) {
     std::memcpy(out.data(), &data, sizeof(data));
     return out;
 }
+constexpr uint32_t StateWritePassThreshold = 8;
 struct Range {
     BufferRole role;
     uint32_t first, count, width, stride;
@@ -94,11 +96,14 @@ struct Instance::Storage {
             case BufferRole::RegionRanges:
             case BufferRole::RegionState:
             case BufferRole::LocalOffsets:
+            case BufferRole::StateWrites:
                 d.view.readOnly = true;
                 break;
             default:
                 break;
             }
+            if (plan->statistics.colorWindows && BufferRole(i) == BufferRole::Values)
+                d.view.body = "coherent " + d.view.body;
             if (!plan->local.empty() && BufferRole(i) == BufferRole::Contributions)
                 d.view.body = "coherent " + d.view.body;
             if (BufferRole(i) == BufferRole::Diagnostics)
@@ -202,11 +207,11 @@ struct Instance::Storage {
         dispatch(*programs[batch.kernel], plan->kernels[batch.kernel].name,
                  {batch.first, batch.count, h, time, uint32_t(tick), iteration, plan->policy.relaxation});
     }
-    void write(Range destination, uint32_t first, const std::vector<float>& values) {
+    uint32_t writeRows(Range destination, uint32_t first, const std::vector<float>& values) const {
         if (!destination.width) {
             if (!values.empty())
                 throw std::invalid_argument("Zero-width state write");
-            return;
+            return 0;
         }
         if (values.size() % destination.width || first > destination.count ||
             values.size() / destination.width > destination.count - first)
@@ -214,7 +219,10 @@ struct Instance::Storage {
         for (auto value : values)
             if (!std::isfinite(value))
                 throw std::invalid_argument("State input must be finite");
-        auto count = uint32_t(values.size() / destination.width);
+        return uint32_t(values.size() / destination.width);
+    }
+    void write(Range destination, uint32_t first, const std::vector<float>& values) {
+        auto count = writeRows(destination, first, values);
         if (!count)
             return;
         std::vector<float> column(count);
@@ -225,6 +233,82 @@ struct Instance::Storage {
                                    uint64_t(destination.first + first + c * destination.stride) * 4,
                                    bytes(column));
         }
+    }
+    void writes(const std::vector<StateWrite>& inputs, uint64_t tick) {
+        std::vector<Range> destinations;
+        std::vector<uint32_t> rows;
+        std::array<size_t, 4> assignments{};
+        destinations.reserve(inputs.size());
+        rows.reserve(inputs.size());
+        uint64_t passes = 0;
+        for (const auto& input : inputs) {
+            auto destination = range(*plan, input.field, input.set);
+            auto count = writeRows(destination, input.first, input.values);
+            destinations.push_back(destination);
+            rows.push_back(count);
+            if (count) {
+                passes += destination.width;
+                assignments[size_t(input.field)] += size_t(count) * destination.width;
+            }
+        }
+        if (passes < StateWritePassThreshold) {
+            for (size_t i = 0; i < inputs.size(); ++i)
+                write(destinations[i], inputs[i].first, inputs[i].values);
+            return;
+        }
+
+        struct FieldWrites {
+            std::vector<uint32_t> words;
+            std::unordered_map<uint32_t, uint32_t> positions;
+        };
+        std::array<FieldWrites, 4> fields;
+        const auto capacity =
+            plan->buffers[size_t(BufferRole::StateWrites)].initial.size() / (3 * sizeof(uint32_t));
+        for (uint32_t field = 0; field < fields.size(); ++field) {
+            auto reserve = std::min(assignments[field], capacity);
+            fields[field].words.reserve(reserve * 2);
+            fields[field].positions.reserve(reserve);
+        }
+        for (size_t w = 0; w < inputs.size(); ++w) {
+            const auto& input = inputs[w];
+            const auto& destination = destinations[w];
+            auto& field = fields[size_t(input.field)];
+            for (uint32_t c = 0; c < destination.width; ++c)
+                for (uint32_t i = 0; i < rows[w]; ++i) {
+                    auto at = destination.first + input.first + i + c * destination.stride;
+                    uint32_t value;
+                    std::memcpy(&value, &input.values[size_t(i) * destination.width + c], sizeof(value));
+                    auto [found, inserted] =
+                        field.positions.emplace(at, uint32_t(field.words.size() / 2));
+                    if (inserted) {
+                        field.words.push_back(at);
+                        field.words.push_back(value);
+                    } else
+                        field.words[size_t(found->second) * 2 + 1] = value;
+                }
+        }
+        uint64_t count = 0;
+        for (const auto& field : fields)
+            count += field.words.size() / 2;
+        if (count > capacity) {
+            for (size_t i = 0; i < inputs.size(); ++i)
+                write(destinations[i], inputs[i].first, inputs[i].values);
+            return;
+        }
+
+        std::vector<uint32_t> packed;
+        packed.reserve(size_t(count) * 3);
+        for (uint32_t field = 0; field < fields.size(); ++field)
+            for (size_t i = 0; i < fields[field].words.size(); i += 2) {
+                packed.push_back(field);
+                packed.push_back(fields[field].words[i]);
+                packed.push_back(fields[field].words[i + 1]);
+            }
+        if (packed.empty())
+            return;
+        execution->uploadRange(id(BufferRole::StateWrites), 0, bytes(packed));
+        dispatch(*programs[plan->stateWriteKernel], plan->kernels[plan->stateWriteKernel].name,
+                 {0, uint32_t(count), 0, 0, uint32_t(tick), 0, 1});
     }
     void dynamicEndpoints(const TickInput::Endpoints& input) {
         const auto& layout = plan->relations.at(input.set);
@@ -380,9 +464,7 @@ void Instance::step(const TickInput& input) {
     auto& s = *storage_;
     auto readSize = s.readSize(input.reads);
     s.execution->graph().reset();
-    for (const auto& write : input.writes) {
-        s.write(range(*s.plan, write.field, write.set), write.first, write.values);
-    }
+    s.writes(input.writes, input.tick);
     s.execution->upload(s.id(BufferRole::Diagnostics), std::vector<uint8_t>(8));
     for (const auto& endpoints : input.endpoints)
         s.dynamicEndpoints(endpoints);

@@ -38,6 +38,7 @@ enum class BufferRole : uint32_t {
     RegionRanges,
     RegionState,
     LocalOffsets,
+    StateWrites,
     Count
 };
 constexpr size_t BufferCount = size_t(BufferRole::Count);
@@ -68,6 +69,8 @@ struct PlanStatistics {
     uint32_t components = 0, localRegions = 0;
     uint32_t localSharedBytes = 0;
     uint64_t localVariables = 0, localRelations = 0;
+    uint32_t colorWindows = 0;
+    uint64_t colorWindowRegions = 0;
     uint64_t referenceDispatches = 0, dispatches = 0; // per tick, excluding topology/transfers
 };
 // No device, resource IDs or submission state. Instance count affects work tables
@@ -85,6 +88,7 @@ struct CompiledPlan {
     // Closed regions execute the same substep/iteration schedule inside a workgroup.
     std::vector<Batch> local;
     uint32_t resetKernel = 0;
+    uint32_t stateWriteKernel = 0;
     // Type-dispatch kernels let Schedule collapse all mathematical relation types
     // in one dependency color without changing their model definitions.
     uint32_t coloredDispatchKernel = UINT32_MAX, jacobiDispatchKernel = UINT32_MAX;

@@ -1,6 +1,7 @@
 #include "Schedule.h"
 #include <algorithm>
 #include <cstring>
+#include <map>
 #include <numeric>
 #include <set>
 #include <sstream>
@@ -10,7 +11,7 @@ namespace whimsical::dynamics {
 namespace {
 constexpr uint32_t NoRegion = UINT32_MAX;
 // Backend work budgets, independent of model names and numerical field values.
-constexpr uint32_t Lanes = 128, RelationBudget = 512, StateWordBudget = 2048;
+constexpr uint32_t Lanes = 128, RelationBudget = 512, StateWordBudget = 2048, ColorWindowBudget = 4;
 constexpr uint64_t FunctionWordBudget = 2048, SourceByteBudget = 256 * 1024;
 std::vector<uint32_t> words(const BufferData& data) {
     std::vector<uint32_t> result(data.initial.size() / 4);
@@ -34,7 +35,31 @@ uint64_t dispatchCount(const CompiledPlan& p) {
     return p.policy.substeps * (count(p.predict) + (p.multiplierCount ? 1 : 0) +
         p.policy.iterations * (count(p.solve) + count(p.apply)) + count(p.recover) + count(p.update));
 }
+struct Components {
+    std::vector<uint32_t> parent, size;
+    explicit Components(uint32_t count) : parent(count), size(count, 1) {
+        std::iota(parent.begin(), parent.end(), 0u);
+    }
+    uint32_t root(uint32_t v) {
+        while (v != parent[v]) {
+            parent[v] = parent[parent[v]];
+            v = parent[v];
+        }
+        return v;
+    }
+    void join(uint32_t a, uint32_t b) {
+        a = root(a);
+        b = root(b);
+        if (a == b)
+            return;
+        if (size[a] < size[b])
+            std::swap(a, b);
+        parent[b] = a;
+        size[a] += size[b];
+    }
+};
 void collapseRelationDispatches(CompiledPlan& p) {
+    auto work = words(p.buffers[size_t(BufferRole::RelationWork)]);
     std::vector<Batch> collapsed;
     for (size_t first = 0; first < p.solve.size();) {
         size_t end = first + 1;
@@ -42,18 +67,191 @@ void collapseRelationDispatches(CompiledPlan& p) {
             ++end;
         const auto dispatch =
             p.solve[first].color < 0 ? p.jacobiDispatchKernel : p.coloredDispatchKernel;
-        if (dispatch == UINT32_MAX) {
+        if (dispatch == UINT32_MAX || end == first + 1) {
             collapsed.insert(collapsed.end(), p.solve.begin() + first, p.solve.begin() + end);
         } else {
             auto batch = p.solve[first];
             batch.kernel = dispatch;
-            for (size_t i = first + 1; i < end; ++i)
-                batch.count += p.solve[i].count;
+            std::vector<uint32_t> joined;
+            for (size_t i = first; i < end; ++i) {
+                const auto& source = p.solve[i];
+                joined.insert(joined.end(), work.begin() + source.first,
+                              work.begin() + source.first + source.count);
+            }
+            batch.first = uint32_t(work.size());
+            batch.count = uint32_t(joined.size());
+            work.insert(work.end(), joined.begin(), joined.end());
             collapsed.push_back(batch);
         }
         first = end;
     }
     p.solve = std::move(collapsed);
+    store(p.buffers[size_t(BufferRole::RelationWork)], work);
+}
+bool buildColorWindow(const CompiledPlan& p, const std::vector<Batch>& stages,
+                      const std::vector<uint32_t>& work, const std::vector<uint32_t>& endpoints,
+                      const std::vector<uint32_t>& relations, const std::vector<uint32_t>& variables,
+                      std::vector<std::vector<std::vector<uint32_t>>>& regions) {
+    struct Item {
+        uint32_t relation, phase;
+    };
+    std::vector<Item> items;
+    for (uint32_t phase = 0; phase < stages.size(); ++phase)
+        for (uint32_t i = 0; i < stages[phase].count; ++i)
+            items.push_back({work[stages[phase].first + i], phase});
+    if (items.empty())
+        return false;
+
+    Components components(uint32_t(items.size()));
+    std::vector<uint32_t> variableOwner(p.statistics.variables, NoRegion);
+    for (uint32_t i = 0; i < items.size(); ++i) {
+        auto relation = items[i].relation;
+        auto endpoint = relations[size_t(relation) * 9];
+        auto type = relations[size_t(relation) * 9 + 8];
+        for (uint32_t slot = 0; slot < p.types[type]->spaces.size(); ++slot) {
+            auto variable = endpoints[endpoint + slot];
+            if (variables[size_t(variable) * 5 + 4])
+                continue;
+            if (variableOwner[variable] == NoRegion)
+                variableOwner[variable] = i;
+            else
+                components.join(i, variableOwner[variable]);
+        }
+    }
+
+    using PhaseWork = std::vector<std::vector<uint32_t>>;
+    std::vector<uint32_t> componentId(items.size(), NoRegion);
+    std::vector<PhaseWork> componentWork;
+    for (uint32_t i = 0; i < items.size(); ++i) {
+        auto root = components.root(i);
+        if (componentId[root] == NoRegion) {
+            componentId[root] = uint32_t(componentWork.size());
+            componentWork.emplace_back(stages.size());
+        }
+        componentWork[componentId[root]][items[i].phase].push_back(items[i].relation);
+    }
+
+    // A dependency component cannot cross workgroups. Pack only independent
+    // components, keeping each color near one relation evaluation per lane.
+    PhaseWork packed(stages.size());
+    uint32_t packedTotal = 0;
+    for (auto& component : componentWork) {
+        uint32_t total = 0;
+        for (const auto& phase : component)
+            total += uint32_t(phase.size());
+        if (total > RelationBudget)
+            return false;
+        bool fits = packedTotal + total <= RelationBudget;
+        for (uint32_t phase = 0; phase < stages.size(); ++phase)
+            fits = fits && packed[phase].size() + component[phase].size() <= Lanes;
+        if (packedTotal && !fits) {
+            regions.push_back(std::move(packed));
+            packed = PhaseWork(stages.size());
+            packedTotal = 0;
+        }
+        for (uint32_t phase = 0; phase < stages.size(); ++phase)
+            packed[phase].insert(packed[phase].end(), component[phase].begin(), component[phase].end());
+        packedTotal += total;
+    }
+    if (packedTotal)
+        regions.push_back(std::move(packed));
+    return !regions.empty();
+}
+void fuseColorWindows(CompiledPlan& p, const std::vector<KernelFunction>& functions) {
+    if (p.dynamicTopology || p.policy.execution == ExecutionMode::Global)
+        return;
+    size_t colored = 0;
+    while (colored < p.solve.size() && p.solve[colored].color >= 0)
+        ++colored;
+    if (colored < 2)
+        return;
+
+    auto relationWork = words(p.buffers[size_t(BufferRole::RelationWork)]);
+    auto ranges = words(p.buffers[size_t(BufferRole::RegionRanges)]);
+    auto endpoints = words(p.buffers[size_t(BufferRole::Endpoints)]);
+    auto relations = words(p.buffers[size_t(BufferRole::Relations)]);
+    auto variables = words(p.buffers[size_t(BufferRole::Variables)]);
+    std::map<uint32_t, uint32_t> kernels;
+    auto windowKernel = [&](const std::vector<Batch>& stages) {
+        auto function = stages.front().kernel;
+        for (const auto& stage : stages)
+            if (stage.kernel != function) {
+                function = p.coloredDispatchKernel;
+                break;
+            }
+        if (function == UINT32_MAX)
+            return UINT32_MAX;
+        auto found = kernels.find(function);
+        if (found != kernels.end())
+            return found->second;
+        std::ostringstream source;
+        source << stateAccess(false) << functions[function].source
+               << "void main(){uint region=gl_WorkGroupID.x+gl_WorkGroupID.y*65535u;"
+                  "if(region>=step.count/128u)return;uint lane=gl_LocalInvocationID.x;"
+                  "uint at=x_regionRanges[step.first+region],phases=x_regionRanges[at++];"
+                  "float inverseH2=1.0/(step.h*step.h);"
+                  "for(uint phase=0u;phase<phases;++phase){"
+                  "uint first=x_regionRanges[at+phase*2u],count=x_regionRanges[at+phase*2u+1u];"
+                  "for(uint j=lane;j<count;j+=128u)"
+               << functions[function].entry
+               << "(x_relationWork[first+j],step.h,step.time,step.relaxation,inverseH2);"
+                  "if(phase+1u<phases){memoryBarrierBuffer();barrier();}}}\n";
+        auto kernel = uint32_t(p.kernels.size());
+        p.kernels.push_back({"Solve color windows", source.str()});
+        kernels.emplace(function, kernel);
+        return kernel;
+    };
+    std::vector<Batch> fused;
+    for (size_t first = 0; first < colored;) {
+        if (first + 1 == colored) {
+            fused.push_back(p.solve[first++]);
+            continue;
+        }
+        std::vector<Batch> stages;
+        std::vector<std::vector<std::vector<uint32_t>>> regions;
+        const auto limit = std::min(colored, first + size_t(ColorWindowBudget));
+        for (size_t end = first + 2; end <= limit; ++end) {
+            std::vector<Batch> candidate(p.solve.begin() + first, p.solve.begin() + end);
+            std::vector<std::vector<std::vector<uint32_t>>> candidateRegions;
+            if (!buildColorWindow(p, candidate, relationWork, endpoints, relations, variables,
+                                  candidateRegions))
+                break;
+            stages = std::move(candidate);
+            regions = std::move(candidateRegions);
+        }
+        if (stages.empty()) {
+            fused.push_back(p.solve[first++]);
+            continue;
+        }
+        auto kernel = windowKernel(stages);
+        if (kernel == UINT32_MAX) {
+            fused.push_back(p.solve[first++]);
+            continue;
+        }
+        auto table = uint32_t(ranges.size());
+        ranges.resize(ranges.size() + regions.size());
+        for (uint32_t region = 0; region < regions.size(); ++region) {
+            ranges[table + region] = uint32_t(ranges.size());
+            ranges.push_back(uint32_t(stages.size()));
+            for (const auto& phase : regions[region]) {
+                ranges.push_back(uint32_t(relationWork.size()));
+                ranges.push_back(uint32_t(phase.size()));
+                relationWork.insert(relationWork.end(), phase.begin(), phase.end());
+            }
+        }
+        if (uint64_t(regions.size()) * Lanes > UINT32_MAX)
+            throw std::overflow_error("Dynamics color-window dispatch exceeds 32-bit addressing");
+        fused.push_back({kernel, table, uint32_t(regions.size()) * Lanes, stages.back().color});
+        ++p.statistics.colorWindows;
+        p.statistics.colorWindowRegions += regions.size();
+        first += stages.size();
+    }
+    fused.insert(fused.end(), p.solve.begin() + colored, p.solve.end());
+    if (kernels.empty())
+        return;
+    p.solve = std::move(fused);
+    store(p.buffers[size_t(BufferRole::RelationWork)], relationWork);
+    store(p.buffers[size_t(BufferRole::RegionRanges)], ranges);
 }
 void pruneKernels(CompiledPlan& p) {
     std::vector<bool> used(p.kernels.size());
@@ -62,6 +260,7 @@ void pruneKernels(CompiledPlan& p) {
             used[batch.kernel] = true;
     };
     used[p.resetKernel] = true;
+    used[p.stateWriteKernel] = true;
     mark(p.predict);
     mark(p.solve);
     mark(p.apply);
@@ -91,6 +290,7 @@ void pruneKernels(CompiledPlan& p) {
             id = mapping[id];
     };
     p.resetKernel = mapping[p.resetKernel];
+    p.stateWriteKernel = mapping[p.stateWriteKernel];
     remapOptional(p.coloredDispatchKernel);
     remapOptional(p.jacobiDispatchKernel);
     if (p.dynamicTopology) {
@@ -108,29 +308,6 @@ void pruneKernels(CompiledPlan& p) {
     remap(p.local);
     p.kernels = std::move(kernels);
 }
-struct Components {
-    std::vector<uint32_t> parent, size;
-    explicit Components(uint32_t count) : parent(count), size(count, 1) {
-        std::iota(parent.begin(), parent.end(), 0u);
-    }
-    uint32_t root(uint32_t v) {
-        while (v != parent[v]) {
-            parent[v] = parent[parent[v]];
-            v = parent[v];
-        }
-        return v;
-    }
-    void join(uint32_t a, uint32_t b) {
-        a = root(a);
-        b = root(b);
-        if (a == b)
-            return;
-        if (size[a] < size[b])
-            std::swap(a, b);
-        parent[b] = a;
-        size[a] += size[b];
-    }
-};
 struct Cost {
     uint64_t variables = 0, relations = 0, state = 0, temporaries = 0;
     bool fits() const {
@@ -155,10 +332,11 @@ uint64_t temporaryWords(const RelationType& t) {
 
 void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions) {
     p.statistics.referenceDispatches = dispatchCount(p);
-    collapseRelationDispatches(p);
-    p.statistics.dispatches = dispatchCount(p);
     // Dynamic endpoints can connect any compatible variable at a later tick.
     if (p.dynamicTopology || p.policy.execution == ExecutionMode::Global) {
+        collapseRelationDispatches(p);
+        fuseColorWindows(p, functions);
+        p.statistics.dispatches = dispatchCount(p);
         pruneKernels(p);
         return;
     }
@@ -214,6 +392,9 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
         packed = packed + costs[id];
     }
     if (!regionCount) {
+        collapseRelationDispatches(p);
+        fuseColorWindows(p, functions);
+        p.statistics.dispatches = dispatchCount(p);
         pruneKernels(p);
         return;
     }
@@ -238,6 +419,9 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
         if (localFunctions[i])
             sourceBytes += functions[i].source.size();
     if (sourceBytes > SourceByteBudget) {
+        collapseRelationDispatches(p);
+        fuseColorWindows(p, functions);
+        p.statistics.dispatches = dispatchCount(p);
         pruneKernels(p);
         return;
     }
@@ -303,6 +487,7 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     std::vector<uint32_t> variableWork, relationWork, ranges;
     struct Phase {
         uint32_t kernel;
+        bool synchronize = true;
     };
     std::vector<Phase> phases;
     // Ranges are phase-major: each region has a (first,count) pair in each phase.
@@ -314,8 +499,11 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
             ranges.push_back(uint32_t(items.size()));
             target.insert(target.end(), items.begin(), items.end());
         }
+        return uint32_t(phases.size() - 1);
     };
-    auto lower = [&](std::vector<Batch>& batches) {
+    auto lower = [&](std::vector<Batch>& batches, bool combineColor = false) {
+        uint32_t previousPhase = UINT32_MAX;
+        int32_t previousColor = -2;
         for (auto& b : batches) {
             const bool variable = functions[b.kernel].work == BufferRole::VariableWork;
             const auto& source = variable ? oldVariables : oldRelations;
@@ -332,8 +520,12 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
             }
             b.first = first;
             b.count = uint32_t(target.size()) - first;
-            if (std::any_of(work.begin(), work.end(), [](const auto& items) { return !items.empty(); }))
-                phase(b.kernel, work, target);
+            if (std::any_of(work.begin(), work.end(), [](const auto& items) { return !items.empty(); })) {
+                if (combineColor && previousPhase != UINT32_MAX && previousColor == b.color)
+                    phases[previousPhase].synchronize = false;
+                previousPhase = phase(b.kernel, work, target);
+                previousColor = b.color;
+            }
         }
         batches.erase(std::remove_if(batches.begin(), batches.end(), [](const Batch& b) { return !b.count; }),
                       batches.end());
@@ -350,7 +542,9 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     const auto resetPhase = uint32_t(phases.size());
     phase(NoRegion, reset, variableWork);
     const auto iterationBegin = uint32_t(phases.size());
-    lower(p.solve);
+    // Local lanes call homogeneous mathematical functions directly. Batches in one
+    // dependency color need no barrier between types; the color boundary remains.
+    lower(p.solve, true);
     lower(p.apply);
     const auto iterationEnd = uint32_t(phases.size());
     lower(p.recover);
@@ -381,7 +575,7 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     };
     copyState(false);
     source << "barrier();\nfor(uint substep=0u;substep<" << p.policy.substeps << "u;++substep){"
-              "float h=step.h,time=step.time+h*float(substep+1u);\n";
+              "float h=step.h,time=step.time+h*float(substep+1u),inverseH2=1.0/(h*h);\n";
     for (uint32_t i = 0; i < phases.size(); ++i) {
         if (i == iterationBegin && iterationBegin != iterationEnd)
             source << "for(uint iteration=0u;iteration<" << p.policy.iterations << "u;++iteration){\n";
@@ -396,14 +590,16 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
             const auto& function = functions[phases[i].kernel];
             source << function.entry << "(x_"
                    << (function.work == BufferRole::VariableWork ? "variableWork" : "relationWork")
-                   << "[first+j],h,time,step.relaxation);";
+                   << "[first+j],h,time,step.relaxation,inverseH2);";
         }
         source << "}}";
         // Jacobi contributions retain their global CSR layout. All other iterative
         // state is shared, so its phase boundary needs only workgroup synchronization.
-        if (i != resetPhase && functions[phases[i].kernel].writesContributions)
+        if (phases[i].synchronize && i != resetPhase && functions[phases[i].kernel].writesContributions)
             source << "memoryBarrierBuffer();";
-        source << "barrier();\n";
+        if (phases[i].synchronize)
+            source << "barrier();";
+        source << "\n";
     }
     source << "}\n";
     copyState(true);
@@ -415,6 +611,10 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
         throw std::overflow_error("Dynamics region dispatch exceeds 32-bit addressing");
     p.local.push_back({uint32_t(p.kernels.size()), 0, regionCount * Lanes});
     p.kernels.push_back({"Solve local regions", source.str()});
+    // Remaining global work still benefits from one type-dispatch per dependency
+    // color. Local work has already retained its specialized calls above.
+    collapseRelationDispatches(p);
+    fuseColorWindows(p, functions);
     p.statistics.dispatches = dispatchCount(p) + 1;
     pruneKernels(p);
 }
