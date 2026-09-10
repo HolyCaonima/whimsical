@@ -89,7 +89,7 @@ powershell -ExecutionPolicy Bypass -File tools/build.ps1
 
 通过 JavaScript 定义数学空间、变量和约束关系，在运行时编译成 GPU 求解执行图。编译器自动生成 Jacobian、安排求解顺序，并根据依赖与容量融合执行区域；运行时支持数值参数更新、拓扑变更后的重新编译与状态迁移，以及异步提交和结果读取。
 
-[![ConstraintLab：四根角绳悬挂的绳布拼接网，全部位于同一自由度空间和关系图](docs/screenshots/constraint-lab.png)](docs/screenshots/constraint-lab.png)
+[![ConstraintLab：四根角绳悬挂的绳布拼接网，全部位于同一自由度空间和关系图](docs/screenshots/constraint-lab-woven.png)](docs/screenshots/constraint-lab-woven.png)
 
 当前画面由 16 块布片、72 根短连接绳和 4 根角绳组成，但它们不是分别模拟后粘合的对象：704 个 R3 变量与 4,136 个关系属于同一个自由度空间和同一张连通关系图。Compiler 只编译空间、端点和数学关系，并不知道绳子或布料类型。
 
