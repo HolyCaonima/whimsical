@@ -96,10 +96,10 @@ struct Variable {uint q; uint v; uint m; uint stride; uint flags; uint id;};
 Variable variable(uint id) {
     uint k=id*5u; return Variable(x_variables[k],x_variables[k+1u],x_variables[k+2u],x_variables[k+3u],x_variables[k+4u],id);
 }
-struct Relation {uint e; uint p; uint a; uint h; uint l; uint c; uint stride; uint cs; uint id;};
+struct Relation {uint e; uint p; uint a; uint h; uint l; uint c; uint stride; uint cs; uint type; uint id;};
 Relation relation(uint id) {
-    uint k=id*8u;return Relation(x_relations[k],x_relations[k+1u],x_relations[k+2u],x_relations[k+3u],
-        x_relations[k+4u],x_relations[k+5u],x_relations[k+6u],x_relations[k+7u],id);
+    uint k=id*9u;return Relation(x_relations[k],x_relations[k+1u],x_relations[k+2u],x_relations[k+3u],
+        x_relations[k+4u],x_relations[k+5u],x_relations[k+6u],x_relations[k+7u],x_relations[k+8u],id);
 }
 )";
 }
@@ -252,7 +252,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             auto end = instance.endpoints;
             relationMeta.insert(relationMeta.end(),
                                 {end, layout.parameters + row, layout.compliance + row, layout.history + row,
-                                 layout.multipliers + row, 0, set.count, 0});
+                                 layout.multipliers + row, 0, set.count, 0, type});
             p->statistics.endpointReferences += instance.arity;
             instances.push_back(std::move(instance));
         }
@@ -292,8 +292,8 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
                 }
                 local += type.spaces[e]->tangentSize;
             }
-            setWord(buffer(BufferRole::Relations), in.id * 8 + 5, rowBase);
-            setWord(buffer(BufferRole::Relations), in.id * 8 + 7, count);
+            setWord(buffer(BufferRole::Relations), in.id * 9 + 5, rowBase);
+            setWord(buffer(BufferRole::Relations), in.id * 9 + 7, count);
         }
     }
     if (p->dynamicTopology) {
@@ -370,6 +370,19 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             p->scatterIncidence.push_back(batch);
         }
     }
+    auto relationDispatch = [&](bool jacobi) {
+        std::vector<std::pair<uint32_t, KernelFunction>> typed;
+        for (const auto& [key, program] : solveKernels)
+            if (key.second == jacobi)
+                typed.emplace_back(key.first, functions[program]);
+        if (typed.size() < 2)
+            return UINT32_MAX;
+        auto label = std::string(jacobi ? "Jacobi" : "Colored");
+        return operation(label + " relations",
+                         relationDispatchFunction(typed, jacobi, label + "Dispatch"));
+    };
+    p->coloredDispatchKernel = relationDispatch(false);
+    p->jacobiDispatchKernel = relationDispatch(true);
     for (uint32_t type = 0; type < p->types.size(); ++type)
         if (p->types[type]->update) {
             std::vector<uint32_t> work;

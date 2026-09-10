@@ -1,5 +1,6 @@
 #pragma once
 #include "CompiledPlan.h"
+#include <utility>
 
 namespace whimsical::dynamics {
 // A numerical operation is callable by either a global dispatch or a region lane.
@@ -11,6 +12,8 @@ struct KernelFunction {
 };
 KernelFunction variableFunction(const Space&, const char* operation, const std::string& name);
 KernelFunction relationFunction(const RelationType&, bool jacobi, bool update, const std::string& name);
+KernelFunction relationDispatchFunction(
+    const std::vector<std::pair<uint32_t, KernelFunction>>&, bool jacobi, const std::string& name);
 std::string globalKernel(const KernelFunction&);
 std::string stateAccess(bool local, uint32_t variableCount = 0);
 

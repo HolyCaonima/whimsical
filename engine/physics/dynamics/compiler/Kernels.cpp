@@ -86,16 +86,18 @@ KernelFunction variableFunction(const Space& space, const char* operation, const
 KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update, const std::string& name) {
     std::ostringstream s;
     const auto Q = t.stateSize(), D = t.tangentSize(), M = t.rows;
-    std::vector<uint32_t> residualInputs(Q);
-    std::iota(residualInputs.begin(), residualInputs.end(), 0u);
-    s << emitGlslDerivative(t.residual, name + "_residual", residualInputs);
-    if (t.update)
+    if (update) {
         s << emitGlsl(*t.update, name + "_commitHistory");
-    for (uint32_t e = 0; e < t.spaces.size(); ++e) {
-        const auto& space = *t.spaces[e];
-        std::vector<uint32_t> tangentInputs(space.tangentSize);
-        std::iota(tangentInputs.begin(), tangentInputs.end(), space.stateSize);
-        s << emitGlslDerivative(space.retract, name + "_retract" + std::to_string(e), tangentInputs);
+    } else {
+        std::vector<uint32_t> residualInputs(Q);
+        std::iota(residualInputs.begin(), residualInputs.end(), 0u);
+        s << emitGlslDerivative(t.residual, name + "_residual", residualInputs);
+        for (uint32_t e = 0; e < t.spaces.size(); ++e) {
+            const auto& space = *t.spaces[e];
+            std::vector<uint32_t> tangentInputs(space.tangentSize);
+            std::iota(tangentInputs.begin(), tangentInputs.end(), space.stateSize);
+            s << emitGlslDerivative(space.retract, name + "_retract" + std::to_string(e), tangentInputs);
+        }
     }
     s << "void " << name << "(uint id,float h,float time,float relaxation){Relation r=relation(id);\n";
     if (jacobi)
@@ -190,17 +192,26 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
     }
     // A singular local model does not have a defined XPBD correction. Leave it
     // unchanged; diagnostics expose it instead of inventing an epsilon compliance.
-    s << "float scale=0.0;for(int k=0;k<" << M * M
-      << ";++k){if(isnan(a[k])||isinf(a[k])){atomicAdd(x_diagnostics[0],1u);return;}scale=max(scale,abs(a[k])"
-         ");}\n";
-    s << "for(int k=0;k<" << M
-      << ";++k)if(isnan(rhs[k])||isinf(rhs[k])){atomicAdd(x_diagnostics[0],1u);return;}\n";
-    s << "if(scale==0.0){for(int k=0;k<" << M
-      << ";++k)if(rhs[k]!=0.0){atomicAdd(x_diagnostics[1],1u);break;}return;}\n";
+    if (M == 1) {
+        // The scalar block has no pivot choice or elimination. Emitting the quotient
+        // directly avoids materializing the generic matrix normalization path.
+        s << "if(isnan(a[0])||isinf(a[0])||isnan(rhs[0])||isinf(rhs[0]))"
+             "{atomicAdd(x_diagnostics[0],1u);return;}\n";
+        s << "if(a[0]==0.0){if(rhs[0]!=0.0)atomicAdd(x_diagnostics[1],1u);return;}\n";
+        s << "rhs[0]/=a[0];\n";
+    } else {
+        s << "float scale=0.0;for(int k=0;k<" << M * M
+          << ";++k){if(isnan(a[k])||isinf(a[k])){atomicAdd(x_diagnostics[0],1u);return;}scale=max(scale,abs(a[k])"
+             ");}\n";
+        s << "for(int k=0;k<" << M
+          << ";++k)if(isnan(rhs[k])||isinf(rhs[k])){atomicAdd(x_diagnostics[0],1u);return;}\n";
+        s << "if(scale==0.0){for(int k=0;k<" << M
+          << ";++k)if(rhs[k]!=0.0){atomicAdd(x_diagnostics[1],1u);break;}return;}\n";
+    }
     // Small block dimensions are compile-time facts. Static matrix accesses let
     // the GPU keep these blocks in registers instead of dynamically indexed arrays.
     // Preserve partial pivoting and the same elimination order as the general path.
-    if (M <= 4) {
+    if (M > 1 && M <= 4) {
         for (uint32_t col = 0; col < M; ++col) {
             s << "{uint pivot=" << col << "u;float largest=abs(a[" << col * M + col << "]);\n";
             for (uint32_t row = col + 1; row < M; ++row)
@@ -229,7 +240,7 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
             }
             s << "}\n";
         }
-    } else {
+    } else if (M > 4) {
         s << "for(int col=0;col<" << M << ";++col){int pivot=col;for(int row=col+1;row<" << M
           << ";++row)if(abs(a[row*" << M << "+col])>abs(a[pivot*" << M << "+col]))pivot=row;\n";
         s << "if(abs(a[pivot*" << M << "+col])<=scale*1e-7){atomicAdd(x_diagnostics[1],1u);return;}\n";
@@ -302,6 +313,19 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
         vo += T;
     }
     s << "}\n";
+    return {name, s.str(), BufferRole::RelationWork, jacobi};
+}
+KernelFunction relationDispatchFunction(
+    const std::vector<std::pair<uint32_t, KernelFunction>>& functions,
+    bool jacobi,
+    const std::string& name) {
+    std::ostringstream s;
+    for (const auto& item : functions)
+        s << item.second.source;
+    s << "void " << name << "(uint id,float h,float time,float relaxation){switch(relation(id).type){\n";
+    for (const auto& [type, function] : functions)
+        s << "case " << type << "u:" << function.entry << "(id,h,time,relaxation);break;\n";
+    s << "}}\n";
     return {name, s.str(), BufferRole::RelationWork, jacobi};
 }
 std::string incidenceKernel(const RelationType& t, bool scatter) {

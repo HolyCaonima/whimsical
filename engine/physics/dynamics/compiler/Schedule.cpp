@@ -34,6 +34,80 @@ uint64_t dispatchCount(const CompiledPlan& p) {
     return p.policy.substeps * (count(p.predict) + (p.multiplierCount ? 1 : 0) +
         p.policy.iterations * (count(p.solve) + count(p.apply)) + count(p.recover) + count(p.update));
 }
+void collapseRelationDispatches(CompiledPlan& p) {
+    std::vector<Batch> collapsed;
+    for (size_t first = 0; first < p.solve.size();) {
+        size_t end = first + 1;
+        while (end < p.solve.size() && p.solve[end].color == p.solve[first].color)
+            ++end;
+        const auto dispatch =
+            p.solve[first].color < 0 ? p.jacobiDispatchKernel : p.coloredDispatchKernel;
+        if (dispatch == UINT32_MAX) {
+            collapsed.insert(collapsed.end(), p.solve.begin() + first, p.solve.begin() + end);
+        } else {
+            auto batch = p.solve[first];
+            batch.kernel = dispatch;
+            for (size_t i = first + 1; i < end; ++i)
+                batch.count += p.solve[i].count;
+            collapsed.push_back(batch);
+        }
+        first = end;
+    }
+    p.solve = std::move(collapsed);
+}
+void pruneKernels(CompiledPlan& p) {
+    std::vector<bool> used(p.kernels.size());
+    auto mark = [&](const std::vector<Batch>& batches) {
+        for (const auto& batch : batches)
+            used[batch.kernel] = true;
+    };
+    used[p.resetKernel] = true;
+    mark(p.predict);
+    mark(p.solve);
+    mark(p.apply);
+    mark(p.recover);
+    mark(p.update);
+    mark(p.local);
+    if (p.dynamicTopology) {
+        used[p.resetTopologyKernel] = true;
+        used[p.scanKernel] = true;
+        used[p.addOffsetsKernel] = true;
+        mark(p.countIncidence);
+        mark(p.scatterIncidence);
+    }
+    std::vector<uint32_t> mapping(p.kernels.size(), UINT32_MAX);
+    std::vector<Kernel> kernels;
+    for (uint32_t id = 0; id < p.kernels.size(); ++id)
+        if (used[id]) {
+            mapping[id] = uint32_t(kernels.size());
+            kernels.push_back(std::move(p.kernels[id]));
+        }
+    auto remap = [&](std::vector<Batch>& batches) {
+        for (auto& batch : batches)
+            batch.kernel = mapping[batch.kernel];
+    };
+    auto remapOptional = [&](uint32_t& id) {
+        if (id != UINT32_MAX)
+            id = mapping[id];
+    };
+    p.resetKernel = mapping[p.resetKernel];
+    remapOptional(p.coloredDispatchKernel);
+    remapOptional(p.jacobiDispatchKernel);
+    if (p.dynamicTopology) {
+        p.resetTopologyKernel = mapping[p.resetTopologyKernel];
+        p.scanKernel = mapping[p.scanKernel];
+        p.addOffsetsKernel = mapping[p.addOffsetsKernel];
+        remap(p.countIncidence);
+        remap(p.scatterIncidence);
+    }
+    remap(p.predict);
+    remap(p.solve);
+    remap(p.apply);
+    remap(p.recover);
+    remap(p.update);
+    remap(p.local);
+    p.kernels = std::move(kernels);
+}
 struct Components {
     std::vector<uint32_t> parent, size;
     explicit Components(uint32_t count) : parent(count), size(count, 1) {
@@ -80,10 +154,14 @@ uint64_t temporaryWords(const RelationType& t) {
 } // namespace
 
 void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions) {
-    p.statistics.referenceDispatches = p.statistics.dispatches = dispatchCount(p);
+    p.statistics.referenceDispatches = dispatchCount(p);
+    collapseRelationDispatches(p);
+    p.statistics.dispatches = dispatchCount(p);
     // Dynamic endpoints can connect any compatible variable at a later tick.
-    if (p.dynamicTopology || p.policy.execution == ExecutionMode::Global)
+    if (p.dynamicTopology || p.policy.execution == ExecutionMode::Global) {
+        pruneKernels(p);
         return;
+    }
     const auto variableCount = uint32_t(p.statistics.variables);
     Components components(variableCount);
     auto endpoints = words(p.buffers[size_t(BufferRole::Endpoints)]);
@@ -91,7 +169,7 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     for (const auto& layout : p.relations) {
         const auto arity = uint32_t(p.types[layout.type]->spaces.size());
         for (uint32_t id = layout.first; id < layout.first + layout.count; ++id) {
-            auto e = relations[size_t(id) * 8];
+            auto e = relations[size_t(id) * 9];
             for (uint32_t slot = 1; slot < arity; ++slot)
                 components.join(endpoints[e], endpoints[e + slot]);
         }
@@ -111,7 +189,7 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     for (const auto& layout : p.relations) {
         auto temporary = temporaryWords(*p.types[layout.type]);
         for (uint32_t id = layout.first; id < layout.first + layout.count; ++id) {
-            auto owner = components.root(endpoints[relations[size_t(id) * 8]]);
+            auto owner = components.root(endpoints[relations[size_t(id) * 9]]);
             relationOwner[id] = owner;
             ++costs[owner].relations;
             costs[owner].state += uint64_t(p.types[layout.type]->history) + p.types[layout.type]->rows;
@@ -135,8 +213,10 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
         regions[id] = regionCount - 1;
         packed = packed + costs[id];
     }
-    if (!regionCount)
+    if (!regionCount) {
+        pruneKernels(p);
         return;
+    }
     auto oldVariables = words(p.buffers[size_t(BufferRole::VariableWork)]);
     auto oldRelations = words(p.buffers[size_t(BufferRole::RelationWork)]);
     // Only functions used by eligible regions contribute to the fused program.
@@ -157,8 +237,10 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     for (size_t i = 0; i < functions.size(); ++i)
         if (localFunctions[i])
             sourceBytes += functions[i].source.size();
-    if (sourceBytes > SourceByteBudget)
+    if (sourceBytes > SourceByteBudget) {
+        pruneKernels(p);
         return;
+    }
     std::vector<uint32_t> variableRegion(variableCount);
     for (uint32_t id = 0; id < variableCount; ++id) {
         variableRegion[id] = regions[components.root(id)];
@@ -334,24 +416,6 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     p.local.push_back({uint32_t(p.kernels.size()), 0, regionCount * Lanes});
     p.kernels.push_back({"Solve local regions", source.str()});
     p.statistics.dispatches = dispatchCount(p) + 1;
-
-    // Do not compile standalone programs that were completely absorbed by regions.
-    std::vector<bool> used(p.kernels.size());
-    used[p.resetKernel] = !p.predict.empty();
-    for (auto batches : {&p.predict, &p.solve, &p.apply, &p.recover, &p.update, &p.local})
-        for (const auto& b : *batches)
-            used[b.kernel] = true;
-    std::vector<uint32_t> mapping(p.kernels.size(), UINT32_MAX);
-    std::vector<Kernel> kernels;
-    for (uint32_t id = 0; id < p.kernels.size(); ++id)
-        if (used[id]) {
-            mapping[id] = uint32_t(kernels.size());
-            kernels.push_back(std::move(p.kernels[id]));
-        }
-    p.resetKernel = mapping[p.resetKernel];
-    for (auto batches : {&p.predict, &p.solve, &p.apply, &p.recover, &p.update, &p.local})
-        for (auto& b : *batches)
-            b.kernel = mapping[b.kernel];
-    p.kernels = std::move(kernels);
+    pruneKernels(p);
 }
 } // namespace whimsical::dynamics

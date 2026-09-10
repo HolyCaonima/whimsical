@@ -85,6 +85,9 @@ struct CompiledPlan {
     // Closed regions execute the same substep/iteration schedule inside a workgroup.
     std::vector<Batch> local;
     uint32_t resetKernel = 0;
+    // Type-dispatch kernels let Schedule collapse all mathematical relation types
+    // in one dependency color without changing their model definitions.
+    uint32_t coloredDispatchKernel = UINT32_MAX, jacobiDispatchKernel = UINT32_MAX;
     uint32_t multiplierCount = 0;
     bool dynamicTopology = false;
     std::vector<Batch> countIncidence, scatterIncidence;

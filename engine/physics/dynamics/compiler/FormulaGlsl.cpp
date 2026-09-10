@@ -1,9 +1,13 @@
 #include "FormulaGlsl.h"
 #include <algorithm>
+#include <cstring>
 #include <iomanip>
 #include <locale>
+#include <map>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
+#include <tuple>
 
 namespace whimsical::dynamics {
 namespace {
@@ -32,6 +36,198 @@ uint32_t arity(MathOp op) {
         return 2;
     }
 }
+constexpr uint32_t ZeroDerivative = UINT32_MAX;
+uint32_t bits(float value) {
+    uint32_t result;
+    std::memcpy(&result, &value, sizeof(result));
+    return result;
+}
+using NodeKey = std::tuple<MathOp, uint32_t, uint32_t, uint32_t, uint32_t>;
+struct SymbolicJacobian {
+    std::vector<MathNode> nodes;
+    std::vector<uint32_t> values;
+    std::map<NodeKey, uint32_t> common;
+
+    explicit SymbolicJacobian(const Formula& formula) : nodes(formula.nodes) {
+        for (uint32_t i = 0; i < nodes.size(); ++i) {
+            const auto& n = nodes[i];
+            common.emplace(NodeKey{n.op, n.a, n.b, n.c, bits(n.value)}, i);
+        }
+    }
+    uint32_t raw(MathNode node) {
+        NodeKey key{node.op, node.a, node.b, node.c, bits(node.value)};
+        if (auto found = common.find(key); found != common.end())
+            return found->second;
+        auto id = uint32_t(nodes.size());
+        nodes.push_back(node);
+        common.emplace(key, id);
+        return id;
+    }
+    bool is(uint32_t id, float value) const {
+        return id != ZeroDerivative && nodes[id].op == MathOp::Constant && nodes[id].value == value;
+    }
+    uint32_t constant(float value) {
+        return raw({MathOp::Constant, 0, 0, 0, value});
+    }
+    uint32_t unary(MathOp op, uint32_t a) {
+        return raw({op, a});
+    }
+    uint32_t negative(uint32_t a) {
+        if (a == ZeroDerivative)
+            return a;
+        if (is(a, 0.0f))
+            return ZeroDerivative;
+        if (is(a, 1.0f))
+            return constant(-1.0f);
+        if (nodes[a].op == MathOp::Negate)
+            return nodes[a].a;
+        return unary(MathOp::Negate, a);
+    }
+    uint32_t sum(uint32_t a, uint32_t b) {
+        if (a == ZeroDerivative || is(a, 0.0f))
+            return b;
+        if (b == ZeroDerivative || is(b, 0.0f))
+            return a;
+        return raw({MathOp::Add, a, b});
+    }
+    uint32_t product(uint32_t a, uint32_t b) {
+        if (a == ZeroDerivative || b == ZeroDerivative || is(a, 0.0f) || is(b, 0.0f))
+            return ZeroDerivative;
+        if (is(a, 1.0f))
+            return b;
+        if (is(b, 1.0f))
+            return a;
+        if (is(a, -1.0f))
+            return negative(b);
+        if (is(b, -1.0f))
+            return negative(a);
+        return raw({MathOp::Multiply, a, b});
+    }
+    uint32_t quotient(uint32_t a, uint32_t b) {
+        if (a == ZeroDerivative || is(a, 0.0f))
+            return ZeroDerivative;
+        if (is(b, 1.0f))
+            return a;
+        return raw({MathOp::Divide, a, b});
+    }
+};
+bool supportsSymbolicDerivative(const Formula& formula) {
+    return std::none_of(formula.nodes.begin(), formula.nodes.end(), [](const MathNode& node) {
+        return node.op == MathOp::Abs || node.op == MathOp::Min || node.op == MathOp::Max ||
+               node.op == MathOp::Select;
+    });
+}
+std::unique_ptr<SymbolicJacobian> buildSymbolicJacobian(
+    const Formula& formula,
+    const std::vector<int32_t>& derivativeColumn,
+    size_t columns) {
+    auto result = std::make_unique<SymbolicJacobian>(formula);
+    result->values.assign(formula.outputs.size() * columns, ZeroDerivative);
+    std::vector<uint8_t> depends(formula.nodes.size());
+    for (size_t i = 0; i < formula.nodes.size(); ++i) {
+        const auto& n = formula.nodes[i];
+        if (n.op == MathOp::Input)
+            depends[i] = derivativeColumn[n.a] >= 0;
+        else if (n.op == MathOp::Constant || n.op == MathOp::Less)
+            depends[i] = 0;
+        else {
+            const auto count = arity(n.op);
+            depends[i] = (count > 0 && depends[n.a]) || (count > 1 && depends[n.b]);
+        }
+    }
+    const auto one = result->constant(1.0f);
+    for (size_t row = 0; row < formula.outputs.size(); ++row) {
+        std::vector<uint32_t> adjoint(formula.nodes.size(), ZeroDerivative);
+        const auto output = formula.outputs[row];
+        if (depends[output])
+            adjoint[output] = one;
+        for (size_t i = formula.nodes.size(); i-- > 0;) {
+            const auto d = adjoint[i];
+            if (d == ZeroDerivative)
+                continue;
+            const auto& n = formula.nodes[i];
+            auto add = [&](uint32_t child, uint32_t term) {
+                adjoint[child] = result->sum(adjoint[child], term);
+            };
+            switch (n.op) {
+            case MathOp::Input: {
+                const auto column = derivativeColumn[n.a];
+                if (column >= 0) {
+                    const auto at = row * columns + size_t(column);
+                    result->values[at] = result->sum(result->values[at], d);
+                }
+                break;
+            }
+            case MathOp::Add:
+                if (depends[n.a])
+                    add(n.a, d);
+                if (depends[n.b])
+                    add(n.b, d);
+                break;
+            case MathOp::Subtract:
+                if (depends[n.a])
+                    add(n.a, d);
+                if (depends[n.b])
+                    add(n.b, result->negative(d));
+                break;
+            case MathOp::Multiply:
+                if (depends[n.a])
+                    add(n.a, result->product(d, n.b));
+                if (depends[n.b])
+                    add(n.b, result->product(d, n.a));
+                break;
+            case MathOp::Divide:
+                if (depends[n.a])
+                    add(n.a, result->quotient(d, n.b));
+                if (depends[n.b])
+                    add(n.b,
+                        result->quotient(result->product(result->negative(d), n.a),
+                                         result->product(n.b, n.b)));
+                break;
+            case MathOp::Negate:
+                if (depends[n.a])
+                    add(n.a, result->negative(d));
+                break;
+            case MathOp::Sqrt:
+                if (depends[n.a])
+                    add(n.a, result->quotient(d, result->product(result->constant(2.0f), uint32_t(i))));
+                break;
+            case MathOp::Sin:
+                if (depends[n.a])
+                    add(n.a, result->product(d, result->unary(MathOp::Cos, n.a)));
+                break;
+            case MathOp::Cos:
+                if (depends[n.a])
+                    add(n.a, result->product(result->negative(d), result->unary(MathOp::Sin, n.a)));
+                break;
+            case MathOp::Exp:
+                if (depends[n.a])
+                    add(n.a, result->product(d, uint32_t(i)));
+                break;
+            case MathOp::Log:
+                if (depends[n.a])
+                    add(n.a, result->quotient(d, n.a));
+                break;
+            case MathOp::Atan2: {
+                const auto denominator =
+                    result->sum(result->product(n.a, n.a), result->product(n.b, n.b));
+                if (depends[n.a])
+                    add(n.a, result->quotient(result->product(d, n.b), denominator));
+                if (depends[n.b])
+                    add(n.b, result->quotient(result->product(result->negative(d), n.a), denominator));
+                break;
+            }
+            default:
+                break;
+            }
+        }
+    }
+    const auto zero = result->constant(0.0f);
+    for (auto& value : result->values)
+        if (value == ZeroDerivative)
+            value = zero;
+    return result;
+}
 std::string emit(const Formula& formula, const std::string& name,
                  const std::vector<uint32_t>* derivativeInputs) {
     const auto inputs = formula.inputs;
@@ -46,6 +242,10 @@ std::string emit(const Formula& formula, const std::string& name,
                 throw std::invalid_argument("Invalid projected derivative inputs");
             derivativeColumn[input] = int32_t(column);
         }
+    std::unique_ptr<SymbolicJacobian> symbolic;
+    if (derivativeInputs && supportsSymbolicDerivative(formula))
+        symbolic = buildSymbolicJacobian(formula, derivativeColumn, derivativeInputs->size());
+    const auto& generatedNodes = symbolic ? symbolic->nodes : nodes;
     std::ostringstream s;
     s.imbue(std::locale::classic());
     s << "void " << name << "(in float x[" << std::max(1u, inputs) << "], out float y[" << outputs.size()
@@ -53,8 +253,8 @@ std::string emit(const Formula& formula, const std::string& name,
     if (derivativeInputs)
         s << ", out float j[" << std::max(size_t(1), outputs.size() * derivativeInputs->size()) << "]";
     s << ") {\n";
-    for (size_t i = 0; i < nodes.size(); ++i) {
-        const auto& n = nodes[i];
+    for (size_t i = 0; i < generatedNodes.size(); ++i) {
+        const auto& n = generatedNodes[i];
         auto a = "n" + std::to_string(n.a), b = "n" + std::to_string(n.b), c = "n" + std::to_string(n.c);
         std::string expr;
         switch (n.op) {
@@ -117,7 +317,10 @@ std::string emit(const Formula& formula, const std::string& name,
     }
     for (size_t row = 0; row < outputs.size(); ++row)
         s << "y[" << row << "]=n" << outputs[row] << ";\n";
-    if (derivativeInputs) {
+    if (symbolic) {
+        for (size_t i = 0; i < symbolic->values.size(); ++i)
+            s << "j[" << i << "]=n" << symbolic->values[i] << ";\n";
+    } else if (derivativeInputs) {
         // Keep only paths from this formula's outputs to the requested inputs.
         // Parameter/history/time-only branches still compute values, but generate no
         // adjoint storage or instructions.
