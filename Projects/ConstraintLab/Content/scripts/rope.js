@@ -2,10 +2,11 @@
 // Each solver instance has a local frame; the gallery places those frames in a grid,
 // and every rope reads its own GPU result rather than a copy of the first rope's positions.
 Lab.add((function(){
-var rope={id:'rope',tab:'绳索',eyebrow:'EXPERIMENT 01',title:'绳索实验',
-    subtitle:'重力下垂 · 端点控制 · 球面碰撞',
+var rope={id:'rope',tab:'绳索',eyebrow:'实验 01',title:'绳索实验',
+    subtitle:'距离关系连成的绳子，右端可移动或松开。',
     equation:'C(q) = ‖qᵢ − qⱼ‖ − L',
-    legend:'<span class="teal">■</span> 绳子 <span class="gold">■</span> 固定端点',
+    hint:'方向键移动右端点',
+    legend:'<span class="teal">■</span>绳子<span class="gold">■</span>固定端点',
     panelTitle:'绳子与端点',
     count:64,copies:1,cut:false,drive:false,kick:false,
     right:[3.5,5,0],anchorDirty:false,forceInput:false,views:[]};
@@ -14,10 +15,10 @@ rope.sizes={label:'条数',options:[{label:'1 条',value:1},{label:'16 条',valu
     get:function(){return rope.copies;},
     set:function(value){if(rope.copies===value)return '';rope.copies=value;Lab.reset();return '求解并显示 '+value+' 条绳子';}};
 rope.actions=[
-    {id:'cut',text:function(){return rope.cut?'接回右端 / C':'松开右端 / C';},active:function(){return rope.cut;},
+    {id:'cut',key:'C',text:function(){return rope.cut?'接回右端':'松开右端';},active:function(){return rope.cut;},
      click:function(){rope.cut=!rope.cut;Lab.dirty=true;rope.anchorDirty=!rope.cut;
         return rope.cut?'松开右端，观察重力与碰撞':'固定右端到控制位置';}},
-    {id:'drive',text:function(){return rope.drive?'端点摆动 ON / W':'端点摆动 OFF / W';},active:function(){return rope.drive;},
+    {id:'drive',key:'W',text:function(){return '端点摆动';},active:function(){return rope.drive;},
      click:function(){rope.drive=!rope.drive;return rope.drive?'右端点沿前后方向摆动':'端点停止主动摆动';}}];
 rope.rows=[
     {kind:'stepper',id:'height',label:'右端高度',text:function(){return rope.right[1].toFixed(1)+' m';},
@@ -47,6 +48,12 @@ rope.camera=function(){
         {target:[0,1.8,0],yaw:0.08,pitch:0.95,distance:side*14,fov:0.75};
 };
 rope.note=function(){return rope.copies+' 条绳子全部显示 · 每条 '+rope.count+' 个求解节点';};
+rope.families=function(){
+    return [{name:'距离 L = '+rope.rest.toFixed(3)+' m',kind:'等式',rows:(rope.count-1)*rope.copies},
+            {name:'地面半空间',kind:'不等式',rows:Lab.total},
+            {name:'球面外部',kind:'不等式',rows:Lab.total},
+            {name:'位移阻力',kind:'持久',rows:Lab.total}];
+};
 
 rope.build=function(model){
     var X=Lab.X,n=rope.count*rope.copies,i;

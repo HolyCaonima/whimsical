@@ -2,10 +2,11 @@
 // distance relations: stiff structural threads hold the weave, soft diagonals carry
 // shear, and relations across two cells resist creasing. Folds come out of the mix.
 Lab.add((function(){
-var cloth={id:'cloth',tab:'布料',eyebrow:'EXPERIMENT 02',title:'布料实验',
-    subtitle:'自由下落 · 结构 / 剪切 / 弯曲关系 · 球面覆盖',
+var cloth={id:'cloth',tab:'布料',eyebrow:'实验 02',title:'布料实验',
+    subtitle:'三族距离关系织成的方布，落到球面上。',
     equation:'C(q) = ‖qᵢ − qⱼ‖ − L,  L ∈ {d, √2 d, 2d}',
-    legend:'<span class="rose">■</span> 布面 <span class="gold">■</span> 抓取角点',
+    hint:'↑ ↓ 调整提起高度',
+    legend:'<span class="rose">■</span>布面<span class="gold">■</span>抓取角点',
     panelTitle:'布料与抓取',
     side:32,span:5.6,height:3.7,patches:0,
     held:false,wind:false,gust:1,phase:0,lift:0,target:0,kick:false,
@@ -16,12 +17,12 @@ cloth.sizes={label:'网格',options:[{label:'16²',value:16},{label:'24²',value
     get:function(){return cloth.side;},
     set:function(value){if(cloth.side===value)return '';cloth.side=value;Lab.reset();return '求解 '+value+' × '+value+' 个布料节点';}};
 cloth.actions=[
-    {id:'grip',text:function(){return cloth.held?'放下布料 / C':'抓起四角 / C';},active:function(){return cloth.held;},
+    {id:'grip',key:'C',text:function(){return cloth.held?'放下布料':'抓起四角';},active:function(){return cloth.held;},
      click:function(){cloth.grab();return cloth.held?'提起四角，观察悬垂的褶皱':'松开四角，布料落回展台';}},
-    {id:'wind',text:function(){return cloth.wind?'侧向风 ON / W':'侧向风 OFF / W';},active:function(){return cloth.wind;},
+    {id:'wind',key:'W',text:function(){return '侧向风';},active:function(){return cloth.wind;},
      click:function(){cloth.blow();return cloth.wind?'加入横向阵风':'风停下来';}}];
 cloth.rows=[
-    {kind:'stepper',id:'lift',label:'提起高度',text:function(){return cloth.held?cloth.target.toFixed(1)+' m':'—';},
+    {kind:'stepper',id:'lift',label:'提起高度',text:function(){return cloth.held?cloth.target.toFixed(1)+' m':'未抓取';},
      step:function(sign){cloth.raise(sign*0.4);}},
     {kind:'cycle',id:'gust',label:'风力强度',text:function(){return gustName[cloth.gust];},
      click:function(){cloth.gust=(cloth.gust+1)%3;return '风力设为'+gustName[cloth.gust];}}];
@@ -40,6 +41,14 @@ cloth.define=function(){
 cloth.layout=function(){return String(cloth.side);};
 cloth.camera=function(){return {target:[0,1.85,0],yaw:0.38,pitch:0.28,distance:11.5,fov:0.62};};
 cloth.note=function(){return cloth.side+' × '+cloth.side+' 个求解节点 · '+cloth.patches+' × '+cloth.patches+' 个可视面片';};
+cloth.families=function(){
+    return [{name:'结构 L = d',kind:'等式',rows:cloth.structureRows},
+            {name:'剪切 L = √2 d',kind:'等式',rows:cloth.shearRows},
+            {name:'弯曲 L = 2d',kind:'等式',rows:cloth.bendRows},
+            {name:'地面半空间',kind:'不等式',rows:Lab.total},
+            {name:'球面外部',kind:'不等式',rows:Lab.total},
+            {name:'接触阻力',kind:'持久',rows:Lab.total}];
+};
 
 cloth.build=function(model){
     var X=Lab.X,n=cloth.side,total=n*n,cell=cloth.span/(n-1),i,j,k;
@@ -69,7 +78,7 @@ cloth.build=function(model){
         return {rows:rows,columns:[{set:Lab.variables,indices:a},{set:Lab.variables,indices:b}]};
     }
     var structure=links([[1,0],[0,1]]),shear=links([[1,1],[1,-1]]),bend=links([[2,0],[0,2]]);
-    cloth.structureRows=structure.rows;
+    cloth.structureRows=structure.rows;cloth.shearRows=shear.rows;cloth.bendRows=bend.rows;
     cloth.structure=X.relations(model,Lab.distance,{endpoints:structure.columns,parameters:[cell],compliance:[Lab.compliance()]});
     cloth.shear=X.relations(model,Lab.distance,{endpoints:shear.columns,parameters:[cell*Math.SQRT2],compliance:[0.00005]});
     cloth.bend=X.relations(model,Lab.distance,{endpoints:bend.columns,parameters:[2*cell],compliance:[0.0002]});

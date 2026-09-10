@@ -13,6 +13,8 @@ ConstraintLab 展示 Whimsical 的通用 GPU Dynamics 方案：通过 JavaScript
 
 双击本目录的 `Run.cmd` 启动（需要先构建 `build/bin/Release/Whimsical.exe`）。顶部标签在实验之间切换，两个实验共用同一个求解外壳、同一套展台和同一个面板框架。
 
+界面沿用 [HumanEditor](../HumanEditor) 的编辑器语言：菜单栏放实验标签与当前实验名，工具栏放运行控制和实验自己的动作，左侧「求解模型」列出编译进模型的变量集与各族关系，右侧「实验详情」是规模、参数与遥测，底部状态栏给出最近一条操作反馈。
+
 ## 实验一：绳索
 
 每条绳子使用 64 个 R3 变量，相邻变量之间是距离关系；球面与地面用不等式条件表示。
@@ -47,9 +49,9 @@ ConstraintLab 展示 Whimsical 的通用 GPU Dynamics 方案：通过 JavaScript
 ## 代码结构
 
 - `Content/scripts/lab.js`：外壳。它拥有求解实体、展台、镜头和面板框架，并提供一小组带参数的公共关系（距离、地面半空间、球面外部、位移阻力）与姿态映射（点、线段、四点面片）。
-- `Content/scripts/rope.js`、`cloth.js`：两个实验。每个实验只拥有自己的数学、道具和面板行；外壳按实验声明的 `sizes / actions / rows / keys` 渲染并接线，新增实验不需要改界面。
-- `Content/scripts/main.js`：面板渲染、快捷键与遥测。
-- `Content/UI/`：中文操作面板、求解耗时和诊断信息。
+- `Content/scripts/rope.js`、`cloth.js`：两个实验。每个实验只拥有自己的数学、道具和面板行；外壳按实验声明的 `sizes / actions / rows / keys / families` 渲染并接线，新增实验不需要改界面。
+- `Content/scripts/main.js`：大纲与面板渲染、快捷键与遥测。
+- `Content/UI/`：编辑器风格的操作界面、求解耗时和诊断信息。
 - `tools/generate_meshes.py`：生成项目自有的 STM1 圆柱 / 球体 / 展台网格和材质。
 
 ## 渲染与规模
