@@ -2,6 +2,11 @@
 #include "physics/dynamics/model/Model.h"
 namespace whimsical::dynamics {
 enum class StateField { Value, Velocity, Acceleration, History };
+struct StateRange {
+    StateField field = StateField::Value;
+    SetId set = 0;
+    uint32_t first = 0, count = 0;
+};
 struct StateWrite {
     StateField field = StateField::Value;
     SetId set = 0;

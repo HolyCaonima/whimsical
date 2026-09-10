@@ -44,7 +44,11 @@ void GpuService::drain() {
             case Operation::Read:
                 if (!e.instance)
                     throw std::logic_error("Compile the model before readback");
-                reply.values = e.instance->read(request->field, request->set, request->first, request->count);
+                if (request->ranges.empty())
+                    reply.values =
+                        e.instance->read(request->field, request->set, request->first, request->count);
+                else
+                    reply.samples = e.instance->read(request->ranges);
                 break;
             }
             reply.completed = e.instance->completed();

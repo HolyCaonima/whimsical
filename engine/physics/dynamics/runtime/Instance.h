@@ -50,6 +50,8 @@ class Instance {
     // set/index identities; changed relation endpoints reset only their history.
     void install(PlanRef);
     std::vector<float> read(StateField, SetId, uint32_t first, uint32_t count);
+    // Multiple disjoint ranges share one GPU submission and completion boundary.
+    std::vector<std::vector<float>> read(const std::vector<StateRange>&);
     // Explicit immutable GPU copy; subsequent ticks cannot overwrite reader state.
     // RenderCore must outlive snapshots and consuming contexts.
     PublishedState publish();

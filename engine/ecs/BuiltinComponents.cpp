@@ -79,6 +79,7 @@ std::vector<ComponentDependency> rootDependencies(const RootMotionBinding& b) {
 }
 } // namespace
 void registerBuiltinComponents(ComponentCatalog& catalog) {
+    dynamics::registerSceneComponents(catalog);
     const auto cascade = OnDependencyRemoval::Cascade;
     {
         auto c = component<DrawEntityID, SceneDrawEntityID>("drawEntityID");

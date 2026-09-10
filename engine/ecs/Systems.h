@@ -37,6 +37,7 @@ class TransformSystem {
     SceneStorage& s;
     void propagate(Entity);
     void validateSubtree(Entity, const TransformPose&) const;
+    void setLocalAs(Entity, const TransformPose&, Entity parent, std::type_index);
 
   public:
     explicit TransformSystem(SceneStorage& storage) : s(storage) {}
@@ -48,6 +49,9 @@ class TransformSystem {
     void setLocal(Entity, const TransformPose&, Entity parent);
     void setScale(Entity, vec3);
     void setParent(Entity, Entity parent, bool keepWorld = true);
+    void claim(Entity, std::type_index);
+    void release(Entity, std::type_index);
+    void setDrivenLocal(Entity, const TransformPose&, std::type_index);
     void refreshEnabled(Entity);
 };
 class MotionSystem {

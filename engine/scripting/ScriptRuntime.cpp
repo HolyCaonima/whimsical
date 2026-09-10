@@ -6,6 +6,7 @@
 #include "scene/ScenePersistence.h"
 #include "UiBindings.h"
 #include "physics/dynamics/adapter/ScriptBindings.h"
+#include "physics/dynamics/scene/SceneBindings.h"
 #include "uiCore/UiCore.h"
 #include <iostream>
 #include <stdexcept>
@@ -1016,7 +1017,8 @@ void ScriptRuntime::createContext() {
     duk_put_prop_string(context_, -2, "content");
     duk_put_global_string(context_, "Engine");
     installRuntimeBindings(context_);
-    if(host_)dynamicsBindings_=std::make_unique<dynamics::ScriptBindings>(context_,host_->dynamicsMailbox());
+    dynamicsBindings_=std::make_unique<dynamics::ScriptBindings>(context_,world_.dynamics.mailbox());
+    dynamics::installSceneBindings(context_, world_);
     if (ui_) {
         uiBindings_ = std::make_unique<UiBindings>(
             context_, *ui_, [this](const auto& text) { log(text); },

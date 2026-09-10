@@ -98,6 +98,7 @@ add_library(whimsical_core
   engine/scripting/RuntimeHost.cpp engine/scripting/RuntimeBindings.cpp
   engine/core/World.cpp engine/core/RenderScene.cpp engine/navigation/Navigation.cpp engine/scripting/ScriptRuntime.cpp
   engine/ecs/ComponentCatalog.cpp engine/ecs/BuiltinComponents.cpp
+  engine/physics/dynamics/scene/DynamicsSystem.cpp engine/physics/dynamics/scene/SceneBindings.cpp
   engine/ecs/TransformSystem.cpp engine/ecs/MotionSystem.cpp engine/ecs/AnimationSystem.cpp engine/ecs/RenderSystem.cpp
   engine/physics/PhysicsScene.cpp engine/physics/DynamicAabbTree.cpp engine/animation/AnimationCollision.cpp
 )
@@ -133,7 +134,7 @@ target_compile_options(whimsical_dynamics_compiler PRIVATE /W4 /permissive- /utf
 add_library(whimsical_dynamics_runtime engine/physics/dynamics/runtime/Instance.cpp)
 target_link_libraries(whimsical_dynamics_runtime PUBLIC whimsical_dynamics_compiler whimsical_rendercore PRIVATE volk)
 target_compile_options(whimsical_dynamics_runtime PRIVATE /W4 /permissive- /utf-8)
-add_library(whimsical_dynamics_adapter engine/physics/dynamics/adapter/Mailbox.cpp engine/physics/dynamics/adapter/ScriptBindings.cpp)
+add_library(whimsical_dynamics_adapter engine/physics/dynamics/adapter/Mailbox.cpp engine/physics/dynamics/adapter/Document.cpp engine/physics/dynamics/adapter/ScriptBindings.cpp)
 target_link_libraries(whimsical_dynamics_adapter PUBLIC whimsical_dynamics_compiler duktape PRIVATE whimsical_assets)
 target_compile_options(whimsical_dynamics_adapter PRIVATE /W4 /permissive- /utf-8)
 add_library(whimsical_dynamics_service engine/physics/dynamics/adapter/GpuService.cpp)

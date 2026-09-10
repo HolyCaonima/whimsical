@@ -30,6 +30,7 @@ struct Transform {
     TransformPose world; // Derived cache, written only by TransformSystem.
     Entity parent = 0;
     std::vector<Entity> children;
+    std::type_index driver{typeid(void)}; // Exclusive local-pose writer, runtime only.
     float yaw() const {
         auto forward = world.rotation * vec3(0, 0, 1);
         return std::atan2(forward.x, forward.z);

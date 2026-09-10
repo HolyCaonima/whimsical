@@ -1,5 +1,6 @@
 #pragma once
 #include "ecs/Systems.h"
+#include "physics/dynamics/scene/DynamicsSystem.h"
 #include "assets/MaterialAsset.h"
 #include "ecs/ComponentCatalog.h"
 #include <type_traits>
@@ -45,6 +46,7 @@ class World {
     TransformSystem transforms{storage_};
     MotionSystem motion{storage_, transforms, resources.navigation};
     AnimationSystem animation{storage_, motion, transforms};
+    dynamics::DynamicsSystem dynamics{storage_, transforms};
     const Registry& registry() const {
         return storage_.registry;
     }
@@ -115,6 +117,7 @@ class World {
     // propagate synchronously before queries; extraction never advances simulation.
     void update(float dt) {
         animation.update(dt);
+        dynamics.update(*this, dt);
     }
     std::optional<vec3> groundAt(float, float, const Input&, const Camera* = nullptr) const;
     Entity pick(float, float, const Input&, const Camera* = nullptr) const;

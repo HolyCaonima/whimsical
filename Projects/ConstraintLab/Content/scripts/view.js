@@ -14,8 +14,21 @@ Lab.scene=function(){
     Lab.boxMesh=Engine.asset('/Engine/Meshes/Box');Lab.rodMesh=Engine.asset('/Game/Models/Rod');Lab.sphereMesh=Engine.asset('/Game/Models/Sphere');Lab.standMesh=Engine.asset('/Game/Models/Stand');Lab.materials={};
     ['Node','Edge','Anchor','Floor','Grid','Frame','Obstacle'].forEach(function(n){Lab.materials[n]=Engine.asset('/Game/Materials/'+n);});
 };
+Lab.bindPoint=function(id,index,ox,oz,size){
+    var e=Lab.X.expression(3);
+    Engine.addComponent(id,'dynamicsBinding',{model:Lab.modelId,direction:'output',interpolation:0.07,variables:[{set:Lab.variables,index:index}],
+        mapping:e.finish([e.add(e.input(0),ox),e.input(1),e.add(e.input(2),oz),1,0,0,0,size,size,size])});
+};
+Lab.bindSpan=function(id,a,b,ox,oz){
+    var e=Lab.X.expression(6),p=[e.input(0),e.input(1),e.input(2)],q=[e.input(3),e.input(4),e.input(5)],d=e.vsub(q,p);
+    var length=e.max(e.length(d),0.000001),w=e.sqrt(e.max(0,e.mul(e.add(1,e.div(d[1],length)),0.5)));
+    var safe=e.max(w,0.00001),flip=e.less(w,0.00001),mid=e.scale(e.vadd(p,q),0.5);
+    Engine.addComponent(id,'dynamicsBinding',{model:Lab.modelId,direction:'output',interpolation:0.07,variables:[{set:Lab.variables,index:a},{set:Lab.variables,index:b}],
+        mapping:e.finish([e.add(mid[0],ox),mid[1],e.add(mid[2],oz),e.select(flip,0,w),
+            e.select(flip,1,e.div(d[2],e.mul(length,e.mul(2,safe)))),0,e.select(flip,0,e.neg(e.div(d[0],e.mul(length,e.mul(2,safe))))),0.06,length,0.06])});
+};
 Lab.arrange=function(copies){
-    if(Lab.viewCopies===copies)return;
+    if(Lab.viewCopies===copies){Lab.ropeViews.forEach(function(view){Engine.enabled(view.controller,true);Engine.visible(view.anchor,true);});return;}
     Lab.entities.forEach(function(id){Engine.destroy(id);});Lab.entities=[];Lab.ropeViews=[];
     Lab.viewCopies=copies;
     var side=Math.sqrt(copies),single=copies===1;
@@ -38,13 +51,20 @@ Lab.arrange=function(copies){
             if(single)prop('Support pole',[direction*3.5,2.5,0.22],[0.045,5,0.045],'Frame');
             if(!single&&direction===-1)continue;
             var anchor=prop('Attachment',[direction*3.5,5,0],[0.13,0.13,0.13],'Anchor',Lab.sphereMesh);
-            if(direction===1)view.anchor=anchor;
+            if(direction===1){view.anchor=anchor;Lab.bindPoint(anchor,view.first+Lab.count-1,ox,oz,0.13);}
         }
-        if(single)for(var i=0;i<Lab.count;++i)view.nodes.push(prop('Rope joint '+i,Lab.initial(i),[0.06,0.06,0.06],'Node',Lab.sphereMesh));
+        var input=Lab.X.expression(10);
+        view.controller=Engine.create({name:'Attachment input',persistent:false,components:{transform:{position:Lab.right},
+            dynamicsBinding:{model:Lab.modelId,direction:'input',variables:[{set:Lab.variables,index:view.first+Lab.count-1}],
+                mapping:input.finish([input.input(0),input.input(1),input.input(2)])}}});
+        Lab.entities.push(view.controller);
+        if(single)for(var i=0;i<Lab.count;++i){var node=prop('Rope joint '+i,Lab.initial(i),[0.06,0.06,0.06],'Node',Lab.sphereMesh);
+            view.nodes.push(node);Lab.bindPoint(node,view.first+i,ox,oz,0.06);}
         for(var span=0;span<spans;++span){
             var a=Math.round(span*(Lab.count-1)/spans),b=Math.round((span+1)*(Lab.count-1)/spans);
             view.wires.push({a:(view.first+a)*3,b:(view.first+b)*3,
                 id:prop('Rope '+rope+' segment '+span,[0,3,0],[0.06,Lab.rest*(b-a),0.06],'Edge',Lab.rodMesh)});
+            Lab.bindSpan(view.wires[view.wires.length-1].id,view.first+a,view.first+b,ox,oz);
         }
     }
     var lightScale=single?1:side*0.9;
@@ -55,23 +75,10 @@ Lab.arrange=function(copies){
     Engine.log('ROPE_LAB scene: '+copies+' visible ropes; '+copies*spans+' rendered spans');
 };
 Lab.draw=function(dt){
-    Lab.readAge+=dt;Lab.drawClock+=dt;if(!Lab.sample||Lab.drawClock<1/30)return;Lab.drawClock=0;
-    var t=Math.min(1,Lab.readAge/Lab.readInterval),p=Lab.displayed;t=t*t*(3-2*t);
-    for(var i=0;i<p.length;++i)p[i]=Lab.from[i]+(Lab.sample[i]-Lab.from[i])*t;
-    Lab.ropeViews.forEach(function(view){
-        view.nodes.forEach(function(id,i){var a=(view.first+i)*3;Engine.transform(id,{position:{x:p[a]+view.x,y:p[a+1],z:p[a+2]+view.z}});});
-        var end=(view.first+Lab.count-1)*3;
-        Engine.visible(view.anchor,!Lab.cut);Engine.transform(view.anchor,{position:{x:p[end]+view.x,y:p[end+1],z:p[end+2]+view.z}});
-        view.wires.forEach(function(wire){
-            var a=wire.a,b=wire.b,dx=p[b]-p[a],dy=p[b+1]-p[a+1],dz=p[b+2]-p[a+2],length=Math.sqrt(dx*dx+dy*dy+dz*dz);
-            var w=Math.sqrt(Math.max(0,(1+dy/length)*0.5));
-            var rotation=w>0.00001?{w:w,x:dz/length/(2*w),y:0,z:-dx/length/(2*w)}:{w:0,x:1,y:0,z:0};
-            Engine.transform(wire.id,{position:{x:(p[a]+p[b])/2+view.x,y:(p[a+1]+p[b+1])/2,z:(p[a+2]+p[b+2])/2+view.z},rotation:rotation,scale:{x:0.06,y:length,z:0.06}});
-        });
-    });
+    Lab.drawClock+=dt;if(!Lab.sample||Lab.drawClock<0.1)return;Lab.drawClock=0;
     // Error covers every physical segment in every completed rope sample.
     var sum=0,q=Lab.sample;
-    for(i=0;i<Lab.total-1;++i)if(i%Lab.count!==Lab.count-1){
+    for(var i=0;i<Lab.total-1;++i)if(i%Lab.count!==Lab.count-1){
         var a=i*3,dx=q[a+3]-q[a],dy=q[a+4]-q[a+1],dz=q[a+5]-q[a+2];
         sum+=Math.abs(Math.sqrt(dx*dx+dy*dy+dz*dz)-Lab.rest)/Lab.rest;
     }

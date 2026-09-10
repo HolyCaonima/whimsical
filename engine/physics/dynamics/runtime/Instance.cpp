@@ -121,7 +121,8 @@ struct Instance::Storage {
         auto remap = declaration("migration", 4, true);
         remap.lifetime = rg::Lifetime::External;
         migration = registry.declare(std::move(remap));
-        execution = std::make_unique<rc::GraphContext>(core, registry, "Dynamics model " + std::to_string(plan->model.model));
+        execution = std::make_unique<rc::GraphContext>(core, registry,
+                                                       "Dynamics model " + std::to_string(plan->model.model));
         interface = "#version 450\n" + registry.glsl().at("graph.compute.glsl") + plan->interface();
         for (const auto& kernel : plan->kernels)
             programs.push_back(&execution->compute(kernel.name + ".comp", interface + kernel.source));
@@ -198,9 +199,10 @@ struct Instance::Storage {
             auto retract = emitGlsl(expected.retract, "r"), difference = emitGlsl(expected.difference, "d");
             for (uint32_t v = 0; v < plan->variables.size(); ++v) {
                 const auto& actual = *plan->spaces[plan->variables[v].space];
-                compatible[v] =
-                    actual.stateSize == expected.stateSize && actual.tangentSize == expected.tangentSize &&
-                    emitGlsl(actual.retract, "r") == retract && emitGlsl(actual.difference, "d") == difference;
+                compatible[v] = actual.stateSize == expected.stateSize &&
+                                actual.tangentSize == expected.tangentSize &&
+                                emitGlsl(actual.retract, "r") == retract &&
+                                emitGlsl(actual.difference, "d") == difference;
             }
             for (uint32_t i = 0; i < count; ++i) {
                 const auto ref = input.columns[e][i];
@@ -445,28 +447,51 @@ void Instance::apply(const ModelCommit& commit) {
     completed_.modelVersion = model_.version;
 }
 std::vector<float> Instance::read(StateField field, SetId set, uint32_t first, uint32_t count) {
+    return read(std::vector<StateRange>{{field, set, first, count}}).front();
+}
+std::vector<std::vector<float>> Instance::read(const std::vector<StateRange>& ranges) {
     idle();
     auto& s = *storage_;
-    auto source = range(*s.plan, field, set);
-    if (first > source.count || count > source.count - first)
-        throw std::out_of_range("Dynamics readback range");
-    if (!count || !source.width)
-        return {};
+    uint64_t total = 0;
+    for (auto r : ranges) {
+        auto source = range(*s.plan, r.field, r.set);
+        if (r.first > source.count || r.count > source.count - r.first)
+            throw std::out_of_range("Dynamics readback range");
+        total += uint64_t(r.count) * source.width;
+    }
+    if (total > UINT32_MAX)
+        throw std::length_error("Dynamics readback exceeds buffer extent");
+    std::vector<std::vector<float>> result(ranges.size());
+    if (!total)
+        return result;
     s.execution->graph().reset();
-    // Every output byte is produced. Initialize once then fill field columns; the
-    // host buffer is sized to the requested range, not the entire simulation.
-    s.execution->upload(s.readback, std::vector<uint8_t>(size_t(count) * source.width * 4));
-    for (uint32_t c = 0; c < source.width; ++c)
-        s.execution->copyBuffer(s.id(source.role), s.readback,
-                                uint64_t(source.first + first + c * source.stride) * 4,
-                                uint64_t(c) * count * 4, uint64_t(count) * 4);
-    s.submit(completed_.tick, 0, count, source.width);
+    // Pack only requested columns; sparse observers never force a full-model copy.
+    s.execution->upload(s.readback, std::vector<uint8_t>(size_t(total) * sizeof(float)));
+    uint64_t offset = 0;
+    for (auto r : ranges) {
+        auto source = range(*s.plan, r.field, r.set);
+        if (r.count)
+            for (uint32_t c = 0; c < source.width; ++c)
+                s.execution->copyBuffer(s.id(source.role), s.readback,
+                                        uint64_t(source.first + r.first + c * source.stride) * 4,
+                                        (offset + uint64_t(c) * r.count) * 4, uint64_t(r.count) * 4);
+        offset += uint64_t(r.count) * source.width;
+    }
+    s.submit(completed_.tick, 0, uint32_t(total), 1);
     s.execution->wait();
     auto data = s.execution->readbackData(s.readback);
-    std::vector<float> result(size_t(count) * source.width);
-    for (uint32_t i = 0; i < count; ++i)
-        for (uint32_t c = 0; c < source.width; ++c)
-            std::memcpy(&result[size_t(i) * source.width + c], data.data() + (size_t(c) * count + i) * 4, 4);
+    offset = 0;
+    for (size_t k = 0; k < ranges.size(); ++k) {
+        auto r = ranges[k];
+        auto source = range(*s.plan, r.field, r.set);
+        auto& values = result[k];
+        values.resize(size_t(r.count) * source.width);
+        for (uint32_t i = 0; i < r.count; ++i)
+            for (uint32_t c = 0; c < source.width; ++c)
+                std::memcpy(&values[size_t(i) * source.width + c],
+                            data.data() + (offset + size_t(c) * r.count + i) * 4, 4);
+        offset += values.size();
+    }
     return result;
 }
 void Instance::install(PlanRef next) {

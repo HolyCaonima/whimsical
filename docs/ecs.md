@@ -126,6 +126,10 @@ Engine.destroy(e);
 
 组件描述沿用 Map 的数组向量；既有 transform/moveBody 等命令仍使用 `{x,y,z}`。`Engine.animation` 是 Animator 接入的便捷入口，不再接收 rootMotion 开关；用 `Engine.addComponent(e,'rootMotion',{mode:'grounded',preserveAnchor:true})` 明确接入消费策略。
 
+## Dynamics 接入
+
+`dynamics` 组件拥有整个批量模型，`dynamicsBinding` 描述可选的 Transform 输入／输出，不对应模型内部变量数量。系统在动画后调度求解并发布姿态，渲染抽取不推进求解。组件契约、独占姿态写权与按需同步见 [Dynamics 与 ECS](dynamics-ecs.md)。
+
 ## 关键验证
 
 `ecs_lifecycle` 在原有生命周期覆盖上验证：提交重试与观察者异常隔离；光源组合、更新、启停、持久化和替换身份；求解失败恢复及蒙皮视觉空间；注册新组件后脚本/原生/持久化一致；失败 draft 与组件组回滚；依赖和派生资源移除；批次提交只同步最终姿态；场景只准备一次且旧句柄失效；手工姿态蒙皮；无碰撞和盒体的根运动。`project_assets_scene` 与 `animation_runtime` 验证既有场景、脚本和求解链路。GPU 生命周期诊断入口仍为 `tools/test_ecs_lifecycle.py`。

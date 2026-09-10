@@ -12,11 +12,13 @@ struct Request {
     StateField field = StateField::Value;
     SetId set = 0;
     uint32_t first = 0, count = 0;
+    std::vector<StateRange> ranges;
 };
 struct Reply {
     CompletedState completed;
     std::vector<float> values;
     std::string error;
+    std::vector<std::vector<float>> samples;
 };
 // Reliable single-flight channel per model. A second operation returns Busy until
 // the caller consumes the first reply; replacing a render Frame never drops a tick.

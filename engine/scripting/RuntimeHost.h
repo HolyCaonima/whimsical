@@ -13,7 +13,6 @@ class RuntimeHost {
     World& world_;
     AssetManager& assets_;
     ui::UiCore* ui_;
-    std::shared_ptr<dynamics::Mailbox> dynamics_ = std::make_shared<dynamics::Mailbox>();
     std::unique_ptr<ScriptRuntime> application_, simulation_;
     ContentSourceRef projectOrigin_;
     std::vector<AssetRef> projectScripts_, hostScripts_;
@@ -43,7 +42,7 @@ class RuntimeHost {
     void changed();
 
   public:
-    const std::shared_ptr<dynamics::Mailbox>& dynamicsMailbox()const{return dynamics_;}
+    const std::shared_ptr<dynamics::Mailbox>& dynamicsMailbox()const{return world_.dynamics.mailbox();}
     RenderView view;
     RenderView renderView() const;
     RuntimeHost(World&, AssetManager&, ui::UiCore* = nullptr);

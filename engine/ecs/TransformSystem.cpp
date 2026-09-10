@@ -32,8 +32,13 @@ void TransformSystem::setLocal(Entity e, const TransformPose& pose) {
     setLocal(e, pose, s.registry.get<Transform>(e).parent);
 }
 void TransformSystem::setLocal(Entity e, const TransformPose& pose, Entity parent) {
+    setLocalAs(e, pose, parent, typeid(void));
+}
+void TransformSystem::setLocalAs(Entity e, const TransformPose& pose, Entity parent, std::type_index writer) {
     validateTransformPose(pose);
     auto& t = s.registry.get<Transform>(e);
+    if (t.driver != writer)
+        throw std::logic_error("Local transform is owned by another driver");
     if (parent) {
         s.registry.get<Transform>(parent);
         for (auto p = parent; p; p = s.registry.get<Transform>(p).parent)
@@ -61,6 +66,20 @@ void TransformSystem::setLocal(Entity e, const TransformPose& pose, Entity paren
     if (reparent)
         refreshEnabled(e);
     batch.commit();
+}
+void TransformSystem::claim(Entity e, std::type_index owner) {
+    auto& t = s.registry.get<Transform>(e);
+    if (owner == typeid(void) || (t.driver != typeid(void) && t.driver != owner))
+        throw std::logic_error("Transform already has a driver");
+    t.driver = owner;
+}
+void TransformSystem::release(Entity e, std::type_index owner) {
+    auto& t = s.registry.get<Transform>(e);
+    if (t.driver == owner)
+        t.driver = typeid(void);
+}
+void TransformSystem::setDrivenLocal(Entity e, const TransformPose& pose, std::type_index owner) {
+    setLocalAs(e, pose, s.registry.get<Transform>(e).parent, owner);
 }
 void TransformSystem::validateSubtree(Entity e, const TransformPose& world) const {
     validateTransformPose(world);

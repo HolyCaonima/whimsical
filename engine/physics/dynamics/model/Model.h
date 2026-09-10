@@ -147,6 +147,7 @@ class Model {
                          const std::vector<float>& velocity, const std::vector<float>& inverseMetric);
     void appendRelations(SetId, std::vector<std::vector<VariableRef>>, const std::vector<float>& parameters,
                          const std::vector<float>& compliance, const std::vector<float>& history = {});
+    ModelSnapshot snapshot() const { return {id_, version_, data_}; }
     ModelCommit commit();
 };
 } // namespace whimsical::dynamics

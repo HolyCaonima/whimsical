@@ -1,5 +1,5 @@
 #include "ScriptBindings.h"
-#include "assets/Json.h"
+#include "Document.h"
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
@@ -110,60 +110,6 @@ std::vector<std::vector<VariableRef>> endpoints(duk_context* c, int object) {
     duk_pop(c);
     return result;
 }
-Formula formula(const Json& j) {
-    Formula f;
-    f.inputs = j.at("inputs").uint();
-    const std::vector<std::string> names = {"constant", "input", "add", "sub",   "mul",  "div",
-                                            "neg",      "sqrt",  "sin", "cos",   "exp",  "log",
-                                            "abs",      "min",   "max", "atan2", "less", "select"};
-    for (const auto& row : j.at("nodes").elements()) {
-        auto name = row.at(0).string();
-        auto found = std::find(names.begin(), names.end(), name);
-        if (found == names.end())
-            throw std::invalid_argument("Unknown mathematical operation: " + name);
-        MathNode n{MathOp(found - names.begin())};
-        const auto& values = row.elements();
-        if (n.op == MathOp::Constant)
-            n.value = float(row.at(1).number());
-        else {
-            if (values.size() > 1)
-                n.a = row.at(1).uint();
-            if (values.size() > 2)
-                n.b = row.at(2).uint();
-            if (values.size() > 3)
-                n.c = row.at(3).uint();
-        }
-        f.nodes.push_back(n);
-    }
-    for (const auto& value : j.at("outputs").elements())
-        f.outputs.push_back(value.uint());
-    f.validate();
-    return f;
-}
-StateField stateField(const std::string& name) {
-    if (name == "value")
-        return StateField::Value;
-    if (name == "velocity")
-        return StateField::Velocity;
-    if (name == "acceleration")
-        return StateField::Acceleration;
-    if (name == "history")
-        return StateField::History;
-    throw std::invalid_argument("Unknown state field: " + name);
-}
-FieldKind modelField(const std::string& name) {
-    if (name == "inverseMetric")
-        return FieldKind::InverseMetric;
-    if (name == "variableEnabled")
-        return FieldKind::VariableEnabled;
-    if (name == "parameters")
-        return FieldKind::Parameters;
-    if (name == "compliance")
-        return FieldKind::Compliance;
-    if (name == "relationEnabled")
-        return FieldKind::RelationEnabled;
-    throw std::invalid_argument("Unknown model field: " + name);
-}
 } // namespace
 ScriptBindings::ScriptBindings(duk_context* c, std::shared_ptr<Mailbox> mailbox)
     : mailbox_(std::move(mailbox)) {
@@ -187,8 +133,8 @@ ScriptBindings::ScriptBindings(duk_context* c, std::shared_ptr<Mailbox> mailbox)
                            "appendVariables",
                            "appendRelations",
                            "replaceEndpoints",
-                           "spaceInfo"};
-    for (int i = 0; i < 15; ++i) {
+                           "spaceInfo", "describe"};
+    for (int i = 0; i < 16; ++i) {
         duk_push_c_function(c, call, DUK_VARARGS);
         duk_set_magic(c, -1, i);
         duk_put_prop_string(c, -2, names[i]);
@@ -288,6 +234,10 @@ __declspec(noinline) duk_ret_t ScriptBindings::dispatch(duk_context* c, int op) 
     }
     auto id = integer(c, 0);
     auto& e = *models_.at(id);
+    if (op == 15) {
+        push(c, document(e.model.snapshot()));
+        return 1;
+    }
     if (op == 10) {
         e.channel->retire();
         models_.erase(id);
