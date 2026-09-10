@@ -70,11 +70,11 @@ struct Cost {
 };
 // Conservative estimate of the dense local solve's explicitly generated arrays.
 uint64_t temporaryWords(const RelationType& t) {
-    uint64_t n = t.inputSize(), d = t.tangentSize(), m = t.rows;
-    uint64_t result = n + m * n + 2 * m * d + m * m + 6 * m;
+    uint64_t n = t.inputSize(), q = t.stateSize(), d = t.tangentSize(), m = t.rows;
+    uint64_t result = n + m * q + 2 * m * d + m * m + 6 * m;
     for (const auto& s : t.spaces)
         result += 2 * s->stateSize + s->tangentSize +
-                  uint64_t(s->stateSize) * (s->stateSize + s->tangentSize);
+                  uint64_t(s->stateSize) * s->tangentSize;
     return result;
 }
 } // namespace

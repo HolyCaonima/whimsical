@@ -1,7 +1,8 @@
 #include "physics/dynamics/compiler/FormulaGlsl.h"
 #include "Schedule.h"
-#include <sstream>
 #include <algorithm>
+#include <numeric>
+#include <sstream>
 
 namespace whimsical::dynamics {
 namespace {
@@ -84,12 +85,18 @@ KernelFunction variableFunction(const Space& space, const char* operation, const
 }
 KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update, const std::string& name) {
     std::ostringstream s;
-    const auto N = t.inputSize(), D = t.tangentSize(), M = t.rows;
-    s << emitGlsl(t.residual, name + "_residual", true);
+    const auto Q = t.stateSize(), D = t.tangentSize(), M = t.rows;
+    std::vector<uint32_t> residualInputs(Q);
+    std::iota(residualInputs.begin(), residualInputs.end(), 0u);
+    s << emitGlslDerivative(t.residual, name + "_residual", residualInputs);
     if (t.update)
         s << emitGlsl(*t.update, name + "_commitHistory");
-    for (uint32_t e = 0; e < t.spaces.size(); ++e)
-        s << emitGlsl(t.spaces[e]->retract, name + "_retract" + std::to_string(e), true);
+    for (uint32_t e = 0; e < t.spaces.size(); ++e) {
+        const auto& space = *t.spaces[e];
+        std::vector<uint32_t> tangentInputs(space.tangentSize);
+        std::iota(tangentInputs.begin(), tangentInputs.end(), space.stateSize);
+        s << emitGlslDerivative(space.retract, name + "_retract" + std::to_string(e), tangentInputs);
+    }
     s << "void " << name << "(uint id,float h,float time,float relaxation){Relation r=relation(id);\n";
     if (jacobi)
         for (uint32_t c = 0; c < D; ++c)
@@ -106,7 +113,7 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
         return {name, s.str(), BufferRole::RelationWork};
     }
     local(s, "c", M);
-    local(s, "rawJ", M * N);
+    local(s, "rawJ", M * Q);
     local(s, "j", M * D);
     local(s, "wjt", D * M);
     s << name << "_residual(x,c,rawJ);\n";
@@ -114,7 +121,7 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
     for (uint32_t e = 0; e < t.spaces.size(); ++e) {
         const auto S = t.spaces[e]->stateSize, T = t.spaces[e]->tangentSize;
         s << "float input" << e << "[" << S + T << "], output" << e << "[" << S << "], tangent" << e << "["
-          << S * (S + T) << "];\n";
+          << S * T << "];\n";
         for (uint32_t a = 0; a < S; ++a)
             s << "input" << e << "[" << a << "]=x[" << qo + a << "];\n";
         for (uint32_t a = 0; a < T; ++a)
@@ -124,7 +131,7 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
             for (uint32_t col = 0; col < T; ++col) {
                 s << "j[" << row * D + vo + col << "]=0.0";
                 for (uint32_t k = 0; k < S; ++k)
-                    s << "+rawJ[" << row * N + qo + k << "]*tangent" << e << "[" << k * (S + T) + S + col
+                    s << "+rawJ[" << row * Q + qo + k << "]*tangent" << e << "[" << k * T + col
                       << "]";
                 s << ";\n";
             }
