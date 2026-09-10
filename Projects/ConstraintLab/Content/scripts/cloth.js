@@ -1,8 +1,8 @@
-// Experiment 02 — a sheet is a grid of R3 variables woven by three families of
+// Experiment 01 — a sheet is a grid of R3 variables woven by three families of
 // distance relations: stiff structural threads hold the weave, soft diagonals carry
 // shear, and relations across two cells resist creasing. Folds come out of the mix.
 Lab.add((function(){
-var cloth={id:'cloth',tab:'布料',eyebrow:'实验 02',title:'布料实验',
+var cloth={id:'cloth',tab:'布料',eyebrow:'实验 01',title:'布料实验',
     subtitle:'三族距离关系织成的方布，落到球面上。',
     equation:'C(q) = ‖qᵢ − qⱼ‖ − L,  L ∈ {d, √2 d, 2d}',
     hint:'↑ ↓ 调整提起高度',

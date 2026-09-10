@@ -5,8 +5,8 @@
   "startupMap": null,
   "scripts": [
     "/Game/scripts/lab",
-    "/Game/scripts/rope",
     "/Game/scripts/cloth",
+    "/Game/scripts/rope",
     "/Game/scripts/woven",
     "/Game/scripts/threaded",
     "/Game/scripts/clockwork",

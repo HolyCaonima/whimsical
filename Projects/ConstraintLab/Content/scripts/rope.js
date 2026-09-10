@@ -1,8 +1,8 @@
-// Experiment 01 — a rope is a chain of distance relations between R3 variables.
+// Experiment 02 — a rope is a chain of distance relations between R3 variables.
 // Each solver instance has a local frame; the gallery places those frames in a grid,
 // and every rope reads its own GPU result rather than a copy of the first rope's positions.
 Lab.add((function(){
-var rope={id:'rope',tab:'绳索',eyebrow:'实验 01',title:'绳索实验',
+var rope={id:'rope',tab:'绳索',eyebrow:'实验 02',title:'绳索实验',
     subtitle:'距离关系连成的绳子，右端可移动或松开。',
     equation:'C(q) = ‖qᵢ − qⱼ‖ − L',
     hint:'方向键移动右端点',
