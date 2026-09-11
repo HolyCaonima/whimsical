@@ -5,9 +5,9 @@
 namespace whimsical {
 // The persistent, slot-addressed description of everything the renderer can draw.
 //
-// A slot is stable for the whole lifetime of a proxy. The renderer mirrors slots one to
-// one onto GPU instance entries and TLAS instances. Raster draws address these through
-// a transient slot stream, so sorting and batching never change an object's identity.
+// A slot is stable for the whole lifetime of a proxy. The renderer maps each proxy to
+// a range of GPU and TLAS instances. Raster draws address those through a transient
+// instance stream, so sorting and batching never change an object's identity.
 // Spawning, hiding or moving an object touches only that object's persistent slot.
 //
 // Changes are recorded as they happen rather than rediscovered by comparing whole frames,
@@ -56,6 +56,8 @@ class RenderScene {
     // Fast path. Does nothing when the transform is unchanged, so a scene that is being
     // simulated without actually moving produces an empty delta and no GPU traffic.
     void setTransform(uint32_t slot, const ProxyTransform&);
+    static void validateInstances(uint32_t count, const std::vector<ProxyTransform>&);
+    void setInstances(uint32_t slot, uint32_t count, const std::vector<ProxyTransform>&);
     void setAttributes(uint32_t slot, ProxyAttributes, const std::shared_ptr<const MaterialAsset>&);
     void setVisible(uint32_t slot, bool visible);
     void geometryChanged(uint32_t slot);

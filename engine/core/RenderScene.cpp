@@ -1,4 +1,5 @@
 #include "RenderScene.h"
+#include "SpatialTransform.h"
 #include "assets/MaterialAsset.h"
 #include <algorithm>
 #include <stdexcept>
@@ -103,6 +104,29 @@ void RenderScene::setTransform(uint32_t slot, const ProxyTransform& transform) {
     proxies_[slot].transform = transform;
     ++revision_;
     mark(slot, MarkMoved);
+}
+void RenderScene::validateInstances(uint32_t count, const std::vector<ProxyTransform>& transforms) {
+    if (!count || (transforms.size() != count && !(count == 1 && transforms.empty())))
+        throw std::invalid_argument("Render instanceCount must be at least 1 and match instanceTransforms");
+    for (const auto& t : transforms)
+        validateTransformPose({t.position, t.rotation, t.scale});
+}
+void RenderScene::setInstances(uint32_t slot, uint32_t count, const std::vector<ProxyTransform>& transforms) {
+    validateInstances(count, transforms);
+    if (!proxy(slot).live)
+        return;
+    auto& p = proxies_[slot];
+    if (p.instanceCount == count &&
+        (p.instanceTransforms ? *p.instanceTransforms == transforms : transforms.empty()))
+        return;
+    const bool resized = p.instanceCount != count;
+    p.instanceCount = count;
+    p.instanceTransforms =
+        transforms.empty() ? nullptr : std::make_shared<const std::vector<ProxyTransform>>(transforms);
+    ++revision_;
+    if (resized)
+        ++topology_;
+    mark(slot, resized ? MarkStructural : MarkMoved);
 }
 void RenderScene::setAttributes(uint32_t slot, ProxyAttributes attributes,
                                 const std::shared_ptr<const MaterialAsset>& material) {

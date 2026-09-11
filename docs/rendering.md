@@ -147,7 +147,7 @@ GPU fence 完成后再更新 CPU-visible 常量／实例／灯光数据；NRD de
 - **多帧在途**：帧时间 4.11 ms 中 GPU 占 3.35 ms，可回收上限是 0.76 ms，代价是把 TLAS、descriptor set 和全部 host-visible 上传缓冲按帧复制。结论与[之前那次测量](verification.md)一致：不做。区别在于现在这个决定是可撤销的——`ResourcePool` 已经按奇偶管理物理槽位，扩成 N 帧是同一套机制。
 - **并行调度**：17 个 pass 的依赖图基本是一条链，唯一与主链无关的分支是 UI overlay（一个小的 raster pass）。单队列上已经没有可暴露的并发，二队列 + semaphore 的复杂度换不回可测的时间。
 
-实例数据不再逐帧全量写入：槽位由 `RenderScene` 稳定分配，渲染器按 `SceneDelta` 只写脏槽位，变换变化只触及 `GpuInstance` 前 128 字节的 `model`／`previousModel`，属性变化只触及末 16 字节的 `info`。实例容量由 `GpuScene` 按场景槽位数自动增长：实例数据与 TLAS 输入数组从 64 个槽位起步，容量不足时至少翻倍或直接满足当前需求，TLAS 存储沿用这份预留容量。扩容发生在上一渲染帧完成之后，保留已有实例字节与运动历史，通过资源 generation 更新绑定，不触发额外的全场景重同步。实例数只受设备 storage buffer 范围、TLAS 实例数和 24 位实例自定义索引约束；材质与灯仍分别限于 256 个，超限明确报错。更大规模场景的后续优化包括 GPU allocator、staging 上传、chunk/streaming 和面向大量灯的 ReGIR 分布。
+实例数据不再逐帧全量写入：槽位由 `RenderScene` 稳定分配，渲染器按 `SceneDelta` 只写脏槽位，变换变化只触及 `GpuInstance` 前 128 字节的 `model`／`previousModel`，属性变化只触及末 16 字节的 `info`。每个 Render 组件始终只占一个场景槽位和排序项，组件内实例由 `GpuScene` 映射到连续实例区间。实例容量按 GPU 实例区间的实际需求自动增长：实例数据与 TLAS 输入数组从 64 个槽位起步，容量不足时至少翻倍或直接满足当前需求，TLAS 存储沿用这份预留容量。扩容发生在上一渲染帧完成之后，保留已有实例字节与运动历史，通过资源 generation 更新绑定，不触发额外的全场景重同步。实例数只受设备 storage buffer 范围、TLAS 实例数和 24 位实例自定义索引约束；材质与灯仍分别限于 256 个，超限明确报错。更大规模场景的后续优化包括 GPU allocator、staging 上传、chunk/streaming 和面向大量灯的 ReGIR 分布。
 
 ## 参考来源
 

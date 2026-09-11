@@ -70,10 +70,20 @@ cloud.stage=function(){
         Lab.mesh('Container rail X '+side,[0,0.1,side*1.58],[3.3,0.2,0.16],'Anchor');
         Lab.mesh('Container rail Z '+side,[side*1.58,0.1,0],[0.16,0.2,3.3],'Anchor');
     }
-    for(var i=0;i<cloud.count;++i){
-        var particle=Lab.mesh('Particle '+i,[0,2,0],[cloud.radius,cloud.radius,cloud.radius],'Edge',Lab.sphereMesh);
-        Lab.bindPoint(particle,i,0,0,cloud.radius);
-    }
+    var transforms=[];
+    for(var i=0;i<cloud.count;++i)
+        transforms.push({position:[Lab.sample[i*3],Lab.sample[i*3+1],Lab.sample[i*3+2]],
+            scale:[cloud.radius,cloud.radius,cloud.radius]});
+    var e=Lab.X.expression(3),size=cloud.radius;
+    cloud.entity=Engine.create({name:'Particles',persistent:false,components:{
+        transform:{},
+        render:{mesh:Lab.sphereMesh,material:Lab.materials.Edge,
+            instanceCount:cloud.count,instanceTransforms:transforms},
+        dynamicsBinding:{model:Lab.modelId,direction:'output',target:'renderInstances',interpolation:0.07,
+            variables:[{set:Lab.variables,index:0}],
+            mapping:e.finish([e.input(0),e.input(1),e.input(2),1,0,0,0,size,size,size])}
+    }});
+    Lab.entities.push(cloud.entity);
     Lab.lights(0.8);
 };
 cloud.restage=function(){};cloud.apply=function(){};

@@ -61,13 +61,19 @@ class GpuScene {
     uint64_t geometryBuilds = 0, geometryReleases = 0, geometryBufferGrowths = 0;
     uint64_t instanceCapacityGrowths = 0;
     size_t staticMeshInstances() const {
-        return staticSlots.size();
+        size_t count = 0;
+        for (const auto& entry : staticSlots)
+            count += proxyInstances[entry.first].count;
+        return count;
     }
     size_t staticMeshAssets() const {
         return staticAssets.size();
     }
     size_t textureAssets() const {
         return textureBindings.size();
+    }
+    uint32_t gpuInstanceCount() const {
+        return instanceCount;
     }
 
     Buffer globals, outlineData, instanceData, materialData, lightData, vertexData, indexData, lightDistribution;
@@ -95,6 +101,14 @@ class GpuScene {
     Buffer tlasInstances, tlasScratch;
     Buffer drawInstances;
     std::vector<uint32_t> drawSlots;
+    uint32_t drawIdentityCapacity = 0;
+    struct InstanceRange {
+        uint32_t first = 0, count = 0;
+        bool fresh = false;
+    };
+    RangeAllocator instanceRanges;
+    std::vector<InstanceRange> proxyInstances;
+    uint32_t instanceCount = 0;
     std::vector<AccelerationStructure> blas;
     std::vector<Buffer> blasScratch;
     AccelerationStructure tlas;
@@ -132,6 +146,7 @@ class GpuScene {
     void releaseGeometry(uint32_t);
     void syncGeometry(const Frame&);
     void reserveInstances(size_t count);
+    void syncInstances(const Frame&);
     void reserveTlas(const Frame&);
     void uploadGeometry(const std::vector<uint32_t>& added);
     void buildMeshAS(VkCommandBuffer, uint32_t mesh, bool update);

@@ -41,6 +41,7 @@ struct Renderable {
     RenderComponent appearance;
     std::shared_ptr<const StaticMesh> mesh;
     uint32_t slot = UINT32_MAX; // Derived render-scene binding; never serialized.
+    std::type_index instanceDriver{typeid(void)};
 };
 struct DrawEntityID {
     using Ownership = SystemComponent;

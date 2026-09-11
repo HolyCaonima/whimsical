@@ -32,13 +32,18 @@ struct DynamicsBinding {
     SceneBinding document;
     std::string model;
     bool input = false;
-    std::vector<VariableRef> variables;
+    bool renderInstances = false;
+    struct Variable {
+        SetId set;
+        uint32_t index, stride = 1;
+    };
+    std::vector<Variable> variables;
     Formula mapping;
     StateField field = StateField::Value;
     float interpolation = 0, age = 0;
     uint64_t sampledModel = 0, sampledTick = 0;
     bool initialized = false;
-    TransformPose from, target;
+    std::vector<TransformPose> from, target;
 };
 class DynamicsSystem {
     SceneStorage& storage_;

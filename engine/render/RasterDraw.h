@@ -22,13 +22,14 @@ struct RasterKey {
     }
 };
 struct RasterDraw {
+    // One logical proxy, including all of its explicitly authored instances.
     uint32_t slot;
     uint32_t sortKey; // Ascending, stable. Scheduling owns its meaning.
     VkPipeline pipeline;
 };
 struct RasterBatch {
     uint32_t firstIndex, indexCount;
-    uint32_t firstInstance, instanceCount; // Range in the frame's stable-slot stream.
+    uint32_t firstInstance, instanceCount; // Range in the frame's GPU-instance stream.
     VkPipeline pipeline;
 };
 } // namespace whimsical

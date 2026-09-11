@@ -432,19 +432,29 @@ static VkTransformMatrixKHR rowMajor(const mat4& model) {
 // instance bytes [0, 48). Geometry binding, material, entity id and visibility mask
 // are left exactly as they were, so moving an object never reconsiders what it is.
 void GpuScene::writeTransform(uint32_t slot, const RenderProxy& p, bool zeroMotion) {
-    const mat4 model = skinMeshes.count(slot) ? mat4(1) : transform(p.transform);
-    const mat4 before = zeroMotion ? model : shadowModel[slot];
-    auto& instance = static_cast<GpuInstance*>(instanceData.mapped)[slot];
-    instance.previousModel = before;
-    instance.model = model;
-    shadowModel[slot] = model;
-    static_cast<VkAccelerationStructureInstanceKHR*>(tlasInstances.mapped)[slot].transform = rowMajor(model);
-    // Only a slot that is actually reporting motion has to be settled once it stops.
-    if (before != model && motionFrame[slot] != sceneStamp) {
-        motionFrame[slot] = sceneStamp;
-        movedThisFrame.push_back(slot);
+    const auto& range = proxyInstances[slot];
+    const auto world = transform(p.transform);
+    const bool skinned = skinMeshes.count(slot) != 0;
+    // Skin vertices are already in owner-world space. Apply each local instance
+    // around that owner, sharing the same deformed geometry and BLAS.
+    const auto skinToLocal = skinned && p.instanceTransforms ? glm::inverse(world) : mat4(1);
+    for (uint32_t i = 0; i < range.count; ++i) {
+        const auto index = range.first + i;
+        const mat4 model = p.instanceTransforms ? world * transform((*p.instanceTransforms)[i]) * skinToLocal
+                                                : (skinned ? mat4(1) : world);
+        const mat4 before = zeroMotion || range.fresh ? model : shadowModel[index];
+        auto& instance = static_cast<GpuInstance*>(instanceData.mapped)[index];
+        instance.previousModel = before;
+        instance.model = model;
+        shadowModel[index] = model;
+        static_cast<VkAccelerationStructureInstanceKHR*>(tlasInstances.mapped)[index].transform =
+            rowMajor(model);
+        if (before != model && motionFrame[index] != sceneStamp) {
+            motionFrame[index] = sceneStamp;
+            movedThisFrame.push_back(index);
+        }
+        statistics.transforms++;
     }
-    statistics.transforms++;
 }
 
 // Folds a slot's motion forward without moving it, so an object that moved on the
@@ -459,21 +469,25 @@ void GpuScene::settleMotion(uint32_t slot) {
 // instance, which is where the visibility mask and geometry binding live.
 void GpuScene::writeAttributes(uint32_t slot, const RenderProxy& p) {
     auto mesh = p.live ? meshFor(slot) : std::nullopt;
-    static_cast<GpuInstance*>(instanceData.mapped)[slot].info = {
-        p.attributes.material, mesh ? meshes[*mesh].firstIndex : 0, p.attributes.entity, 0};
-    VkAccelerationStructureInstanceKHR a{};
-    a.transform = rowMajor(shadowModel[slot]);
-    a.instanceCustomIndex = slot;
-    // Bit 0 is shadow visibility; the other bits retain material/reflective rays.
-    a.mask = mesh && p.attributes.visible && bindings.rayPolicies[p.attributes.material].visible
-                 ? (p.attributes.castShadow ? 0xffu : 0xfeu)
-                 : 0u;
-    a.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-    if (p.live && bindings.rayPolicies[p.attributes.material].opaque)
-        a.flags |= VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
-    a.accelerationStructureReference = mesh ? blas[*mesh].address : 0;
-    static_cast<VkAccelerationStructureInstanceKHR*>(tlasInstances.mapped)[slot] = a;
-    statistics.attributes++;
+    const auto& range = proxyInstances[slot];
+    for (uint32_t i = 0; i < range.count; ++i) {
+        const auto index = range.first + i;
+        static_cast<GpuInstance*>(instanceData.mapped)[index].info = {
+            p.attributes.material, mesh ? meshes[*mesh].firstIndex : 0, p.attributes.entity, i};
+        VkAccelerationStructureInstanceKHR a{};
+        a.transform = rowMajor(shadowModel[index]);
+        a.instanceCustomIndex = index;
+        // Bit 0 is shadow visibility; the other bits retain material/reflective rays.
+        a.mask = mesh && p.attributes.visible && bindings.rayPolicies[p.attributes.material].visible
+                     ? (p.attributes.castShadow ? 0xffu : 0xfeu)
+                     : 0u;
+        a.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+        if (p.live && bindings.rayPolicies[p.attributes.material].opaque)
+            a.flags |= VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
+        a.accelerationStructureReference = mesh ? blas[*mesh].address : 0;
+        static_cast<VkAccelerationStructureInstanceKHR*>(tlasInstances.mapped)[index] = a;
+        statistics.attributes++;
+    }
 }
 
 void GpuScene::writeSlot(uint32_t slot, const RenderProxy& p, bool zeroMotion) {
@@ -500,8 +514,9 @@ void GpuScene::reserveInstances(size_t count) {
     // history. Reading upload memory is confined to these infrequent reallocations.
     auto grow = [&](Buffer& buffer, VkDeviceSize stride, VkBufferUsageFlags usage) {
         auto next = vk.buffer(capacity * stride, usage, BufferMemory::Upload);
-        if (mirrorCapacity)
-            std::memcpy(next.mapped, buffer.mapped, size_t(mirrorCapacity * stride));
+        std::memset(next.mapped, 0, size_t(capacity * stride));
+        if (instanceCount)
+            std::memcpy(next.mapped, buffer.mapped, size_t(instanceCount * stride));
         vk.destroy(buffer);
         buffer = next;
     };
@@ -513,19 +528,43 @@ void GpuScene::reserveInstances(size_t count) {
     rebind();
 }
 
+void GpuScene::syncInstances(const Frame& frame) {
+    // Proxy identity and GPU instance identity have independent lifetimes. Resizing
+    // one batch must not move any other batch's data or temporal history.
+    proxyInstances.resize(std::max(proxyInstances.size(), frame.proxies.size()));
+    for (uint32_t slot = 0; slot < proxyInstances.size(); ++slot) {
+        auto& range = proxyInstances[slot];
+        const auto count =
+            slot < frame.proxies.size() && frame.proxies[slot].live ? frame.proxies[slot].instanceCount : 0;
+        if (range.count == count)
+            continue;
+        if (range.count) {
+            std::memset(static_cast<VkAccelerationStructureInstanceKHR*>(tlasInstances.mapped) + range.first,
+                        0, range.count * sizeof(VkAccelerationStructureInstanceKHR));
+            instanceRanges.release(range.first, range.count);
+        }
+        range = {count ? instanceRanges.allocate(count) : 0, count, true};
+    }
+    reserveInstances(instanceRanges.size());
+    instanceCount = instanceRanges.size();
+    shadowModel.resize(instanceCount);
+    motionFrame.resize(instanceCount, 0);
+    // Retired tail indices no longer address upload memory after a later growth.
+    movedLastFrame.erase(std::remove_if(movedLastFrame.begin(), movedLastFrame.end(),
+                                        [this](uint32_t index) { return index >= instanceCount; }),
+                         movedLastFrame.end());
+}
+
 // Brings the GPU mirror in line with a snapshot. The delta is applied when the mirror
 // sits exactly at the revision the delta was built against; otherwise a snapshot was
 // skipped and the only safe recovery is to rewrite every slot from the array, which
 // costs exactly what the engine used to pay on every single frame.
 void GpuScene::apply(const Frame& frame, bool reset) {
-    reserveInstances(frame.proxies.size());
+    if (!mirrorValid || frame.delta.topology != mirrorTopology)
+        syncInstances(frame);
     const uint32_t capacity = uint32_t(frame.proxies.size());
     statistics = {};
     statistics.slots = capacity;
-    if (capacity > shadowModel.size()) {
-        shadowModel.resize(capacity);
-        motionFrame.resize(capacity, 0);
-    }
     ++sceneStamp;
     movedThisFrame.clear();
     // The renderer may outrun the simulation and be handed the same snapshot twice.
@@ -580,6 +619,8 @@ void GpuScene::apply(const Frame& frame, bool reset) {
             writeAttributes(slot, frame.proxies[slot]);
     rayPoliciesDirty = false;
     movedLastFrame = movedThisFrame;
+    for (auto& range : proxyInstances)
+        range.fresh = false;
     statistics.resynchronised = resync;
     mirrorRevision = frame.delta.revision;
     mirrorCapacity = capacity;
@@ -612,10 +653,9 @@ void GpuScene::reserveTlas(const Frame& frame) {
     tlasBuild.geometryCount = 1;
     tlasBuild.pGeometries = &tlasGeometry;
     tlasBuild.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-    // The instance array is slot-addressed and covers dead slots too, so the primitive
-    // count only moves when the scene gains slots. Visibility and transforms can
-    // refit; destroying geometry changes active instances and requires a rebuild.
-    uint32_t count = uint32_t(frame.proxies.size());
+    // GPU ranges include inactive holes. Count/geometry changes rebuild; visibility
+    // and transforms retain the same topology and can refit.
+    uint32_t count = instanceCount;
     // Storage and scratch depend only on how many instances the structure can hold, so
     // reallocating is reserved for actually outgrowing it. Rebuilding reuses what is
     // already there.
@@ -669,37 +709,60 @@ void GpuScene::beginDraws() {
 }
 
 std::vector<RasterBatch> GpuScene::prepareDraws(std::vector<RasterDraw> draws) {
-    std::stable_sort(draws.begin(), draws.end(), [](const RasterDraw& a, const RasterDraw& b) {
-        return a.sortKey < b.sortKey;
-    });
+    // Exactly one sortable item per proxy, independent of its instance count.
+    std::stable_sort(draws.begin(), draws.end(),
+                     [](const RasterDraw& a, const RasterDraw& b) { return a.sortKey < b.sortKey; });
     std::vector<RasterBatch> batches;
+    bool previousMergeable = false;
+    const auto identityCapacity = uint32_t(instanceData.size / sizeof(GpuInstance));
     for (const auto& draw : draws) {
         auto geometry = meshFor(draw.slot);
         if (!geometry)
             continue;
         const auto& mesh = meshes[*geometry];
+        const auto& instances = proxyInstances[draw.slot];
+        const bool mergeable = instances.count == 1;
+        if (!mergeable) {
+            // A contiguous authored group addresses the persistent identity prefix
+            // directly. Even a million instances produce one item and one range,
+            // with no per-frame index expansion or per-instance sorting.
+            batches.push_back(
+                {mesh.firstIndex, mesh.indexCount, instances.first, instances.count, draw.pipeline});
+            previousMergeable = false;
+            continue;
+        }
         // Only neighbours in the sorted stream may merge. Material values remain
         // per slot; shared geometry and the complete pipeline determine compatibility.
-        if (!batches.empty() && batches.back().pipeline == draw.pipeline &&
+        if (previousMergeable && !batches.empty() && batches.back().pipeline == draw.pipeline &&
             batches.back().firstIndex == mesh.firstIndex && batches.back().indexCount == mesh.indexCount)
             ++batches.back().instanceCount;
         else
-            batches.push_back({mesh.firstIndex, mesh.indexCount, uint32_t(drawSlots.size()), 1, draw.pipeline});
-        drawSlots.push_back(draw.slot);
+            batches.push_back({mesh.firstIndex, mesh.indexCount,
+                               identityCapacity + uint32_t(drawSlots.size()), 1, draw.pipeline});
+        drawSlots.push_back(instances.first);
+        previousMergeable = true;
     }
     return batches;
 }
 
 void GpuScene::uploadDraws() {
-    const VkDeviceSize bytes = drawSlots.size() * sizeof(uint32_t);
+    // Explicit groups reuse [0, identityCapacity). Dynamic singleton batches use
+    // a transient indirection suffix. Both feed the same instance-rate vertex input.
+    const auto identityCapacity = uint32_t(instanceData.size / sizeof(GpuInstance));
+    const VkDeviceSize bytes = (VkDeviceSize(identityCapacity) + drawSlots.size()) * sizeof(uint32_t);
     if (bytes > drawInstances.size) {
         const auto capacity = std::max(bytes, drawInstances.size * 2);
         vk.destroy(drawInstances);
         drawInstances = vk.buffer(capacity, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, BufferMemory::Upload);
+        drawIdentityCapacity = 0;
         rebind();
     }
-    if (bytes)
-        std::memcpy(drawInstances.mapped, drawSlots.data(), size_t(bytes));
+    auto* slots = static_cast<uint32_t*>(drawInstances.mapped);
+    for (uint32_t i = drawIdentityCapacity; i < identityCapacity; ++i)
+        slots[i] = i;
+    drawIdentityCapacity = identityCapacity;
+    if (!drawSlots.empty())
+        std::memcpy(slots + identityCapacity, drawSlots.data(), drawSlots.size() * sizeof(uint32_t));
 }
 
 void GpuScene::recordDraws(VkCommandBuffer c, const std::vector<RasterBatch>& draws) {

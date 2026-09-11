@@ -24,7 +24,7 @@ uiCore 在主线程拥有 RmlUi Context、文档、DOM 和输入。EngineUi 只�
 
 运行参数由主线程拥有的 `ConsoleRegistry` 管理，`EngineSettings` 注册引擎变量并把实际生效值装入已有 `Frame`。渲染线程不直接访问可变注册表；控制台编辑器发布展示数据，由主线程 EngineUi 更新 RML 文档。变量、命令、配置优先级及重启语义见 [CVar 与控制台](console.md)。CVar 的 cfg 是进程运行配置，独立于内容资产。
 
-`RenderScene` 是常驻的、按槽位寻址的可绘制物描述，`World` 之外的渲染状态只经它流转。只有 `Renderable` 组件持有派生的 `slot` 槽位；槽位在对象销毁后进入自由列表待复用，单张运行场景内 `proxies_` 只增不减（整张地图替换会接收新场景的槽表），因此**槽位在所属 proxy 生命周期内稳定，销毁后可以复用**，可以直接当作 GPU instance buffer、TLAS instance 和 `gl_InstanceIndex` 的下标，三者天然对齐，无需任何映射表。
+`RenderScene` 是常驻的、按槽位寻址的可绘制物描述，`World` 之外的渲染状态只经它流转。只有 `Renderable` 组件持有派生的 `slot` 槽位；槽位在对象销毁后进入自由列表待复用，单张运行场景内 `proxies_` 只增不减（整张地图替换会接收新场景的槽表），因此**槽位在所属 proxy 生命周期内稳定，销毁后可以复用**。一个组件始终对应一个 proxy 和一个排序项，无论 `instanceCount` 有多大。`GpuScene` 将 proxy 映射到连续 GPU 实例区间，GPU instance buffer 与 TLAS custom index 按实例对应；显式实例组直接提交整个区间，单实例动态合批则通过临时索引流寻址。排序不会展开组件内部实例，也不会重排 GPU 实例数据。详见 [实例绘制](instanced-rendering.md)。
 
 proxy 拆成两半，因为它们的变化频率相差一到两个数量级：`ProxyTransform`（位置、朝向、缩放）几乎每帧都动，`ProxyAttributes`（网格、材质、可见性、叠加颜色）很少动。这个划分对应到 `GpuInstance` 的内存布局上——前 128 字节是 `model` 与 `previousModel`，后 16 字节是 `info`——所以变换更新是一条**只写前 128 字节的快速路径**，不碰属性、不重建 proxy、不需要改动 shader。
 

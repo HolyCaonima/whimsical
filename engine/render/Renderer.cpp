@@ -491,10 +491,10 @@ struct Renderer::Impl {
         // playing which role this frame; it replaces the end-of-frame history copy.
         data.renderSettings = {frame.exposure, frame.diHistoryConfidence ? 1.f : 0.f,
                                lightsChanged ? 1.f : 0.f, float((frameNumber & 1) ? DiLayerRotation : 0)};
-        data.counts = {uint32_t(frame.proxies.size()), uint32_t(frame.lights.size()), uint32_t(frameNumber),
+        scene->apply(frame, reset);
+        data.counts = {scene->gpuInstanceCount(), uint32_t(frame.lights.size()), uint32_t(frameNumber),
                        reset ? 0u : 1u};
         scene->writeGlobals(&data, sizeof(data));
-        scene->apply(frame, reset);
         // Materials and lights are compared against the previous snapshot anyway, to
         // decide whether temporal history survives; the same answer decides whether they
         // are worth uploading again.

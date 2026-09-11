@@ -23,14 +23,9 @@ struct MaterialAsset;
 struct TextureAsset;
 struct CpuProfile;
 
-struct RenderComponent {
-    std::shared_ptr<const MaterialAsset> material;
-    bool visible = true;
-    bool castShadow = true;
-};
 // A renderable occupies a stable slot for its whole lifetime. Transform and attributes
 // are separate because a transform changes orders of magnitude more often, and the two
-// map onto disjoint halves of a GPU instance so each can be rewritten on its own.
+// map onto disjoint halves of each GPU instance so each can be rewritten on its own.
 struct ProxyTransform {
     vec3 position{0};
     vec3 scale{1};
@@ -41,6 +36,14 @@ struct ProxyTransform {
     bool operator!=(const ProxyTransform& o) const {
         return !(*this == o);
     }
+};
+struct RenderComponent {
+    std::shared_ptr<const MaterialAsset> material;
+    bool visible = true;
+    bool castShadow = true;
+    uint32_t instanceCount = 1;
+    // Local to the entity. Empty means identity for a singleton; otherwise exactly instanceCount.
+    std::vector<ProxyTransform> instanceTransforms;
 };
 struct ProxyAttributes {
     uint32_t entity = 0;
@@ -55,12 +58,13 @@ struct ProxyAttributes {
         return !(*this == o);
     }
 };
-// Deliberately free of heap-owning members: publishing a snapshot is then one flat copy,
-// not one allocation per object.
+// Instance arrays are immutable and shared by snapshots; publishing never deep-copies them.
 struct RenderProxy {
     ProxyTransform transform;
     ProxyAttributes attributes;
     bool live = false;
+    uint32_t instanceCount = 1;
+    std::shared_ptr<const std::vector<ProxyTransform>> instanceTransforms;
 };
 // Slots touched since the previous published delta. `base` is the revision that delta
 // ended at, so a consumer whose mirror sits exactly at `base` may apply these lists and
@@ -171,8 +175,7 @@ struct Frame {
     // slots to look at, so a consumer that skipped snapshots can fall back to the array.
     std::vector<RenderProxy> proxies;
     SceneDelta delta;
-    // Resolved here rather than stored per proxy: keeping proxies free of heap-owning
-    // members is what makes publishing a snapshot a single flat copy.
+    // Resolved once per material, rather than duplicated in each proxy.
     std::vector<Material> materials;
     std::vector<Light> lights;
     std::vector<uint32_t> lightEntities; // Packed light identity for temporal history.

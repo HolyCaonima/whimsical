@@ -87,6 +87,46 @@ std::vector<double> poseValues(const TransformPose& p) {
     return {p.position.x, p.position.y, p.position.z, p.rotation.w, p.rotation.x,
             p.rotation.y, p.rotation.z, p.scale.x,    p.scale.y,    p.scale.z};
 }
+bool renderInstancesTarget(const Json& j) {
+    const auto target = j.contains("target") ? j.at("target").string() : "transform";
+    if (target != "transform" && target != "renderInstances")
+        throw std::invalid_argument("Dynamics binding target must be transform or renderInstances");
+    return target == "renderInstances";
+}
+uint32_t bindingCount(const World& w, Entity e, const DynamicsBinding& b) {
+    return b.renderInstances ? w.get<Renderable>(e).appearance.instanceCount : 1;
+}
+SampleRange bindingRange(const DynamicsBinding::Variable& v, uint32_t count) {
+    const auto size = uint64_t(count - 1) * v.stride + 1;
+    if (size > UINT32_MAX)
+        throw std::out_of_range("Dynamics binding range");
+    return {v.set, v.index, uint32_t(size)};
+}
+TransformPose interpolate(const TransformPose& from, const TransformPose& target, float blend) {
+    return {glm::mix(from.position, target.position, blend),
+            glm::slerp(from.rotation, target.rotation, blend),
+            glm::mix(from.scale, target.scale, blend)};
+}
+std::vector<ComponentDependency> bindingDependencies(bool renderInstances) {
+    return renderInstances ? std::vector<ComponentDependency>{{"render", OnDependencyRemoval::Cascade}}
+                           : std::vector<ComponentDependency>{};
+}
+void releaseOutput(World& w, Entity e, const DynamicsBinding& b) {
+    if (!b.input) {
+        if (b.renderInstances)
+            w.render.releaseInstances(e, typeid(DynamicsBinding));
+        else
+            w.transforms.release(e, typeid(DynamicsBinding));
+    }
+}
+void claimOutput(World& w, Entity e, const DynamicsBinding& b) {
+    if (!b.input) {
+        if (b.renderInstances)
+            w.render.claimInstances(e, typeid(DynamicsBinding));
+        else
+            w.transforms.claim(e, typeid(DynamicsBinding));
+    }
+}
 void submit(SceneInstance& s, Request request) {
     s.pending = request.operation;
     s.channel->submit(std::move(request));
@@ -171,7 +211,7 @@ bool DynamicsSystem::update(World& world, float dt) {
                 auto& b = storage_.registry.get<DynamicsBinding>(binding);
                 if (!b.input)
                     for (auto v : b.variables)
-                        ranges.push_back({v.set, v.index, 1});
+                        ranges.push_back(bindingRange(v, bindingCount(world, binding, b)));
             }
             for (auto r : ranges)
                 checkRange(s, r);
@@ -213,25 +253,54 @@ bool DynamicsSystem::update(World& world, float dt) {
                 continue;
             try {
                 auto modelId = s.model->snapshot().model;
-                if (!b.initialized || b.sampledModel != modelId || b.sampledTick != s.samplesTick) {
-                    std::vector<double> input;
+                const auto count = bindingCount(world, e, b);
+                if (!b.initialized || b.sampledModel != modelId || b.sampledTick != s.samplesTick ||
+                    b.target.size() != count) {
+                    // Read each source range once. A batch owns one mapping, applied
+                    // to zipped variable streams without creating member entities.
+                    struct Source {
+                        std::vector<float> values;
+                        uint32_t width, stride;
+                    };
+                    std::vector<Source> sources;
                     bool available = true;
                     for (auto v : b.variables) {
+                        auto range = bindingRange(v, count);
                         // Newly attached outputs join the next sample.
-                        if (s.samplesTick && !findSample(s, {v.set, v.index, 1})) {
+                        if (s.samplesTick && !findSample(s, range)) {
                             available = false;
                             break;
                         }
-                        auto values = sample(s, {v.set, v.index, 1});
-                        input.insert(input.end(), values.begin(), values.end());
+                        sources.push_back({sample(s, range), width(s, v.set), v.stride});
                     }
                     if (!available)
                         continue;
-                    auto p = b.mapping.evaluate(input);
-                    b.target = {vec3(float(p[0]), float(p[1]), float(p[2])),
-                                quat(float(p[3]), float(p[4]), float(p[5]), float(p[6])),
-                                vec3(float(p[7]), float(p[8]), float(p[9]))};
-                    b.from = b.initialized ? storage_.registry.get<Transform>(e).local : b.target;
+                    std::vector<TransformPose> targets;
+                    targets.reserve(count);
+                    std::vector<double> input;
+                    input.reserve(b.mapping.inputs);
+                    for (uint32_t i = 0; i < count; ++i) {
+                        input.clear();
+                        for (const auto& source : sources) {
+                            auto first = source.values.begin() + size_t(i) * source.stride * source.width;
+                            input.insert(input.end(), first, first + source.width);
+                        }
+                        auto p = b.mapping.evaluate(input);
+                        targets.push_back({vec3(float(p[0]), float(p[1]), float(p[2])),
+                                           quat(float(p[3]), float(p[4]), float(p[5]), float(p[6])),
+                                           vec3(float(p[7]), float(p[8]), float(p[9]))});
+                    }
+                    if (!b.initialized || b.target.size() != count)
+                        b.from = targets;
+                    else if (b.renderInstances) {
+                        const auto& current = world.get<Renderable>(e).appearance.instanceTransforms;
+                        for (uint32_t i = 0; i < count; ++i) {
+                            auto t = current.empty() ? ProxyTransform{} : current[i];
+                            b.from[i] = {t.position, t.rotation, t.scale};
+                        }
+                    } else
+                        b.from[0] = storage_.registry.get<Transform>(e).local;
+                    b.target = std::move(targets);
                     b.age = 0;
                     b.initialized = true;
                     b.sampledModel = modelId;
@@ -240,11 +309,17 @@ bool DynamicsSystem::update(World& world, float dt) {
                 b.age += dt;
                 float blend = b.interpolation > 0 ? std::min(1.f, b.age / b.interpolation) : 1.f;
                 blend = blend * blend * (3 - 2 * blend);
-                transforms_.setDrivenLocal(e,
-                                           {glm::mix(b.from.position, b.target.position, blend),
-                                            glm::slerp(b.from.rotation, b.target.rotation, blend),
-                                            glm::mix(b.from.scale, b.target.scale, blend)},
-                                           typeid(DynamicsBinding));
+                if (b.renderInstances) {
+                    std::vector<ProxyTransform> poses;
+                    poses.reserve(count);
+                    for (uint32_t i = 0; i < count; ++i) {
+                        auto p = interpolate(b.from[i], b.target[i], blend);
+                        poses.push_back({p.position, p.scale, p.rotation});
+                    }
+                    world.render.setDrivenInstances(e, count, std::move(poses), typeid(DynamicsBinding));
+                } else
+                    transforms_.setDrivenLocal(e, interpolate(b.from[0], b.target[0], blend),
+                                               typeid(DynamicsBinding));
             } catch (const std::exception& error) {
                 s.error = error.what();
                 break;
@@ -370,9 +445,15 @@ void registerSceneComponents(ComponentCatalog& catalog) {
     binding.dependencies = {{"transform", OnDependencyRemoval::Cascade}};
     binding.decode = [](const Json& j) -> std::any { return SceneBinding{j}; };
     binding.encode = [](const std::any& v) { return std::any_cast<const SceneBinding&>(v).value; };
+    binding.extraDependencies = [](const std::any& v) {
+        return bindingDependencies(renderInstancesTarget(std::any_cast<const SceneBinding&>(v).value));
+    };
+    binding.runtimeDependencies = [](const World& w, Entity e) {
+        return bindingDependencies(w.get<DynamicsBinding>(e).renderInstances);
+    };
     binding.validate = [](const ComponentSet& set, const std::any& v) {
-        if (set.contains("rootMotion") &&
-            std::any_cast<const SceneBinding&>(v).value.at("direction").string() == "output")
+        const auto& j = std::any_cast<const SceneBinding&>(v).value;
+        if (set.contains("rootMotion") && !renderInstancesTarget(j) && j.at("direction").string() == "output")
             throw std::invalid_argument("Root motion and Dynamics cannot both drive a local transform");
     };
     binding.prepare = [](const World& w, Entity e, const std::any& value,
@@ -388,13 +469,17 @@ void registerSceneComponents(ComponentCatalog& catalog) {
         if (direction != "input" && direction != "output")
             throw std::invalid_argument("Unknown Dynamics binding direction");
         b.input = direction == "input";
+        b.renderInstances = renderInstancesTarget(j);
+        if (b.input && b.renderInstances)
+            throw std::invalid_argument("Render instances are an output binding target");
         b.mapping = formula(j.at("mapping"));
         if (j.contains("interpolation"))
             b.interpolation = float(j.at("interpolation").number());
         if (!std::isfinite(b.interpolation) || b.interpolation < 0)
             throw std::invalid_argument("Interpolation time must be nonnegative");
         for (const auto& v : j.at("variables").elements())
-            b.variables.push_back({v.at("set").uint(), v.at("index").uint()});
+            b.variables.push_back({v.at("set").uint(), v.at("index").uint(),
+                                   v.contains("stride") ? v.at("stride").uint() : 1});
         if (b.input) {
             if (b.variables.size() != 1 || b.mapping.inputs != 10)
                 throw std::invalid_argument("Input binding maps local pose to one variable");
@@ -406,10 +491,9 @@ void registerSceneComponents(ComponentCatalog& catalog) {
             throw std::invalid_argument("Output binding maps variable states to a local pose of ten scalars");
         return [e, b](ComponentAccess& a) {
             auto& r = a.storage.registry;
-            if (auto old = r.tryGet<DynamicsBinding>(e); old && !old->input)
-                a.world.transforms.release(e, typeid(DynamicsBinding));
-            if (!b.input)
-                a.world.transforms.claim(e, typeid(DynamicsBinding));
+            if (auto old = r.tryGet<DynamicsBinding>(e))
+                releaseOutput(a.world, e, *old);
+            claimOutput(a.world, e, b);
             if (auto old = r.tryGet<DynamicsBinding>(e))
                 *old = b;
             else
@@ -421,8 +505,7 @@ void registerSceneComponents(ComponentCatalog& catalog) {
         return w.get<DynamicsBinding>(e).document;
     };
     binding.erase = [](ComponentAccess& a, Entity e) {
-        if (!a.storage.registry.get<DynamicsBinding>(e).input)
-            a.world.transforms.release(e, typeid(DynamicsBinding));
+        releaseOutput(a.world, e, a.storage.registry.get<DynamicsBinding>(e));
         a.storage.registry.remove<DynamicsBinding>(e);
     };
     catalog.add(std::move(binding));

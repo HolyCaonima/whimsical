@@ -171,6 +171,8 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
         c.validateValue = [](const std::any& value) {
             const auto& render = std::any_cast<const SceneRender&>(value);
             validatePersistentId(render.material.id);
+            RenderScene::validateInstances(render.appearance.instanceCount,
+                                           render.appearance.instanceTransforms);
         };
         codec<SceneRender>(
             c,
@@ -186,14 +188,32 @@ void registerBuiltinComponents(ComponentCatalog& catalog) {
                     a.visible = j.at("visible").boolean();
                 if (j.contains("castShadow"))
                     a.castShadow = j.at("castShadow").boolean();
+                if (j.contains("instanceCount"))
+                    a.instanceCount = j.at("instanceCount").uint();
+                if (j.contains("instanceTransforms"))
+                    for (const auto& item : j.at("instanceTransforms").elements()) {
+                        auto p = pose(item);
+                        auto scale = item.contains("scale") ? vector3(item.at("scale")) : vec3(1);
+                        a.instanceTransforms.push_back({p.position, scale, p.rotation});
+                    }
+                RenderScene::validateInstances(a.instanceCount, a.instanceTransforms);
                 if (j.contains("mesh"))
                     v.mesh = AssetRef::fromJson(j.at("mesh"));
                 return v;
             },
             [](const SceneRender& v) {
                 const auto& a = v.appearance;
-                Json j{{"material", v.material.json()},
-                       {"visible", a.visible}, {"castShadow", a.castShadow}};
+                Json j{{"material", v.material.json()}, {"visible", a.visible}, {"castShadow", a.castShadow}};
+                j["instanceCount"] = a.instanceCount;
+                if (!a.instanceTransforms.empty()) {
+                    auto transforms = Json::array();
+                    for (const auto& t : a.instanceTransforms) {
+                        auto item = pose(PhysicsPose{t.position, t.rotation});
+                        item["scale"] = vector(t.scale);
+                        transforms.push(std::move(item));
+                    }
+                    j["instanceTransforms"] = std::move(transforms);
+                }
                 if (v.mesh)
                     j["mesh"] = v.mesh->json();
                 return j;

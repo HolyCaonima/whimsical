@@ -153,6 +153,8 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
     const bool picking = setup.targets && !setup.targets->rasterOutputs().empty();
     const auto eye = frame.camera.eye();
     gpuScene->beginDraws();
+    // A component remains one proxy and one sort item, even with millions of
+    // authored instances. Its internal order is never changed by scheduling.
     for (uint32_t slot = 0; slot < frame.proxies.size(); ++slot) {
         const auto& proxy = frame.proxies[slot];
         if (!proxy.live || !proxy.attributes.visible)

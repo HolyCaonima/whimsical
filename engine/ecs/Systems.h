@@ -20,6 +20,7 @@ struct SceneStorage {
 };
 class RenderSystem {
     SceneStorage& s;
+    void setInstancesAs(Entity, uint32_t, std::vector<ProxyTransform>, std::type_index);
 
   public:
     explicit RenderSystem(SceneStorage&);
@@ -30,6 +31,10 @@ class RenderSystem {
     void publishAttributes(Entity);
     void setMaterial(Entity, std::shared_ptr<const MaterialAsset>);
     void setVisible(Entity, bool);
+    void setInstances(Entity, uint32_t count, std::vector<ProxyTransform>);
+    void claimInstances(Entity, std::type_index);
+    void releaseInstances(Entity, std::type_index);
+    void setDrivenInstances(Entity, uint32_t, std::vector<ProxyTransform>, std::type_index);
     void setStaticMesh(Entity, std::shared_ptr<const StaticMesh>);
     void extract(Frame&, bool debug, RenderTargetAccess&);
 };

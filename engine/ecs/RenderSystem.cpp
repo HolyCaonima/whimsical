@@ -15,6 +15,7 @@ static ProxyTransform proxyTransform(const Transform& t) {
     return {t.world.position, t.world.scale, t.world.rotation};
 }
 void RenderSystem::add(Entity e, RenderComponent appearance, std::shared_ptr<const StaticMesh> mesh) {
+    RenderScene::validateInstances(appearance.instanceCount, appearance.instanceTransforms);
     if (!appearance.material)
         throw std::invalid_argument("Render requires a Material asset");
     auto& t = s.registry.get<Transform>(e);
@@ -23,19 +24,27 @@ void RenderSystem::add(Entity e, RenderComponent appearance, std::shared_ptr<con
     r.slot = s.renderScene.create(proxyTransform(t),
                                   {e, 0, s.enabled(e) && appearance.visible, appearance.castShadow},
                                   appearance.material);
+    s.renderScene.setInstances(r.slot, appearance.instanceCount, appearance.instanceTransforms);
     if (r.mesh)
         s.changes.mark<GeometryChanged>(e);
     s.changes.mark<Renderable>(e);
     batch.commit();
 }
 void RenderSystem::set(Entity e, RenderComponent appearance, std::shared_ptr<const StaticMesh> mesh) {
+    RenderScene::validateInstances(appearance.instanceCount, appearance.instanceTransforms);
     if (!appearance.material)
         throw std::invalid_argument("Render requires a Material asset");
     if (mesh && s.registry.has<Skin>(e))
         throw std::invalid_argument("Remove skin before static geometry");
+    auto& r = s.registry.get<Renderable>(e);
+    if (r.instanceDriver != typeid(void) &&
+        (r.appearance.instanceCount != appearance.instanceCount ||
+         r.appearance.instanceTransforms != appearance.instanceTransforms))
+        throw std::logic_error("Render instances are owned by another driver");
     auto batch = Changes::Batch(s.changes);
     setStaticMesh(e, std::move(mesh));
-    s.registry.get<Renderable>(e).appearance = appearance;
+    s.renderScene.setInstances(r.slot, appearance.instanceCount, appearance.instanceTransforms);
+    r.appearance = std::move(appearance);
     s.changes.mark<RenderAttributesChanged>(e);
     s.changes.mark<Renderable>(e);
     batch.commit();
@@ -78,6 +87,36 @@ void RenderSystem::setVisible(Entity e, bool visible) {
     auto batch = Changes::Batch(s.changes);
     s.registry.get<Renderable>(e).appearance.visible = visible;
     s.changes.mark<RenderAttributesChanged>(e);
+    s.changes.mark<Renderable>(e);
+    batch.commit();
+}
+void RenderSystem::setInstances(Entity e, uint32_t count, std::vector<ProxyTransform> transforms) {
+    setInstancesAs(e, count, std::move(transforms), typeid(void));
+}
+void RenderSystem::claimInstances(Entity e, std::type_index owner) {
+    auto& r = s.registry.get<Renderable>(e);
+    if (owner == typeid(void) || (r.instanceDriver != typeid(void) && r.instanceDriver != owner))
+        throw std::logic_error("Render instances already have a driver");
+    r.instanceDriver = owner;
+}
+void RenderSystem::releaseInstances(Entity e, std::type_index owner) {
+    auto& r = s.registry.get<Renderable>(e);
+    if (r.instanceDriver == owner)
+        r.instanceDriver = typeid(void);
+}
+void RenderSystem::setDrivenInstances(Entity e, uint32_t count, std::vector<ProxyTransform> transforms,
+                                      std::type_index owner) {
+    setInstancesAs(e, count, std::move(transforms), owner);
+}
+void RenderSystem::setInstancesAs(Entity e, uint32_t count, std::vector<ProxyTransform> transforms,
+                                 std::type_index writer) {
+    auto& r = s.registry.get<Renderable>(e);
+    if (r.instanceDriver != writer)
+        throw std::logic_error("Render instances are owned by another driver");
+    s.renderScene.setInstances(r.slot, count, transforms);
+    auto batch = Changes::Batch(s.changes);
+    r.appearance.instanceCount = count;
+    r.appearance.instanceTransforms = std::move(transforms);
     s.changes.mark<Renderable>(e);
     batch.commit();
 }
