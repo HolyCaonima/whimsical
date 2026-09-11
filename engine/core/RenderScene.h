@@ -6,9 +6,9 @@ namespace whimsical {
 // The persistent, slot-addressed description of everything the renderer can draw.
 //
 // A slot is stable for the whole lifetime of a proxy. The renderer mirrors slots one to
-// one onto GPU instance entries, TLAS instances and draw instance indices, so nothing
-// downstream is rebuilt when the scene changes: spawning, hiding or moving an object
-// touches only that object's slot.
+// one onto GPU instance entries and TLAS instances. Raster draws address these through
+// a transient slot stream, so sorting and batching never change an object's identity.
+// Spawning, hiding or moving an object touches only that object's persistent slot.
 //
 // Changes are recorded as they happen rather than rediscovered by comparing whole frames,
 // and they are classified, because a transform changes orders of magnitude more often

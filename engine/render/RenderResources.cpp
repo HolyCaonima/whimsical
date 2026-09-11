@@ -81,6 +81,12 @@ SceneResources::SceneResources(Registry& registry) {
     indices = registry.declare(
         storage("indices", Lifetime::External, "Indices", "    uint indices[];", nullptr, true));
 
+    Declaration drawInput;
+    drawInput.name = "drawInstances";
+    drawInput.kind = Kind::Buffer;
+    drawInput.lifetime = Lifetime::External;
+    drawInstances = registry.declare(std::move(drawInput));
+
     // The transforms and bottom-level references a top-level build reads. No shader sees
     // it, and it is nothing like the instance data a shader does see, which is why naming
     // the wrong one used to go unnoticed.

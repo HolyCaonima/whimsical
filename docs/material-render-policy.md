@@ -70,6 +70,12 @@ transparency. Integer EntityID outputs never blend; picking returns the last fra
 that passes the same coverage/depth rules. For opacity-based picking holes, author
 masked coverage explicitly.
 
+Scheduling encodes that order in a `uint32_t` sort key. The raster backend uses
+stable ascending sorting, then batches only adjacent draws with the same pipeline
+and geometry. Different material values can share a batch; the ordered instance
+slot stream preserves their individual identity and blending order. See
+[raster instancing](instanced-rendering.md) for the interface and lifetime contract.
+
 The graph's depth declaration distinguishes an explicit clear value from `nullopt`
 (load existing depth). Clear declares an overwrite; load declares a modification.
 Only the graph chooses attachment load/store operations and barriers. Layer scratch

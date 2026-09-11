@@ -30,7 +30,7 @@ struct alignas(16) GpuGlobals {
 // is what a top-level build actually reads.
 struct SceneResources {
     rg::ResourceId globals, outlines, instances, materials, lights, vertices, indices, textures, buildInstances, blas,
-        tlas;
+        tlas, drawInstances;
     explicit SceneResources(rg::Registry&);
     rg::ResourceList geometry() const; // vertex/index buffers, as a structure build reads them
 };

@@ -24,6 +24,7 @@ GpuScene::GpuScene(VulkanContext& context, const RenderOptions& opts) : vk(conte
     lightDistribution = vk.buffer(MaxLights * (sizeof(vec4) + sizeof(Light)),
                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, BufferMemory::Upload);
     reserveInstances(0);
+    drawInstances = vk.buffer(64 * sizeof(uint32_t), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, BufferMemory::Upload);
     uploadGeometry({});
     updateTextures({});
 }
@@ -34,7 +35,7 @@ GpuScene::~GpuScene() {
     if (materialSampler)
         vkDestroySampler(vk.device, materialSampler, nullptr);
     for (auto* b : {&globals, &outlineData, &instanceData, &materialData, &lightData, &vertexData, &indexData,
-                    &lightDistribution, &tlasInstances, &tlasScratch})
+                    &lightDistribution, &tlasInstances, &tlasScratch, &drawInstances})
         vk.destroy(*b);
     for (auto& a : blas)
         destroyAS(a);
@@ -62,6 +63,7 @@ void GpuScene::rebind() {
     pool_->importBuffer(ids_->lights, lightData);
     pool_->importBuffer(ids_->vertices, vertexData);
     pool_->importBuffer(ids_->indices, indexData);
+    pool_->importBuffer(ids_->drawInstances, drawInstances);
     pool_->importBuffer(ids_->buildInstances, tlasInstances);
     pool_->importTlas(ids_->tlas, tlas.handle, tlas.storage.generation);
     std::vector<VkDescriptorImageInfo> sampled(MaxTextures);
@@ -662,23 +664,59 @@ void GpuScene::recordTlas(VkCommandBuffer c, GpuProfiler& profiler) {
     vkCmdBuildAccelerationStructuresKHR(c, 1, &tlasBuild, &rangePointer);
 }
 
-// The slot is the draw's instance index, so gl_InstanceIndex, the acceleration
-// structure's custom index and the GPU instance entry all stay the same number.
-void GpuScene::recordDraws(VkCommandBuffer c, const std::vector<RasterDraw>& draws) {
-    VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(c, 0, 1, &vertexData.handle, &offset);
-    vkCmdBindIndexBuffer(c, indexData.handle, 0, VK_INDEX_TYPE_UINT32);
-    VkPipeline bound = VK_NULL_HANDLE;
+void GpuScene::beginDraws() {
+    drawSlots.clear();
+}
+
+std::vector<RasterBatch> GpuScene::prepareDraws(std::vector<RasterDraw> draws) {
+    std::stable_sort(draws.begin(), draws.end(), [](const RasterDraw& a, const RasterDraw& b) {
+        return a.sortKey < b.sortKey;
+    });
+    std::vector<RasterBatch> batches;
     for (const auto& draw : draws) {
         auto geometry = meshFor(draw.slot);
         if (!geometry)
             continue;
+        const auto& mesh = meshes[*geometry];
+        // Only neighbours in the sorted stream may merge. Material values remain
+        // per slot; shared geometry and the complete pipeline determine compatibility.
+        if (!batches.empty() && batches.back().pipeline == draw.pipeline &&
+            batches.back().firstIndex == mesh.firstIndex && batches.back().indexCount == mesh.indexCount)
+            ++batches.back().instanceCount;
+        else
+            batches.push_back({mesh.firstIndex, mesh.indexCount, uint32_t(drawSlots.size()), 1, draw.pipeline});
+        drawSlots.push_back(draw.slot);
+    }
+    return batches;
+}
+
+void GpuScene::uploadDraws() {
+    const VkDeviceSize bytes = drawSlots.size() * sizeof(uint32_t);
+    if (bytes > drawInstances.size) {
+        const auto capacity = std::max(bytes, drawInstances.size * 2);
+        vk.destroy(drawInstances);
+        drawInstances = vk.buffer(capacity, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, BufferMemory::Upload);
+        rebind();
+    }
+    if (bytes)
+        std::memcpy(drawInstances.mapped, drawSlots.data(), size_t(bytes));
+}
+
+void GpuScene::recordDraws(VkCommandBuffer c, const std::vector<RasterBatch>& draws) {
+    const VkBuffer buffers[] = {vertexData.handle, drawInstances.handle};
+    const VkDeviceSize offsets[] = {0, 0};
+    vkCmdBindVertexBuffers(c, 0, 2, buffers, offsets);
+    vkCmdBindIndexBuffer(c, indexData.handle, 0, VK_INDEX_TYPE_UINT32);
+    VkPipeline bound = VK_NULL_HANDLE;
+    for (const auto& draw : draws) {
         if (draw.pipeline != bound) {
             vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.pipeline);
             bound = draw.pipeline;
         }
-        const auto& mesh = meshes[*geometry];
-        vkCmdDrawIndexed(c, mesh.indexCount, 1, mesh.firstIndex, 0, draw.slot);
+        vkCmdDrawIndexed(c, draw.indexCount, draw.instanceCount, draw.firstIndex, 0, draw.firstInstance);
+        ++statistics.rasterDrawCalls;
+        statistics.rasterInstances += draw.instanceCount;
+        statistics.largestRasterBatch = std::max(statistics.largestRasterBatch, draw.instanceCount);
     }
 }
 } // namespace whimsical

@@ -33,6 +33,7 @@ struct SceneUpdateStatistics {
     uint32_t attributes = 0;     // Slots whose mesh/material/visibility half was rewritten.
     uint32_t structural = 0;     // Slots created, destroyed or reused.
     uint32_t settled = 0;        // Slots whose motion was folded forward after they stopped.
+    uint32_t rasterDrawCalls = 0, rasterInstances = 0, largestRasterBatch = 0; // All recorded raster passes.
     bool resynchronised = false; // A skipped snapshot forced a full rewrite.
     bool tlasRebuilt = false;    // Topology changed, so no incremental update was possible.
 };

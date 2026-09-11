@@ -7,6 +7,7 @@ layout(location = 2) in vec3 inColor;
 layout(location = 3) in vec3 inPreviousPosition;
 layout(location = 4) in vec2 inUv;
 layout(location = 5) in vec4 inTangent;
+layout(location = 6) in uint inInstanceSlot;
 layout(location = 0) out vec3 worldPosition;
 layout(location = 1) out vec3 worldNormal;
 layout(location = 2) out vec4 previousClip;
@@ -15,7 +16,7 @@ layout(location = 4) out vec3 vertexColor;
 layout(location = 5) out vec2 texcoord;
 layout(location = 6) out vec4 worldTangent;
 void main() {
-    Instance i = instances[gl_InstanceIndex];
+    Instance i = instances[inInstanceSlot];
     vec4 p = i.model * vec4(inPosition, 1);
     worldPosition = p.xyz;
     worldNormal = transpose(inverse(mat3(i.model))) * inNormal;
@@ -23,6 +24,6 @@ void main() {
     vertexColor = inColor;
     texcoord = inUv;
     worldTangent = vec4(mat3(i.model)*inTangent.xyz, inTangent.w);
-    instanceIndex = gl_InstanceIndex;
+    instanceIndex = inInstanceSlot;
     gl_Position = g.viewProjection * p;
 }

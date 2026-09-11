@@ -26,14 +26,14 @@ cloud.define=function(){
 };
 cloud.build=function(model){
     var X=Lab.X,n=cloud.count,initial=new Float32Array(n*3);
-    var columns=25,spacing=2.4*cloud.radius;
+    var halfWidth=1.5-cloud.radius;
     cloud.acceleration=new Float32Array(n*3);
     cloud.measureGrid={stamp:0,marks:new Uint32Array(1),heads:new Uint32Array(1),
         x:new Int32Array(n),y:new Int32Array(n),z:new Int32Array(n),next:new Uint32Array(n)};
     for(var i=0;i<n;++i){
-        initial[i*3]=(i%columns-(columns-1)/2)*spacing;
-        initial[i*3+1]=1+Math.floor(i/(columns*columns))*spacing;
-        initial[i*3+2]=(Math.floor(i/columns)%columns-(columns-1)/2)*spacing;
+        initial[i*3]=(Math.random()*2-1)*halfWidth;
+        initial[i*3+1]=1+Math.random()*2;
+        initial[i*3+2]=(Math.random()*2-1)*halfWidth;
         cloud.acceleration[i*3+1]=-9.81;
     }
     // 1. Define mathematical state independently of any object.

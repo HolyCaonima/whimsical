@@ -5,6 +5,7 @@
 #include "renderCore/graph/ImageReadback.h"
 #include "renderCore/vulkan/VulkanAccess.h"
 #include <fstream>
+#include <cstring>
 
 namespace whimsical {
 using namespace rg;
@@ -50,11 +51,13 @@ rc::Pipeline RenderPipeline::createRaster(const RasterKey& key, bool entityID) {
     merge(accesses, reflect(pool_.registry(), code.data(), code.size()));
     rc::GraphicsDescription desc;
     desc.layout = pool_.pipelineLayout();
-    desc.bindings = {{0, sizeof(GpuVertex), VK_VERTEX_INPUT_RATE_VERTEX}};
+    desc.bindings = {{0, sizeof(GpuVertex), VK_VERTEX_INPUT_RATE_VERTEX},
+                     {1, sizeof(uint32_t), VK_VERTEX_INPUT_RATE_INSTANCE}};
     desc.attributes = {
         {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},  {1, 0, VK_FORMAT_R32G32B32_SFLOAT, 16},
         {2, 0, VK_FORMAT_R32G32B32_SFLOAT, 32}, {3, 0, VK_FORMAT_R32G32B32_SFLOAT, 48},
-        {4, 0, VK_FORMAT_R32G32_SFLOAT, 64},    {5, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 80}};
+        {4, 0, VK_FORMAT_R32G32_SFLOAT, 64},    {5, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 80},
+        {6, 1, VK_FORMAT_R32_UINT, 0}};
     desc.cull = key.cull == SurfaceCull::Back ? VK_CULL_MODE_BACK_BIT
                 : key.cull == SurfaceCull::Front ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_NONE;
     // Vulkan gates writes on depthTestEnable. Expose independent material switches
@@ -143,10 +146,13 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
     // Scheduling owns visibility, material selection and layer membership. Both
     // colour and picking are built together, so their coverage/order cannot drift.
     struct DrawGroup {
-        std::vector<RasterDraw> color, entityID;
+        std::vector<RasterDraw> items;
+        std::vector<RasterBatch> color, entityID;
     };
     std::map<std::pair<MaterialDomain, uint32_t>, DrawGroup> groups;
     const bool picking = setup.targets && !setup.targets->rasterOutputs().empty();
+    const auto eye = frame.camera.eye();
+    gpuScene->beginDraws();
     for (uint32_t slot = 0; slot < frame.proxies.size(); ++slot) {
         const auto& proxy = frame.proxies[slot];
         if (!proxy.live || !proxy.attributes.visible)
@@ -154,37 +160,32 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
         const auto& material = frame.materials[proxy.attributes.material];
         auto& group = groups[{material.renderState.domain, material.renderState.layer}];
         const auto key = RasterKey::from(material);
-        group.color.push_back({slot, rasterPrograms_.at(key)->pipeline});
+        // Opaque first, then blended origins back-to-front. The raster backend only
+        // interprets the resulting uint32 order, not the scheduling policy.
+        uint32_t sortKey = 0;
+        if (material.renderState.blend != MaterialBlend::Opaque) {
+            const auto delta = proxy.transform.position - eye;
+            const float distanceSquared = glm::dot(delta, delta);
+            std::memcpy(&sortKey, &distanceSquared, sizeof(sortKey));
+            sortKey = ~sortKey; // Nonnegative IEEE floats sort by their unsigned bits.
+        }
+        group.items.push_back({slot, sortKey, rasterPrograms_.at(key)->pipeline});
         if (picking && !entityIDPrograms_.count(key))
             entityIDPrograms_.emplace(key, createRaster(key, true));
     }
     for (auto& entry : groups) {
         auto& group = entry.second;
-        // Opaque geometry establishes depth first. Blended draws use back-to-front
-        // instance-origin order; picking consumes precisely the same draw order.
-        std::stable_sort(group.color.begin(), group.color.end(),
-                         [&](const RasterDraw& a, const RasterDraw& b) {
-                             const auto& pa = frame.proxies[a.slot];
-                             const auto& pb = frame.proxies[b.slot];
-                             const bool blendA = frame.materials[pa.attributes.material].renderState.blend !=
-                                                 MaterialBlend::Opaque;
-                             const bool blendB = frame.materials[pb.attributes.material].renderState.blend !=
-                                                 MaterialBlend::Opaque;
-                             if (blendA != blendB)
-                                 return !blendA;
-                             if (!blendA)
-                                 return false;
-                             auto da = pa.transform.position - frame.camera.eye(),
-                                  db = pb.transform.position - frame.camera.eye();
-                             return glm::dot(da, da) > glm::dot(db, db);
-                         });
+        std::vector<RasterDraw> ids;
         if (picking)
-            for (const auto& draw : group.color) {
+            for (const auto& draw : group.items) {
                 const auto& material = frame.materials[frame.proxies[draw.slot].attributes.material];
-                group.entityID.push_back({draw.slot, entityIDPrograms_.at(RasterKey::from(material))->pipeline});
+                ids.push_back({draw.slot, draw.sortKey, entityIDPrograms_.at(RasterKey::from(material))->pipeline});
             }
+        group.color = gpuScene->prepareDraws(std::move(group.items));
+        group.entityID = gpuScene->prepareDraws(std::move(ids));
     }
-    auto record = [gpuScene](std::vector<RasterDraw> draws) {
+    gpuScene->uploadDraws();
+    auto record = [gpuScene](std::vector<RasterBatch> draws) {
         return [gpuScene, draws = std::move(draws)](const PassContext& c) {
             if (draws.empty())
                 return;
@@ -225,6 +226,7 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
         .depth(g.depth)
         .shader(rasterAccess_)
         .read(scene.vertices, Access::Vertex)
+        .read(scene.drawInstances, Access::Vertex)
         .read(scene.indices, Access::Index)
         .record(record(surfaces.color));
 
@@ -235,6 +237,7 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
                 .depth(output.depth)
                 .shader(entityIDAccess_)
                 .read(scene.vertices, Access::Vertex)
+                .read(scene.drawInstances, Access::Vertex)
                 .read(scene.indices, Access::Index)
                 .record(record(surfaces.entityID));
             for (const auto& entry : groups) {
@@ -246,6 +249,7 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
                     .depth(output.depth, layer ? std::optional<float>(1.f) : std::nullopt)
                     .shader(entityIDAccess_)
                     .read(scene.vertices, Access::Vertex)
+                    .read(scene.drawInstances, Access::Vertex)
                     .read(scene.indices, Access::Index)
                     .record(record(entry.second.entityID));
             }
@@ -331,6 +335,7 @@ void RenderPipeline::build(RenderGraph& graph, const FrameSetup& setup) {
             .depth(layer ? shade.layerDepth : g.depth, layer ? std::optional<float>(1.f) : std::nullopt)
             .shader(displayAccess_)
             .read(scene.vertices, Access::Vertex)
+            .read(scene.drawInstances, Access::Vertex)
             .read(scene.indices, Access::Index)
             .record(record(entry.second.color));
     }

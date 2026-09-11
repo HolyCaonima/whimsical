@@ -320,6 +320,9 @@ struct Renderer::Impl {
                << ",\n  \"sceneSlots\": " << scene->statistics.slots
                << ", \"instanceBufferBytes\": " << scene->instanceData.size
                << ", \"instanceCapacityGrowths\": " << scene->instanceCapacityGrowths
+               << ",\n  \"rasterDrawCalls\": " << scene->statistics.rasterDrawCalls
+               << ", \"rasterInstances\": " << scene->statistics.rasterInstances
+               << ", \"largestRasterBatch\": " << scene->statistics.largestRasterBatch
                << ", \"sceneSlotWrites\": " << scene->writes
                << ", \"sceneSlotWritesIfRebuilt\": " << scene->slotFrames
                << ",\n  \"sceneResyncs\": " << scene->resyncs << ", \"tlasRebuilds\": " << scene->tlasRebuilds

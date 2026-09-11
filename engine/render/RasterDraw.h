@@ -23,6 +23,12 @@ struct RasterKey {
 };
 struct RasterDraw {
     uint32_t slot;
+    uint32_t sortKey; // Ascending, stable. Scheduling owns its meaning.
+    VkPipeline pipeline;
+};
+struct RasterBatch {
+    uint32_t firstIndex, indexCount;
+    uint32_t firstInstance, instanceCount; // Range in the frame's stable-slot stream.
     VkPipeline pipeline;
 };
 } // namespace whimsical

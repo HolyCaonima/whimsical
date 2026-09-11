@@ -48,7 +48,11 @@ class GpuScene {
     }
     void recordSkinnedBlas(VkCommandBuffer);
     void recordTlas(VkCommandBuffer, GpuProfiler&);
-    void recordDraws(VkCommandBuffer, const std::vector<RasterDraw>&);
+    // Prepare every pass before uploading once; recording never allocates or sorts.
+    void beginDraws();
+    std::vector<RasterBatch> prepareDraws(std::vector<RasterDraw>);
+    void uploadDraws();
+    void recordDraws(VkCommandBuffer, const std::vector<RasterBatch>&);
 
     // A new texture set replaces images the temporal history was accumulated against.
 
@@ -89,6 +93,8 @@ class GpuScene {
     std::optional<rc::NativeResources> pool_;
     const SceneResources* ids_ = nullptr;
     Buffer tlasInstances, tlasScratch;
+    Buffer drawInstances;
+    std::vector<uint32_t> drawSlots;
     std::vector<AccelerationStructure> blas;
     std::vector<Buffer> blasScratch;
     AccelerationStructure tlas;
