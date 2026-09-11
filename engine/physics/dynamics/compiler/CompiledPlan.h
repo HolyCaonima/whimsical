@@ -87,6 +87,13 @@ struct PlanStatistics {
     uint64_t eliminatedDerivativeColumns = 0;
     double compileMilliseconds = 0;
 };
+// Immutable row metadata can use arithmetic addressing independently of the
+// logical domains and the mutable fields indexed by those domains.
+template <size_t Width> struct MetadataRange {
+    uint32_t first = 0, count = 0, offset = 0;
+    bool affine = false;
+    std::array<uint32_t, Width> base{}, stride{};
+};
 // No device, resource IDs or submission state. Instance count affects work tables
 // and execution mapping, without a graph or GPU resource per variable/relation.
 struct CompiledPlan {
@@ -99,12 +106,9 @@ struct CompiledPlan {
     std::vector<RelationLayout> relations;
     // Final physical metadata layout. Logical row IDs and mutable fields keep
     // their public indexing; affine metadata columns become address arithmetic.
-    struct RelationMetadata {
-        uint32_t first = 0, count = 0, offset = 0;
-        bool affine = false;
-        std::array<uint32_t, 9> base{}, stride{};
-    };
+    using RelationMetadata = MetadataRange<9>;
     std::vector<RelationMetadata> relationMetadata;
+    std::vector<MetadataRange<5>> variableMetadata;
     // High-level index maps survive analysis, scheduling and GPU lowering.
     std::vector<BindingIR> bindings;
     std::vector<std::vector<bool>> typeReadOnly;

@@ -66,14 +66,81 @@ template <class T> uint32_t append(BufferData& target, const std::vector<T>& val
     return first;
 }
 uint32_t field(BufferData& target, const Field& values) {
-    std::vector<float> packed(size_t(values.width()) * values.count());
-    for (uint32_t c = 0; c < values.width(); ++c)
-        for (uint32_t i = 0; i < values.count(); ++i)
-            packed[size_t(c) * values.count() + i] = values.at(i, c);
-    return append(target, packed);
+    return append(target, values.columnMajor());
 }
 void setWord(BufferData& target, uint32_t index, uint32_t value) {
     std::memcpy(target.initial.data() + size_t(index) * 4, &value, 4);
+}
+template <size_t Width, class Layout>
+void packMetadata(BufferData& buffer, const std::vector<Layout>& layouts,
+                  std::vector<MetadataRange<Width>>& ranges) {
+    std::vector<uint8_t> packed;
+    for (const auto& layout : layouts) {
+        if (!layout.count) continue;
+        MetadataRange<Width> m;
+        m.first = layout.first;
+        m.count = layout.count;
+        const auto* begin = buffer.initial.data() + size_t(layout.first) * Width * 4;
+        // Small sets stay in the table to bound generated code per metadata row.
+        m.affine = layout.count >= 128;
+        std::memcpy(m.base.data(), begin, Width * 4);
+        if (layout.count > 1) {
+            std::memcpy(m.stride.data(), begin + Width * 4, Width * 4);
+            for (size_t c = 0; c < Width; ++c) m.stride[c] -= m.base[c];
+        }
+        for (uint32_t row = 2; m.affine && row < layout.count; ++row) {
+            std::array<uint32_t, Width> values;
+            std::memcpy(values.data(), begin + size_t(row) * Width * 4, Width * 4);
+            for (size_t c = 0; c < Width; ++c)
+                m.affine = m.affine && values[c] == m.base[c] + row * m.stride[c];
+        }
+        m.offset = checked(packed.size() / 4);
+        if (!m.affine)
+            packed.insert(packed.end(), begin, begin + size_t(layout.count) * Width * 4);
+        if (!m.affine && !ranges.empty() && !ranges.back().affine)
+            ranges.back().count += m.count;
+        else
+            ranges.push_back(m);
+    }
+    buffer.initial = std::move(packed);
+}
+template <size_t Width>
+void metadataAccess(std::ostringstream& source, const std::vector<MetadataRange<Width>>& ranges,
+                    const char* type, const char* buffer) {
+    // A balanced range dispatch keeps table and arithmetic leaves interchangeable.
+    auto emit = [&](auto&& self, size_t first, size_t end) -> void {
+        if (end - first > 1) {
+            auto middle = first + (end - first) / 2;
+            source << "if(id<" << ranges[middle].first << "u){";
+            self(self, first, middle);
+            source << "}else{";
+            self(self, middle, end);
+            source << "}";
+            return;
+        }
+        const auto& m = ranges[first];
+        source << "uint row=id-" << m.first << "u;";
+        if (!m.affine)
+            source << "uint k=" << m.offset << "u+row*" << Width << "u;";
+        source << "return " << type << "(";
+        for (size_t c = 0; c < Width; ++c) {
+            if (c) source << ",";
+            if (!m.affine)
+                source << buffer << "[k+" << c << "u]";
+            else {
+                source << m.base[c] << "u";
+                if (m.stride[c]) source << "+row*" << m.stride[c] << "u";
+            }
+        }
+        source << ",id);";
+    };
+    if (!ranges.empty())
+        emit(emit, 0, ranges.size());
+    else {
+        source << "return " << type << "(";
+        for (size_t c = 0; c < Width; ++c) source << "0u,";
+        source << "id);";
+    }
 }
 std::string signature(const Space& s) {
     return std::to_string(s.stateSize) + ":" + std::to_string(s.tangentSize) + emitGlsl(s.retract, "r") +
@@ -117,43 +184,14 @@ layout(push_constant) uniform Step {
 uint invocation() { return gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * 8388480u; }
 struct Variable {uint q; uint v; uint m; uint stride; uint flags; uint id;};
 Variable variable(uint id) {
-    uint k=id*5u; return Variable(x_variables[k],x_variables[k+1u],x_variables[k+2u],x_variables[k+3u],x_variables[k+4u],id);
+)";
+    metadataAccess(source, variableMetadata, "Variable", "x_variables");
+    source << R"(
 }
 struct Relation {uint e; uint p; uint a; uint h; uint l; uint c; uint stride; uint cs; uint type; uint id;};
 Relation relation(uint id) {
 )";
-    // A balanced set dispatch bounds shader branching even for many sets. The
-    // affine leaves contain no metadata loads and fold into typed callers.
-    auto emit = [&](auto&& self, size_t first, size_t end) -> void {
-        if (end - first > 1) {
-            auto middle = first + (end - first) / 2;
-            source << "if(id<" << relationMetadata[middle].first << "u){";
-            self(self, first, middle);
-            source << "}else{";
-            self(self, middle, end);
-            source << "}";
-            return;
-        }
-        const auto& m = relationMetadata[first];
-        source << "uint row=id-" << m.first << "u;";
-        if (!m.affine)
-            source << "uint k=" << m.offset << "u+row*9u;";
-        source << "return Relation(";
-        for (uint32_t c = 0; c < 9; ++c) {
-            if (c) source << ",";
-            if (!m.affine)
-                source << "x_relations[k+" << c << "u]";
-            else {
-                source << m.base[c] << "u";
-                if (m.stride[c]) source << "+row*" << m.stride[c] << "u";
-            }
-        }
-        source << ",id);";
-    };
-    if (!relationMetadata.empty())
-        emit(emit, 0, relationMetadata.size());
-    else
-        source << "return Relation(0u,0u,0u,0u,0u,0u,0u,0u,0u,id);";
+    metadataAccess(source, relationMetadata, "Relation", "x_relations");
     source << R"(
 }
 uint trianglePrefix(uint i,uint n,bool diagonal){
@@ -707,37 +745,8 @@ void main(){uint i=invocation();if(i<step.count)x_scanScratch[step.first+i]+=x_s
     p->statistics.endpointStorageWords = endpointData.size();
     // Scheduling has finished inspecting row metadata. Select physical storage
     // now, without constraining the logical domain or its patch/read contract.
-    auto& metadata = buffer(BufferRole::Relations).initial;
-    std::vector<uint8_t> packedMetadata;
-    for (const auto& layout : p->relations) {
-        if (!layout.count) continue;
-        CompiledPlan::RelationMetadata m;
-        m.first = layout.first;
-        m.count = layout.count;
-        const auto* begin = metadata.data() + size_t(layout.first) * 9 * 4;
-        // Small sets stay in the table: constant code per tiny set would turn
-        // a data-size problem into unbounded shader source growth.
-        m.affine = layout.count >= 128;
-        std::memcpy(m.base.data(), begin, 9 * 4);
-        if (layout.count > 1) {
-            std::memcpy(m.stride.data(), begin + 9 * 4, 9 * 4);
-            for (uint32_t c = 0; c < 9; ++c) m.stride[c] -= m.base[c];
-        }
-        for (uint32_t row = 2; m.affine && row < layout.count; ++row) {
-            std::array<uint32_t, 9> values;
-            std::memcpy(values.data(), begin + size_t(row) * 9 * 4, 9 * 4);
-            for (uint32_t c = 0; c < 9; ++c)
-                m.affine = m.affine && values[c] == m.base[c] + row * m.stride[c];
-        }
-        m.offset = checked(packedMetadata.size() / 4);
-        if (!m.affine)
-            packedMetadata.insert(packedMetadata.end(), begin, begin + size_t(layout.count) * 9 * 4);
-        if (!m.affine && !p->relationMetadata.empty() && !p->relationMetadata.back().affine)
-            p->relationMetadata.back().count += m.count;
-        else
-            p->relationMetadata.push_back(m);
-    }
-    metadata = std::move(packedMetadata);
+    packMetadata(buffer(BufferRole::Relations), p->relations, p->relationMetadata);
+    packMetadata(buffer(BufferRole::Variables), p->variables, p->variableMetadata);
     for (auto& b : p->buffers) {
         if (b.initial.empty())
             b.initial.resize(4);

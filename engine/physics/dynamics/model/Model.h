@@ -53,6 +53,9 @@ class Field {
     }
     float at(uint32_t row, uint32_t component = 0) const;
     std::vector<float> slice(uint32_t first, uint32_t count) const;
+    // Materialize the immutable field as contiguous columns for execution.
+    // Uniform and patched pages retain their existing logical row semantics.
+    std::vector<float> columnMajor() const;
     void patch(uint32_t first, const std::vector<float>& values);
     void append(uint32_t count, const std::vector<float>& values);
 };

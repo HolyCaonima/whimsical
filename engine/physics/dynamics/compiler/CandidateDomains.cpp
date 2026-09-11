@@ -19,6 +19,11 @@ std::vector<uint32_t> words(const BufferData& b) {
     if (!result.empty()) std::memcpy(result.data(), b.initial.data(), b.initial.size());
     return result;
 }
+uint32_t word(const BufferData& b, size_t index) {
+    uint32_t value;
+    std::memcpy(&value, b.initial.data() + index * 4, 4);
+    return value;
+}
 std::string number(uint32_t n) { return std::to_string(n) + "u"; }
 // Only the selected mathematical input columns become index coordinates. Neither
 // state width nor object/field names imply a geometric interpretation.
@@ -137,14 +142,20 @@ void lowerCandidateDomains(CompiledPlan& p) {
     struct TypeQueue { uint32_t type, first, count, lanes; };
     std::vector<TypeQueue> typed;
     std::set<uint32_t> types;
-    auto metadata = words(p.buffers[size_t(BufferRole::Relations)]);
+    // Read the needed type column without duplicating the entire dense table.
+    // Physical metadata packing happens after this lowering pass.
+    const auto& metadata = p.buffers[size_t(BufferRole::Relations)];
     std::vector<uint32_t> typeCounts(p.types.size());
-    for (auto id : all) ++typeCounts[metadata[size_t(id) * 9 + 8]];
+    for (auto id : all) ++typeCounts[word(metadata, size_t(id) * 9 + 8)];
     uint32_t typeFirst = 0, solveLanes = 0;
     for (uint32_t type = 0; type < typeCounts.size(); ++type) {
         auto count = typeCounts[type];
         if (!count) continue;
-        auto width = uint32_t(std::min(uint64_t(4096), ((uint64_t(count) + 127) / 128) * 128));
+        // Keep enough independent groups for a wide GPU. The previous 32-group
+        // ceiling serialized long active queues even when many SMs were idle.
+        // This is a bounded execution budget, never a cap on queued relations.
+        constexpr uint64_t SolveGroups = 128;
+        auto width = uint32_t(std::min(SolveGroups * 128, ((uint64_t(count) + 127) / 128) * 128));
         typed.push_back({type, typeFirst, count, width});
         types.insert(type);
         typeFirst += count;
@@ -314,7 +325,15 @@ void lowerCandidateDomains(CompiledPlan& p) {
         add("Index candidate domain", source.str(), std::max(d.binding.left, d.binding.right), stages);
         source.str(""); source.clear();
         const auto dimensions = d.bound.coordinates.size();
-        uint32_t neighbors = dimensions == 3 ? 27 : dimensions == 2 ? 9 : 3;
+        const uint32_t fullNeighbors = dimensions == 3 ? 27 : dimensions == 2 ? 9 : 3;
+        // Identical feature maps on an upper domain permit one orientation of
+        // each cell pair. Canonicalize member IDs before recovering the logical
+        // row; the relation itself need not be symmetric. This is an index-domain
+        // proof, not an assumption about the residual or the other input fields.
+        const bool halfNeighborhood = d.leftCells == d.cells &&
+            (d.binding.map == BindingDomain::Map::Upper || d.binding.map == BindingDomain::Map::UpperDiagonal);
+        const uint32_t neighborFirst = halfNeighborhood ? fullNeighbors / 2 : 0;
+        const uint32_t neighbors = fullNeighbors - neighborFirst;
         auto type = p.relations[d.set].type;
         source << activity.str() << domainSource(p, d);
         // The query already owns the two member indices. Feed them into the
@@ -335,14 +354,22 @@ void lowerCandidateDomains(CompiledPlan& p) {
                   "vec3 leftFeature=feature(i,true);float bound=1.5625*uintBitsToFloat(x_candidates[" << d.header << "u]);"
                   "uint featureAt=" << d.leftCells << "u+i*3u;ivec3 c=ivec3(x_candidates[featureAt],"
                   "x_candidates[featureAt+1u],x_candidates[featureAt+2u]);"
-                  "ivec3 offset=ivec3(int(neighbor%3u)-1,";
-        source << (dimensions >= 2 ? "int((neighbor/3u)%3u)-1" : "0") << ","
-               << (dimensions >= 3 ? "int(neighbor/9u)-1" : "0") << ");"
+                  "uint offsetIndex=neighbor+" << neighborFirst << "u;"
+                  "ivec3 offset=ivec3(int(offsetIndex%3u)-1,";
+        source << (dimensions >= 2 ? "int((offsetIndex/3u)%3u)-1" : "0") << ","
+               << (dimensions >= 3 ? "int(offsetIndex/9u)-1" : "0") << ");"
                   "ivec3 cell=c+offset;uint j=x_candidates["
-               << d.heads << "u+bucket(cell)];while(j!=0xffffffffu){if(accepts(i,j)){uint at=" << d.cells << "u+j*3u;"
+               << d.heads << "u+bucket(cell)];while(j!=0xffffffffu){if("
+               << (halfNeighborhood ? "neighbor!=0u||accepts(i,j)" : "accepts(i,j)")
+               << "){uint at=" << d.cells << "u+j*3u;"
                   "ivec3 actual=ivec3(x_candidates[at],x_candidates[at+1u],x_candidates[at+2u]);"
                   "if(all(equal(cell,actual))){vec3 delta=leftFeature-feature(j,false);"
-                  "if(dot(delta,delta)<=bound)considerNew(rowOf(i,j),i,j);}}j=x_candidates["
+                  "if(dot(delta,delta)<=bound){";
+        if (halfNeighborhood)
+            source << "uint left=min(i,j),right=max(i,j);considerNew(rowOf(left,right),left,right);";
+        else
+            source << "considerNew(rowOf(i,j),i,j);";
+        source << "}}}j=x_candidates["
                << d.next << "u+j];}}";
         if (uint64_t(d.binding.left) * neighbors > UINT32_MAX)
             throw std::overflow_error("Candidate query dispatch exceeds 32-bit addressing");
@@ -353,7 +380,7 @@ void lowerCandidateDomains(CompiledPlan& p) {
         add("Query candidate domain", source.str() + "void main(){queryDomain();}", d.binding.left * neighbors, stages);
     }
     std::vector<std::vector<uint32_t>> ordinaryByType(p.types.size());
-    for (auto id : all) if (!selected[id]) ordinaryByType[metadata[size_t(id) * 9 + 8]].push_back(id);
+    for (auto id : all) if (!selected[id]) ordinaryByType[word(metadata, size_t(id) * 9 + 8)].push_back(id);
     uint32_t ordinaryFirst = uint32_t(work.size());
     for (const auto& rows : ordinaryByType) work.insert(work.end(), rows.begin(), rows.end());
     auto& workBuffer = p.buffers[size_t(BufferRole::RelationWork)].initial;

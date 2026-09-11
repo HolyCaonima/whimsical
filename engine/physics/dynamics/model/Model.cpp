@@ -184,6 +184,23 @@ std::vector<float> Field::slice(uint32_t first, uint32_t count) const {
             out[size_t(i) * width_ + c] = at(first + i, c);
     return out;
 }
+std::vector<float> Field::columnMajor() const {
+    std::vector<float> out(size_t(count_) * width_);
+    for (size_t pageIndex = 0; pageIndex < pages_.size(); ++pageIndex) {
+        const auto first = uint32_t(pageIndex * PageRows);
+        const auto rows = std::min(PageRows, count_ - first);
+        const auto& page = pages_[pageIndex];
+        for (uint32_t c = 0; c < width_; ++c) {
+            auto destination = out.data() + size_t(c) * count_ + first;
+            if (!page)
+                std::fill_n(destination, rows, uniform_[c]);
+            else
+                for (uint32_t row = 0; row < rows; ++row)
+                    destination[row] = (*page)[size_t(row) * width_ + c];
+        }
+    }
+    return out;
+}
 void Field::patch(uint32_t first, const std::vector<float>& values) {
     if (!width_) {
         if (!values.empty())
