@@ -13,8 +13,18 @@ struct BindingDomain {
     std::pair<uint32_t, uint32_t> members(uint32_t row) const;
     VariableRef at(uint32_t row, uint32_t slot) const;
     bool affineFields() const;
+    // Half-open member range actually referenced by an endpoint column.
+    std::pair<uint32_t, uint32_t> memberRange(uint32_t slot) const;
     // 0: explicit table; 1..5: a fixed index map; -1 is reserved for mixed sets.
     int32_t endpointMode(bool dynamic) const;
+    // A traversal cursor strength-reduces sequential product/triangle indexing.
+    // Random seeks retain the exact closed-form map; no endpoint table is built.
+    struct Cursor {
+        const BindingDomain* domain = nullptr;
+        uint32_t row = 0;
+        std::pair<uint32_t, uint32_t> value;
+        std::pair<uint32_t, uint32_t> seek(const BindingDomain&, uint32_t);
+    };
 };
 struct BindingIR {
     std::vector<BindingDomain> domains;

@@ -28,10 +28,38 @@ VariableRef BindingDomain::at(uint32_t row, uint32_t slot) const {
     const auto indices = members(row);
     return fields[slot].at(slot < split ? indices.first : indices.second);
 }
+std::pair<uint32_t, uint32_t> BindingDomain::Cursor::seek(const BindingDomain& d, uint32_t next) {
+    if (domain == &d && next == row) return value;
+    if (domain != &d || next != row + 1) {
+        value = d.members(next);
+    } else if (d.map == Map::Zip) {
+        ++value.first;
+        ++value.second;
+    } else {
+        ++value.second;
+        if (d.map == Map::Directed && value.second == value.first) ++value.second;
+        if (value.second == d.right) {
+            ++value.first;
+            value.second = d.map == Map::Upper ? value.first + 1 :
+                           d.map == Map::UpperDiagonal ? value.first : 0;
+            if (d.map == Map::Directed && value.second == value.first) ++value.second;
+        }
+    }
+    domain = &d;
+    row = next;
+    return value;
+}
 bool BindingDomain::affineFields() const {
     return std::all_of(fields.begin(), fields.end(), [](const EndpointSource& source) {
         return source.kind != EndpointSource::Kind::Explicit;
     });
+}
+std::pair<uint32_t, uint32_t> BindingDomain::memberRange(uint32_t slot) const {
+    if (!count) return {0, 0};
+    if (map == Map::Zip) return {0, count};
+    const bool a = slot < split;
+    if (map == Map::Upper) return a ? std::make_pair(0u, left - 1) : std::make_pair(1u, right);
+    return {0, a ? left : right};
 }
 int32_t BindingDomain::endpointMode(bool dynamic) const {
     return !dynamic && affineFields() && 5ull + 2ull * fields.size() < uint64_t(count) * fields.size()
@@ -40,6 +68,7 @@ int32_t BindingDomain::endpointMode(bool dynamic) const {
 const BindingDomain& BindingIR::domain(uint32_t row) const {
     if (singletonDomains)
         return domains[row];
+    if (domains.size() == 1) return domains.front();
     auto found = std::upper_bound(domains.begin(), domains.end(), row,
         [](uint32_t value, const BindingDomain& domain) { return value < domain.first; });
     return *std::prev(found);

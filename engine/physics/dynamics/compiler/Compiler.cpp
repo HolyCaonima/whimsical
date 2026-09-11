@@ -71,6 +71,53 @@ uint32_t field(BufferData& target, const Field& values) {
 void setWord(BufferData& target, uint32_t index, uint32_t value) {
     std::memcpy(target.initial.data() + size_t(index) * 4, &value, 4);
 }
+
+// Per-row scheduling state is a color byte. Everything else is an immutable
+// projection of the logical set range, not a Cartesian array of instance structs.
+class InstanceRows {
+    const CompiledPlan& plan_;
+    std::vector<int8_t> colors_;
+    uint32_t currentSet_ = 0;
+  public:
+    struct Row {
+        uint32_t id, set, local, type;
+        int8_t& color;
+        uint32_t arity;
+    };
+    InstanceRows(const CompiledPlan& plan, uint32_t count) : plan_(plan), colors_(count, -1) {}
+    uint32_t size() const { return uint32_t(colors_.size()); }
+    Row at(uint32_t id, uint32_t set) {
+        const auto& layout = plan_.relations[set];
+        return {id, set, id - layout.first, layout.type, colors_[id],
+                uint32_t(plan_.types[layout.type]->spaces.size())};
+    }
+    Row operator[](uint32_t id) {
+        const auto& current = plan_.relations[currentSet_];
+        if (id >= current.first && id - current.first < current.count) return at(id, currentSet_);
+        auto found = std::upper_bound(plan_.relations.begin(), plan_.relations.end(), id,
+            [](uint32_t row, const RelationLayout& layout) { return row < layout.first; });
+        currentSet_ = uint32_t(std::prev(found) - plan_.relations.begin());
+        return at(id, currentSet_);
+    }
+    struct Iterator {
+        InstanceRows& rows;
+        uint32_t id, set;
+        bool operator!=(const Iterator& other) const { return id != other.id; }
+        Row operator*() const { return rows.at(id, set); }
+        Iterator& operator++() {
+            ++id;
+            while (set < rows.plan_.relations.size() &&
+                   id >= rows.plan_.relations[set].first + rows.plan_.relations[set].count) ++set;
+            return *this;
+        }
+    };
+    Iterator begin() {
+        uint32_t set = 0;
+        while (set < plan_.relations.size() && !plan_.relations[set].count) ++set;
+        return {*this, 0, set};
+    }
+    Iterator end() { return {*this, size(), uint32_t(plan_.relations.size())}; }
+};
 template <size_t Width, class Layout>
 void packMetadata(BufferData& buffer, const std::vector<Layout>& layouts,
                   std::vector<MetadataRange<Width>>& ranges) {
@@ -240,7 +287,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     std::map<std::string, uint32_t> spaceIds, typeIds;
     std::vector<std::vector<uint32_t>> variableGroups;
     std::vector<bool> writable;
-    std::vector<uint32_t> variableMeta, relationMeta;
+    std::vector<uint32_t> variableMeta;
     for (const auto& set : model.data->variables) {
         set.space->validate();
         auto key = signature(*set.space);
@@ -282,14 +329,12 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     p->statistics.variables = writable.size();
     buffer(BufferRole::Previous).initial = buffer(BufferRole::Values).initial;
     buffer(BufferRole::Acceleration).initial.resize(buffer(BufferRole::Velocity).initial.size());
-    struct Instance {
-        uint32_t id, set, local, type;
-        int32_t color;
-        uint32_t arity;
-    };
     // Resolve named fields and access effects before choosing numerical kernels.
     // Scheduling traverses the domains without making a second endpoint graph.
-    std::vector<Instance> instances;
+    uint64_t relationCount = 0;
+    for (const auto& set : model.data->relations) relationCount += set.count;
+    buffer(BufferRole::Relations).initial.resize(size_t(checked(relationCount * 9)) * 4);
+    uint32_t relationFirst = 0;
     for (uint32_t setId = 0; setId < model.data->relations.size(); ++setId) {
         const auto& set = model.data->relations[setId];
         set.type->validate();
@@ -314,7 +359,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         } else
             type = it->second;
         RelationLayout layout{
-            checked(instances.size()),
+            relationFirst,
             set.count,
             type,
             field(buffer(BufferRole::Parameters), set.parameters),
@@ -332,40 +377,57 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             auto found = spaceIds.find(signature(*space));
             endpointSpaces.push_back(found == spaceIds.end() ? UINT32_MAX : found->second);
         }
-        for (uint32_t row = 0; row < set.count; ++row) {
-            Instance instance{
-                checked(instances.size()), setId, row, type, -1, checked(set.type->spaces.size())};
-            const auto& domain = binding.domain(row);
-            const auto members = domain.members(row - domain.first);
-            for (uint32_t e = 0; e < instance.arity; ++e) {
-                auto ref = domain.fields[e].at(e < domain.split ? members.first : members.second);
-                if (ref.set >= p->variables.size() || ref.index >= p->variables[ref.set].count)
-                    throw std::invalid_argument("Relation references a missing variable: " + set.name);
-                if (p->variables[ref.set].space != endpointSpaces[e])
-                    throw std::invalid_argument("Relation endpoint space mismatch: " + set.name);
-                if (binding.readOnly[e])
-                    p->statistics.eliminatedDerivativeColumns += set.type->spaces[e]->tangentSize;
+        // Validate the image of each reference column, not every tuple of the
+        // product. Affine columns are monotone and retain a single space/set.
+        for (const auto& domain : binding.domains) {
+            for (uint32_t e = 0; e < domain.fields.size(); ++e) {
+                const auto& source = domain.fields[e];
+                const auto [first, end] = domain.memberRange(e);
+                auto validate = [&](uint32_t member) {
+                    const auto ref = source.at(member);
+                    if (ref.set >= p->variables.size() || ref.index >= p->variables[ref.set].count)
+                        throw std::invalid_argument("Relation references a missing variable: " + set.name);
+                    if (p->variables[ref.set].space != endpointSpaces[e])
+                        throw std::invalid_argument("Relation endpoint space mismatch: " + set.name);
+                };
+                const bool affine = source.kind != EndpointSource::Kind::Explicit &&
+                    (source.broadcast() || first == end ||
+                     uint64_t(source.first.index) + uint64_t(end - 1) * source.stride <= UINT32_MAX);
+                if (!affine) {
+                    for (uint32_t member = first; member < end; ++member) validate(member);
+                } else if (first != end) {
+                    validate(first);
+                    validate(end - 1);
+                }
             }
+        }
+        for (uint32_t e = 0; e < binding.readOnly.size(); ++e)
+            if (binding.readOnly[e])
+                p->statistics.eliminatedDerivativeColumns += uint64_t(set.count) * set.type->spaces[e]->tangentSize;
+        for (uint32_t row = 0; row < set.count; ++row) {
             for (uint32_t r = 0; r < set.type->rows; ++r)
                 if (set.compliance.at(row, r) < 0)
                     throw std::invalid_argument("Compliance must be nonnegative: " + set.name);
-            relationMeta.insert(relationMeta.end(),
-                                {0, layout.parameters + row, layout.compliance + row, layout.history + row,
-                                 layout.multipliers + row, 0, set.count, 0, type});
-            p->statistics.endpointReferences += instance.arity;
-            instances.push_back(std::move(instance));
+            const uint32_t metadata[] = {0, layout.parameters + row, layout.compliance + row, layout.history + row,
+                                         layout.multipliers + row, 0, set.count, 0, type};
+            std::memcpy(buffer(BufferRole::Relations).initial.data() + size_t(layout.first + row) * sizeof(metadata),
+                        metadata, sizeof(metadata));
         }
+        p->statistics.endpointReferences += uint64_t(set.count) * set.type->spaces.size();
+        relationFirst += set.count;
     }
-    auto endpointId = [&](const Instance& instance, uint32_t slot) {
+    InstanceRows instances(*p, relationFirst);
+    auto endpointId = [&](const InstanceRows::Row& instance, uint32_t slot) {
         auto ref = p->bindings[instance.set].at(instance.local, slot);
         return p->variables[ref.set].first + ref.index;
     };
     std::vector<uint32_t> endpointScratch;
     for (const auto& type : p->types)
         endpointScratch.resize(std::max(endpointScratch.size(), type->spaces.size()));
-    auto writableEndpoints = [&](const Instance& instance, auto&& visit) {
+    BindingDomain::Cursor bindingCursor;
+    auto writableEndpoints = [&](const InstanceRows::Row& instance, auto&& visit) {
         const auto& domain = p->bindings[instance.set].domain(instance.local);
-        const auto members = domain.members(instance.local - domain.first);
+        const auto members = bindingCursor.seek(domain, instance.local - domain.first);
         for (uint32_t endpoint = 0; endpoint < instance.arity; ++endpoint) {
             const auto ref = domain.fields[endpoint].at(endpoint < domain.split ? members.first : members.second);
             const auto id = p->variables[ref.set].first + ref.index;
@@ -382,16 +444,19 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         // Stable buckets retain the exact priority/row order without sorting a
         // Cartesian number of identical type priorities against one another.
         std::map<std::array<uint32_t, 4>, std::vector<uint32_t>> priorities;
+        std::vector<std::array<uint32_t, 4>> typePriority;
+        for (uint32_t type = 0; type < p->types.size(); ++type)
+            typePriority.push_back({0, UINT32_MAX - p->types[type]->rows,
+                UINT32_MAX - uint32_t(p->types[type]->residual.nodes.size()), UINT32_MAX - p->activeTangent(type)});
         coloringOrder.reserve(instances.size());
         for (const auto& instance : instances) {
             if (model.data->relations[instance.set].dynamicEndpoints)
                 continue;
             uint32_t endpoints = 0;
             writableEndpoints(instance, [&](uint32_t) { ++endpoints; });
-            const auto& type = *p->types[instance.type];
-            priorities[{endpoints, UINT32_MAX - type.rows,
-                        UINT32_MAX - uint32_t(type.residual.nodes.size()),
-                        UINT32_MAX - p->activeTangent(instance.type)}].push_back(instance.id);
+            auto priority = typePriority[instance.type];
+            priority[0] = endpoints;
+            priorities[priority].push_back(instance.id);
         }
         for (const auto& [priority, rows] : priorities)
             coloringOrder.insert(coloringOrder.end(), rows.begin(), rows.end());
@@ -403,7 +468,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     const uint64_t allowed =
         policy.colorBudget == 64 ? UINT64_MAX : ((uint64_t(1) << policy.colorBudget) - 1);
     for (auto id : coloringOrder) {
-        auto& instance = instances[id];
+        auto instance = instances[id];
         uint64_t conflict = 0;
         writableEndpoints(instance, [&](uint32_t variable) { conflict |= used[variable]; });
         const auto available = allowed & ~conflict;
@@ -476,7 +541,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
                 policy.execution == ExecutionMode::Auto)
                 selected = 0;
             if (selected < p->statistics.colors) {
-                for (auto& instance : instances)
+                for (auto instance : instances)
                     if (instance.color >= int32_t(selected))
                         instance.color = -1;
                 p->statistics.colors = selected;
@@ -508,7 +573,6 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             ++p->statistics.jacobiRelations;
             p->statistics.directJacobiRelations += directJacobi[instance.type];
         }
-    append(buffer(BufferRole::Relations), relationMeta);
     buffer(BufferRole::Diagnostics).initial.resize(8);
     p->statistics.relations = instances.size();
     std::vector<uint32_t> offsets(writable.size() + 1);

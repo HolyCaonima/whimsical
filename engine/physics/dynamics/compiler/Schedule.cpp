@@ -401,17 +401,22 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     // substep boundary, not a reason to merge independent solve regions.
     for (uint32_t set = 0; set < p.relations.size(); ++set) {
         for (const auto& domain : p.bindings[set].domains) {
-            if (domain.map == BindingDomain::Map::Product && domain.affineFields()) {
+            // The used vertices of a full/triangular bipartite domain form one
+            // component when both sides write. Removing a directed diagonal
+            // retains that property for at least three members. Visit columns,
+            // not the Cartesian number of edges, to establish connectivity.
+            if (domain.map != BindingDomain::Map::Zip && domain.affineFields() &&
+                (domain.map != BindingDomain::Map::Directed || domain.right >= 3)) {
                 bool active[2] = {};
                 for (uint32_t slot = 0; slot < domain.fields.size(); ++slot)
                     active[slot < domain.split ? 0 : 1] = active[slot < domain.split ? 0 : 1] ||
                         !p.model.data->variables[domain.fields[slot].first.set].readOnly;
                 uint32_t owner = NoRegion;
                 for (uint32_t side = 0; side < 2; ++side) {
-                    const auto count = side ? domain.right : domain.left;
                     const auto begin = side ? domain.split : 0u;
                     const auto end = side ? uint32_t(domain.fields.size()) : domain.split;
-                    for (uint32_t member = 0; member < count && active[side]; ++member) {
+                    const auto members = domain.memberRange(begin);
+                    for (uint32_t member = members.first; member < members.second && active[side]; ++member) {
                         if (!(active[0] && active[1]))
                             owner = NoRegion;
                         for (uint32_t slot = begin; slot < end; ++slot) {
@@ -445,27 +450,64 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     }
     std::vector<uint32_t> relationWriter(p.statistics.relations, NoRegion), inputOwner(variableCount, NoRegion);
     std::vector<bool> sharedInput(variableCount);
-    for (const auto& layout : p.relations) {
+    for (uint32_t set = 0; set < p.relations.size(); ++set) {
+        const auto& layout = p.relations[set];
         auto arity = uint32_t(p.types[layout.type]->spaces.size());
-        for (uint32_t id = layout.first; id < layout.first + layout.count; ++id) {
-            auto& writer = relationWriter[id];
-            for (uint32_t slot = 0; slot < arity; ++slot) {
-                auto variable = p.endpoint(id, slot);
-                if (!readOnly(variable)) {
-                    writer = components.root(variable);
-                    break;
+        for (const auto& domain : p.bindings[set].domains) {
+            // A uniform writer component is a property of the reference image.
+            // Prove it once over member columns, then broadcast it over rows.
+            uint32_t writer = NoRegion;
+            bool uniformWriter = domain.affineFields();
+            for (uint32_t slot = 0; uniformWriter && slot < arity; ++slot) {
+                const auto& source = domain.fields[slot];
+                if (p.model.data->variables[source.first.set].readOnly) continue;
+                const auto members = domain.memberRange(slot);
+                for (uint32_t member = members.first; member < members.second; ++member) {
+                    const auto ref = source.at(member);
+                    const auto owner = components.root(p.variables[ref.set].first + ref.index);
+                    if (writer == NoRegion) writer = owner;
+                    else if (writer != owner) { uniformWriter = false; break; }
+                    if (source.broadcast()) break;
                 }
             }
-            for (uint32_t slot = 0; slot < arity; ++slot) {
-                auto variable = p.endpoint(id, slot);
-                if (!readOnly(variable))
-                    continue;
-                if (writer == NoRegion)
-                    sharedInput[variable] = true;
-                else if (inputOwner[variable] == NoRegion)
-                    inputOwner[variable] = writer;
-                else if (inputOwner[variable] != writer)
-                    sharedInput[variable] = true;
+            const auto first = layout.first + domain.first, end = first + domain.count;
+            if (uniformWriter) {
+                std::fill(relationWriter.begin() + first, relationWriter.begin() + end, writer);
+                for (uint32_t slot = 0; slot < arity; ++slot) {
+                    const auto& source = domain.fields[slot];
+                    if (!p.model.data->variables[source.first.set].readOnly) continue;
+                    const auto members = domain.memberRange(slot);
+                    for (uint32_t member = members.first; member < members.second; ++member) {
+                        const auto ref = source.at(member);
+                        const auto variable = p.variables[ref.set].first + ref.index;
+                        if (writer == NoRegion) sharedInput[variable] = true;
+                        else if (inputOwner[variable] == NoRegion) inputOwner[variable] = writer;
+                        else if (inputOwner[variable] != writer) sharedInput[variable] = true;
+                        if (source.broadcast()) break;
+                    }
+                }
+                continue;
+            }
+            for (uint32_t id = first; id < end; ++id) {
+                auto& writer = relationWriter[id];
+                for (uint32_t slot = 0; slot < arity; ++slot) {
+                    auto variable = p.endpoint(id, slot);
+                    if (!readOnly(variable)) {
+                        writer = components.root(variable);
+                        break;
+                    }
+                }
+                for (uint32_t slot = 0; slot < arity; ++slot) {
+                    auto variable = p.endpoint(id, slot);
+                    if (!readOnly(variable))
+                        continue;
+                    if (writer == NoRegion)
+                        sharedInput[variable] = true;
+                    else if (inputOwner[variable] == NoRegion)
+                        inputOwner[variable] = writer;
+                    else if (inputOwner[variable] != writer)
+                        sharedInput[variable] = true;
+                }
             }
         }
     }
