@@ -45,7 +45,7 @@ CompiledPlan → Runtime → RenderCore
 
 阶段顺序保持为预测 → 乘子清零 → 多轮约束求解 / Jacobi 归并 → 速度恢复 → 历史提交；乘子清零后来融合进第一次关系求解，不再形成独立阶段。所有 lane 都经过区域屏障；某个数学操作中的奇异或非有限诊断只退出该操作。
 
-Jacobi 贡献保留全局 CSR 布局，使用 coherent 访问与贡献阶段后的 buffer barrier；其余迭代状态使用共享内存和工作组 barrier。融合与全局组件不共享可写端点；共享只读输入的预测依赖由每子步的全局预测 → 局部融合顺序保证。只含只读输入的关系保留全局执行。
+Jacobi 默认保留全局 CSR 布局；静态标量不等式在 Auto 下可改用自由度槽直接稀疏累加。两条路径都在贡献阶段后建立 buffer 可见性；其余迭代状态使用共享内存和工作组 barrier。融合与全局组件不共享可写端点；共享只读输入的预测依赖由每子步的全局预测 → 局部融合顺序保证。只含只读输入的关系保留全局执行。
 
 变量 / 关系集合的稳定 ID、公开字段偏移、范围更新、回读和迁移契约保持一致。新增三个固定 buffer 角色保存区域阶段范围、共享状态布局和局部偏移；buffer 数量不随组件数量增长。被完整吸收的独立 kernel 不再编译。
 
@@ -68,6 +68,7 @@ Engine.dynamics.compile(handle, {mode:'hybrid', substeps:4, iterations:12, execu
 - `localVariables`、`localRelations`：映射到融合区域的工作量。
 - `localSharedBytes`：融合 kernel 每工作组声明的共享内存。
 - `referenceDispatches`、`dispatches`：每步数值阶段的原始 / 实际计算 dispatch 数，不含拓扑构建及数据传输。
+- `directJacobiRelations`：使用自由度槽直接稀疏累加的 Jacobi 关系实例数。
 
 Global 和动态拓扑路径跳过区域分析，其区域统计为零。
 
@@ -258,3 +259,36 @@ grid 可以作为将来的候选域生成策略，但任意用户公式并不必
 着色仍为 5,624 个 Colored / 3,274 个 Jacobi 实例、8 个执行颜色。修改前后及历史版本在 tick 120 抽取的 12 个状态 float 完全一致，完整结构边计算的平均应变均为 `0.0032157234891912433`。Release 构建成功；最终布料、100 粒子、64 组绳子在 validation 模式下均完成运行，求解 diagnostics 为 0 / 0，Vulkan validation errors 为 0。没有新增测试或运行测试套件，临时项目脚本和 profile 入口均已恢复。
 
 没有保留缺乏收益的固定阶段展开、缩小工作组、窗口共享缓存和逐变量前缀融合实验。最终变化集中在现有索引、工作列表及同步范围，数学模型、子步数、迭代数和项目脚本保持不变。汇总数据见 `captures/cloth-compiler-comparison-2026-09-11.json`；原始数据见 `captures/cloth-default-before.log`、`cloth-default-after-{1,2}.log`、`cloth-historical-16cfc55.log` 和 `cloth-final-{validation,particles,rope}.log`。
+
+## Newton 粒子路径启发与直接稀疏累加（2026-09-11）
+
+本轮重点对照 Newton 1.5 的粒子 VBD / XPBD 实现。可迁移的经验是：在拓扑稳定时预计算调度元数据、让颜色组保持足够工作量、沿自由度邻接关系组织求解，以及对经过活动条件筛选的稀疏修正直接累加。Newton 的 CUDA graph 主要减少固定工作流的宿主提交开销；当前 Dynamics 已将一个 tick 记录为一个 command buffer 并单次提交，因此它不是本轮的主要瓶颈。
+
+这些经验只落在 `Formula + 条件种类 + 可写端点 incidence + BindingIR 索引域 + 后端成本` 上。用户仍定义自由度、对象、关系公式和 pair；Compiler 没有粒子、接触、布料、绳子或弹簧分类。
+
+### 通用 lowering
+
+- 静态拓扑、Auto 执行下的标量不等式 Jacobi 关系先执行已有 feasibility guard。满足条件且乘子为零时不求导，也不写任何贡献。
+- 活跃关系不再写完整的 `relation × tangent` 贡献表，而是用 32 位 CAS 浮点累加到目标自由度的切向槽。Gather 每轮消费并清零这些槽，同时继续归并同一自由度可能具有的普通 CSR 贡献。
+- Jacobi 的 degree 仍取该自由度全部静态 Jacobi incidence；直接与 CSR 混合时不会因省略 CSR entry 而改变原有缩放规则。等式、多行关系、动态端点和显式 `ExecutionMode::Global` 保留原 CSR 路径。
+- 仿射 Zip / Product / Directed / Upper 域在每次关系调用中只解码一次左右成员；多个端点字段复用结果，避免为同一关系重复执行除法或三角索引反解。
+- Hybrid 如果在给定颜色上限内无法让每个参与自由度获得至少一半的原位 incidence，且既存 overflow 全是可早退的标量不等式，Auto 会撤掉收益不足的颜色前缀并统一进入 Jacobi。该规则不适用于 Colored、动态拓扑或 Global，也不会触发布料样本的 equality overflow 图。
+
+原子累加会使活跃修正的浮点加法顺序依赖 GPU 调度，因此一般只保证相同求解语义，不承诺逐位一致。`ExecutionMode::Global` 继续提供确定顺序的 CSR 对照路径。Hybrid 的划分本来就是策略的一部分；上述截止规则可能把某个模型从 Colored/Jacobi 混合更新变为全 Jacobi，因此不能把结果宣称为与旧 Hybrid 路径数值相同。
+
+### 粒子样本与回归检查
+
+独立的 100 自由度、5,550 关系基准使用 Release、RTX 3080、Vulkan validation、Hybrid、4 子步 × 12 迭代。相同进程中的 Global CSR 均值为 `2.304361 ms`；两次 Auto 均值为 `0.457695 ms` 和 `0.682585 ms`，相对该次参考减少约 70%–80%。三次最终 300 个状态 float 的最大绝对差均为 `0`，最小间距重叠诊断均为 `0.110385237`。
+
+真实 ConstraintLab 粒子示例在 validation + immediate present 下统计完成 tick 21–120，Auto 均值为 `1.062153 ms`；同文档前一轮记录为 `4.983 ms`，本次样本减少约 78.7%。计划由 12 个候选颜色自然选择 0 个执行颜色，5,550 个关系进入 Jacobi，其中 5,450 个使用直接累加；每 tick 计算 dispatch 为 108，参考阶段列表为 212，端点描述仍为 27 个 word。运行收到 GPU 回读，diagnostics 为 0 / 0，Vulkan validation errors 为 0。
+
+作为非目标图回归，32×32 ConstraintLab 布料计划保持 5,624 Colored / 3,274 Jacobi、8 个执行颜色、252 个计算 dispatch，`directJacobiRelations=0`。相同 validation + FIFO 模式下均值为 `3.278 ms`，接近此前记录的 `3.216 ms`；diagnostics 与 validation 均无错误。不同 present 模式会改变渲染与计算的队列竞争，不能直接混合比较。
+
+没有新增测试。Release 的 `dynamics_tests`、`dynamics_run` 和 `Whimsical` 构建成功；现有 Dynamics focused checks 通过。以上数据说明当前粒子式高候选、低活动率数学图的收益，不构成其他关系图或设备上的普遍加速保证。
+
+参考实现：
+
+- <https://github.com/newton-physics/newton/blob/v1.5.0/newton/_src/solvers/vbd/solver_vbd.py>
+- <https://github.com/newton-physics/newton/blob/v1.5.0/newton/_src/solvers/vbd/particle_vbd_kernels.py>
+- <https://github.com/newton-physics/newton/blob/v1.5.0/newton/_src/sim/graph_coloring.py>
+- <https://github.com/newton-physics/newton/blob/v1.5.0/newton/_src/solvers/xpbd/kernels.py>

@@ -43,7 +43,7 @@ constexpr uint32_t StateWriteCapacity = 4096;
 bool integer(BufferRole r) {
     return r == BufferRole::Variables || r == BufferRole::VariableWork || r == BufferRole::Relations ||
            r == BufferRole::Endpoints || r == BufferRole::RelationWork || r == BufferRole::AdjacencyOffsets ||
-           r == BufferRole::AdjacencyEntries || r == BufferRole::Diagnostics ||
+           r == BufferRole::Contributions || r == BufferRole::AdjacencyEntries || r == BufferRole::Diagnostics ||
            r == BufferRole::ScanScratch || r == BufferRole::AdjacencyCursors || r == BufferRole::RegionRanges ||
            r == BufferRole::RegionState || r == BufferRole::LocalOffsets || r == BufferRole::StateWrites;
 }
@@ -356,7 +356,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     p->statistics.candidateColors = p->statistics.colors;
     if (policy.mode == SolveMode::Hybrid && !p->dynamicTopology && p->statistics.colors > 1) {
         std::vector<uint32_t> incidence(writable.size());
-        bool hasOverflow = false;
+        bool hasOverflow = false, sparseInequalityOverflow = true;
         for (const auto& instance : instances) {
             uint32_t endpoints = 0;
             writableEndpoints(instance, [&](uint32_t variable) {
@@ -364,6 +364,10 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
                 ++endpoints;
             });
             hasOverflow = hasOverflow || (endpoints && instance.color < 0);
+            if (endpoints && instance.color < 0)
+                sparseInequalityOverflow =
+                    sparseInequalityOverflow && p->types[instance.type]->rows == 1 &&
+                    p->types[instance.type]->kind != RelationKind::Equality;
         }
         if (hasOverflow) {
             // Gather is already mandatory. Tail colors then add graph-wide
@@ -379,6 +383,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
                     });
             std::vector<uint32_t> covered(writable.size());
             uint32_t selected = p->statistics.colors;
+            bool coverageReached = false;
             for (uint32_t color = 0; color < p->statistics.colors; ++color) {
                 for (auto variable : colorIncidence[color])
                     ++covered[variable];
@@ -390,9 +395,18 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
                     }
                 if (sufficient) {
                     selected = color + 1;
+                    coverageReached = true;
                     break;
                 }
             }
+            // A bounded prefix that cannot cover half of every endpoint gives no
+            // useful in-place convergence floor. If the overflow is entirely made
+            // of scalar inequalities, their feasibility guard and sparse direct
+            // accumulation make a coherent Jacobi phase cheaper than graph-wide
+            // barriers around a weak colored prefix.
+            if (!coverageReached && sparseInequalityOverflow &&
+                policy.execution == ExecutionMode::Auto)
+                selected = 0;
             if (selected < p->statistics.colors) {
                 for (auto& instance : instances)
                     if (instance.color >= int32_t(selected))
@@ -401,23 +415,56 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             }
         }
     }
-    std::vector<uint32_t> degree(writable.size());
+    // Scalar inequalities often reject most candidates before differentiation.
+    // For static Jacobi work, accumulate those sparse corrections directly into
+    // each writable variable. Equality blocks and dynamic topology retain the
+    // ordered per-relation contribution table.
+    std::vector<bool> directJacobi(p->types.size());
+    if (!p->dynamicTopology && policy.execution == ExecutionMode::Auto)
+        for (uint32_t type = 0; type < p->types.size(); ++type)
+            directJacobi[type] =
+                p->types[type]->rows == 1 && p->types[type]->kind != RelationKind::Equality;
+    std::vector<uint32_t> degree(writable.size()), gatheredDegree(writable.size());
+    std::vector<bool> directVariables(writable.size());
     for (const auto& instance : instances)
         if (instance.color >= 0)
             ++p->statistics.coloredRelations;
         else {
-            writableEndpoints(instance, [&](uint32_t id) { ++degree[id]; });
+            writableEndpoints(instance, [&](uint32_t id) {
+                ++degree[id];
+                if (directJacobi[instance.type])
+                    directVariables[id] = true;
+                else
+                    ++gatheredDegree[id];
+            });
             ++p->statistics.jacobiRelations;
+            p->statistics.directJacobiRelations += directJacobi[instance.type];
         }
     append(buffer(BufferRole::Relations), relationMeta);
     buffer(BufferRole::Diagnostics).initial.resize(8);
     p->statistics.relations = instances.size();
     std::vector<uint32_t> offsets(writable.size() + 1);
-    for (size_t i = 0; i < degree.size(); ++i)
-        offsets[i + 1] = checked(uint64_t(offsets[i]) + degree[i]);
+    for (size_t i = 0; i < gatheredDegree.size(); ++i)
+        offsets[i + 1] = checked(uint64_t(offsets[i]) + gatheredDegree[i]);
     std::vector<uint32_t> entries(size_t(offsets.back()) * 2), cursor = offsets;
+    if (p->statistics.directJacobiRelations) {
+        buffer(BufferRole::Contributions).initial.resize(buffer(BufferRole::Velocity).initial.size());
+        append(buffer(BufferRole::AdjacencyCursors), degree);
+    }
     for (uint32_t setId = 0; setId < p->relations.size(); ++setId) {
         const auto& layout = p->relations[setId];
+        if (directJacobi[layout.type]) {
+            for (uint32_t i = 0; i < layout.count; ++i) {
+                const auto& in = instances[layout.first + i];
+                if (in.color >= 0)
+                    continue;
+                uint32_t maximumDegree = 1;
+                writableEndpoints(
+                    in, [&](uint32_t id) { maximumDegree = std::max(maximumDegree, degree[id]); });
+                setWord(buffer(BufferRole::Relations), in.id * 9 + 7, maximumDegree);
+            }
+            continue;
+        }
         uint32_t count = 0;
         for (uint32_t i = 0; i < layout.count; ++i)
             if (instances[layout.first + i].color < 0)
@@ -494,7 +541,11 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
                     gather.push_back(variable);
             if (!gather.empty())
                 p->apply.push_back(
-                    {operation("Gather " + s.name, variableFunction(s, "apply", "gather" + suffix)),
+                    {operation("Gather " + s.name,
+                               variableFunction(
+                                   s, "apply", "gather" + suffix,
+                                   std::any_of(variableGroups[space].begin(), variableGroups[space].end(),
+                                               [&](uint32_t id) { return directVariables[id]; }))),
                      append(buffer(BufferRole::VariableWork), gather), checked(gather.size())});
         }
     }
@@ -510,7 +561,10 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         uint32_t program;
         if (found == solveKernels.end()) {
             program = operation(std::string(jacobi ? "Jacobi " : "Colored ") + p->types[type]->name,
-                                relationFunction(*p->types[type], p->typeReadOnly[type], p->typeEndpointMode[type], jacobi, false,
+                                relationFunction(*p->types[type], p->typeReadOnly[type],
+                                                 p->typeEndpointMode[type], jacobi,
+                                                 jacobi && directJacobi[type],
+                                                 p->statistics.directJacobiRelations != 0, false,
                                                  std::string(jacobi ? "jacobi" : "colored") +
                                                      std::to_string(type)));
             solveKernels.emplace(key, program);
@@ -549,7 +603,9 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
                     work.push_back(in.id);
             p->update.push_back(
                 {operation("Commit " + p->types[type]->name,
-                           relationFunction(*p->types[type], p->typeReadOnly[type], p->typeEndpointMode[type], false, true, "commit" + std::to_string(type))),
+                           relationFunction(*p->types[type], p->typeReadOnly[type],
+                                            p->typeEndpointMode[type], false, false, false, true,
+                                            "commit" + std::to_string(type))),
                  append(buffer(BufferRole::RelationWork), work), checked(work.size())});
         }
     const std::array<BufferRole, 4> stateFields = {

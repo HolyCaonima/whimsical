@@ -281,6 +281,7 @@ Json DynamicsSystem::plan(Entity e) const {
             {"components", s.components}, {"localRegions", s.localRegions},
             {"candidateColors", s.candidateColors}, {"colors", s.colors},
             {"coloredRelations", double(s.coloredRelations)}, {"jacobiRelations", double(s.jacobiRelations)},
+            {"directJacobiRelations", double(s.directJacobiRelations)},
             {"colorWindows", s.colorWindows}, {"colorWindowRegions", double(s.colorWindowRegions)},
             {"localRelations", double(s.localRelations)},
             {"localPerSubstep", p.localPerSubstep},

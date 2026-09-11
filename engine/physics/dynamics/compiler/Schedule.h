@@ -10,9 +10,11 @@ struct KernelFunction {
     BufferRole work;
     bool writesContributions = false;
 };
-KernelFunction variableFunction(const Space&, const char* operation, const std::string& name);
+KernelFunction variableFunction(
+    const Space&, const char* operation, const std::string& name, bool directContributions = false);
 KernelFunction relationFunction(const RelationType&, const std::vector<bool>& readOnly,
-                                int32_t endpointMode, bool jacobi, bool update, const std::string& name);
+                                int32_t endpointMode, bool jacobi, bool directContributions,
+                                bool separateDegrees, bool update, const std::string& name);
 KernelFunction relationDispatchFunction(
     const std::vector<std::pair<uint32_t, KernelFunction>>&, bool jacobi, const std::string& name);
 std::string globalKernel(const KernelFunction&);

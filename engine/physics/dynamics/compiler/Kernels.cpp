@@ -35,10 +35,46 @@ std::string endpointAccess(uint32_t slot, int32_t mode) {
 void relationInputs(std::ostringstream& s, const RelationType& t, int32_t endpointMode) {
     const auto n = t.inputSize();
     local(s, "x", n);
+    if (endpointMode > 0) {
+        const auto map = endpointMode - 1;
+        s << "uint endpointAt=r.e&0x7fffffffu,endpointRow=r.id-x_endpoints[endpointAt+1u];"
+             "uint endpointLeft=endpointRow,endpointRight=endpointRow;\n";
+        if (map == int(BindingDomain::Map::Product))
+            s << "{uint count=x_endpoints[endpointAt+3u];endpointLeft=endpointRow/count;"
+                 "endpointRight=endpointRow%count;}\n";
+        else if (map == int(BindingDomain::Map::Directed))
+            s << "{uint count=x_endpoints[endpointAt+3u];endpointLeft=endpointRow/(count-1u);"
+                 "endpointRight=endpointRow%(count-1u);"
+                 "if(endpointRight>=endpointLeft)++endpointRight;}\n";
+        else if (map == int(BindingDomain::Map::Upper) ||
+                 map == int(BindingDomain::Map::UpperDiagonal)) {
+            const bool diagonal = map == int(BindingDomain::Map::UpperDiagonal);
+            s << "{uint count=x_endpoints[endpointAt+3u];float b=2.0*float(count)"
+              << (diagonal ? "+1.0" : "-1.0")
+              << ";endpointLeft=min(count-1u,uint(max(0.0,floor((b-sqrt(max(0.0,b*b-8.0*float("
+                 "endpointRow))))*0.5))));"
+                 "while(endpointLeft>0u&&trianglePrefix(endpointLeft,count,"
+              << (diagonal ? "true" : "false")
+              << ")>endpointRow)--endpointLeft;"
+                 "while(endpointLeft+1u<count&&trianglePrefix(endpointLeft+1u,count,"
+              << (diagonal ? "true" : "false")
+              << ")<=endpointRow)++endpointLeft;"
+                 "endpointRight=endpointLeft+"
+              << (diagonal ? "0u" : "1u") << "+endpointRow-trianglePrefix(endpointLeft,count,"
+              << (diagonal ? "true" : "false") << ");}\n";
+        }
+    }
     uint32_t offset = 0;
     for (uint32_t e = 0; e < t.spaces.size(); ++e) {
-        s << "uint id" << e << "=" << endpointAccess(e, endpointMode) << "; Variable v" << e << "=variable(id" << e
-          << ");\n";
+        s << "uint id" << e << "=";
+        if (endpointMode > 0) {
+            const auto field = 5 + 2 * e;
+            const bool left = e < t.objects[0].size();
+            s << "x_endpoints[endpointAt+" << field << "u]+endpoint"
+              << (left ? "Left" : "Right") << "*x_endpoints[endpointAt+" << field + 1 << "u]";
+        } else
+            s << endpointAccess(e, endpointMode);
+        s << "; Variable v" << e << "=variable(id" << e << ");\n";
         for (uint32_t c = 0; c < t.spaces[e]->stateSize; ++c)
             s << "x[" << offset + c << "]=loadValue(v" << e << "," << c << "u);\n";
         offset += t.spaces[e]->stateSize;
@@ -51,7 +87,8 @@ void relationInputs(std::ostringstream& s, const RelationType& t, int32_t endpoi
     s << "x[" << n - 2 << "]=h; x[" << n - 1 << "]=time;\n";
 }
 } // namespace
-KernelFunction variableFunction(const Space& space, const char* operation, const std::string& name) {
+KernelFunction variableFunction(
+    const Space& space, const char* operation, const std::string& name, bool directContributions) {
     const std::string op = operation;
     std::ostringstream s;
     const auto S = space.stateSize, T = space.tangentSize;
@@ -84,27 +121,36 @@ KernelFunction variableFunction(const Space& space, const char* operation, const
         for (uint32_t i = 0; i < T; ++i)
             s << "storeVelocity(v," << i << "u,outputValue[" << i << "]/h);\n";
     } else {
-        s << "if(v.flags!=0u || x_variableEnabled[id]==0.0)return;\n";
         local(s, "inputValue", S + T);
         local(s, "outputValue", S);
+        if (directContributions)
+            for (uint32_t i = 0; i < T; ++i)
+                s << "inputValue[" << S + i << "]=uintBitsToFloat(x_contributions[v.v+" << i
+                  << "u*v.stride]);x_contributions[v.v+" << i << "u*v.stride]=0u;\n";
+        s << "if(v.flags!=0u || x_variableEnabled[id]==0.0)return;\n";
         for (uint32_t i = 0; i < S; ++i)
             s << "inputValue[" << i << "]=loadValue(v," << i << "u);\n";
-        for (uint32_t i = 0; i < T; ++i)
-            s << "inputValue[" << S + i << "]=0.0;\n";
+        if (!directContributions)
+            for (uint32_t i = 0; i < T; ++i)
+                s << "inputValue[" << S + i << "]=0.0;\n";
         s << "for(uint j=x_adjOffsets[id];j<x_adjOffsets[id+1u];++j){uint "
              "at=x_adjEntries[j*2u],stride=x_adjEntries[j*2u+1u];\n";
         for (uint32_t i = 0; i < T; ++i)
-            s << "inputValue[" << S + i << "]+=x_contributions[at+" << i << "u*stride];\n";
+            s << "inputValue[" << S + i << "]+=uintBitsToFloat(x_contributions[at+" << i
+              << "u*stride]);\n";
         s << "}\n" << name << "_retractValue(inputValue,outputValue);\n";
         finite(s, "outputValue", S);
         for (uint32_t i = 0; i < S; ++i)
             s << "storeValue(v," << i << "u,outputValue[" << i << "]);\n";
     }
     s << "}\n";
-    return {name, s.str(), BufferRole::VariableWork};
+    // Direct gather also clears the shared accumulation slots. Local fused
+    // schedules must publish that clear before the next iteration's atomics.
+    return {name, s.str(), BufferRole::VariableWork, directContributions};
 }
 KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& readOnly,
-                                int32_t endpointMode, bool jacobi, bool update, const std::string& name) {
+                                int32_t endpointMode, bool jacobi, bool directContributions,
+                                bool separateDegrees, bool update, const std::string& name) {
     std::ostringstream s;
     const auto M = t.rows;
     uint32_t Q = 0, D = 0, activeSlots = 0, singleSlot = 0;
@@ -173,9 +219,9 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
     if (!update)
         for (uint32_t row = 0; row < M; ++row)
             s << "if(iteration==0u)storeMultiplier(r," << row << "u,0.0);\n";
-    if (jacobi)
+    if (jacobi && !directContributions)
         for (uint32_t c = 0; c < D; ++c)
-            s << "x_contributions[r.c+" << c << "u*r.cs]=0.0;\n";
+            s << "x_contributions[r.c+" << c << "u*r.cs]=0u;\n";
     s << "if(x_relationEnabled[id]==0.0)return;\n";
     relationInputs(s, t, endpointMode);
     if (update) {
@@ -435,10 +481,18 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
           << ";++k)a[row*" << M << "+k]-=f*a[col*" << M << "+k];rhs[row]-=f*rhs[col];}}\n";
     }
     if (jacobi) {
-        s << "uint degree=1u;\n";
-        for (uint32_t e = 0; e < t.spaces.size(); ++e)
-            if (!readOnly[e])
-                s << "degree=max(degree,x_adjOffsets[id" << e << "+1u]-x_adjOffsets[id" << e << "]);\n";
+        if (directContributions)
+            s << "uint degree=r.cs;\n";
+        else {
+            s << "uint degree=1u;\n";
+            for (uint32_t e = 0; e < t.spaces.size(); ++e)
+                if (!readOnly[e])
+                    if (separateDegrees)
+                        s << "degree=max(degree,x_adjCursors[id" << e << "]);\n";
+                    else
+                        s << "degree=max(degree,x_adjOffsets[id" << e << "+1u]-x_adjOffsets[id" << e
+                          << "]);\n";
+        }
     }
     local(s, "nextLambda", M);
     for (uint32_t row = 0; row < M; ++row) {
@@ -487,8 +541,19 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
             continue;
         const auto S = t.spaces[e]->stateSize, T = t.spaces[e]->tangentSize;
         if (jacobi) {
-            for (uint32_t col = 0; col < T; ++col)
-                s << "x_contributions[r.c+" << vo + col << "u*r.cs]=input" << e << "[" << S + col << "];\n";
+            if (directContributions) {
+                s << "if(v" << e << ".flags==0u && x_variableEnabled[id" << e << "]!=0.0";
+                for (uint32_t b = 0; b < e; ++b)
+                    s << " && id" << e << "!=id" << b;
+                s << ") {\n";
+                for (uint32_t col = 0; col < T; ++col)
+                    s << "addContribution(v" << e << ".v+" << col << "u*v" << e << ".stride,input"
+                      << e << "[" << S + col << "]);\n";
+                s << "}\n";
+            } else
+                for (uint32_t col = 0; col < T; ++col)
+                    s << "x_contributions[r.c+" << vo + col << "u*r.cs]=floatBitsToUint(input" << e
+                      << "[" << S + col << "]);\n";
         } else {
             s << "if(v" << e << ".flags==0u && x_variableEnabled[id" << e << "]!=0.0";
             for (uint32_t b = 0; b < e; ++b)
@@ -559,6 +624,10 @@ std::string stateAccess(bool localState, uint32_t variableCount, bool externalIn
                                   {"Velocity", "velocity", "v", true}, {"History", "history", "h", false},
                                   {"Multiplier", "lambda", "l", false}};
     std::ostringstream s;
+    s << "void addContribution(uint at,float value){if(value==0.0)return;uint expected=x_contributions[at];"
+         "for(;;){uint desired=floatBitsToUint(uintBitsToFloat(expected)+value);"
+         "uint observed=atomicCompSwap(x_contributions[at],expected,desired);"
+         "if(observed==expected)return;expected=observed;}}\n";
     for (uint32_t i = 0; i < 5; ++i) {
         const auto& field = fields[i];
         const char* type = field.variable ? "Variable" : "Relation";

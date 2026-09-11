@@ -105,15 +105,15 @@ auto tail = instance.read(StateField::Value, variables, 99996, 4);
 - `Jacobi`：关系计算局部贡献，随后按变量的关联表归并。
 - `Hybrid`：在颜色预算内着色，超出预算的关系进入 Jacobi；默认预算 32，上限 64。
 
-只读端点不产生写冲突。`readOnly` 是结构承诺，仍可通过速度、加速度或状态命令驱动；逆度量为零不会被编译器自动视为只读。批次按颜色和数学类型形成，不为每个独立连通分量创建一个 pass。
+只读端点不产生写冲突。`readOnly` 是结构承诺，仍可通过速度、加速度或状态命令驱动；逆度量为零不会被编译器自动视为只读。批次按颜色和数学类型形成，不为每个独立连通分量创建一个 pass。Hybrid 的颜色数是上限；Auto 可根据静态 incidence 覆盖率把收益不足的颜色前缀并入已经存在的 Jacobi 阶段。
 
-Gather 只覆盖有 Jacobi 贡献的可写变量；动态拓扑按可写变量保留候选范围。Auto 将不同空间中互不依赖的预测、归并、速度恢复批次分别合并，避免仅因增加一个只读空间就增加每轮 dispatch。颜色窗口内部使用工作组范围的内存屏障，其写依赖已由组件划分限制在同一工作组。
+Gather 只覆盖有 Jacobi 贡献的可写变量；动态拓扑按可写变量保留候选范围。静态标量不等式在 Auto 下可先用 feasibility guard 裁掉非活跃关系，再把活跃修正直接累加到自由度槽；等式、多行关系、动态拓扑和 Global 保留逐关系 CSR 贡献。Auto 将不同空间中互不依赖的预测、归并、速度恢复批次分别合并，避免仅因增加一个只读空间就增加每轮 dispatch。颜色窗口内部使用工作组范围的内存屏障，其写依赖已由组件划分限制在同一工作组。
 
 执行方式与数值方法分开选择：`SolverPolicy::execution` 默认 `ExecutionMode::Auto`，也可指定 `ExecutionMode::Global` 保留逐阶段 dispatch。JavaScript 对应 `compile(handle, {execution:'auto'})` / `{execution:'global'}`。
 
 Auto 根据静态可写端点连接识别组件，按变量数、关系数、状态容量和函数复杂度选择工作组融合，并把多个小组件打包。区域内的值、前值、速度、history 和乘子放入共享内存，保持颜色顺序和 Jacobi 归并。独占的只读输入归入消费组件，可融合整个 tick；跨组件共享的只读输入由全局预测每子步推进一次，消费它的局部区域在预测后融合该子步的迭代。大型组件保留全局路径；含动态端点的模型目前整体使用全局路径。
 
-`CompiledPlan::statistics` 报告组件数、局部区域数、局部变量 / 关系数、每工作组共享字节数，以及优化前后的每步数值计算 dispatch 数。后者不含动态拓扑构建和上传 / 回读。另有 BindingIR 域数、隐式端点引用数、实际端点存储 word 数、被裁剪的切向导数列数和 CPU 计划编译耗时（不含驱动编译 shader）；脚本可用 `Engine.dynamics.scene.plan(entity)` 查看摘要。具体预算、实现边界和实测结果见 [编译器优化说明](dynamics-compiler-optimization.md)。
+`CompiledPlan::statistics` 报告组件数、局部区域数、局部变量 / 关系数、直接累加的 Jacobi 关系数、每工作组共享字节数，以及优化前后的每步数值计算 dispatch 数。后者不含动态拓扑构建和上传 / 回读。另有 BindingIR 域数、隐式端点引用数、实际端点存储 word 数、被裁剪的切向导数列数和 CPU 计划编译耗时（不含驱动编译 shader）；脚本可用 `Engine.dynamics.scene.plan(entity)` 查看摘要。具体预算、实现边界和实测结果见 [编译器优化说明](dynamics-compiler-optimization.md)。
 
 关联结构按端点数增长，不创建关系之间的两两冲突图。Jacobi 用端点最大关联度缩放乘子增量与对应修正，避免共享端点的贡献无控制累加；高关联度可能需要更多迭代。它和 Colored 的迭代路径不保证逐位一致。
 
@@ -240,7 +240,7 @@ var contact = X.pair(separation, particles, particles, {diameter: 0.36}, {
 
 `compile`、`step`、`read` 使用单请求通道：每个模型最多一个未消费结果；`poll` 返回版本、tick、诊断、`error` 和 `Float32Array values`。处理完成后才能提交下一项操作。场景用法见 [Dynamics 与 ECS](dynamics-ecs.md)。
 
-可运行示例位于 [ConstraintLab](../Projects/ConstraintLab/README.md)：布料、绳索、绳网、穿绳布幕、星仪，以及集合粒子示例。粒子示例只声明三条高层绑定，BindingIR 保留三个域，逻辑上仍有 4,950 个无向粒子组合、500 个粒子—边界组合和 100 个阻力实例。GPU 用 27 个整数描述全部 11,500 个端点引用。当前没有邻域查询、空间剪枝或集合归约；着色、逐关系字段和求解遍历仍随成员组合数增长。
+可运行示例位于 [ConstraintLab](../Projects/ConstraintLab/README.md)：布料、绳索、绳网、穿绳布幕、星仪，以及集合粒子示例。粒子示例只声明三条高层绑定，BindingIR 保留三个域，逻辑上仍有 4,950 个无向粒子组合、500 个粒子—边界组合和 100 个阻力实例。GPU 用 27 个整数描述全部 11,500 个端点引用。当前没有邻域查询、空间剪枝或集合归约；着色、逐关系字段和求解遍历仍随成员组合数增长。Auto 会让非活跃标量不等式在求导和写贡献前退出，但这不是候选生成或空间剪枝。
 
 ## 重点验证
 
