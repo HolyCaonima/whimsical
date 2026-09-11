@@ -55,6 +55,7 @@ class GpuScene {
     SceneUpdateStatistics statistics;
     uint64_t writes = 0, resyncs = 0, tlasRebuilds = 0, slotFrames = 0;
     uint64_t geometryBuilds = 0, geometryReleases = 0, geometryBufferGrowths = 0;
+    uint64_t instanceCapacityGrowths = 0;
     size_t staticMeshInstances() const {
         return staticSlots.size();
     }
@@ -124,6 +125,7 @@ class GpuScene {
     uint32_t allocateGeometry(const std::vector<GpuVertex>&, const std::vector<uint32_t>&, bool dynamic);
     void releaseGeometry(uint32_t);
     void syncGeometry(const Frame&);
+    void reserveInstances(size_t count);
     void reserveTlas(const Frame&);
     void uploadGeometry(const std::vector<uint32_t>& added);
     void buildMeshAS(VkCommandBuffer, uint32_t mesh, bool update);

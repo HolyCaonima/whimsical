@@ -8,7 +8,7 @@
 // descriptor writes, allocation, clearing, barriers and the GLSL declaration block are all
 // derived from it, so adding a resource is one line in the feature that needs it.
 namespace whimsical {
-constexpr uint32_t MaxInstances = 1024, MaxLights = 256, MaxMaterials = 256, MaxTextures = 64;
+constexpr uint32_t MaxLights = 256, MaxMaterials = 256, MaxTextures = 64;
 // The DI gradient is measured on strata of this many pixels a side.
 constexpr uint16_t GradientDivisor = 3;
 // The four DI reservoir arrays swap in pairs each frame instead of being copied, so a

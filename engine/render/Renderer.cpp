@@ -318,6 +318,8 @@ struct Renderer::Impl {
                << ", \"shaderCompilations\": " << shaderCompiler.compilationCount()
                << ", \"rasterPrograms\": " << pipeline->rasterProgramCount()
                << ",\n  \"sceneSlots\": " << scene->statistics.slots
+               << ", \"instanceBufferBytes\": " << scene->instanceData.size
+               << ", \"instanceCapacityGrowths\": " << scene->instanceCapacityGrowths
                << ", \"sceneSlotWrites\": " << scene->writes
                << ", \"sceneSlotWritesIfRebuilt\": " << scene->slotFrames
                << ",\n  \"sceneResyncs\": " << scene->resyncs << ", \"tlasRebuilds\": " << scene->tlasRebuilds
@@ -399,8 +401,7 @@ struct Renderer::Impl {
             frameRef = std::make_shared<const Frame>(std::move(diagnostic));
         }
         const Frame& frame = *frameRef;
-        if (frame.proxies.size() > MaxInstances || frame.materials.size() > MaxMaterials ||
-            frame.lights.size() > MaxLights)
+        if (frame.materials.size() > MaxMaterials || frame.lights.size() > MaxLights)
             throw std::runtime_error("Scene capacity exceeded");
         {
             CpuScope scope("Wait / Previous GPU Fence");

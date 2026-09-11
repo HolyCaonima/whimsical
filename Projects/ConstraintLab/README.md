@@ -94,17 +94,17 @@ Dynamics 的建模边界是 `DOFs → Objects → Relation → pair`。用户在
 
 ## 实验六：集合粒子
 
-500 个位置自由度组成显式粒子集合，五个平面的法线与偏移自由度组成显式边界集合。用户用 op 编写平方间距和半空间残差，再声明三条绑定：
+4,000 个位置自由度组成显式粒子集合，五个平面的法线与偏移自由度组成显式边界集合。用户用 op 编写平方间距和半空间残差，再声明三条绑定：
 
 ```js
-X.pair(separation, particles, particles, {diameter:0.2}, {
+X.pair(separation, particles, particles, {diameter:0.1}, {
     self:'undirected', includeSelf:false
 });
-X.pair(containment, particles, walls, {radius:0.1});
+X.pair(containment, particles, walls, {radius:0.05});
 X.pair(damping, particles, frame, [], {history:initial, compliance:[0.08,0.08,0.08]});
 ```
 
-逻辑上分别有 124,750、2,500、500 个关系实例。连接和公式仍全部由这里的 DSL 定义；Compiler 根据数学界及成本自动选择完整活动扫描或网格候选，不要求项目枚举邻居。当前规模采用完整活动扫描与活动关联缩放，更大集合可自动使用网格。它展示间距及容器条件，不包含不可压缩水的密度模型。面板的最大重叠率只是项目诊断，使用直径网格精确检查邻格，不参与求解。`I` 给集合施加一个向上的冲量。
+逻辑上分别有 7,998,000、20,000、4,000 个关系实例，共 8,022,000 个。连接和公式仍全部由这里的 DSL 定义；Compiler 根据数学界及成本自动选择完整活动扫描或网格候选，不要求项目枚举邻居。它展示间距及容器条件，不包含不可压缩水的密度模型。面板的最大重叠率只是项目诊断，使用直径网格精确检查邻格，不参与求解。`I` 给集合施加一个向上的冲量。
 
 ## 通用操作
 

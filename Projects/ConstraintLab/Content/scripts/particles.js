@@ -6,9 +6,9 @@ var cloud={id:'particles',tab:'粒子群',eyebrow:'实验 06',title:'集合关�
     equation:'C₁ = (pᵢ − pⱼ)² − d² ≥ 0； C₂ = n·p − h − r ≥ 0',
     hint:'I 给粒子一个向上冲量',
     legend:'<span class="teal">■</span>粒子<span class="gold">■</span>容器边界',
-    panelTitle:'集合 pair',count:500,radius:0.1,kick:false,forceInput:false};
-cloud.sizes={label:'数量',options:[{label:'500 个',value:500}],
-    get:function(){return 500;},set:function(){return '';}};
+    panelTitle:'集合 pair',count:4000,radius:0.05,kick:false,forceInput:false};
+cloud.sizes={label:'数量',options:[{label:'4,000 个',value:4000}],
+    get:function(){return 4000;},set:function(){return '';}};
 cloud.actions=[];cloud.rows=[];cloud.keys={};
 cloud.define=function(){
     var X=Lab.X;
@@ -26,13 +26,14 @@ cloud.define=function(){
 };
 cloud.build=function(model){
     var X=Lab.X,n=cloud.count,initial=new Float32Array(n*3);
+    var columns=25,spacing=2.4*cloud.radius;
     cloud.acceleration=new Float32Array(n*3);
     cloud.measureGrid={stamp:0,marks:new Uint32Array(1),heads:new Uint32Array(1),
         x:new Int32Array(n),y:new Int32Array(n),z:new Int32Array(n),next:new Uint32Array(n)};
     for(var i=0;i<n;++i){
-        initial[i*3]=(i%10-4.5)*0.24;
-        initial[i*3+1]=2+Math.floor(i/100)*0.24;
-        initial[i*3+2]=(Math.floor(i/10)%10-4.5)*0.24;
+        initial[i*3]=(i%columns-(columns-1)/2)*spacing;
+        initial[i*3+1]=1+Math.floor(i/(columns*columns))*spacing;
+        initial[i*3+2]=(Math.floor(i/columns)%columns-(columns-1)/2)*spacing;
         cloud.acceleration[i*3+1]=-9.81;
     }
     // 1. Define mathematical state independently of any object.
@@ -56,9 +57,9 @@ cloud.build=function(model){
     Lab.total=n;Lab.relations=n*(n-1)/2+5*n+n;
     return initial;
 };
-cloud.layout=function(){return '500';};
-cloud.camera=function(){return {target:[0,1.2,0],yaw:0.48,pitch:0.35,distance:8,fov:0.65};};
-cloud.note=function(){return '500 个粒子 · 124,750 个无向成员组合 · 2,500 个粒子—边界组合';};
+cloud.layout=function(){return cloud.count+'/'+cloud.radius;};
+cloud.camera=function(){return {target:[0,1.2,0],yaw:0.48,pitch:0.55,distance:8,fov:0.65};};
+cloud.note=function(){return '4,000 个粒子 · 7,998,000 个无向成员组合 · 20,000 个粒子—边界组合';};
 cloud.families=function(){return [
     {name:'粒子集合 × 自身',kind:'不等式',rows:cloud.count*(cloud.count-1)/2},
     {name:'粒子集合 × 边界集合',kind:'不等式',rows:cloud.count*5},

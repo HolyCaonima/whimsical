@@ -17,18 +17,13 @@ static_assert(sizeof(GpuInstance) == 144 && sizeof(GpuMaterial) == 176 && sizeof
 GpuScene::GpuScene(VulkanContext& context, const RenderOptions& opts) : vk(context), options(opts) {
     globals = vk.buffer(sizeof(GpuGlobals), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, BufferMemory::Upload);
     outlineData = vk.buffer(16, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, BufferMemory::Upload);
-    instanceData = vk.buffer(sizeof(GpuInstance) * MaxInstances, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                             BufferMemory::Upload);
     materialData = vk.buffer(sizeof(GpuMaterial) * MaxMaterials, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                              BufferMemory::Upload);
     lightData =
         vk.buffer(sizeof(Light) * MaxLights, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, BufferMemory::Upload);
     lightDistribution = vk.buffer(MaxLights * (sizeof(vec4) + sizeof(Light)),
                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, BufferMemory::Upload);
-    tlasInstances = vk.buffer(sizeof(VkAccelerationStructureInstanceKHR) * MaxInstances,
-                              VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
-                                  VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                              BufferMemory::Upload);
+    reserveInstances(0);
     uploadGeometry({});
     updateTextures({});
 }
@@ -484,11 +479,44 @@ void GpuScene::writeSlot(uint32_t slot, const RenderProxy& p, bool zeroMotion) {
     writeAttributes(slot, p);
 }
 
+void GpuScene::reserveInstances(size_t count) {
+    const auto current = instanceData.size / sizeof(GpuInstance);
+    if (instanceData.handle && count <= current)
+        return;
+    // Shader storage range, TLAS primitive count and its 24-bit custom slot index
+    // constrain representation; the scene itself has no fixed instance budget.
+    const auto limit = std::min<VkDeviceSize>(
+        {vk.properties.limits.maxStorageBufferRange / sizeof(GpuInstance),
+         vk.asProperties.maxInstanceCount, VkDeviceSize(1) << 24});
+    if (count > limit)
+        throw std::runtime_error("Scene instance count " + std::to_string(count) +
+                                 " exceeds device/index capacity " + std::to_string(limit));
+    const auto capacity =
+        std::min(limit, std::max<VkDeviceSize>(count, std::max(current * 2, VkDeviceSize(64))));
+    // Renderer retires the previous GPU frame before applying the scene. Preserve
+    // both mirrors byte-for-byte: growth must not force a resync or lose motion
+    // history. Reading upload memory is confined to these infrequent reallocations.
+    auto grow = [&](Buffer& buffer, VkDeviceSize stride, VkBufferUsageFlags usage) {
+        auto next = vk.buffer(capacity * stride, usage, BufferMemory::Upload);
+        if (mirrorCapacity)
+            std::memcpy(next.mapped, buffer.mapped, size_t(mirrorCapacity * stride));
+        vk.destroy(buffer);
+        buffer = next;
+    };
+    grow(instanceData, sizeof(GpuInstance), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    grow(tlasInstances, sizeof(VkAccelerationStructureInstanceKHR),
+         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+    ++instanceCapacityGrowths;
+    rebind();
+}
+
 // Brings the GPU mirror in line with a snapshot. The delta is applied when the mirror
 // sits exactly at the revision the delta was built against; otherwise a snapshot was
 // skipped and the only safe recovery is to rewrite every slot from the array, which
 // costs exactly what the engine used to pay on every single frame.
 void GpuScene::apply(const Frame& frame, bool reset) {
+    reserveInstances(frame.proxies.size());
     const uint32_t capacity = uint32_t(frame.proxies.size());
     statistics = {};
     statistics.slots = capacity;
@@ -590,8 +618,9 @@ void GpuScene::reserveTlas(const Frame& frame) {
     // reallocating is reserved for actually outgrowing it. Rebuilding reuses what is
     // already there.
     if (!tlas.handle || count > tlasCapacity) {
-        uint32_t capacity = std::max(count, 64u);
-        capacity = (capacity + 63) & ~63u; // Grow in blocks so spawning is not a cliff.
+        // Share the instance arrays' growth policy instead of reallocating the
+        // acceleration structure at every small increase in the scene's slot count.
+        uint32_t capacity = uint32_t(instanceData.size / sizeof(GpuInstance));
         destroyAS(tlas);
         vk.destroy(tlasScratch);
         VkAccelerationStructureBuildSizesInfoKHR sizes{

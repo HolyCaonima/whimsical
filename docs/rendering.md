@@ -135,7 +135,7 @@ binding 号只存在于 `Registry` 里。构建期的 `shader_bindings` 工具�
 
 基础几何共享静态 BLAS，蒙皮角色各自持有支持 update 的 BLAS 和持续复用的对齐 scratch。每次新姿态先更新顶点、refit 动态 BLAS，再更新 TLAS，然后进入光追查询——这三步的顺序由上面的资源依赖给出。蒙皮绑定列表发生变化时重建几何和 BLAS，并清理历史。
 
-TLAS 只在拓扑变化时重建：`SceneDelta::topology` 是单调计数，槽位数增长或某个槽位改绑到不同几何体时递增；蒙皮资源重建也会使 TLAS 失效，其余情况走 `UPDATE`。TLAS 存储与 scratch 按 64 的块增长，只在容量真正不够时重新分配，避免姿态变化引发显存反复分配。
+TLAS 只在拓扑变化时重建：`SceneDelta::topology` 是单调计数，槽位数增长或某个槽位改绑到不同几何体时递增；蒙皮资源重建也会使 TLAS 失效，其余情况走 `UPDATE`。TLAS 存储与 scratch 采用实例数组的预留容量，只在容量真正不够时重新分配，避免姿态变化引发显存反复分配。
 
 GPU fence 完成后再更新 CPU-visible 常量／实例／灯光数据；NRD descriptor pool 每帧重置前也已完成同一 fence。历史内容由 `History` 的奇偶翻转和 DI 的角色轮转带入下一帧，帧末没有拷贝 pass。Resize 只等待 device idle 并重建 swapchain 与 NRD pool；屏幕尺寸资源由下一次 `compile()` 按新的存储签名重新实现。关闭时先 idle，再按依赖关系析构。
 
@@ -147,7 +147,7 @@ GPU fence 完成后再更新 CPU-visible 常量／实例／灯光数据；NRD de
 - **多帧在途**：帧时间 4.11 ms 中 GPU 占 3.35 ms，可回收上限是 0.76 ms，代价是把 TLAS、descriptor set 和全部 host-visible 上传缓冲按帧复制。结论与[之前那次测量](verification.md)一致：不做。区别在于现在这个决定是可撤销的——`ResourcePool` 已经按奇偶管理物理槽位，扩成 N 帧是同一套机制。
 - **并行调度**：17 个 pass 的依赖图基本是一条链，唯一与主链无关的分支是 UI overlay（一个小的 raster pass）。单队列上已经没有可暴露的并发，二队列 + semaphore 的复杂度换不回可测的时间。
 
-实例数据不再逐帧全量写入：槽位由 `RenderScene` 稳定分配，渲染器按 `SceneDelta` 只写脏槽位，变换变化只触及 `GpuInstance` 前 128 字节的 `model`／`previousModel`，属性变化只触及末 16 字节的 `info`。资源上限是 1024 个 instance、256 个 material 和 256 个 light，超限明确报错。要做大型场景，下一步应增加 GPU allocator、staging 上传、chunk/streaming、draw batching 和面向大量灯的 ReGIR 分布。
+实例数据不再逐帧全量写入：槽位由 `RenderScene` 稳定分配，渲染器按 `SceneDelta` 只写脏槽位，变换变化只触及 `GpuInstance` 前 128 字节的 `model`／`previousModel`，属性变化只触及末 16 字节的 `info`。实例容量由 `GpuScene` 按场景槽位数自动增长：实例数据与 TLAS 输入数组从 64 个槽位起步，容量不足时至少翻倍或直接满足当前需求，TLAS 存储沿用这份预留容量。扩容发生在上一渲染帧完成之后，保留已有实例字节与运动历史，通过资源 generation 更新绑定，不触发额外的全场景重同步。实例数只受设备 storage buffer 范围、TLAS 实例数和 24 位实例自定义索引约束；材质与灯仍分别限于 256 个，超限明确报错。更大规模场景的后续优化包括 GPU allocator、staging 上传、chunk/streaming、draw batching 和面向大量灯的 ReGIR 分布。
 
 ## 参考来源
 
