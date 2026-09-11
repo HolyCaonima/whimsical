@@ -94,17 +94,17 @@ Dynamics 的建模边界是 `DOFs → Objects → Relation → pair`。用户在
 
 ## 实验六：集合粒子
 
-100 个位置自由度组成显式粒子集合，五个平面的法线与偏移自由度组成显式边界集合。用户用 op 编写平方间距和半空间残差，再声明三条绑定：
+500 个位置自由度组成显式粒子集合，五个平面的法线与偏移自由度组成显式边界集合。用户用 op 编写平方间距和半空间残差，再声明三条绑定：
 
 ```js
-X.pair(separation, particles, particles, {diameter:0.36}, {
+X.pair(separation, particles, particles, {diameter:0.2}, {
     self:'undirected', includeSelf:false
 });
-X.pair(containment, particles, walls, {radius:0.18});
+X.pair(containment, particles, walls, {radius:0.1});
 X.pair(damping, particles, frame, [], {history:initial, compliance:[0.08,0.08,0.08]});
 ```
 
-Compiler 分别完整展开为 4,950、500、100 个关系实例。示例没有在用户侧枚举粒子连接，也没有邻域筛选或集合归约；它展示粒子间距及容器条件，不包含不可压缩水的密度模型。`I` 给粒子集合施加一个向上的冲量。
+Compiler 分别完整展开为 124,750、2,500、500 个关系实例。求解绑定没有在用户侧枚举粒子连接，也没有对关系候选做邻域筛选或集合归约；它展示粒子间距及容器条件，不包含不可压缩水的密度模型。面板的最大重叠率只是项目诊断，使用粒子直径网格精确检查邻格，不参与求解。`I` 给粒子集合施加一个向上的冲量。
 
 ## 通用操作
 
