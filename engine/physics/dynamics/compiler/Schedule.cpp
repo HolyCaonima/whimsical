@@ -310,6 +310,8 @@ void pruneKernels(CompiledPlan& p) {
     mark(p.recover);
     mark(p.update);
     mark(p.local);
+    mark(p.prepareCandidates);
+    mark(p.candidateBounds);
     if (p.dynamicTopology) {
         used[p.resetTopologyKernel] = true;
         used[p.scanKernel] = true;
@@ -348,6 +350,8 @@ void pruneKernels(CompiledPlan& p) {
     remap(p.recover);
     remap(p.update);
     remap(p.local);
+    remap(p.prepareCandidates);
+    remap(p.candidateBounds);
     p.kernels = std::move(kernels);
 }
 struct Cost {
@@ -736,4 +740,5 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     p.statistics.dispatches = dispatchCount(p) + (p.localPerSubstep ? p.policy.substeps : 1);
     pruneKernels(p);
 }
+void prunePlanKernels(CompiledPlan& p) { pruneKernels(p); }
 } // namespace whimsical::dynamics

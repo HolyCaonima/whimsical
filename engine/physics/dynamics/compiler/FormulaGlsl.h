@@ -1,6 +1,7 @@
 #pragma once
 #include "physics/dynamics/model/Expression.h"
 #include <optional>
+#include <utility>
 
 namespace whimsical::dynamics {
 // GPU code generation belongs to the compiler; Formula remains mathematical data.
@@ -17,4 +18,12 @@ std::string emitGlslJacobian(const Formula&, const std::string& name,
 // This lets downstream lowering compose maps without materializing a matrix.
 std::optional<std::vector<float>> constantJacobian(
     const Formula&, const std::vector<uint32_t>& derivativeInputs);
+// A violated sum-of-squares bound implies a finite interval for each input
+// difference. This is a mathematical proof, independent of objects and solvers.
+struct DifferenceBound {
+    std::vector<std::pair<uint32_t, uint32_t>> coordinates;
+    Formula squaredRadius;
+};
+std::optional<DifferenceBound> differenceBound(const Formula&, bool nonnegative,
+                                              uint32_t parameterFirst, uint32_t parameterCount);
 } // namespace whimsical::dynamics

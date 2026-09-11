@@ -18,6 +18,100 @@ static std::shared_ptr<const std::vector<VariableRef>> column(uint32_t count, bo
         (*result)[i] = {0, repeated ? 0 : i};
     return result;
 }
+static void candidateDomainChecks(rc::RenderCore& core, SpaceRef scalar) {
+    // Two focused groups: changes within an iteration sequence, then invalidation
+    // and range fallback across submissions. All relations are user mathematics.
+    constexpr uint32_t count = 128;
+    Model model;
+    std::vector<float> initial(count);
+    for (uint32_t i = 0; i < count; ++i) initial[i] = float(i * 16);
+    initial[1] = .125f;
+    VariableSet values;
+    values.space = scalar;
+    values.count = count;
+    values.initial = Field::dense(count, 1, initial);
+    auto variables = model.variables(values);
+    Object collection;
+    collection.kind = Object::Kind::Collection;
+    collection.count = count;
+    collection.dofs["u"] = EndpointSource::collection(variables, 0, count);
+    auto object = model.object(collection);
+    RelationBuilder bound("quadratic difference", {scalar, scalar}, 1);
+    auto delta = bound.endpoint(0)[0] - bound.endpoint(1)[0];
+    auto boundType = std::make_shared<RelationType>(*bound.finish(
+        {delta * delta - bound.parameter(0) * bound.parameter(0)}, RelationKind::GreaterEqual));
+    boundType->objects = {{"u"}, {"u"}};
+    RelationSet domain;
+    domain.type = boundType;
+    domain.pairs = std::vector<PairBinding>{{object, object, PairBinding::Self::Undirected, false}};
+    domain.count = count * (count - 1) / 2;
+    domain.parameters = Field::uniform(domain.count, {1});
+    auto relation = model.relations(domain);
+    RelationBuilder target("scalar target", {scalar}, 1);
+    RelationSet drive;
+    drive.type = target.finish({target.endpoint(0)[0] - target.parameter(0)});
+    drive.count = 1;
+    drive.endpoints = {EndpointSource::object({variables, 2})};
+    drive.parameters = Field::uniform(1, {-1.5f});
+    drive.enabled = Field::uniform(1, {0});
+    auto driven = model.relations(drive);
+    auto commit = model.commit();
+    SolverPolicy policy;
+    policy.mode = SolveMode::Jacobi;
+    policy.substeps = 1;
+    policy.iterations = 2;
+    policy.weighting = JacobiWeighting::Active;
+    auto indexedPlan = Compiler().compile(commit.snapshot, policy);
+    policy.spatialCandidates = false;
+    auto fullPlan = Compiler().compile(commit.snapshot, policy);
+    check(indexedPlan->statistics.candidateDomains == 1 && fullPlan->statistics.candidateDomains == 0,
+          "Candidate checks must exercise indexed and full-domain execution");
+    Instance indexed(core, indexedPlan), full(core, fullPlan);
+    auto compare = [&](uint64_t tick, const std::vector<float>& q) {
+        TickInput input;
+        input.tick = tick;
+        input.modelVersion = commit.snapshot.version;
+        input.writes = {{StateField::Value, variables, 0, q},
+                        {StateField::Velocity, variables, 0, std::vector<float>(count)}};
+        for (auto* instance : {&indexed, &full}) {
+            instance->step(input);
+            const auto& done = instance->wait();
+            check(!done.invalidEvaluations && !done.singularSystems, "Candidate diagnostics");
+        }
+        auto a = indexed.read(StateField::Value, variables, 0, count);
+        auto b = full.read(StateField::Value, variables, 0, count);
+        for (uint32_t i = 0; i < count; ++i) near(a[i], b[i]);
+        return a;
+    };
+    // First correction makes the separation 4.0625, outside adjacent 1.25-wide
+    // cells. The second must still release part of the nonzero multiplier.
+    auto q = compare(1, initial);
+    const double firstGap = (.125 + 1 / .125) / 2;
+    near(q[1] - q[0], (firstGap + 1 / firstGap) / 2);
+    // The target moves a previously distant endpoint into a new cell after the
+    // first Jacobi snapshot. Reusing that first index would miss its correction.
+    model.patch(FieldKind::RelationEnabled, driven, 0, {1});
+    commit = model.commit();
+    indexed.apply(commit); full.apply(commit);
+    q = compare(2, initial);
+    check(q[2] > -1.45f, "Iteration index missed a newly violated relation");
+
+    // A single logical row widens the domain bound. Runtime must invalidate the
+    // cached GPU reduction without changing the plan, row IDs or other parameters.
+    model.patch(FieldKind::RelationEnabled, driven, 0, {0});
+    model.patch(FieldKind::Parameters, relation, 0, {4});
+    commit = model.commit();
+    indexed.apply(commit); full.apply(commit);
+    initial[1] = 3;
+    q = compare(3, initial);
+    check(q[1] - q[0] > 3.99f, "Parameter patch left a stale candidate bound");
+    // Keep the same finite residual, but exceed the safe coordinate-to-cell range.
+    // The indexed plan must run the complete logical domain, not discard it.
+    for (auto& value : initial) value += 2000000.f;
+    q = compare(4, initial);
+    check(q[1] - q[0] >= 3.875f, "Unsafe cell coordinates did not fall back to the full domain");
+    std::cout << "Candidate iteration/lifetime and bound/fallback checks passed\n";
+}
 int main() {
     try {
         Expression e(2);
@@ -172,6 +266,7 @@ int main() {
         near(solution[0], 3);
         near(solution[1], 1);
         near(coupledSolve.read(StateField::History, 0, 0, 1)[0], 1);
+        candidateDomainChecks(core, space);
         check(core.errors() == 0, "Vulkan validation errors");
         std::cout << "Dynamics focused checks passed\n";
         return 0;

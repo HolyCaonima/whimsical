@@ -150,7 +150,8 @@ KernelFunction variableFunction(
 }
 KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& readOnly,
                                 int32_t endpointMode, bool jacobi, bool directContributions,
-                                bool separateDegrees, bool update, const std::string& name) {
+                                bool separateDegrees, bool update, const std::string& name,
+                                bool activeDegrees, bool activityChecked) {
     std::ostringstream s;
     const auto M = t.rows;
     uint32_t Q = 0, D = 0, activeSlots = 0, singleSlot = 0;
@@ -167,7 +168,7 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
         }
         inputOffset += t.spaces[e]->stateSize;
     }
-    const bool feasibilityGuard = M == 1 && t.kind != RelationKind::Equality;
+    const bool feasibilityGuard = M == 1 && t.kind != RelationKind::Equality && !activityChecked;
     std::optional<std::vector<float>> residualConstants;
     std::vector<std::optional<std::vector<float>>> tangentConstants;
     std::optional<std::vector<float>> singleJacobian;
@@ -216,7 +217,7 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
       << "(uint id,float h,float time,float relaxation,float inverseH2,uint iteration){Relation r=relation(id);\n";
     // A relation owns its multiplier rows and is scheduled exactly once per
     // iteration. Initialize them in its first solve to avoid a full-buffer pass.
-    if (!update)
+    if (!update && !activityChecked)
         for (uint32_t row = 0; row < M; ++row)
             s << "if(iteration==0u)storeMultiplier(r," << row << "u,0.0);\n";
     if (jacobi && !directContributions)
@@ -481,7 +482,12 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
           << ";++k)a[row*" << M << "+k]-=f*a[col*" << M << "+k];rhs[row]-=f*rhs[col];}}\n";
     }
     if (jacobi) {
-        if (directContributions)
+        if (activeDegrees) {
+            s << "uint degree=1u;\n";
+            for (uint32_t e = 0; e < t.spaces.size(); ++e)
+                if (!readOnly[e])
+                    s << "degree=max(degree,x_activeDegrees[id" << e << "]);\n";
+        } else if (directContributions)
             s << "uint degree=r.cs;\n";
         else {
             s << "uint degree=1u;\n";
@@ -567,6 +573,34 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
     }
     s << "}\n";
     return {name, s.str(), BufferRole::RelationWork, jacobi};
+}
+KernelFunction relationActivityFunction(const RelationType& t, const std::vector<bool>& readOnly,
+                                       int32_t endpointMode, const std::string& name, bool countDegrees) {
+    std::ostringstream s;
+    const bool guarded = t.rows == 1 && t.kind != RelationKind::Equality;
+    if (guarded)
+        s << emitGlsl(t.residual, name + "_value");
+    s << "bool " << name
+      << "(uint id,float h,float time,float relaxation,float inverseH2,uint iteration){Relation r=relation(id);\n";
+    for (uint32_t row = 0; row < t.rows; ++row)
+        s << "if(iteration==0u)storeMultiplier(r," << row << "u,0.0);\n";
+    s << "if(x_relationEnabled[id]==0.0)return false;\n";
+    relationInputs(s, t, endpointMode);
+    if (guarded) {
+        s << "float c[1];" << name << "_value(x,c);\n"
+          << "if(!isnan(c[0])&&!isinf(c[0])&&c[0]" << (t.kind == RelationKind::GreaterEqual ? ">=" : "<=")
+          << "0.0&&loadMultiplier(r,0u)==0.0)return false;\n";
+    }
+    for (uint32_t e = 0; countDegrees && e < t.spaces.size(); ++e) {
+        if (readOnly[e])
+            continue;
+        s << "if(v" << e << ".flags==0u&&x_variableEnabled[id" << e << "]!=0.0";
+        for (uint32_t before = 0; before < e; ++before)
+            s << "&&id" << e << "!=id" << before;
+        s << ")atomicAdd(x_activeDegrees[id" << e << "],1u);\n";
+    }
+    s << "return true;}\n";
+    return {name, s.str(), BufferRole::RelationWork};
 }
 KernelFunction relationDispatchFunction(
     const std::vector<std::pair<uint32_t, KernelFunction>>& functions,

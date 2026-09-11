@@ -744,4 +744,61 @@ std::optional<std::vector<float>> constantJacobian(
     }
     return result;
 }
+std::optional<DifferenceBound> differenceBound(const Formula& source, bool nonnegative,
+                                              uint32_t parameterFirst, uint32_t parameterCount) {
+    auto formula = simplify(source);
+    if (formula.outputs.size() != 1)
+        return {};
+    const auto& root = formula.nodes[formula.outputs[0]];
+    if (root.op != MathOp::Subtract)
+        return {};
+    const auto sum = nonnegative ? root.a : root.b;
+    const auto radius = nonnegative ? root.b : root.a;
+    DifferenceBound result;
+    std::vector<uint32_t> pending{sum};
+    while (!pending.empty()) {
+        const auto id = pending.back();
+        pending.pop_back();
+        const auto& node = formula.nodes[id];
+        if (node.op == MathOp::Constant && node.value == 0)
+            continue;
+        if (node.op == MathOp::Add) {
+            pending.push_back(node.b);
+            pending.push_back(node.a);
+            continue;
+        }
+        if (node.op != MathOp::Multiply || node.a != node.b)
+            return {};
+        const auto& difference = formula.nodes[node.a];
+        if (difference.op != MathOp::Subtract)
+            return {};
+        const auto& a = formula.nodes[difference.a];
+        const auto& b = formula.nodes[difference.b];
+        if (a.op != MathOp::Input || b.op != MathOp::Input)
+            return {};
+        result.coordinates.emplace_back(a.a, b.a);
+    }
+    if (result.coordinates.empty())
+        return {};
+    pending = {radius};
+    std::vector<bool> visited(formula.nodes.size());
+    while (!pending.empty()) {
+        const auto id = pending.back();
+        pending.pop_back();
+        if (visited[id])
+            continue;
+        visited[id] = true;
+        const auto& node = formula.nodes[id];
+        if (node.op == MathOp::Input &&
+            (node.a < parameterFirst || node.a - parameterFirst >= parameterCount))
+            return {};
+        const auto count = arity(node.op);
+        if (count > 0) pending.push_back(node.a);
+        if (count > 1) pending.push_back(node.b);
+        if (count > 2) pending.push_back(node.c);
+    }
+    formula.outputs = {radius};
+    result.squaredRadius = std::move(formula);
+    return result;
+}
 } // namespace whimsical::dynamics

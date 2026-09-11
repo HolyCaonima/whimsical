@@ -8,8 +8,8 @@
 using namespace whimsical;
 int main(int argc, char** argv) {
     try {
-        if (argc != 2) {
-            std::cerr << "Usage: dynamics_run script.js\nThe script defines update(); return false to finish.\n";
+        if (argc < 2 || argc > 3 || (argc == 3 && std::string(argv[2]) != "--profile")) {
+            std::cerr << "Usage: dynamics_run script.js [--profile]\nThe script defines update(); return false to finish.\n";
             return 1;
         }
         std::ifstream file(argv[1], std::ios::binary);
@@ -36,8 +36,18 @@ int main(int argc, char** argv) {
         if (duk_peval_lstring(c, source.data(), source.size()) != 0)
             throw std::runtime_error(duk_safe_to_stacktrace(c, -1));
         duk_pop(c);
+        uint64_t polls = 0;
+        bool profilePending = false;
         for (;;) {
+            if (argc == 3 && ++polls % 64 == 0 && !profilePending) {
+                core.requestProfile(polls, "Dynamics");
+                profilePending = true;
+            }
             service.drain();
+            if (auto profile = core.takeProfile()) {
+                std::cout << "PROFILE " << profile->json() << '\n';
+                profilePending = false;
+            }
             duk_get_global_string(c, "update");
             if (duk_pcall(c, 0) != 0)
                 throw std::runtime_error(duk_safe_to_stacktrace(c, -1));

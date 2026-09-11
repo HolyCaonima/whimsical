@@ -292,3 +292,13 @@ grid 可以作为将来的候选域生成策略，但任意用户公式并不必
 - <https://github.com/newton-physics/newton/blob/v1.5.0/newton/_src/solvers/vbd/particle_vbd_kernels.py>
 - <https://github.com/newton-physics/newton/blob/v1.5.0/newton/_src/sim/graph_coloring.py>
 - <https://github.com/newton-physics/newton/blob/v1.5.0/newton/_src/solvers/xpbd/kernels.py>
+
+## 数学候选域与活动关联缩放（2026-09-11）
+
+在不修改用户 DSL、Model、脚本输入解析或 RenderCore 的前提下，Compiler 现在从平方差之和的不等式推导有限查询范围，再由后端成本决定完整活动扫描或 GPU 哈希网格。适用于仿射集合域的全局静态 Jacobi 工作；未知公式、动态端点和局部融合计划保留原路径。编译器不识别任何具体模拟对象。
+
+网格每轮读取当前快照，精确比较 cell，并合并仍有非零乘子的旧关系；参数 patch 使 GPU 边界归约缓存失效。活动队列按数学类型打包，省去重复的 feasibility primal 和乘子初始化；活动收集及下一轮清理分别融合进查询、Gather。活动 degree 同时缩放乘子和对应修正，其数值变化与索引优化分开对照。
+
+500 自由度采用完整活动扫描，最大重叠从约 62.4% 降至 0.61%，但固定预算单步时间从约 1.0 ms 增至 2.6 ms。2,000 自由度采用网格，在相同活动缩放和相同采样结果下，相比完整扫描的 12.45 ms，记录到 2.12 / 3.69 / 7.39 ms。无界面运行自动变频，以上是样本范围，不是稳定加速倍数。公开字段及乘子仍保留 dense 布局，编译、存储和部分清理成本仍随全部逻辑组合增长。
+
+Release 构建、现有回归和经用户许可的两组候选覆盖/生命周期检查均通过。详细算法边界、Newton 固定版本来源、残差量纲和原始数据位置见 [候选域实施说明](../engine/physics/dynamics/compiler/CandidateDomains.md#已实现的第一阶段2026-09-11)。

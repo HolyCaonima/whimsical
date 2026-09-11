@@ -6,12 +6,17 @@
 namespace whimsical::dynamics {
 enum class SolveMode { Colored, Jacobi, Hybrid };
 enum class ExecutionMode { Auto, Global };
+enum class JacobiWeighting { Auto, Static, Active };
 struct SolverPolicy {
     uint32_t substeps = 4, iterations = 4;
     SolveMode mode = SolveMode::Hybrid;
     uint32_t colorBudget = 32; // bounded coloring; Hybrid sends overflow to gather Jacobi
     float relaxation = 1;
     ExecutionMode execution = ExecutionMode::Auto;
+    // Controls for global static Auto plans; local/dynamic/Global execution keeps
+    // its original numerical path. No additional modeling DSL input is required.
+    JacobiWeighting weighting = JacobiWeighting::Auto;
+    bool spatialCandidates = true; // permit cost-selected indexing
 };
 enum class BufferRole : uint32_t {
     Values,
@@ -40,6 +45,8 @@ enum class BufferRole : uint32_t {
     RegionState,
     LocalOffsets,
     StateWrites,
+    Candidates,
+    ActiveDegrees,
     Count
 };
 constexpr size_t BufferCount = size_t(BufferRole::Count);
@@ -66,6 +73,8 @@ struct PlanStatistics {
     uint64_t variables = 0, relations = 0, endpointReferences = 0;
     uint64_t coloredRelations = 0, jacobiRelations = 0, incidenceEntries = 0;
     uint64_t directJacobiRelations = 0;
+    uint32_t candidateDomains = 0;
+    uint64_t candidateRelations = 0, activeJacobiRelations = 0;
     uint32_t colors = 0, candidateColors = 0;
     uint64_t storageBytes = 0;
     uint32_t components = 0, localRegions = 0;
@@ -97,6 +106,8 @@ struct CompiledPlan {
     uint32_t activeTangent(uint32_t type) const;
     std::vector<Kernel> kernels;
     std::vector<Batch> predict, solve, apply, recover, update;
+    std::vector<Batch> prepareCandidates; // once per tick, before prediction
+    std::vector<Batch> candidateBounds; // cached until relation parameters change
     // Closed regions execute the same substep/iteration schedule inside a workgroup.
     std::vector<Batch> local;
     bool localPerSubstep = false;

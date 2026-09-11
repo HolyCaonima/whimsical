@@ -76,6 +76,7 @@ struct Instance::Storage {
     std::unique_ptr<rc::GraphContext> execution;
     std::vector<const rg::Program*> programs;
     std::string interface;
+    bool candidateBoundsDirty = true;
     explicit Storage(rc::RenderCore& core, PlanRef value) : plan(std::move(value)) {
         for (uint32_t i = 0; i < BufferCount; ++i) {
             const auto& b = plan->buffers[i];
@@ -470,6 +471,13 @@ void Instance::step(const TickInput& input) {
         s.dynamicEndpoints(endpoints);
     s.topology(input.tick);
     float h = input.dt / s.plan->policy.substeps;
+    if (s.candidateBoundsDirty) {
+        for (const auto& batch : s.plan->candidateBounds)
+            s.batch(batch, h, float(completed_.time), input.tick, 0);
+        s.candidateBoundsDirty = false;
+    }
+    for (const auto& batch : s.plan->prepareCandidates)
+        s.batch(batch, h, float(completed_.time), input.tick, 0);
     for (uint32_t substep = 0; !s.plan->predict.empty() && substep < s.plan->policy.substeps; ++substep) {
         float time = float(completed_.time) + h * (substep + 1);
         for (const auto& batch : s.plan->predict)
@@ -544,6 +552,8 @@ void Instance::apply(const ModelCommit& commit) {
             edits[{f.field, f.set}].push_back({f.first, f.first + f.count});
     for (auto& group : edits) {
         auto kind = group.first.first;
+        if (kind == FieldKind::Parameters)
+            s.candidateBoundsDirty = true;
         auto set = group.first.second;
         const Field* field = nullptr;
         Range r{};

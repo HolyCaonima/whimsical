@@ -36,7 +36,8 @@ constexpr const char* Names[] = {"q",
                                  "diagnostics",
                                  "scanScratch",
                                  "adjCursors",
-                                 "regionRanges", "regionState", "localOffsets", "stateWrites"};
+                                 "regionRanges", "regionState", "localOffsets", "stateWrites",
+                                 "candidates", "activeDegrees"};
 static_assert(sizeof(Names) / sizeof(*Names) == BufferCount);
 // Bounded transient input table; larger updates retain the direct upload path.
 constexpr uint32_t StateWriteCapacity = 4096;
@@ -45,7 +46,8 @@ bool integer(BufferRole r) {
            r == BufferRole::Endpoints || r == BufferRole::RelationWork || r == BufferRole::AdjacencyOffsets ||
            r == BufferRole::Contributions || r == BufferRole::AdjacencyEntries || r == BufferRole::Diagnostics ||
            r == BufferRole::ScanScratch || r == BufferRole::AdjacencyCursors || r == BufferRole::RegionRanges ||
-           r == BufferRole::RegionState || r == BufferRole::LocalOffsets || r == BufferRole::StateWrites;
+           r == BufferRole::RegionState || r == BufferRole::LocalOffsets || r == BufferRole::StateWrites ||
+           r == BufferRole::Candidates || r == BufferRole::ActiveDegrees;
 }
 uint32_t checked(size_t n) {
     if (n > UINT32_MAX)
@@ -639,6 +641,7 @@ void main(){uint i=invocation();if(i<step.count)x_scanScratch[step.first+i]+=x_s
 )");
     }
     lowerSchedule(*p, functions);
+    lowerCandidateDomains(*p);
     // Physical endpoint storage is selected last. Affine object fields with large
     // domains remain compact, and the GPU computes their addresses on demand.
     std::vector<uint32_t> endpointData;

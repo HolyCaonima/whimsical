@@ -129,6 +129,7 @@ add_library(whimsical_dynamics_model engine/physics/dynamics/model/Expression.cp
 target_include_directories(whimsical_dynamics_model PUBLIC engine)
 target_compile_options(whimsical_dynamics_model PRIVATE /W4 /permissive- /utf-8)
 add_library(whimsical_dynamics_compiler engine/physics/dynamics/compiler/Compiler.cpp engine/physics/dynamics/compiler/BindingIR.cpp engine/physics/dynamics/compiler/FormulaGlsl.cpp engine/physics/dynamics/compiler/Kernels.cpp engine/physics/dynamics/compiler/Migration.cpp engine/physics/dynamics/compiler/Schedule.cpp)
+target_sources(whimsical_dynamics_compiler PRIVATE engine/physics/dynamics/compiler/CandidateDomains.cpp)
 target_link_libraries(whimsical_dynamics_compiler PUBLIC whimsical_dynamics_model)
 target_compile_options(whimsical_dynamics_compiler PRIVATE /W4 /permissive- /utf-8)
 add_library(whimsical_dynamics_runtime engine/physics/dynamics/runtime/Instance.cpp)

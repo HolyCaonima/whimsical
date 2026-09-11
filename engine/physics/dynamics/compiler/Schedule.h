@@ -14,7 +14,13 @@ KernelFunction variableFunction(
     const Space&, const char* operation, const std::string& name, bool directContributions = false);
 KernelFunction relationFunction(const RelationType&, const std::vector<bool>& readOnly,
                                 int32_t endpointMode, bool jacobi, bool directContributions,
-                                bool separateDegrees, bool update, const std::string& name);
+                                bool separateDegrees, bool update, const std::string& name,
+                                bool activeDegrees = false, bool activityChecked = false);
+// The predicate counts unique enabled writable endpoints only when a relation
+// participates in this Jacobi snapshot. Invalid residuals reach the solve's
+// existing diagnostic path rather than disappearing during candidate selection.
+KernelFunction relationActivityFunction(const RelationType&, const std::vector<bool>& readOnly,
+                                       int32_t endpointMode, const std::string& name, bool countDegrees = true);
 KernelFunction relationDispatchFunction(
     const std::vector<std::pair<uint32_t, KernelFunction>>&, bool jacobi, const std::string& name);
 std::string globalKernel(const KernelFunction&);
@@ -23,4 +29,6 @@ std::string stateAccess(bool local, uint32_t variableCount = 0, bool externalInp
 // Preserve the semantic batch ordering; choose ownership and execution placement.
 // Layouts and work IDs remain stable across this lowering pass.
 void lowerSchedule(CompiledPlan&, const std::vector<KernelFunction>&);
+void lowerCandidateDomains(CompiledPlan&);
+void prunePlanKernels(CompiledPlan&);
 } // namespace whimsical::dynamics
