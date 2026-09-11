@@ -97,6 +97,14 @@ struct CompiledPlan {
     std::vector<RelationRef> types;
     std::vector<VariableLayout> variables;
     std::vector<RelationLayout> relations;
+    // Final physical metadata layout. Logical row IDs and mutable fields keep
+    // their public indexing; affine metadata columns become address arithmetic.
+    struct RelationMetadata {
+        uint32_t first = 0, count = 0, offset = 0;
+        bool affine = false;
+        std::array<uint32_t, 9> base{}, stride{};
+    };
+    std::vector<RelationMetadata> relationMetadata;
     // High-level index maps survive analysis, scheduling and GPU lowering.
     std::vector<BindingIR> bindings;
     std::vector<std::vector<bool>> typeReadOnly;

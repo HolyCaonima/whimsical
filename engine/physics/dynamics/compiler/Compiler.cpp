@@ -107,7 +107,8 @@ uint32_t CompiledPlan::activeTangent(uint32_t type) const {
     return count;
 }
 std::string CompiledPlan::interface() const {
-    return R"(
+    std::ostringstream source;
+    source << R"(
 layout(local_size_x=128) in;
 layout(push_constant) uniform Step {
     uint first; uint count; float h; float time;
@@ -120,8 +121,40 @@ Variable variable(uint id) {
 }
 struct Relation {uint e; uint p; uint a; uint h; uint l; uint c; uint stride; uint cs; uint type; uint id;};
 Relation relation(uint id) {
-    uint k=id*9u;return Relation(x_relations[k],x_relations[k+1u],x_relations[k+2u],x_relations[k+3u],
-        x_relations[k+4u],x_relations[k+5u],x_relations[k+6u],x_relations[k+7u],x_relations[k+8u],id);
+)";
+    // A balanced set dispatch bounds shader branching even for many sets. The
+    // affine leaves contain no metadata loads and fold into typed callers.
+    auto emit = [&](auto&& self, size_t first, size_t end) -> void {
+        if (end - first > 1) {
+            auto middle = first + (end - first) / 2;
+            source << "if(id<" << relationMetadata[middle].first << "u){";
+            self(self, first, middle);
+            source << "}else{";
+            self(self, middle, end);
+            source << "}";
+            return;
+        }
+        const auto& m = relationMetadata[first];
+        source << "uint row=id-" << m.first << "u;";
+        if (!m.affine)
+            source << "uint k=" << m.offset << "u+row*9u;";
+        source << "return Relation(";
+        for (uint32_t c = 0; c < 9; ++c) {
+            if (c) source << ",";
+            if (!m.affine)
+                source << "x_relations[k+" << c << "u]";
+            else {
+                source << m.base[c] << "u";
+                if (m.stride[c]) source << "+row*" << m.stride[c] << "u";
+            }
+        }
+        source << ",id);";
+    };
+    if (!relationMetadata.empty())
+        emit(emit, 0, relationMetadata.size());
+    else
+        source << "return Relation(0u,0u,0u,0u,0u,0u,0u,0u,0u,id);";
+    source << R"(
 }
 uint trianglePrefix(uint i,uint n,bool diagonal){
     uint b=2u*n-i-(diagonal?0u:2u)+1u;
@@ -149,6 +182,7 @@ uint endpoint(Relation r,uint slot,int mapping){
     return x_endpoints[field]+member*x_endpoints[field+1u];
 }
 )";
+    return source.str();
 }
 PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy) const {
     const auto started = std::chrono::steady_clock::now();
@@ -263,8 +297,10 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         for (uint32_t row = 0; row < set.count; ++row) {
             Instance instance{
                 checked(instances.size()), setId, row, type, -1, checked(set.type->spaces.size())};
+            const auto& domain = binding.domain(row);
+            const auto members = domain.members(row - domain.first);
             for (uint32_t e = 0; e < instance.arity; ++e) {
-                auto ref = binding.at(row, e);
+                auto ref = domain.fields[e].at(e < domain.split ? members.first : members.second);
                 if (ref.set >= p->variables.size() || ref.index >= p->variables[ref.set].count)
                     throw std::invalid_argument("Relation references a missing variable: " + set.name);
                 if (p->variables[ref.set].space != endpointSpaces[e])
@@ -286,53 +322,45 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         auto ref = p->bindings[instance.set].at(instance.local, slot);
         return p->variables[ref.set].first + ref.index;
     };
+    std::vector<uint32_t> endpointScratch;
+    for (const auto& type : p->types)
+        endpointScratch.resize(std::max(endpointScratch.size(), type->spaces.size()));
     auto writableEndpoints = [&](const Instance& instance, auto&& visit) {
+        const auto& domain = p->bindings[instance.set].domain(instance.local);
+        const auto members = domain.members(instance.local - domain.first);
         for (uint32_t endpoint = 0; endpoint < instance.arity; ++endpoint) {
-            const auto id = endpointId(instance, endpoint);
+            const auto ref = domain.fields[endpoint].at(endpoint < domain.split ? members.first : members.second);
+            const auto id = p->variables[ref.set].first + ref.index;
             bool repeated = false;
             for (uint32_t before = 0; before < endpoint; ++before)
-                repeated = repeated || endpointId(instance, before) == id;
+                repeated = repeated || endpointScratch[before] == id;
+            endpointScratch[endpoint] = id;
             if (writable[id] && !repeated)
                 visit(id);
         }
     };
-    struct ColorPriority {
-        uint32_t endpoints, rows, nodes, tangent, id;
-    };
-    std::vector<ColorPriority> priorities;
     std::vector<uint32_t> coloringOrder;
     if (policy.mode != SolveMode::Jacobi) {
-        priorities.resize(instances.size());
+        // Stable buckets retain the exact priority/row order without sorting a
+        // Cartesian number of identical type priorities against one another.
+        std::map<std::array<uint32_t, 4>, std::vector<uint32_t>> priorities;
         coloringOrder.reserve(instances.size());
         for (const auto& instance : instances) {
             if (model.data->relations[instance.set].dynamicEndpoints)
                 continue;
-            auto& priority = priorities[instance.id];
-            writableEndpoints(instance, [&](uint32_t) { ++priority.endpoints; });
+            uint32_t endpoints = 0;
+            writableEndpoints(instance, [&](uint32_t) { ++endpoints; });
             const auto& type = *p->types[instance.type];
-            priority.rows = type.rows;
-            priority.nodes = uint32_t(type.residual.nodes.size());
-            priority.tangent = p->activeTangent(instance.type);
-            priority.id = instance.id;
-            coloringOrder.push_back(instance.id);
+            priorities[{endpoints, UINT32_MAX - type.rows,
+                        UINT32_MAX - uint32_t(type.residual.nodes.size()),
+                        UINT32_MAX - p->activeTangent(instance.type)}].push_back(instance.id);
         }
+        for (const auto& [priority, rows] : priorities)
+            coloringOrder.insert(coloringOrder.end(), rows.begin(), rows.end());
     }
     // A color consumes one slot at every writable endpoint. Place relations with
     // fewer slots first, then prefer numerically heavier work when slot cost ties.
     // This maximizes useful candidate work under the user's color upper bound.
-    std::sort(coloringOrder.begin(), coloringOrder.end(), [&](uint32_t a, uint32_t b) {
-        const auto& x = priorities[a];
-        const auto& y = priorities[b];
-        if (x.endpoints != y.endpoints)
-            return x.endpoints < y.endpoints;
-        if (x.rows != y.rows)
-            return x.rows > y.rows;
-        if (x.nodes != y.nodes)
-            return x.nodes > y.nodes;
-        if (x.tangent != y.tangent)
-            return x.tangent > y.tangent;
-        return x.id < y.id;
-    });
     std::vector<uint64_t> used(writable.size());
     const uint64_t allowed =
         policy.colorBudget == 64 ? UINT64_MAX : ((uint64_t(1) << policy.colorBudget) - 1);
@@ -677,6 +705,39 @@ void main(){uint i=invocation();if(i<step.count)x_scanScratch[step.first+i]+=x_s
     }
     append(buffer(BufferRole::Endpoints), endpointData);
     p->statistics.endpointStorageWords = endpointData.size();
+    // Scheduling has finished inspecting row metadata. Select physical storage
+    // now, without constraining the logical domain or its patch/read contract.
+    auto& metadata = buffer(BufferRole::Relations).initial;
+    std::vector<uint8_t> packedMetadata;
+    for (const auto& layout : p->relations) {
+        if (!layout.count) continue;
+        CompiledPlan::RelationMetadata m;
+        m.first = layout.first;
+        m.count = layout.count;
+        const auto* begin = metadata.data() + size_t(layout.first) * 9 * 4;
+        // Small sets stay in the table: constant code per tiny set would turn
+        // a data-size problem into unbounded shader source growth.
+        m.affine = layout.count >= 128;
+        std::memcpy(m.base.data(), begin, 9 * 4);
+        if (layout.count > 1) {
+            std::memcpy(m.stride.data(), begin + 9 * 4, 9 * 4);
+            for (uint32_t c = 0; c < 9; ++c) m.stride[c] -= m.base[c];
+        }
+        for (uint32_t row = 2; m.affine && row < layout.count; ++row) {
+            std::array<uint32_t, 9> values;
+            std::memcpy(values.data(), begin + size_t(row) * 9 * 4, 9 * 4);
+            for (uint32_t c = 0; c < 9; ++c)
+                m.affine = m.affine && values[c] == m.base[c] + row * m.stride[c];
+        }
+        m.offset = checked(packedMetadata.size() / 4);
+        if (!m.affine)
+            packedMetadata.insert(packedMetadata.end(), begin, begin + size_t(layout.count) * 9 * 4);
+        if (!m.affine && !p->relationMetadata.empty() && !p->relationMetadata.back().affine)
+            p->relationMetadata.back().count += m.count;
+        else
+            p->relationMetadata.push_back(m);
+    }
+    metadata = std::move(packedMetadata);
     for (auto& b : p->buffers) {
         if (b.initial.empty())
             b.initial.resize(4);

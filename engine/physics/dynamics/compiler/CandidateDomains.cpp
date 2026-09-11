@@ -324,11 +324,15 @@ void lowerCandidateDomains(CompiledPlan& p) {
         else
             source << "void considerNew(uint id,uint left,uint right){if(x_lambda[relation(id).l]==0.0)consider"
                    << type << "(id);}\n";
+        // Apply the proven feature bound before touching row-indexed fields.
+        // The same 25% radius margin as cellOf covers float reassociation; this
+        // is only a conservative rejection, never a replacement for the formula.
         source << "void queryDomain(){uint lane=invocation(),i=lane/" << neighbors << "u,neighbor=lane%" << neighbors
                << "u;if(i>=" << d.binding.left << "u)return;"
                   "if(x_candidates[" << d.header + 2 << "u]!=0u){"
                   "for(uint j=neighbor;j<" << d.binding.right << "u;j+=" << neighbors
                << "u)if(accepts(i,j))considerNew(rowOf(i,j),i,j);return;}"
+                  "vec3 leftFeature=feature(i,true);float bound=1.5625*uintBitsToFloat(x_candidates[" << d.header << "u]);"
                   "uint featureAt=" << d.leftCells << "u+i*3u;ivec3 c=ivec3(x_candidates[featureAt],"
                   "x_candidates[featureAt+1u],x_candidates[featureAt+2u]);"
                   "ivec3 offset=ivec3(int(neighbor%3u)-1,";
@@ -337,7 +341,8 @@ void lowerCandidateDomains(CompiledPlan& p) {
                   "ivec3 cell=c+offset;uint j=x_candidates["
                << d.heads << "u+bucket(cell)];while(j!=0xffffffffu){if(accepts(i,j)){uint at=" << d.cells << "u+j*3u;"
                   "ivec3 actual=ivec3(x_candidates[at],x_candidates[at+1u],x_candidates[at+2u]);"
-                  "if(all(equal(cell,actual)))considerNew(rowOf(i,j),i,j);}j=x_candidates["
+                  "if(all(equal(cell,actual))){vec3 delta=leftFeature-feature(j,false);"
+                  "if(dot(delta,delta)<=bound)considerNew(rowOf(i,j),i,j);}}j=x_candidates["
                << d.next << "u+j];}}";
         if (uint64_t(d.binding.left) * neighbors > UINT32_MAX)
             throw std::overflow_error("Candidate query dispatch exceeds 32-bit addressing");
