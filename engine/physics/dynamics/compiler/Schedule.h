@@ -19,8 +19,11 @@ KernelFunction relationFunction(const RelationType&, const std::vector<bool>& re
 // The predicate counts unique enabled writable endpoints only when a relation
 // participates in this Jacobi snapshot. Invalid residuals reach the solve's
 // existing diagnostic path rather than disappearing during candidate selection.
+// mappedEndpoints adds left/right member arguments for an already-decoded
+// affine invocation; the predicate and endpoint field loads are shared.
 KernelFunction relationActivityFunction(const RelationType&, const std::vector<bool>& readOnly,
-                                       int32_t endpointMode, const std::string& name, bool countDegrees = true);
+                                       int32_t endpointMode, const std::string& name, bool countDegrees = true,
+                                       bool mappedEndpoints = false);
 KernelFunction relationDispatchFunction(
     const std::vector<std::pair<uint32_t, KernelFunction>>&, bool jacobi, const std::string& name);
 std::string globalKernel(const KernelFunction&);

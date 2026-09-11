@@ -1,5 +1,6 @@
 #include "BindingIR.h"
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 namespace whimsical::dynamics {
@@ -14,14 +15,13 @@ std::pair<uint32_t, uint32_t> BindingDomain::members(uint32_t row) const {
     }
     const bool diagonal = map == Map::UpperDiagonal;
     auto prefix = [&](uint32_t i) { return uint64_t(i) * (2ull * right - i + (diagonal ? 1 : -1)) / 2; };
-    uint32_t lo = 0, hi = left;
-    while (lo + 1 < hi) {
-        auto mid = lo + (hi - lo) / 2;
-        if (prefix(mid) <= row)
-            lo = mid;
-        else
-            hi = mid;
-    }
+    // Invert the triangular prefix once instead of binary-searching it at every
+    // incidence visit. The rationalized root avoids cancellation near row zero;
+    // integer prefix checks preserve exact row boundaries independently of sqrt.
+    const double b = 2.0 * right + (diagonal ? 1.0 : -1.0);
+    uint32_t lo = std::min(left - 1, uint32_t(4.0 * row / (b + std::sqrt(b * b - 8.0 * row))));
+    while (lo > 0 && prefix(lo) > row) --lo;
+    while (lo + 1 < left && prefix(lo + 1) <= row) ++lo;
     return {lo, lo + (diagonal ? 0u : 1u) + uint32_t(row - prefix(lo))};
 }
 VariableRef BindingDomain::at(uint32_t row, uint32_t slot) const {

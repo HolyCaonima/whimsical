@@ -32,22 +32,24 @@ std::string endpointAccess(uint32_t slot, int32_t mode) {
         return "linearEndpoint(r," + index + ")";
     return "endpoint(r," + index + "," + std::to_string(mode) + ")";
 }
-void relationInputs(std::ostringstream& s, const RelationType& t, int32_t endpointMode) {
+void relationInputs(std::ostringstream& s, const RelationType& t, int32_t endpointMode, bool mappedEndpoints = false) {
     const auto n = t.inputSize();
     local(s, "x", n);
     if (endpointMode > 0) {
         const auto map = endpointMode - 1;
-        s << "uint endpointAt=r.e&0x7fffffffu,endpointRow=r.id-x_endpoints[endpointAt+1u];"
-             "uint endpointLeft=endpointRow,endpointRight=endpointRow;\n";
-        if (map == int(BindingDomain::Map::Product))
+        s << "uint endpointAt=r.e&0x7fffffffu;\n";
+        if (!mappedEndpoints)
+            s << "uint endpointRow=r.id-x_endpoints[endpointAt+1u];"
+                 "uint endpointLeft=endpointRow,endpointRight=endpointRow;\n";
+        if (!mappedEndpoints && map == int(BindingDomain::Map::Product))
             s << "{uint count=x_endpoints[endpointAt+3u];endpointLeft=endpointRow/count;"
                  "endpointRight=endpointRow%count;}\n";
-        else if (map == int(BindingDomain::Map::Directed))
+        else if (!mappedEndpoints && map == int(BindingDomain::Map::Directed))
             s << "{uint count=x_endpoints[endpointAt+3u];endpointLeft=endpointRow/(count-1u);"
                  "endpointRight=endpointRow%(count-1u);"
                  "if(endpointRight>=endpointLeft)++endpointRight;}\n";
-        else if (map == int(BindingDomain::Map::Upper) ||
-                 map == int(BindingDomain::Map::UpperDiagonal)) {
+        else if (!mappedEndpoints && (map == int(BindingDomain::Map::Upper) ||
+                 map == int(BindingDomain::Map::UpperDiagonal))) {
             const bool diagonal = map == int(BindingDomain::Map::UpperDiagonal);
             s << "{uint count=x_endpoints[endpointAt+3u];float b=2.0*float(count)"
               << (diagonal ? "+1.0" : "-1.0")
@@ -575,17 +577,21 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
     return {name, s.str(), BufferRole::RelationWork, jacobi};
 }
 KernelFunction relationActivityFunction(const RelationType& t, const std::vector<bool>& readOnly,
-                                       int32_t endpointMode, const std::string& name, bool countDegrees) {
+                                       int32_t endpointMode, const std::string& name, bool countDegrees,
+                                       bool mappedEndpoints) {
     std::ostringstream s;
     const bool guarded = t.rows == 1 && t.kind != RelationKind::Equality;
     if (guarded)
         s << emitGlsl(t.residual, name + "_value");
     s << "bool " << name
-      << "(uint id,float h,float time,float relaxation,float inverseH2,uint iteration){Relation r=relation(id);\n";
+      << "(uint id,float h,float time,float relaxation,float inverseH2,uint iteration";
+    if (mappedEndpoints)
+        s << ",uint endpointLeft,uint endpointRight";
+    s << "){Relation r=relation(id);\n";
     for (uint32_t row = 0; row < t.rows; ++row)
         s << "if(iteration==0u)storeMultiplier(r," << row << "u,0.0);\n";
     s << "if(x_relationEnabled[id]==0.0)return false;\n";
-    relationInputs(s, t, endpointMode);
+    relationInputs(s, t, endpointMode, mappedEndpoints);
     if (guarded) {
         s << "float c[1];" << name << "_value(x,c);\n"
           << "if(!isnan(c[0])&&!isinf(c[0])&&c[0]" << (t.kind == RelationKind::GreaterEqual ? ">=" : "<=")

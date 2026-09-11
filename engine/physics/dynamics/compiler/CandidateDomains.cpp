@@ -12,6 +12,7 @@ struct Domain {
     uint32_t set, first, count, header, heads, next, cells, buckets;
     BindingDomain binding;
     DifferenceBound bound;
+    uint32_t leftCells = 0;
 };
 std::vector<uint32_t> words(const BufferData& b) {
     std::vector<uint32_t> result(b.initial.size() / 4);
@@ -152,14 +153,16 @@ void lowerCandidateDomains(CompiledPlan& p) {
 
     // Full logical capacity guarantees correctness even when all pairs are active.
     // Queues compact execution; public row-indexed fields are intentionally dense.
-    uint64_t storage = 1 + 2 * typed.size();
+    // The solve publishes its queue side separately: gather may reset the next
+    // side while other workgroups still consume the completed queue for cleanup.
+    constexpr uint32_t counters = 2;
+    uint64_t storage = counters + 2 * typed.size();
     auto reserve = [&](uint64_t n) {
         auto first = storage;
         storage += n;
         if (storage > UINT32_MAX) throw std::overflow_error("Candidate storage exceeds 32-bit addressing");
         return uint32_t(first);
     };
-    uint32_t bits = reserve((uint64_t(relations) + 31) / 32);
     uint32_t queues = reserve(uint64_t(all.size()) * 2);
     for (auto& d : domains) {
         d.header = reserve(3); // squared bound, invalid bound, invalid coordinate
@@ -171,6 +174,11 @@ void lowerCandidateDomains(CompiledPlan& p) {
         d.heads = reserve(d.buckets);
         d.next = reserve(d.binding.right);
         d.cells = reserve(uint64_t(d.binding.right) * 3);
+        const bool sameFeatures = d.binding.left == d.binding.right &&
+            std::all_of(d.bound.coordinates.begin(), d.bound.coordinates.end(), [&](const auto& inputs) {
+                return coordinate(p, d, inputs.first) == coordinate(p, d, inputs.second);
+            });
+        d.leftCells = sameFeatures ? d.cells : reserve(uint64_t(d.binding.left) * 3);
         for (uint32_t row = 0; row < d.count; ++row) selected[d.first + row] = true;
         p.statistics.candidateRelations += d.count;
     }
@@ -188,20 +196,38 @@ void lowerCandidateDomains(CompiledPlan& p) {
     for (auto type : types)
         activity << relationActivityFunction(*p.types[type], p.typeReadOnly[type], p.typeEndpointMode[type],
                                              "activity" + std::to_string(type), active).source;
-    activity << "bool activeRow(uint id){switch(relation(id).type){";
-    for (auto type : types)
-        activity << "case " << type << "u:return activity" << type
+    for (uint32_t slot = 0; slot < typed.size(); ++slot) {
+        const auto& q = typed[slot];
+        const auto& t = *p.types[q.type];
+        activity << "void enqueue" << q.type << "(uint id){uint side=x_candidates[0],at=atomicAdd(x_candidates["
+                 << counters + slot << "u+side*" << typed.size() << "u],1u);x_candidates[" << queues + q.first
+                 << "u+side*" << all.size() << "u+at]=id;}\n";
+        activity << "void consider" << q.type << "(uint id){bool participates=activity" << q.type
                  << "(id,step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration);";
-    activity << "}return false;}\nvoid consider(uint id,bool sparse){"
-             << "uint mask=1u<<(id&31u);if((atomicOr(x_candidates[" << bits
-             << "u+id/32u],mask)&mask)!=0u)return;"
-                "bool participates=activeRow(id);if(sparse&&!participates)return;"
-                "uint side=x_candidates[0],slot=0u,first=0u;switch(relation(id).type){";
-    for (uint32_t k = 0; k < typed.size(); ++k)
-        activity << "case " << typed[k].type << "u:slot=" << k << "u;first=" << typed[k].first << "u;break;";
-    activity << "}uint at=atomicAdd(x_candidates[1u+side*" << typed.size() << "u+slot],1u);"
-                "x_candidates[" << queues << "u+side*" << all.size() << "u+first+at]=id;}\n";
-
+        // Ordinary multirow work must still clear its CSR contributions when
+        // disabled, so only guarded scalar inequalities are compacted away.
+        if (t.rows == 1 && t.kind != RelationKind::Equality)
+            activity << "if(!participates)return;";
+        activity << "enqueue" << q.type << "(id);}\n";
+    }
+    // Each domain query enumerates a logical row at most once. A nonzero
+    // multiplier remains in the previous queue, so partition by multiplier
+    // state instead of atomically deduplicating overlapping work. Both sources
+    // consume the same Jacobi snapshot; only the later solve changes multipliers.
+    std::vector<std::string> mappedActivity(p.types.size());
+    for (uint32_t slot = 0; slot < typed.size(); ++slot) {
+        const auto& q = typed[slot];
+        if (p.typeEndpointMode[q.type] <= 0 ||
+            std::none_of(domains.begin(), domains.end(), [&](const Domain& d) { return p.relations[d.set].type == q.type; }))
+            continue;
+        std::ostringstream mapped;
+        mapped << relationActivityFunction(*p.types[q.type], p.typeReadOnly[q.type], p.typeEndpointMode[q.type],
+                                            "mappedActivity", active, true).source;
+        mapped << "void considerNew(uint id,uint left,uint right){if(x_lambda[relation(id).l]!=0.0)return;"
+                  "if(!mappedActivity(id,step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration,left,right))return;"
+                  "enqueue" << q.type << "(id);}\n";
+        mappedActivity[q.type] = mapped.str();
+    }
     // Parameter expressions run on the GPU using the same float generator as the
     // residual. Runtime invalidates this cache on parameter patches.
     if (!domains.empty()) {
@@ -229,24 +255,37 @@ void lowerCandidateDomains(CompiledPlan& p) {
         }
     }
     std::vector<Batch> stages;
+    std::ostringstream indexed;
+    indexed << "bool indexed(uint id){return false";
+    for (const auto& d : domains) indexed << "||(id>=" << d.first << "u&&id-" << d.first << "u<" << d.count << "u)";
+    indexed << ";}\n";
     std::ostringstream reset;
-    reset << "void resetCandidates(uint iteration){uint i=invocation();if(i>=step.count)return;"
+    reset << indexed.str() << "void resetCandidates(uint iteration){uint i=invocation();if(i>=step.count)return;"
              "if(i==0u){uint side=1u-x_candidates[0];"
              "x_candidates[0]=side;for(uint k=0u;k<" << typed.size()
-          << "u;++k)x_candidates[1u+side*" << typed.size() << "u+k]=0u;}";
-    reset << "for(uint j=i;j<" << (uint64_t(relations) + 31) / 32
-          << "u;j+=step.count)x_candidates[" << bits << "u+j]=0u;";
+          << "u;++k)x_candidates[" << counters << "u+side*" << typed.size() << "u+k]=0u;}";
     if (active)
         reset << "for(uint j=i;j<" << p.statistics.variables << "u;j+=step.count)x_activeDegrees[j]=0u;";
     for (const auto& d : domains) {
         reset << "if(i==0u)x_candidates[" << d.header + 2 << "u]=x_candidates[" << d.header + 1 << "u];"
-              << "for(uint j=i;j<" << d.buckets << "u;j+=step.count)x_candidates[" << d.heads << "u+j]=0xffffffffu;"
-              << "if(iteration==0u)for(uint j=i;j<" << d.count << "u;j+=step.count)x_lambda["
-              << p.relations[d.set].multipliers + d.binding.first << "u+j]=0.0;";
+              << "for(uint j=i;j<" << d.buckets << "u;j+=step.count)x_candidates[" << d.heads << "u+j]=0xffffffffu;";
+    }
+    // Every nonzero indexed multiplier remains in the completed active queue.
+    // At a substep boundary clear that queue, not the entire Cartesian domain.
+    // Enabled fields cannot change inside a submission. The next tick therefore
+    // starts with zero multipliers even if enablement/parameters have changed.
+    for (uint32_t slot = 0; slot < typed.size(); ++slot) {
+        const auto& q = typed[slot];
+        if (std::none_of(domains.begin(), domains.end(), [&](const Domain& d) { return p.relations[d.set].type == q.type; }))
+            continue;
+        reset << "if(iteration==0u){uint side=x_candidates[1],count=x_candidates["
+              << counters + slot << "u+side*" << typed.size() << "u];for(uint k=i;k<count;k+=step.count){"
+                 "uint id=x_candidates[" << queues + q.first << "u+side*" << all.size()
+              << "u+k];if(indexed(id))x_lambda[relation(id).l]=0.0;}}";
     }
     reset << "}";
     if (p.apply.size() == 1) {
-        add("Initialize Jacobi candidates", reset.str() + "void main(){resetCandidates(0u);}", lanes, p.prepareCandidates);
+        add("Initialize Jacobi candidates", reset.str() + "void main(){resetCandidates(1u);}", lanes, p.prepareCandidates);
         // Gather has consumed all corrections; reuse its dispatch to prepare the
         // next snapshot. No relation state used by gather is cleared here.
         auto& gather = p.kernels[p.apply[0].kernel].source;
@@ -259,28 +298,46 @@ void lowerCandidateDomains(CompiledPlan& p) {
     std::string firstQueryBody;
     for (const auto& d : domains) {
         std::ostringstream source;
-        source << domainSource(p, d) << "void main(){uint member=invocation();if(member>=" << d.binding.right
+        source << domainSource(p, d) << "void main(){uint member=invocation();";
+        // Cache the feature-to-cell map once per member and snapshot. Identical
+        // affine feature maps share the same column, including self-products.
+        if (d.leftCells != d.cells)
+            source << "if(member<" << d.binding.left << "u){ivec3 c;if(!cellOf(feature(member,true),c))"
+                      "atomicOr(x_candidates[" << d.header + 2 << "u],1u);else{uint at=" << d.leftCells
+                   << "u+member*3u;x_candidates[at]=uint(c.x);x_candidates[at+1u]=uint(c.y);"
+                      "x_candidates[at+2u]=uint(c.z);}}";
+        source << "if(member>=" << d.binding.right
                << "u)return;ivec3 c;if(!cellOf(feature(member,false),c)){atomicOr(x_candidates["
                << d.header + 2 << "u],1u);return;}uint at=" << d.cells << "u+member*3u;"
                   "x_candidates[at]=uint(c.x);x_candidates[at+1u]=uint(c.y);x_candidates[at+2u]=uint(c.z);"
                   "x_candidates[" << d.next << "u+member]=atomicExchange(x_candidates[" << d.heads << "u+bucket(c)],member);}";
-        add("Index candidate domain", source.str(), d.binding.right, stages);
+        add("Index candidate domain", source.str(), std::max(d.binding.left, d.binding.right), stages);
         source.str(""); source.clear();
         const auto dimensions = d.bound.coordinates.size();
         uint32_t neighbors = dimensions == 3 ? 27 : dimensions == 2 ? 9 : 3;
-        source << activity.str() << domainSource(p, d)
-               << "void queryDomain(){uint lane=invocation(),i=lane/" << neighbors << "u,neighbor=lane%" << neighbors
-               << "u;if(i>=" << d.binding.left << "u)return;ivec3 c;"
-                  "if(x_candidates[" << d.header + 2 << "u]!=0u||!cellOf(feature(i,true),c)){"
+        auto type = p.relations[d.set].type;
+        source << activity.str() << domainSource(p, d);
+        // The query already owns the two member indices. Feed them into the
+        // same predicate generator instead of inverting rowOf's triangle again.
+        if (!mappedActivity[type].empty())
+            source << mappedActivity[type];
+        else
+            source << "void considerNew(uint id,uint left,uint right){if(x_lambda[relation(id).l]==0.0)consider"
+                   << type << "(id);}\n";
+        source << "void queryDomain(){uint lane=invocation(),i=lane/" << neighbors << "u,neighbor=lane%" << neighbors
+               << "u;if(i>=" << d.binding.left << "u)return;"
+                  "if(x_candidates[" << d.header + 2 << "u]!=0u){"
                   "for(uint j=neighbor;j<" << d.binding.right << "u;j+=" << neighbors
-               << "u)if(accepts(i,j))consider(rowOf(i,j),true);return;}"
+               << "u)if(accepts(i,j))considerNew(rowOf(i,j),i,j);return;}"
+                  "uint featureAt=" << d.leftCells << "u+i*3u;ivec3 c=ivec3(x_candidates[featureAt],"
+                  "x_candidates[featureAt+1u],x_candidates[featureAt+2u]);"
                   "ivec3 offset=ivec3(int(neighbor%3u)-1,";
         source << (dimensions >= 2 ? "int((neighbor/3u)%3u)-1" : "0") << ","
                << (dimensions >= 3 ? "int(neighbor/9u)-1" : "0") << ");"
                   "ivec3 cell=c+offset;uint j=x_candidates["
-               << d.heads << "u+bucket(cell)];while(j!=0xffffffffu){uint at=" << d.cells << "u+j*3u;"
+               << d.heads << "u+bucket(cell)];while(j!=0xffffffffu){if(accepts(i,j)){uint at=" << d.cells << "u+j*3u;"
                   "ivec3 actual=ivec3(x_candidates[at],x_candidates[at+1u],x_candidates[at+2u]);"
-                  "if(all(equal(cell,actual))&&accepts(i,j))consider(rowOf(i,j),true);j=x_candidates["
+                  "if(all(equal(cell,actual)))considerNew(rowOf(i,j),i,j);}j=x_candidates["
                << d.next << "u+j];}}";
         if (uint64_t(d.binding.left) * neighbors > UINT32_MAX)
             throw std::overflow_error("Candidate query dispatch exceeds 32-bit addressing");
@@ -290,30 +347,56 @@ void lowerCandidateDomains(CompiledPlan& p) {
         }
         add("Query candidate domain", source.str() + "void main(){queryDomain();}", d.binding.left * neighbors, stages);
     }
-    std::vector<uint32_t> ordinary;
-    for (auto id : all) if (!selected[id]) ordinary.push_back(id);
+    std::vector<std::vector<uint32_t>> ordinaryByType(p.types.size());
+    for (auto id : all) if (!selected[id]) ordinaryByType[metadata[size_t(id) * 9 + 8]].push_back(id);
     uint32_t ordinaryFirst = uint32_t(work.size());
-    work.insert(work.end(), ordinary.begin(), ordinary.end());
+    for (const auto& rows : ordinaryByType) work.insert(work.end(), rows.begin(), rows.end());
     auto& workBuffer = p.buffers[size_t(BufferRole::RelationWork)].initial;
     workBuffer.resize(work.size() * 4);
     std::memcpy(workBuffer.data(), work.data(), workBuffer.size());
     std::ostringstream collect;
-    collect << activity.str() << "bool indexed(uint id){return false";
-    for (const auto& d : domains) collect << "||(id>=" << d.first << "u&&id-" << d.first << "u<" << d.count << "u)";
-    collect << ";}\nbool sparseType(uint id){switch(relation(id).type){";
-    for (auto type : types)
-        if (p.types[type]->rows == 1 && p.types[type]->kind != RelationKind::Equality)
-            collect << "case " << type << "u:return true;";
-    collect << "}return false;}\nvoid collectActivity(){uint i=invocation();if(i>=step.count)return;for(uint k=i;k<" << ordinary.size()
-            << "u;k+=step.count){uint id=x_relationWork[" << ordinaryFirst << "u+k];consider(id,sparseType(id));}"
-               "if(step.iteration==0u)return;uint side=1u-x_candidates[0];";
+    collect << activity.str() << indexed.str()
+            << "shared uint activityCount,activityBase;\nvoid collectActivity(){uint i=invocation();";
+    uint64_t ordinaryLanes = 0;
+    uint32_t rowFirst = ordinaryFirst;
+    for (uint32_t slot = 0; slot < typed.size(); ++slot) {
+        const auto& q = typed[slot];
+        auto count = uint32_t(ordinaryByType[q.type].size());
+        if (!count) continue;
+        uint64_t width = (uint64_t(count) + 127) / 128 * 128;
+        collect << "if(i>=" << ordinaryLanes << "u&&i<" << ordinaryLanes + width
+                << "u){uint k=i-" << ordinaryLanes << "u;";
+        if (count < 128) {
+            collect << "if(k<" << count << "u)consider" << q.type << "(x_relationWork[" << rowFirst << "u+k]);";
+        } else {
+            // Padded type ranges own whole workgroups, including tail lanes.
+            // All lanes reach these barriers; predicate early returns only exit
+            // the called function. Reserve once per nonempty workgroup.
+            collect << "if(gl_LocalInvocationIndex==0u)activityCount=0u;barrier();"
+                       "uint id=0u,rank=0u;bool append=false;if(k<" << count
+                    << "u){id=x_relationWork[" << rowFirst << "u+k];bool participates=activity" << q.type
+                    << "(id,step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration);append="
+                    << (p.types[q.type]->rows == 1 && p.types[q.type]->kind != RelationKind::Equality ? "participates" : "true")
+                    << ";}if(append)rank=atomicAdd(activityCount,1u);barrier();"
+                       "if(activityCount!=0u){uint side=x_candidates[0];if(gl_LocalInvocationIndex==0u)"
+                       "activityBase=atomicAdd(x_candidates[" << counters + slot << "u+side*" << typed.size()
+                    << "u],activityCount);barrier();if(append)x_candidates[" << queues + q.first
+                    << "u+side*" << all.size() << "u+activityBase+rank]=id;}";
+        }
+        collect << "}";
+        ordinaryLanes += width;
+        rowFirst += count;
+    }
+    if (ordinaryLanes > UINT32_MAX)
+        throw std::overflow_error("Candidate activity dispatch exceeds 32-bit addressing");
+    collect << "if(i>=step.count||step.iteration==0u)return;uint side=1u-x_candidates[0];";
     for (uint32_t slot = 0; slot < typed.size(); ++slot) {
         const auto& q = typed[slot];
         if (std::none_of(domains.begin(), domains.end(), [&](const Domain& d) { return p.relations[d.set].type == q.type; }))
             continue;
-        collect << "{uint count=x_candidates[" << 1 + slot << "u+side*" << typed.size() << "u];"
+        collect << "{uint count=x_candidates[" << counters + slot << "u+side*" << typed.size() << "u];"
                    "for(uint k=i;k<count;k+=step.count){uint id=x_candidates[" << queues + q.first << "u+side*" << all.size()
-                << "u+k];if(indexed(id)&&x_lambda[relation(id).l]!=0.0)consider(id,true);}}";
+                << "u+k];if(indexed(id)&&x_lambda[relation(id).l]!=0.0)consider" << q.type << "(id);}}";
     }
     collect << "}";
     if (firstQuery != UINT32_MAX) {
@@ -321,9 +404,9 @@ void lowerCandidateDomains(CompiledPlan& p) {
                                       "void main(){collectActivity();queryDomain();}";
         for (auto& batch : stages)
             if (batch.kernel == firstQuery)
-                batch.count = std::max(batch.count, uint32_t(ordinary.size()));
+                batch.count = std::max(batch.count, uint32_t(ordinaryLanes));
     } else {
-        add("Collect Jacobi activity", collect.str() + "void main(){collectActivity();}", uint32_t(ordinary.size()), stages);
+        add("Collect Jacobi activity", collect.str() + "void main(){collectActivity();}", uint32_t(ordinaryLanes), stages);
     }
     std::vector<std::pair<uint32_t, KernelFunction>> solve;
     for (auto type : types) {
@@ -335,14 +418,14 @@ void lowerCandidateDomains(CompiledPlan& p) {
     std::ostringstream source;
     source << stateAccess(false);
     for (const auto& item : solve) source << item.second.source;
-    source << "void main(){uint lane=invocation(),side=x_candidates[0];";
+    source << "void main(){uint lane=invocation(),side=x_candidates[0];if(lane==0u)x_candidates[1]=side;";
     uint32_t laneFirst = 0;
     // Whole workgroups consume one mathematical type. Interleaving unlike active
     // rows would serialize branches and inflate the per-warp register footprint.
     for (uint32_t slot = 0; slot < typed.size(); ++slot) {
         const auto& q = typed[slot];
         source << "if(lane>=" << laneFirst << "u&&lane<" << laneFirst + q.lanes
-               << "u){uint count=x_candidates[" << 1 + slot << "u+side*" << typed.size()
+               << "u){uint count=x_candidates[" << counters + slot << "u+side*" << typed.size()
                << "u];for(uint i=lane-" << laneFirst << "u;i<count;i+=" << q.lanes << "u)candidateSolve" << q.type
                << "(x_candidates[" << queues + q.first << "u+side*" << all.size()
                << "u+i],step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration);}";
