@@ -1,6 +1,7 @@
 #include "physics/dynamics/compiler/FormulaGlsl.h"
 #include "Schedule.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -11,7 +12,7 @@
 namespace whimsical::dynamics {
 // Kernel generation is local to the physics compiler; RenderCore never sees spaces,
 // constraints, multiplier state, coloring, or the numerical method.
-std::string incidenceKernel(const RelationType&, bool scatter);
+std::string incidenceKernel(const RelationType&, const std::vector<bool>&, int32_t endpointMode, bool scatter);
 namespace {
 constexpr const char* Names[] = {"q",
                                  "oldq",
@@ -86,41 +87,23 @@ std::string signature(const RelationType& t) {
         s += emitGlsl(*t.update, "u");
     return s;
 }
-std::vector<VariableRef> lowerPairs(const ModelData& model, const RelationSet& set) {
-    std::vector<VariableRef> refs;
-    refs.reserve(size_t(set.count) * set.type->spaces.size());
-    if (!set.pairs) {
-        for (uint32_t row = 0; row < set.count; ++row)
-            for (const auto& source : set.endpoints)
-                refs.push_back(source.at(row));
-        return refs;
-    }
-    auto emitObject = [&](const Object& object, uint32_t member, uint32_t side) {
-        for (const auto& name : set.type->objects[side]) {
-            auto found = object.dofs.find(name);
-            if (found == object.dofs.end())
-                throw std::invalid_argument("Object '" + object.name + "' lacks DOF field '" + name + "'");
-            refs.push_back(found->second.at(member));
-        }
-    };
-    // Full expansion is intentional. There is no neighbor search, pruning or zip
-    // interpretation: the mathematical residual decides what each pair does.
-    for (const auto& pair : *set.pairs) {
-        const auto& a = model.objects.at(pair.a);
-        const auto& b = model.objects.at(pair.b);
-        const bool self = pair.a == pair.b && a.kind == Object::Kind::Collection;
-        for (uint32_t i = 0; i < a.count; ++i)
-            for (uint32_t j = 0; j < b.count; ++j) {
-                if (self && ((!pair.includeSelf && i == j) ||
-                    (pair.self == PairBinding::Self::Undirected && j < i)))
-                    continue;
-                emitObject(a, i, 0);
-                emitObject(b, j, 1);
-            }
-    }
-    return refs;
-}
 } // namespace
+uint32_t CompiledPlan::endpoint(uint32_t relation, uint32_t slot) const {
+    auto found = std::upper_bound(relations.begin(), relations.end(), relation,
+        [](uint32_t id, const RelationLayout& layout) { return id < layout.first; });
+    const auto set = uint32_t(std::prev(found) - relations.begin());
+    auto ref = bindings[set].at(relation - relations[set].first, slot);
+    return variables[ref.set].first + ref.index;
+}
+uint32_t CompiledPlan::activeTangent(uint32_t type, uint32_t slot) const {
+    return typeReadOnly[type][slot] ? 0 : types[type]->spaces[slot]->tangentSize;
+}
+uint32_t CompiledPlan::activeTangent(uint32_t type) const {
+    uint32_t count = 0;
+    for (uint32_t slot = 0; slot < types[type]->spaces.size(); ++slot)
+        count += activeTangent(type, slot);
+    return count;
+}
 std::string CompiledPlan::interface() const {
     return R"(
 layout(local_size_x=128) in;
@@ -138,9 +121,35 @@ Relation relation(uint id) {
     uint k=id*9u;return Relation(x_relations[k],x_relations[k+1u],x_relations[k+2u],x_relations[k+3u],
         x_relations[k+4u],x_relations[k+5u],x_relations[k+6u],x_relations[k+7u],x_relations[k+8u],id);
 }
+uint trianglePrefix(uint i,uint n,bool diagonal){
+    uint b=2u*n-i-(diagonal?0u:2u)+1u;
+    return (i&1u)==0u?(i/2u)*b:i*(b/2u);
+}
+uint linearEndpoint(Relation r,uint slot){
+    uint at=r.e&0x7fffffffu,field=at+5u+2u*slot;
+    return x_endpoints[field]+(r.id-x_endpoints[at+1u])*x_endpoints[field+1u];
+}
+uint endpoint(Relation r,uint slot,int mapping){
+    if(mapping==0||(mapping<0&&(r.e&0x80000000u)==0u))return x_endpoints[r.e+slot];
+    uint at=r.e&0x7fffffffu,mode=mapping<0?x_endpoints[at]:uint(mapping-1),row=r.id-x_endpoints[at+1u];
+    uint n=x_endpoints[at+3u],i=row,j=row;
+    if(mode==1u){i=row/n;j=row%n;}
+    else if(mode==2u){i=row/(n-1u);j=row%(n-1u);if(j>=i)++j;}
+    else if(mode>=3u){
+        bool diagonal=mode==4u;
+        float b=2.0*float(n)+(diagonal?1.0:-1.0);
+        i=min(n-1u,uint(max(0.0,floor((b-sqrt(max(0.0,b*b-8.0*float(row))))*0.5))));
+        while(i>0u&&trianglePrefix(i,n,diagonal)>row)--i;
+        while(i+1u<n&&trianglePrefix(i+1u,n,diagonal)<=row)++i;
+        j=i+(diagonal?0u:1u)+row-trianglePrefix(i,n,diagonal);
+    }
+    uint member=slot<x_endpoints[at+4u]?i:j,field=at+5u+2u*slot;
+    return x_endpoints[field]+member*x_endpoints[field+1u];
+}
 )";
 }
 PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy) const {
+    const auto started = std::chrono::steady_clock::now();
     if (!model.data || !model.model || !model.version)
         throw std::invalid_argument("Compile requires a committed model");
     if (!policy.substeps || !policy.iterations || policy.colorBudget > 64 ||
@@ -157,7 +166,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     std::map<std::string, uint32_t> spaceIds, typeIds;
     std::vector<std::vector<uint32_t>> variableGroups;
     std::vector<bool> writable;
-    std::vector<uint32_t> variableMeta, relationMeta, endpointData;
+    std::vector<uint32_t> variableMeta, relationMeta;
     for (const auto& set : model.data->variables) {
         set.space->validate();
         auto key = signature(*set.space);
@@ -202,24 +211,32 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     struct Instance {
         uint32_t id, set, local, type;
         int32_t color;
-        uint32_t endpoints, arity;
+        uint32_t arity;
     };
-    // Declarative endpoint sources reach this lowering boundary intact. The current
-    // execution ABI uses explicit endpoint rows, so only Compiler materializes them;
-    // no quadratic constraint-conflict graph is created.
+    // Resolve named fields and access effects before choosing numerical kernels.
+    // Scheduling traverses the domains without making a second endpoint graph.
     std::vector<Instance> instances;
     for (uint32_t setId = 0; setId < model.data->relations.size(); ++setId) {
         const auto& set = model.data->relations[setId];
         set.type->validate();
-        p->relationDofs.push_back(lowerPairs(*model.data, set));
-        const auto& dofs = p->relationDofs.back();
-        auto key = signature(*set.type);
+        p->bindings.push_back(analyzeBindings(*model.data, set));
+        const auto& binding = p->bindings.back();
+        p->statistics.bindingDomains += binding.domains.size();
+        int32_t endpointMode = binding.domains.empty() ? 0 : binding.domains[0].endpointMode(set.dynamicEndpoints);
+        for (const auto& domain : binding.domains)
+            if (domain.endpointMode(set.dynamicEndpoints) != endpointMode)
+                endpointMode = -1;
+        auto key = signature(*set.type) + ":map" + std::to_string(endpointMode);
+        for (bool readOnly : binding.readOnly)
+            key += readOnly ? ":r" : ":w";
         auto it = typeIds.find(key);
         uint32_t type;
         if (it == typeIds.end()) {
             type = checked(p->types.size());
             typeIds.emplace(key, type);
             p->types.push_back(set.type);
+            p->typeReadOnly.push_back(binding.readOnly);
+            p->typeEndpointMode.push_back(endpointMode);
         } else
             type = it->second;
         RelationLayout layout{
@@ -230,7 +247,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             field(buffer(BufferRole::Compliance), set.compliance),
             field(buffer(BufferRole::History), set.initialHistory),
             append(buffer(BufferRole::Multipliers), std::vector<float>(size_t(set.count) * set.type->rows)),
-            checked(endpointData.size())};
+            0};
         p->dynamicTopology = p->dynamicTopology || set.dynamicEndpoints;
         if (set.dynamicEndpoints && policy.mode == SolveMode::Colored)
             throw std::invalid_argument("Dynamic endpoint sets require Hybrid or Jacobi policy");
@@ -243,34 +260,36 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         }
         for (uint32_t row = 0; row < set.count; ++row) {
             Instance instance{
-                checked(instances.size()),    setId, row, type, -1, checked(endpointData.size()),
-                checked(set.type->spaces.size())};
+                checked(instances.size()), setId, row, type, -1, checked(set.type->spaces.size())};
             for (uint32_t e = 0; e < instance.arity; ++e) {
-                auto ref = dofs[size_t(row) * instance.arity + e];
+                auto ref = binding.at(row, e);
                 if (ref.set >= p->variables.size() || ref.index >= p->variables[ref.set].count)
                     throw std::invalid_argument("Relation references a missing variable: " + set.name);
                 if (p->variables[ref.set].space != endpointSpaces[e])
                     throw std::invalid_argument("Relation endpoint space mismatch: " + set.name);
-                auto id = p->variables[ref.set].first + ref.index;
-                endpointData.push_back(id);
+                if (binding.readOnly[e])
+                    p->statistics.eliminatedDerivativeColumns += set.type->spaces[e]->tangentSize;
             }
             for (uint32_t r = 0; r < set.type->rows; ++r)
                 if (set.compliance.at(row, r) < 0)
                     throw std::invalid_argument("Compliance must be nonnegative: " + set.name);
-            auto end = instance.endpoints;
             relationMeta.insert(relationMeta.end(),
-                                {end, layout.parameters + row, layout.compliance + row, layout.history + row,
+                                {0, layout.parameters + row, layout.compliance + row, layout.history + row,
                                  layout.multipliers + row, 0, set.count, 0, type});
             p->statistics.endpointReferences += instance.arity;
             instances.push_back(std::move(instance));
         }
     }
+    auto endpointId = [&](const Instance& instance, uint32_t slot) {
+        auto ref = p->bindings[instance.set].at(instance.local, slot);
+        return p->variables[ref.set].first + ref.index;
+    };
     auto writableEndpoints = [&](const Instance& instance, auto&& visit) {
         for (uint32_t endpoint = 0; endpoint < instance.arity; ++endpoint) {
-            const auto id = endpointData[instance.endpoints + endpoint];
+            const auto id = endpointId(instance, endpoint);
             bool repeated = false;
             for (uint32_t before = 0; before < endpoint; ++before)
-                repeated = repeated || endpointData[instance.endpoints + before] == id;
+                repeated = repeated || endpointId(instance, before) == id;
             if (writable[id] && !repeated)
                 visit(id);
         }
@@ -291,7 +310,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             const auto& type = *p->types[instance.type];
             priority.rows = type.rows;
             priority.nodes = uint32_t(type.residual.nodes.size());
-            priority.tangent = type.tangentSize();
+            priority.tangent = p->activeTangent(instance.type);
             priority.id = instance.id;
             coloringOrder.push_back(instance.id);
         }
@@ -390,7 +409,6 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             writableEndpoints(instance, [&](uint32_t id) { ++degree[id]; });
             ++p->statistics.jacobiRelations;
         }
-    append(buffer(BufferRole::Endpoints), endpointData);
     append(buffer(BufferRole::Relations), relationMeta);
     buffer(BufferRole::Diagnostics).initial.resize(8);
     p->statistics.relations = instances.size();
@@ -400,13 +418,12 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     std::vector<uint32_t> entries(size_t(offsets.back()) * 2), cursor = offsets;
     for (uint32_t setId = 0; setId < p->relations.size(); ++setId) {
         const auto& layout = p->relations[setId];
-        const auto& type = *p->types[layout.type];
         uint32_t count = 0;
         for (uint32_t i = 0; i < layout.count; ++i)
             if (instances[layout.first + i].color < 0)
                 ++count;
         auto base =
-            append(buffer(BufferRole::Contributions), std::vector<float>(size_t(count) * type.tangentSize()));
+            append(buffer(BufferRole::Contributions), std::vector<float>(size_t(count) * p->activeTangent(layout.type)));
         uint32_t index = 0;
         for (uint32_t i = 0; i < layout.count; ++i) {
             const auto& in = instances[layout.first + i];
@@ -415,14 +432,16 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             auto rowBase = base + index++;
             uint32_t local = 0;
             for (uint32_t e = 0; e < in.arity; ++e) {
-                auto id = endpointData[in.endpoints + e];
-                auto begin = endpointData.begin() + in.endpoints;
-                if (writable[id] && std::find(begin, begin + e, id) == begin + e) {
+                auto id = endpointId(in, e);
+                bool repeated = false;
+                for (uint32_t before = 0; before < e; ++before)
+                    repeated = repeated || endpointId(in, before) == id;
+                if (writable[id] && !repeated) {
                     auto at = cursor[id]++;
                     entries[size_t(at) * 2] = rowBase + local * count;
                     entries[size_t(at) * 2 + 1] = count;
                 }
-                local += type.spaces[e]->tangentSize;
+                local += p->activeTangent(layout.type, e);
             }
             setWord(buffer(BufferRole::Relations), in.id * 9 + 5, rowBase);
             setWord(buffer(BufferRole::Relations), in.id * 9 + 7, count);
@@ -468,9 +487,16 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             {operation("Predict " + s.name, variableFunction(s, "predict", "predict" + suffix)), first, count});
         p->recover.push_back(
             {operation("Recover " + s.name, variableFunction(s, "recover", "recover" + suffix)), first, count});
-        if (p->statistics.jacobiRelations)
-            p->apply.push_back(
-                {operation("Gather " + s.name, variableFunction(s, "apply", "gather" + suffix)), first, count});
+        if (p->statistics.jacobiRelations) {
+            std::vector<uint32_t> gather;
+            for (auto variable : variableGroups[space])
+                if (writable[variable] && (p->dynamicTopology || degree[variable]))
+                    gather.push_back(variable);
+            if (!gather.empty())
+                p->apply.push_back(
+                    {operation("Gather " + s.name, variableFunction(s, "apply", "gather" + suffix)),
+                     append(buffer(BufferRole::VariableWork), gather), checked(gather.size())});
+        }
     }
     std::map<std::pair<int32_t, uint32_t>, std::vector<uint32_t>> groups;
     for (const auto& in : instances)
@@ -484,7 +510,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         uint32_t program;
         if (found == solveKernels.end()) {
             program = operation(std::string(jacobi ? "Jacobi " : "Colored ") + p->types[type]->name,
-                                relationFunction(*p->types[type], jacobi, false,
+                                relationFunction(*p->types[type], p->typeReadOnly[type], p->typeEndpointMode[type], jacobi, false,
                                                  std::string(jacobi ? "jacobi" : "colored") +
                                                      std::to_string(type)));
             solveKernels.emplace(key, program);
@@ -495,10 +521,10 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         if (p->dynamicTopology && jacobi) {
             auto batch = p->solve.back();
             batch.kernel =
-                kernel("Count incidence " + p->types[type]->name, incidenceKernel(*p->types[type], false));
+                kernel("Count incidence " + p->types[type]->name, incidenceKernel(*p->types[type], p->typeReadOnly[type], p->typeEndpointMode[type], false));
             p->countIncidence.push_back(batch);
             batch.kernel =
-                kernel("Scatter incidence " + p->types[type]->name, incidenceKernel(*p->types[type], true));
+                kernel("Scatter incidence " + p->types[type]->name, incidenceKernel(*p->types[type], p->typeReadOnly[type], p->typeEndpointMode[type], true));
             p->scatterIncidence.push_back(batch);
         }
     }
@@ -523,7 +549,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
                     work.push_back(in.id);
             p->update.push_back(
                 {operation("Commit " + p->types[type]->name,
-                           relationFunction(*p->types[type], false, true, "commit" + std::to_string(type))),
+                           relationFunction(*p->types[type], p->typeReadOnly[type], p->typeEndpointMode[type], false, true, "commit" + std::to_string(type))),
                  append(buffer(BufferRole::RelationWork), work), checked(work.size())});
         }
     const std::array<BufferRole, 4> stateFields = {
@@ -557,11 +583,48 @@ void main(){uint i=invocation();if(i<step.count)x_scanScratch[step.first+i]+=x_s
 )");
     }
     lowerSchedule(*p, functions);
+    // Physical endpoint storage is selected last. Affine object fields with large
+    // domains remain compact, and the GPU computes their addresses on demand.
+    std::vector<uint32_t> endpointData;
+    constexpr uint32_t Indirect = 0x80000000u;
+    for (uint32_t setId = 0; setId < p->relations.size(); ++setId) {
+        auto& layout = p->relations[setId];
+        layout.endpoints = checked(endpointData.size());
+        const auto arity = uint32_t(p->types[layout.type]->spaces.size());
+        for (const auto& domain : p->bindings[setId].domains) {
+            const auto base = checked(endpointData.size());
+            const bool compact = domain.endpointMode(model.data->relations[setId].dynamicEndpoints) > 0;
+            if (compact) {
+                endpointData.insert(endpointData.end(), {uint32_t(domain.map), layout.first + domain.first,
+                    domain.left, domain.right, domain.split});
+                for (const auto& source : domain.fields) {
+                    endpointData.push_back(p->variables[source.first.set].first + source.first.index);
+                    endpointData.push_back(source.broadcast() ? 0 : source.stride);
+                }
+                p->statistics.implicitEndpointReferences += uint64_t(domain.count) * arity;
+            }
+            for (uint32_t row = 0; row < domain.count; ++row) {
+                const auto address = compact ? base | Indirect : checked(endpointData.size());
+                if (!compact)
+                    for (uint32_t slot = 0; slot < arity; ++slot) {
+                        const auto ref = domain.at(row, slot);
+                        endpointData.push_back(p->variables[ref.set].first + ref.index);
+                    }
+                setWord(buffer(BufferRole::Relations), (layout.first + domain.first + row) * 9, address);
+            }
+            if (endpointData.size() >= Indirect)
+                throw std::overflow_error("Endpoint storage exceeds tagged address capacity");
+        }
+    }
+    append(buffer(BufferRole::Endpoints), endpointData);
+    p->statistics.endpointStorageWords = endpointData.size();
     for (auto& b : p->buffers) {
         if (b.initial.empty())
             b.initial.resize(4);
         p->statistics.storageBytes += b.initial.size();
     }
+    p->statistics.compileMilliseconds = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - started).count();
     return p;
 }
 } // namespace whimsical::dynamics

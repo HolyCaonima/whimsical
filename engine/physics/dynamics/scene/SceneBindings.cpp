@@ -77,6 +77,12 @@ duk_ret_t call(duk_context* c) {
                 throw std::invalid_argument("Expected model field");
             system.patch(e, modelField(duk_get_string(c, 1)), integer(c, 2), integer(c, 3), floats(c, 4));
             break;
+        case 5: {
+            auto text = system.plan(e).dump();
+            duk_push_lstring(c, text.data(), text.size());
+            duk_json_decode(c, -1);
+            return 1;
+        }
         }
         return 0;
     } catch (const std::exception& error) {
@@ -93,8 +99,8 @@ void installSceneBindings(duk_context* c, World& world) {
     duk_get_global_string(c, "Engine");
     duk_get_prop_string(c, -1, "dynamics");
     duk_push_object(c);
-    const char* names[] = {"state", "values", "control", "write", "patch"};
-    for (int i = 0; i < 5; ++i) {
+    const char* names[] = {"state", "values", "control", "write", "patch", "plan"};
+    for (int i = 0; i < 6; ++i) {
         duk_push_c_function(c, call, DUK_VARARGS);
         duk_set_magic(c, -1, i);
         duk_put_prop_string(c, -2, names[i]);

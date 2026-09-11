@@ -1,5 +1,6 @@
 #pragma once
 #include "physics/dynamics/model/Model.h"
+#include "BindingIR.h"
 #include <array>
 
 namespace whimsical::dynamics {
@@ -72,6 +73,9 @@ struct PlanStatistics {
     uint32_t colorWindows = 0;
     uint64_t colorWindowRegions = 0;
     uint64_t referenceDispatches = 0, dispatches = 0; // per tick, excluding topology/transfers
+    uint64_t bindingDomains = 0, implicitEndpointReferences = 0, endpointStorageWords = 0;
+    uint64_t eliminatedDerivativeColumns = 0;
+    double compileMilliseconds = 0;
 };
 // No device, resource IDs or submission state. Instance count affects work tables
 // and execution mapping, without a graph or GPU resource per variable/relation.
@@ -83,12 +87,18 @@ struct CompiledPlan {
     std::vector<RelationRef> types;
     std::vector<VariableLayout> variables;
     std::vector<RelationLayout> relations;
-    // Compiler-owned explicit DOF references, row-major per binding set.
-    std::vector<std::vector<VariableRef>> relationDofs;
+    // High-level index maps survive analysis, scheduling and GPU lowering.
+    std::vector<BindingIR> bindings;
+    std::vector<std::vector<bool>> typeReadOnly;
+    std::vector<int32_t> typeEndpointMode;
+    uint32_t endpoint(uint32_t relation, uint32_t slot) const;
+    uint32_t activeTangent(uint32_t type, uint32_t slot) const;
+    uint32_t activeTangent(uint32_t type) const;
     std::vector<Kernel> kernels;
     std::vector<Batch> predict, solve, apply, recover, update;
     // Closed regions execute the same substep/iteration schedule inside a workgroup.
     std::vector<Batch> local;
+    bool localPerSubstep = false;
     uint32_t stateWriteKernel = 0;
     // Type-dispatch kernels let Schedule collapse all mathematical relation types
     // in one dependency color without changing their model definitions.

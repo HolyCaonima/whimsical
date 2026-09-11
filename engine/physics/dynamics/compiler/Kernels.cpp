@@ -24,12 +24,20 @@ std::string literal(float value) {
     s << std::scientific << std::setprecision(9) << value;
     return s.str();
 }
-void relationInputs(std::ostringstream& s, const RelationType& t) {
+std::string endpointAccess(uint32_t slot, int32_t mode) {
+    const auto index = std::to_string(slot) + "u";
+    if (mode == 0)
+        return "x_endpoints[r.e+" + index + "]";
+    if (mode == 1)
+        return "linearEndpoint(r," + index + ")";
+    return "endpoint(r," + index + "," + std::to_string(mode) + ")";
+}
+void relationInputs(std::ostringstream& s, const RelationType& t, int32_t endpointMode) {
     const auto n = t.inputSize();
     local(s, "x", n);
     uint32_t offset = 0;
     for (uint32_t e = 0; e < t.spaces.size(); ++e) {
-        s << "uint id" << e << "=x_endpoints[r.e+" << e << "u]; Variable v" << e << "=variable(id" << e
+        s << "uint id" << e << "=" << endpointAccess(e, endpointMode) << "; Variable v" << e << "=variable(id" << e
           << ");\n";
         for (uint32_t c = 0; c < t.spaces[e]->stateSize; ++c)
             s << "x[" << offset + c << "]=loadValue(v" << e << "," << c << "u);\n";
@@ -95,23 +103,44 @@ KernelFunction variableFunction(const Space& space, const char* operation, const
     s << "}\n";
     return {name, s.str(), BufferRole::VariableWork};
 }
-KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update, const std::string& name) {
+KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& readOnly,
+                                int32_t endpointMode, bool jacobi, bool update, const std::string& name) {
     std::ostringstream s;
-    const auto Q = t.stateSize(), D = t.tangentSize(), M = t.rows;
+    const auto M = t.rows;
+    uint32_t Q = 0, D = 0, activeSlots = 0, singleSlot = 0;
+    std::vector<uint32_t> residualInputs;
+    uint32_t inputOffset = 0;
+    for (uint32_t e = 0; e < t.spaces.size(); ++e) {
+        if (!readOnly[e]) {
+            for (uint32_t c = 0; c < t.spaces[e]->stateSize; ++c)
+                residualInputs.push_back(inputOffset + c);
+            Q += t.spaces[e]->stateSize;
+            D += t.spaces[e]->tangentSize;
+            ++activeSlots;
+            singleSlot = e;
+        }
+        inputOffset += t.spaces[e]->stateSize;
+    }
+    const bool feasibilityGuard = M == 1 && t.kind != RelationKind::Equality;
     std::optional<std::vector<float>> residualConstants;
     std::vector<std::optional<std::vector<float>>> tangentConstants;
     std::optional<std::vector<float>> singleJacobian;
     if (update) {
         s << emitGlsl(*t.update, name + "_commitHistory");
     } else {
-        std::vector<uint32_t> residualInputs(Q);
-        std::iota(residualInputs.begin(), residualInputs.end(), 0u);
         residualConstants = constantJacobian(t.residual, residualInputs);
         if (residualConstants)
             s << emitGlsl(t.residual, name + "_residual");
-        else
+        else {
             s << emitGlslDerivative(t.residual, name + "_residual", residualInputs);
+            if (feasibilityGuard)
+                s << emitGlsl(t.residual, name + "_feasibility");
+        }
         for (uint32_t e = 0; e < t.spaces.size(); ++e) {
+            if (readOnly[e]) {
+                tangentConstants.emplace_back();
+                continue;
+            }
             const auto& space = *t.spaces[e];
             std::vector<uint32_t> tangentInputs(space.tangentSize);
             std::iota(tangentInputs.begin(), tangentInputs.end(), space.stateSize);
@@ -121,8 +150,8 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
                 s << emitGlslJacobian(space.retract, prefix + "Tangent", tangentInputs);
             s << emitGlsl(space.retract, prefix + "Value");
         }
-        if (t.spaces.size() == 1 && residualConstants && tangentConstants[0]) {
-            const auto S = t.spaces[0]->stateSize, T = t.spaces[0]->tangentSize;
+        if (activeSlots == 1 && residualConstants && tangentConstants[singleSlot]) {
+            const auto S = t.spaces[singleSlot]->stateSize, T = t.spaces[singleSlot]->tangentSize;
             std::vector<float> composed(size_t(M) * T);
             bool finite = true;
             for (uint32_t row = 0; row < M; ++row)
@@ -131,7 +160,7 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
                         finite = std::isfinite(
                                      composed[row * T + col] +=
                                          (*residualConstants)[row * S + k] *
-                                         (*tangentConstants[0])[k * T + col]) &&
+                                         (*tangentConstants[singleSlot])[k * T + col]) &&
                                  finite;
             if (finite)
                 singleJacobian = std::move(composed);
@@ -148,7 +177,7 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
         for (uint32_t c = 0; c < D; ++c)
             s << "x_contributions[r.c+" << c << "u*r.cs]=0.0;\n";
     s << "if(x_relationEnabled[id]==0.0)return;\n";
-    relationInputs(s, t);
+    relationInputs(s, t, endpointMode);
     if (update) {
         local(s, "nextHistory", t.history);
         s << name << "_commitHistory(x,nextHistory);\n";
@@ -164,15 +193,27 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
     if (!singleJacobian)
         local(s, "j", M * D);
     local(s, "wjt", D * M);
-    s << name << "_residual(x,c" << (residualConstants ? "" : ",rawJ") << ");\n";
+    if (feasibilityGuard) {
+        s << name << (residualConstants ? "_residual" : "_feasibility") << "(x,c);\n";
+        finite(s, "c", M);
+        s << "if(c[0]" << (t.kind == RelationKind::GreaterEqual ? ">=" : "<=")
+          << "0.0&&loadMultiplier(r,0u)==0.0)return;\n";
+    }
+    if (!feasibilityGuard || !residualConstants)
+        s << name << "_residual(x,c" << (residualConstants ? "" : ",rawJ") << ");\n";
     uint32_t qo = 0, vo = 0;
+    inputOffset = 0;
     for (uint32_t e = 0; e < t.spaces.size(); ++e) {
         const auto S = t.spaces[e]->stateSize, T = t.spaces[e]->tangentSize;
+        const auto sourceOffset = inputOffset;
+        inputOffset += S;
+        if (readOnly[e])
+            continue;
         s << "float input" << e << "[" << S + T << "], output" << e << "[" << S << "];\n";
         if (!tangentConstants[e])
             s << "float tangent" << e << "[" << S * T << "];\n";
         for (uint32_t a = 0; a < S; ++a)
-            s << "input" << e << "[" << a << "]=x[" << qo + a << "];\n";
+            s << "input" << e << "[" << a << "]=x[" << sourceOffset + a << "];\n";
         for (uint32_t a = 0; a < T; ++a)
             s << "input" << e << "[" << S + a << "]=0.0;\n";
         if (!tangentConstants[e])
@@ -248,9 +289,13 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
     // before forming the effective mass; otherwise cross terms would be lost.
     vo = 0;
     for (uint32_t e = 0; e < t.spaces.size(); ++e) {
+        if (readOnly[e])
+            continue;
         uint32_t before = 0;
         bool emitted = false;
         for (uint32_t b = 0; b < e; ++b) {
+            if (readOnly[b])
+                continue;
             if (t.spaces[e]->stateSize == t.spaces[b]->stateSize &&
                 t.spaces[e]->tangentSize == t.spaces[b]->tangentSize) {
                 s << (emitted ? "else " : "") << "if(id" << e << "==id" << b << ") {\n";
@@ -267,6 +312,8 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
     }
     vo = 0;
     for (uint32_t e = 0; e < t.spaces.size(); ++e) {
+        if (readOnly[e])
+            continue;
         auto T = t.spaces[e]->tangentSize;
         for (uint32_t col = 0; col < T; ++col)
             for (uint32_t row = 0; row < M; ++row) {
@@ -390,7 +437,8 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
     if (jacobi) {
         s << "uint degree=1u;\n";
         for (uint32_t e = 0; e < t.spaces.size(); ++e)
-            s << "degree=max(degree,x_adjOffsets[id" << e << "+1u]-x_adjOffsets[id" << e << "]);\n";
+            if (!readOnly[e])
+                s << "degree=max(degree,x_adjOffsets[id" << e << "+1u]-x_adjOffsets[id" << e << "]);\n";
     }
     local(s, "nextLambda", M);
     for (uint32_t row = 0; row < M; ++row) {
@@ -409,6 +457,8 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
     finite(s, "dl", M);
     vo = 0;
     for (uint32_t e = 0; e < t.spaces.size(); ++e) {
+        if (readOnly[e])
+            continue;
         const auto S = t.spaces[e]->stateSize, T = t.spaces[e]->tangentSize;
         for (uint32_t col = 0; col < T; ++col) {
             s << "input" << e << "[" << S + col << "]=0.0";
@@ -433,6 +483,8 @@ KernelFunction relationFunction(const RelationType& t, bool jacobi, bool update,
         s << "storeMultiplier(r," << row << "u,nextLambda[" << row << "]);\n";
     vo = 0;
     for (uint32_t e = 0; e < t.spaces.size(); ++e) {
+        if (readOnly[e])
+            continue;
         const auto S = t.spaces[e]->stateSize, T = t.spaces[e]->tangentSize;
         if (jacobi) {
             for (uint32_t col = 0; col < T; ++col)
@@ -466,13 +518,15 @@ KernelFunction relationDispatchFunction(
     s << "}}\n";
     return {name, s.str(), BufferRole::RelationWork, jacobi};
 }
-std::string incidenceKernel(const RelationType& t, bool scatter) {
+std::string incidenceKernel(const RelationType& t, const std::vector<bool>& readOnly, int32_t endpointMode, bool scatter) {
     std::ostringstream s;
     s << "void main(){uint i=invocation();if(i>=step.count)return;uint "
          "id=x_relationWork[step.first+i];if(x_relationEnabled[id]==0.0)return;Relation r=relation(id);\n";
     uint32_t offset = 0;
     for (uint32_t e = 0; e < t.spaces.size(); ++e) {
-        s << "uint id" << e << "=x_endpoints[r.e+" << e << "u];\n";
+        s << "uint id" << e << "=" << endpointAccess(e, endpointMode) << ";\n";
+        if (readOnly[e])
+            continue;
         s << "if(variable(id" << e << ").flags==0u";
         for (uint32_t b = 0; b < e; ++b)
             s << " && id" << e << "!=id" << b;
@@ -494,7 +548,7 @@ std::string globalKernel(const KernelFunction& function) {
            function.entry + "(x_" + work +
            "[step.first+lane],step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration); }\n";
 }
-std::string stateAccess(bool localState, uint32_t variableCount) {
+std::string stateAccess(bool localState, uint32_t variableCount, bool externalInputs) {
     struct FieldAccess {
         const char* name;
         const char* buffer;
@@ -509,12 +563,22 @@ std::string stateAccess(bool localState, uint32_t variableCount) {
         const auto& field = fields[i];
         const char* type = field.variable ? "Variable" : "Relation";
         std::string address = std::string("x_") + field.buffer + "[v." + field.offset + "+c*v.stride]";
+        const auto globalAddress = address;
         if (localState)
             address = "regionState[x_localOffsets[" +
                 (field.variable ? "v.id*3u+" + std::to_string(i) :
                  std::to_string(uint64_t(variableCount) * 3) + "u+v.id*2u+" + std::to_string(i - 3)) + "u]+c]";
-        s << "float load" << field.name << "(" << type << " v,uint c){return " << address << ";}\n";
-        s << "void store" << field.name << "(" << type << " v,uint c,float value){" << address << "=value;}\n";
+        std::string external;
+        if (localState && externalInputs && field.variable)
+            external = "x_localOffsets[v.id*3u]==0xffffffffu";
+        s << "float load" << field.name << "(" << type << " v,uint c){return ";
+        if (!external.empty())
+            s << external << "?" << globalAddress << ":";
+        s << address << ";}\n";
+        s << "void store" << field.name << "(" << type << " v,uint c,float value){";
+        if (!external.empty())
+            s << "if(" << external << ")" << globalAddress << "=value;else ";
+        s << address << "=value;}\n";
     }
     return s.str();
 }

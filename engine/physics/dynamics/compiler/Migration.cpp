@@ -43,8 +43,7 @@ StateMigration Compiler::migration(const CompiledPlan& previous, const CompiledP
         for (uint32_t i = 0; i < std::min(a.count, b.count); ++i) {
             bool same = true;
             for (size_t e = 0; e < type.spaces.size(); ++e) {
-                auto slot = size_t(i) * type.spaces.size() + e;
-                same = same && previous.relationDofs[id][slot] == next.relationDofs[id][slot];
+                same = same && previous.bindings[id].at(i, uint32_t(e)) == next.bindings[id].at(i, uint32_t(e));
             }
             if (same)
                 for (uint32_t c = 0; c < type.history; ++c)

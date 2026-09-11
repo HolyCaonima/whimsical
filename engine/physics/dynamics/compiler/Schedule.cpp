@@ -59,6 +59,49 @@ struct Components {
         size[a] += size[b];
     }
 };
+void collapseVariableDispatches(CompiledPlan& p, const std::vector<KernelFunction>& functions) {
+    if (p.policy.execution == ExecutionMode::Global)
+        return;
+    // Predict, gather and recover each own one variable. Space boundaries carry
+    // no dependency; contiguous work ranges keep their type branches coherent.
+    auto work = words(p.buffers[size_t(BufferRole::VariableWork)]);
+    for (auto entry : {std::make_pair(&p.predict, "Predict variables"),
+                       std::make_pair(&p.apply, "Gather variables"),
+                       std::make_pair(&p.recover, "Recover variables")}) {
+        auto& batches = *entry.first;
+        if (batches.size() < 2)
+            continue;
+        std::set<uint32_t> kernels;
+        uint64_t sourceBytes = 0;
+        for (const auto& batch : batches)
+            if (kernels.insert(batch.kernel).second)
+                sourceBytes += functions[batch.kernel].source.size();
+        if (sourceBytes > SourceByteBudget)
+            continue;
+        std::ostringstream source;
+        source << stateAccess(false);
+        for (auto kernel : kernels)
+            source << functions[kernel].source;
+        source << "void main(){uint lane=invocation();if(lane>=step.count)return;"
+                  "uint id=x_variableWork[step.first+lane];float inverseH2=1.0/(step.h*step.h);";
+        std::vector<uint32_t> joined;
+        for (size_t i = 0; i < batches.size(); ++i) {
+            const auto& batch = batches[i];
+            joined.insert(joined.end(), work.begin() + batch.first, work.begin() + batch.first + batch.count);
+            if (i)
+                source << "else ";
+            if (i + 1 < batches.size())
+                source << "if(lane<" << joined.size() << "u)";
+            source << functions[batch.kernel].entry
+                   << "(id,step.h,step.time,step.relaxation,inverseH2,step.iteration);";
+        }
+        source << "}\n";
+        batches = {{uint32_t(p.kernels.size()), uint32_t(work.size()), uint32_t(joined.size())}};
+        work.insert(work.end(), joined.begin(), joined.end());
+        p.kernels.push_back({entry.second, source.str()});
+    }
+    store(p.buffers[size_t(BufferRole::VariableWork)], work);
+}
 void collapseRelationDispatches(CompiledPlan& p) {
     auto work = words(p.buffers[size_t(BufferRole::RelationWork)]);
     std::vector<Batch> collapsed;
@@ -90,7 +133,7 @@ void collapseRelationDispatches(CompiledPlan& p) {
     store(p.buffers[size_t(BufferRole::RelationWork)], work);
 }
 bool buildColorWindow(const CompiledPlan& p, const std::vector<Batch>& stages,
-                      const std::vector<uint32_t>& work, const std::vector<uint32_t>& endpoints,
+                      const std::vector<uint32_t>& work,
                       const std::vector<uint32_t>& relations, const std::vector<uint32_t>& variables,
                       std::vector<std::vector<std::vector<uint32_t>>>& regions) {
     struct Item {
@@ -107,10 +150,9 @@ bool buildColorWindow(const CompiledPlan& p, const std::vector<Batch>& stages,
     std::vector<uint32_t> variableOwner(p.statistics.variables, NoRegion);
     for (uint32_t i = 0; i < items.size(); ++i) {
         auto relation = items[i].relation;
-        auto endpoint = relations[size_t(relation) * 9];
         auto type = relations[size_t(relation) * 9 + 8];
         for (uint32_t slot = 0; slot < p.types[type]->spaces.size(); ++slot) {
-            auto variable = endpoints[endpoint + slot];
+            auto variable = p.endpoint(relation, slot);
             if (variables[size_t(variable) * 5 + 4])
                 continue;
             if (variableOwner[variable] == NoRegion)
@@ -169,7 +211,6 @@ void fuseColorWindows(CompiledPlan& p, const std::vector<KernelFunction>& functi
 
     auto relationWork = words(p.buffers[size_t(BufferRole::RelationWork)]);
     auto ranges = words(p.buffers[size_t(BufferRole::RegionRanges)]);
-    auto endpoints = words(p.buffers[size_t(BufferRole::Endpoints)]);
     auto relations = words(p.buffers[size_t(BufferRole::Relations)]);
     auto variables = words(p.buffers[size_t(BufferRole::Variables)]);
     std::map<uint32_t, uint32_t> kernels;
@@ -186,6 +227,8 @@ void fuseColorWindows(CompiledPlan& p, const std::vector<KernelFunction>& functi
         if (found != kernels.end())
             return found->second;
         std::ostringstream source;
+        // Window components own their writes. Only invocations in this workgroup
+        // consume the preceding color, so a device-scope memory fence is needless.
         source << stateAccess(false) << functions[function].source
                << "void main(){uint region=gl_WorkGroupID.x+gl_WorkGroupID.y*65535u;"
                   "if(region>=step.count/128u)return;uint lane=gl_LocalInvocationID.x;"
@@ -196,9 +239,9 @@ void fuseColorWindows(CompiledPlan& p, const std::vector<KernelFunction>& functi
                   "for(uint j=lane;j<count;j+=128u)"
                << functions[function].entry
                << "(x_relationWork[first+j],step.h,step.time,step.relaxation,inverseH2,step.iteration);"
-                  "if(phase+1u<phases){memoryBarrierBuffer();barrier();}}}\n";
+                  "if(phase+1u<phases){groupMemoryBarrier();barrier();}}}\n";
         auto kernel = uint32_t(p.kernels.size());
-        p.kernels.push_back({"Solve color windows", source.str()});
+        p.kernels.push_back({"Solve color windows / " + p.kernels[function].name, source.str()});
         kernels.emplace(function, kernel);
         return kernel;
     };
@@ -214,7 +257,7 @@ void fuseColorWindows(CompiledPlan& p, const std::vector<KernelFunction>& functi
         for (size_t end = first + 2; end <= limit; ++end) {
             std::vector<Batch> candidate(p.solve.begin() + first, p.solve.begin() + end);
             std::vector<std::vector<std::vector<uint32_t>>> candidateRegions;
-            if (!buildColorWindow(p, candidate, relationWork, endpoints, relations, variables,
+            if (!buildColorWindow(p, candidate, relationWork, relations, variables,
                                   candidateRegions))
                 break;
             stages = std::move(candidate);
@@ -319,12 +362,18 @@ struct Cost {
     }
 };
 // Conservative estimate of the dense local solve's explicitly generated arrays.
-uint64_t temporaryWords(const RelationType& t) {
-    uint64_t n = t.inputSize(), q = t.stateSize(), d = t.tangentSize(), m = t.rows;
+uint64_t temporaryWords(const CompiledPlan& p, uint32_t type) {
+    const auto& t = *p.types[type];
+    uint64_t n = t.inputSize(), q = 0, d = p.activeTangent(type), m = t.rows;
+    for (uint32_t slot = 0; slot < t.spaces.size(); ++slot)
+        if (!p.typeReadOnly[type][slot])
+            q += t.spaces[slot]->stateSize;
     uint64_t result = n + m * q + 2 * m * d + m * m + 6 * m;
-    for (const auto& s : t.spaces)
-        result += 2 * s->stateSize + s->tangentSize +
-                  uint64_t(s->stateSize) * s->tangentSize;
+    for (uint32_t slot = 0; slot < t.spaces.size(); ++slot)
+        if (!p.typeReadOnly[type][slot]) {
+            const auto& s = t.spaces[slot];
+            result += 2 * s->stateSize + s->tangentSize + uint64_t(s->stateSize) * s->tangentSize;
+        }
     return result;
 }
 } // namespace
@@ -333,6 +382,7 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     p.statistics.referenceDispatches = dispatchCount(p);
     // Dynamic endpoints can connect any compatible variable at a later tick.
     if (p.dynamicTopology || p.policy.execution == ExecutionMode::Global) {
+        collapseVariableDispatches(p, functions);
         collapseRelationDispatches(p);
         fuseColorWindows(p, functions);
         p.statistics.dispatches = dispatchCount(p);
@@ -341,20 +391,91 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     }
     const auto variableCount = uint32_t(p.statistics.variables);
     Components components(variableCount);
-    auto endpoints = words(p.buffers[size_t(BufferRole::Endpoints)]);
-    auto relations = words(p.buffers[size_t(BufferRole::Relations)]);
-    for (const auto& layout : p.relations) {
-        const auto arity = uint32_t(p.types[layout.type]->spaces.size());
-        for (uint32_t id = layout.first; id < layout.first + layout.count; ++id) {
-            auto e = relations[size_t(id) * 9];
-            for (uint32_t slot = 1; slot < arity; ++slot)
-                components.join(endpoints[e], endpoints[e + slot]);
+    auto variables = words(p.buffers[size_t(BufferRole::Variables)]);
+    auto readOnly = [&](uint32_t id) { return variables[size_t(id) * 5 + 4] != 0; };
+    // Components are defined by writes. Shared read-only input is an effect at a
+    // substep boundary, not a reason to merge independent solve regions.
+    for (uint32_t set = 0; set < p.relations.size(); ++set) {
+        for (const auto& domain : p.bindings[set].domains) {
+            if (domain.map == BindingDomain::Map::Product && domain.affineFields()) {
+                bool active[2] = {};
+                for (uint32_t slot = 0; slot < domain.fields.size(); ++slot)
+                    active[slot < domain.split ? 0 : 1] = active[slot < domain.split ? 0 : 1] ||
+                        !p.model.data->variables[domain.fields[slot].first.set].readOnly;
+                uint32_t owner = NoRegion;
+                for (uint32_t side = 0; side < 2; ++side) {
+                    const auto count = side ? domain.right : domain.left;
+                    const auto begin = side ? domain.split : 0u;
+                    const auto end = side ? uint32_t(domain.fields.size()) : domain.split;
+                    for (uint32_t member = 0; member < count && active[side]; ++member) {
+                        if (!(active[0] && active[1]))
+                            owner = NoRegion;
+                        for (uint32_t slot = begin; slot < end; ++slot) {
+                            const auto ref = domain.fields[slot].at(member);
+                            const auto id = p.variables[ref.set].first + ref.index;
+                            if (readOnly(id))
+                                continue;
+                            if (owner == NoRegion)
+                                owner = id;
+                            else
+                                components.join(owner, id);
+                        }
+                    }
+                }
+            } else {
+                for (uint32_t row = 0; row < domain.count; ++row) {
+                    uint32_t owner = NoRegion;
+                    for (uint32_t slot = 0; slot < domain.fields.size(); ++slot) {
+                        const auto ref = domain.at(row, slot);
+                        const auto id = p.variables[ref.set].first + ref.index;
+                        if (readOnly(id))
+                            continue;
+                        if (owner == NoRegion)
+                            owner = id;
+                        else
+                            components.join(owner, id);
+                    }
+                }
+            }
         }
     }
+    std::vector<uint32_t> relationWriter(p.statistics.relations, NoRegion), inputOwner(variableCount, NoRegion);
+    std::vector<bool> sharedInput(variableCount);
+    for (const auto& layout : p.relations) {
+        auto arity = uint32_t(p.types[layout.type]->spaces.size());
+        for (uint32_t id = layout.first; id < layout.first + layout.count; ++id) {
+            auto& writer = relationWriter[id];
+            for (uint32_t slot = 0; slot < arity; ++slot) {
+                auto variable = p.endpoint(id, slot);
+                if (!readOnly(variable)) {
+                    writer = components.root(variable);
+                    break;
+                }
+            }
+            for (uint32_t slot = 0; slot < arity; ++slot) {
+                auto variable = p.endpoint(id, slot);
+                if (!readOnly(variable))
+                    continue;
+                if (writer == NoRegion)
+                    sharedInput[variable] = true;
+                else if (inputOwner[variable] == NoRegion)
+                    inputOwner[variable] = writer;
+                else if (inputOwner[variable] != writer)
+                    sharedInput[variable] = true;
+            }
+        }
+    }
+    // A read-only input with one consumer component can be predicted privately
+    // inside that region. Inputs shared between components stay globally owned.
+    for (uint32_t id = 0; id < variableCount; ++id)
+        if (!sharedInput[id] && inputOwner[id] != NoRegion)
+            components.join(inputOwner[id], id);
     std::vector<Cost> costs(variableCount);
     for (const auto& layout : p.variables) {
         const auto& space = *p.spaces[layout.space];
         for (uint32_t id = layout.first; id < layout.first + layout.count; ++id) {
+            if (sharedInput[id])
+                continue;
             auto& cost = costs[components.root(id)];
             ++cost.variables;
             cost.state += 2 * uint64_t(space.stateSize) + space.tangentSize;
@@ -364,9 +485,11 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     }
     std::vector<uint32_t> relationOwner(p.statistics.relations, NoRegion);
     for (const auto& layout : p.relations) {
-        auto temporary = temporaryWords(*p.types[layout.type]);
+        auto temporary = temporaryWords(p, layout.type);
         for (uint32_t id = layout.first; id < layout.first + layout.count; ++id) {
-            auto owner = components.root(endpoints[relations[size_t(id) * 9]]);
+            if (relationWriter[id] == NoRegion)
+                continue;
+            auto owner = components.root(relationWriter[id]);
             relationOwner[id] = owner;
             ++costs[owner].relations;
             costs[owner].state += uint64_t(p.types[layout.type]->history) + p.types[layout.type]->rows;
@@ -391,6 +514,7 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
         packed = packed + costs[id];
     }
     if (!regionCount) {
+        collapseVariableDispatches(p, functions);
         collapseRelationDispatches(p);
         fuseColorWindows(p, functions);
         p.statistics.dispatches = dispatchCount(p);
@@ -409,7 +533,7 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
             for (uint32_t i = 0; !localFunctions[b.kernel] && i < b.count; ++i) {
                 auto id = source[b.first + i];
                 auto owner = variable ? components.root(id) : relationOwner[id];
-                localFunctions[b.kernel] = regions[owner] != NoRegion;
+                localFunctions[b.kernel] = owner != NoRegion && regions[owner] != NoRegion;
             }
         }
     // Bound a mixed-type program's code footprint before committing the mapping.
@@ -418,6 +542,7 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
         if (localFunctions[i])
             sourceBytes += functions[i].source.size();
     if (sourceBytes > SourceByteBudget) {
+        collapseVariableDispatches(p, functions);
         collapseRelationDispatches(p);
         fuseColorWindows(p, functions);
         p.statistics.dispatches = dispatchCount(p);
@@ -430,14 +555,20 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
         p.statistics.localVariables += variableRegion[id] != NoRegion;
     }
     for (auto& owner : relationOwner) {
-        owner = regions[owner];
+        if (owner != NoRegion)
+            owner = regions[owner];
         p.statistics.localRelations += owner != NoRegion;
     }
     p.statistics.localRegions = regionCount;
+    for (const auto& layout : p.relations)
+        for (uint32_t id = layout.first; id < layout.first + layout.count; ++id)
+            if (relationOwner[id] != NoRegion)
+                for (uint32_t slot = 0; slot < p.types[layout.type]->spaces.size(); ++slot)
+                    p.localPerSubstep = p.localPerSubstep || sharedInput[p.endpoint(id, slot)];
     // Each region owns a packed shared-state image. Layout records map it back to
     // stable public SoA addresses; operation accessors use variable/relation IDs.
     std::vector<std::vector<uint32_t>> state(regionCount);
-    std::vector<uint32_t> localOffsets(size_t(variableCount) * 3 + size_t(p.statistics.relations) * 2);
+    std::vector<uint32_t> localOffsets(size_t(variableCount) * 3 + size_t(p.statistics.relations) * 2, NoRegion);
     auto stateField = [&](uint32_t owner, uint32_t kind, uint32_t address, uint32_t width, uint32_t stride) {
         auto offset = uint32_t(state[owner].size() / 2);
         for (uint32_t c = 0; c < width; ++c) {
@@ -540,7 +671,7 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     lower(p.update);
 
     std::ostringstream source;
-    source << "shared float regionState[" << sharedWords << "];\n" << stateAccess(true, variableCount);
+    source << "shared float regionState[" << sharedWords << "];\n" << stateAccess(true, variableCount, p.localPerSubstep);
     std::set<uint32_t> emitted;
     for (const auto& stage : phases)
         if (stage.kernel != NoRegion && emitted.insert(stage.kernel).second)
@@ -563,7 +694,7 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
         source << "}\n";
     };
     copyState(false);
-    source << "barrier();\nfor(uint substep=0u;substep<" << p.policy.substeps << "u;++substep){"
+    source << "barrier();\nfor(uint substep=0u;substep<" << (p.localPerSubstep ? 1u : p.policy.substeps) << "u;++substep){"
               "float h=step.h,time=step.time+h*float(substep+1u),inverseH2=1.0/(h*h);\n";
     for (uint32_t i = 0; i < phases.size(); ++i) {
         if (i == iterationBegin && iterationBegin != iterationEnd)
@@ -599,9 +730,10 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     p.kernels.push_back({"Solve local regions", source.str()});
     // Remaining global work still benefits from one type-dispatch per dependency
     // color. Local work has already retained its specialized calls above.
+    collapseVariableDispatches(p, functions);
     collapseRelationDispatches(p);
     fuseColorWindows(p, functions);
-    p.statistics.dispatches = dispatchCount(p) + 1;
+    p.statistics.dispatches = dispatchCount(p) + (p.localPerSubstep ? p.policy.substeps : 1);
     pruneKernels(p);
 }
 } // namespace whimsical::dynamics

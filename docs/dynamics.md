@@ -53,7 +53,7 @@ DSL 中每个关系定义恰好接收两个形式对象。每个对象可以暴�
 
 ## C++ 底层构造接口
 
-C++ 保留端点级构造接口供底层调用方使用。DSL 的对象和 pair 存在同一个 Model 中，Compiler 将它们展开后进入相同的求解管线。
+C++ 保留端点级构造接口供底层调用方使用。DSL 的对象和 pair 存在同一个 Model 中，Compiler 先将连接转换为与求解器无关的 BindingIR，保留集合积、组合和字段映射。着色按需遍历逻辑实例，执行计划确定后才选择 GPU 端点布局；可用仿射索引表达的大集合不物化完整端点表。
 
 ```cpp
 using namespace whimsical::dynamics;
@@ -107,11 +107,13 @@ auto tail = instance.read(StateField::Value, variables, 99996, 4);
 
 只读端点不产生写冲突。`readOnly` 是结构承诺，仍可通过速度、加速度或状态命令驱动；逆度量为零不会被编译器自动视为只读。批次按颜色和数学类型形成，不为每个独立连通分量创建一个 pass。
 
+Gather 只覆盖有 Jacobi 贡献的可写变量；动态拓扑按可写变量保留候选范围。Auto 将不同空间中互不依赖的预测、归并、速度恢复批次分别合并，避免仅因增加一个只读空间就增加每轮 dispatch。颜色窗口内部使用工作组范围的内存屏障，其写依赖已由组件划分限制在同一工作组。
+
 执行方式与数值方法分开选择：`SolverPolicy::execution` 默认 `ExecutionMode::Auto`，也可指定 `ExecutionMode::Global` 保留逐阶段 dispatch。JavaScript 对应 `compile(handle, {execution:'auto'})` / `{execution:'global'}`。
 
-Auto 根据静态端点连接识别封闭组件，按变量数、关系数、状态容量和函数复杂度选择工作组融合，并把多个小组件打包。区域内的值、前值、速度、history 和乘子放入共享内存，保持原有颜色顺序、Jacobi 归并及子步 / 迭代循环。共享只读端点也会连接组件，因为预测仍可能推进只读变量。大型组件保留全局路径；含动态端点的模型目前整体使用全局路径。
+Auto 根据静态可写端点连接识别组件，按变量数、关系数、状态容量和函数复杂度选择工作组融合，并把多个小组件打包。区域内的值、前值、速度、history 和乘子放入共享内存，保持颜色顺序和 Jacobi 归并。独占的只读输入归入消费组件，可融合整个 tick；跨组件共享的只读输入由全局预测每子步推进一次，消费它的局部区域在预测后融合该子步的迭代。大型组件保留全局路径；含动态端点的模型目前整体使用全局路径。
 
-`CompiledPlan::statistics` 报告组件数、局部区域数、局部变量 / 关系数、每工作组共享字节数，以及优化前后的每步数值计算 dispatch 数。后者不含动态拓扑构建和上传 / 回读。具体预算、实现边界和实测结果见 [编译器优化说明](dynamics-compiler-optimization.md)。
+`CompiledPlan::statistics` 报告组件数、局部区域数、局部变量 / 关系数、每工作组共享字节数，以及优化前后的每步数值计算 dispatch 数。后者不含动态拓扑构建和上传 / 回读。另有 BindingIR 域数、隐式端点引用数、实际端点存储 word 数、被裁剪的切向导数列数和 CPU 计划编译耗时（不含驱动编译 shader）；脚本可用 `Engine.dynamics.scene.plan(entity)` 查看摘要。具体预算、实现边界和实测结果见 [编译器优化说明](dynamics-compiler-optimization.md)。
 
 关联结构按端点数增长，不创建关系之间的两两冲突图。Jacobi 用端点最大关联度缩放乘子增量与对应修正，避免共享端点的贡献无控制累加；高关联度可能需要更多迭代。它和 Colored 的迭代路径不保证逐位一致。
 
@@ -238,7 +240,7 @@ var contact = X.pair(separation, particles, particles, {diameter: 0.36}, {
 
 `compile`、`step`、`read` 使用单请求通道：每个模型最多一个未消费结果；`poll` 返回版本、tick、诊断、`error` 和 `Float32Array values`。处理完成后才能提交下一项操作。场景用法见 [Dynamics 与 ECS](dynamics-ecs.md)。
 
-可运行示例位于 [ConstraintLab](../Projects/ConstraintLab/README.md)：布料、绳索、绳网、穿绳布幕、星仪，以及集合粒子示例。粒子示例只声明三条高层绑定，Compiler 完整展开为 4,950 个无向粒子组合、500 个粒子—边界组合和 100 个阻力实例。当前没有邻域查询、剪枝或集合归约，展开成本按成员组合数增长。
+可运行示例位于 [ConstraintLab](../Projects/ConstraintLab/README.md)：布料、绳索、绳网、穿绳布幕、星仪，以及集合粒子示例。粒子示例只声明三条高层绑定，BindingIR 保留三个域，逻辑上仍有 4,950 个无向粒子组合、500 个粒子—边界组合和 100 个阻力实例。GPU 用 27 个整数描述全部 11,500 个端点引用。当前没有邻域查询、空间剪枝或集合归约；着色、逐关系字段和求解遍历仍随成员组合数增长。
 
 ## 重点验证
 

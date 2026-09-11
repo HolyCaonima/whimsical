@@ -4,7 +4,7 @@
 
 `dynamicsBinding` 是可选的实体交互／姿态映射，不是模型内部的拓扑表示。显示十万个网格顶点不应创建十万个 Transform 绑定，整体网格应通过 GPU 几何接入。当前场景层实现了 Transform 输入／输出与显式范围观察，尚未添加布料网格组件。Runtime 已有 `PublishedState::import` 的 GPU 消费契约；后续网格接入应沿该边界扩展，不向数学后端添加布料语义。
 
-建模使用 `defineDofs → defineObject / defineMember → defineRelation → pair / pairs`。`X.describe` 保存对象声明、成员引用、两个形式对象的具名自由度接口和高层绑定；ECS 加载文档后由 Compiler 完整展开集合组合。`dynamicsBinding.variables` 仍是显示 / 输入映射的自由度地址，取 `defineDofs` 返回句柄的 `.set`，不承担数学对象或关系绑定语义。
+建模使用 `defineDofs → defineObject / defineMember → defineRelation → pair / pairs`。`X.describe` 保存对象声明、成员引用、两个形式对象的具名自由度接口和高层绑定；ECS 加载文档后由 Compiler 保留集合域和字段映射，按需遍历逻辑组合，执行计划确定后选择隐式索引或显式端点布局。`dynamicsBinding.variables` 仍是显示 / 输入映射的自由度地址，取 `defineDofs` 返回句柄的 `.set`，不承担数学对象或关系绑定语义。
 
 ## 组件与生命周期
 
@@ -56,6 +56,7 @@ S.control(owner, true, true);                  // 排队一个单步
 S.write(owner,'acceleration',0,0,acceleration); // 整行 Float32Array 或数组
 S.patch(owner,'compliance',0,0,compliance);     // 自动 apply，无需重建实例
 var state = S.state(owner);                    // tick/time、sampleTick、ready、error、数值诊断
+var plan = S.plan(owner);                      // CPU 编译耗时、域 / 端点存储、导数裁剪、融合及 dispatch 统计
 var firstEight = S.values(owner,0,0,8);        // 查询已完成的缓存，不隐式等待 GPU
 ```
 

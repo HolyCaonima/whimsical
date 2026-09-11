@@ -474,6 +474,11 @@ void Instance::step(const TickInput& input) {
         float time = float(completed_.time) + h * (substep + 1);
         for (const auto& batch : s.plan->predict)
             s.batch(batch, h, time, input.tick, 0);
+        // Shared read-only inputs have just been predicted for this substep.
+        // Independent local regions consume that value before the next prediction.
+        if (s.plan->localPerSubstep)
+            for (const auto& batch : s.plan->local)
+                s.batch(batch, h, time - h, input.tick, 0);
         for (uint32_t iteration = 0; iteration < s.plan->policy.iterations; ++iteration) {
             for (const auto& batch : s.plan->solve)
                 s.batch(batch, h, time, input.tick, iteration);
@@ -486,8 +491,9 @@ void Instance::step(const TickInput& input) {
             s.batch(batch, h, time, input.tick, 0);
     }
     // Closed regions are incidence-independent from the remaining global work.
-    for (const auto& batch : s.plan->local)
-        s.batch(batch, h, float(completed_.time), input.tick, 0);
+    if (!s.plan->localPerSubstep)
+        for (const auto& batch : s.plan->local)
+            s.batch(batch, h, float(completed_.time), input.tick, 0);
     s.recordReads(input.reads, readSize);
     s.submit(input.tick, input.profileRequest, std::max(1u, readSize), 1);
     submittedReads_ = input.reads;

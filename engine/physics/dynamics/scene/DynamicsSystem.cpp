@@ -267,6 +267,26 @@ Json DynamicsSystem::state(Entity e) const {
             {"paused", s.paused},
             {"error", s.error}};
 }
+Json DynamicsSystem::plan(Entity e) const {
+    const auto& p = *instance(storage_, e).plan;
+    const auto& s = p.statistics;
+    return {{"compileMilliseconds", s.compileMilliseconds},
+            {"variables", double(s.variables)}, {"relations", double(s.relations)},
+            {"bindingDomains", double(s.bindingDomains)},
+            {"endpointReferences", double(s.endpointReferences)},
+            {"implicitEndpointReferences", double(s.implicitEndpointReferences)},
+            {"endpointStorageWords", double(s.endpointStorageWords)},
+            {"eliminatedDerivativeColumns", double(s.eliminatedDerivativeColumns)},
+            {"storageBytes", double(s.storageBytes)},
+            {"components", s.components}, {"localRegions", s.localRegions},
+            {"candidateColors", s.candidateColors}, {"colors", s.colors},
+            {"coloredRelations", double(s.coloredRelations)}, {"jacobiRelations", double(s.jacobiRelations)},
+            {"colorWindows", s.colorWindows}, {"colorWindowRegions", double(s.colorWindowRegions)},
+            {"localRelations", double(s.localRelations)},
+            {"localPerSubstep", p.localPerSubstep},
+            {"referenceDispatches", double(s.referenceDispatches)},
+            {"dispatches", double(s.dispatches)}};
+}
 std::vector<float> DynamicsSystem::values(Entity e, SetId set, uint32_t first, uint32_t count) const {
     return sample(instance(storage_, e), {set, first, count});
 }
