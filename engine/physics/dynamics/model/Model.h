@@ -51,6 +51,10 @@ class Field {
     uint32_t width() const {
         return width_;
     }
+    bool isUniform() const;
+    const std::vector<float>& uniformValue() const {
+        return uniform_;
+    }
     float at(uint32_t row, uint32_t component = 0) const;
     std::vector<float> slice(uint32_t first, uint32_t count) const;
     // Materialize the immutable field as contiguous columns for execution.

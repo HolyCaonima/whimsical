@@ -232,3 +232,30 @@ Release 的 Whimsical、dynamics_run、dynamics_tests 构建成功；既有 Dyna
 ### 尚存成本
 
 本轮去掉的是位图和按完整索引域清理乘子的工作，未改变公开字段及关系元数据的 dense 契约。双活动队列仍按最坏逻辑容量分配；2,000 规模计划存储从 137,538,168 降至 137,286,796 bytes，降幅很小，不能宣称已实现端到端稀疏存储。CPU 编译仍展开全部逻辑关系，参数变更后的边界归约仍扫描域；高密度候选或范围回退也仍可能达到 O(P)。进一步消除这些成本需要内部逻辑域与物化字段的延迟表示，同时保留现有逐行 patch、迁移和回读契约。
+
+## 逻辑域延迟物化与有界活动存储（2026-09-12）
+
+这一轮把前述“尚存成本”中的两个平方级中间表示移除，仍未改变任何 DSL 输入、关系公式、稳定逻辑行 ID 或逐行 patch 契约。
+
+- 借鉴 Simit 的索引上下文传递，`BindingDomain` 在调度完成前一直保留。通过候选证明的大型域直接记为 deferred Jacobi domain，不再先创建每行 CPU instance、颜色和端点元数据，再把它们丢给候选 lowering。
+- 借鉴 Ebb 的逻辑关系与物理表示分离，GPU relation metadata 现在按域选择显式行表或 `base + row × stride`。Deferred segment 的仿射性来自构造规则，不再逐逻辑行重新验证。逻辑关系数仍是原集合组合数，物理 metadata 不再必须具有相同数量的结构体。
+- 借鉴 Taichi 的稀疏活动列表和分块状态，Compiler 现在沿用 Model 已有的 uniform fallback 加 1,024 行不可变页表示，而不在 lowering 时无条件展开它。小范围修改只复制涉及的页；未修改的巨大 uniform 字段不会在 snapshot 或 Compiler 中展开。GPU 公开字段仍保留原 dense 地址空间，以保证任意范围 patch 无需重编译。
+- `BufferData` 将逻辑字数与 CPU 初值分开。uniform/zero 字段由 Runtime 使用 `vkCmdFillBuffer` 初始化，Compiler 不再建立和上传同尺寸的临时数组。
+- Newton/Warp 式空间索引仍只生成保守候选。查询用已算出的距离平方构造精确 residual 并交给原活动谓词，避免重新加载两个端点和重复计算 primal；最终数学判断、导数及修正公式没有被网格替换。
+
+活动双队列不再按全部逻辑 Jacobi 行分配。每个数学类型的容量为非索引普通行数，加上每个候选域的
+`min(domainRows, 64 × (leftMembers + rightMembers))`。64 是后端容量启发式，不是邻居上限：追加超过容量时设置当前 queue side 的 overflow，所有关系在活动计数阶段仍被完整判断；求解阶段改为遍历完整逻辑域。若上一轮 overflow，下一轮活动收集同样从完整域重建，因此离开网格但乘子非零的关系不会因截断队列而丢失。新子步的首次活动判断按原 iteration-0 规则惰性重置乘子。密集回退可以达到 O(P)，但不会越界、截断或改变用户关系。
+
+没有采用 MPM lowering。MPM 的网格是离散状态与数值模型的一部分，把任意 pair relation 改写成 MPM 会改变关系、自由度及误差定义；本轮只迁移其稀疏容器和活动任务组织经验。
+
+### 当前规模结果
+
+使用同一 standalone DSL、固定随机种子、Hybrid、4 子步 × 12 迭代、Release、RTX 3080、Vulkan validation：
+
+- 4,000 个 R3 自由度、8,022,000 个逻辑关系：CPU 计划从 1,754 ms 降至 6 ms。双队列的关系 ID 容量从 8,022,000 降为 536,000，即队列主体从约 64.18 MB 降为 4.29 MB。不同变频/细粒度 profile 运行的稳态完整 dynamics 提交约 3.1–4.1 ms；稀疏容量分支的详细 profile 样本相对无容量上限版本约增加 0.1 ms，但避免了随笛卡尔积增长的队列显存。
+- 10,000 个 R3 自由度、50,055,000 个逻辑关系：CPU 计划从 10,656 ms 降至 13–14 ms。双队列容量为 1,340,000，队列主体从约 400.44 MB 降为 10.72 MB。tick 60–90 的完整提交主要为 6.11–6.27 ms，和优化前记录的 6.236 ms 均值同量级。
+- 4,000 与 10,000 两个运行的 tick-1 状态前缀与各自优化前记录一致，完成样本的 invalid / singular 为 0 / 0。长期轨迹包含活动队列原子追加顺序造成的浮点非确定性，不宣称逐位一致。另以 800 成员、全部关系活动的范围强制触发 overflow；完整域回退正常结束，诊断为 0 / 0。
+
+`candidateQueueCapacity` 已加入计划摘要，用于区分逻辑活动行数和实际队列容量。当前仍按逻辑行分配 Parameters、Compliance、Enabled 和 Multiplier 的 GPU 地址空间；uniform fill 已消除 CPU 展开和上传，却没有消除这些 Vulkan buffer 的虚拟/物理容量。若继续压缩它们，需要让 Runtime 支持 uniform base + patch pages 或可重建的物理字段资源；这属于下一层存储架构，而不是在 Compiler 中加入具体模拟类别。
+
+最终 Release 的 `dynamics_tests`、`dynamics_run` 和 `Whimsical` 均构建成功；既有 Dynamics focused checks（包含候选生命周期及 bound/fallback）通过，Vulkan validation 未报告错误。本轮没有新增或修改测试。

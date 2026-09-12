@@ -360,6 +360,7 @@ Json DynamicsSystem::plan(Entity e) const {
             {"candidateDomains", s.candidateDomains},
             {"candidateRelations", double(s.candidateRelations)},
             {"activeJacobiRelations", double(s.activeJacobiRelations)},
+            {"candidateQueueCapacity", double(s.candidateQueueCapacity)},
             {"colorWindows", s.colorWindows}, {"colorWindowRegions", double(s.colorWindowRegions)},
             {"localRelations", double(s.localRelations)},
             {"localPerSubstep", p.localPerSubstep},

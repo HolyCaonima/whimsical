@@ -1,6 +1,7 @@
 #include "physics/dynamics/compiler/FormulaGlsl.h"
 #include "Instance.h"
 #include "renderCore/graph/RenderGraph.h"
+#include "renderCore/vulkan/GraphAccess.h"
 #include "renderCore/vulkan/VulkanAccess.h"
 #include <algorithm>
 #include <cmath>
@@ -80,7 +81,7 @@ struct Instance::Storage {
     explicit Storage(rc::RenderCore& core, PlanRef value) : plan(std::move(value)) {
         for (uint32_t i = 0; i < BufferCount; ++i) {
             const auto& b = plan->buffers[i];
-            auto d = declaration(b.name, b.initial.size(), b.integers);
+            auto d = declaration(b.name, b.byteSize(), b.integers);
             // Model fields and compiled tables may be uploaded between steps, but
             // no kernel writes them. Preserve that fact in the shader interface.
             switch (BufferRole(i)) {
@@ -187,8 +188,25 @@ struct Instance::Storage {
     void initialize() {
         auto& graph = execution->graph();
         graph.reset();
-        for (uint32_t i = 0; i < BufferCount; ++i)
-            execution->upload(resources[i], plan->buffers[i].initial);
+        for (uint32_t i = 0; i < BufferCount; ++i) {
+            const auto& buffer = plan->buffers[i];
+            if (!buffer.initial.empty()) {
+                if (buffer.initial.size() != buffer.byteSize())
+                    throw std::logic_error("Partial Dynamics buffer initialization is unsupported");
+                execution->upload(resources[i], buffer.initial);
+            }
+            if (!buffer.fills.empty()) {
+                const auto target = resources[i];
+                graph.add("Fill Dynamics " + std::string(buffer.name))
+                    .modify(target, rg::Access::Transfer)
+                    .record([target, fills = buffer.fills](const rg::PassContext& context) {
+                        const auto& native = context.buffer(target);
+                        for (const auto& fill : fills)
+                            vkCmdFillBuffer(context.command, native.handle, fill.first * 4,
+                                            fill.count * 4, fill.value);
+                    });
+            }
+        }
     }
     void submit(uint64_t tick = 0, uint64_t profile = 0, uint32_t width = 1, uint32_t height = 1) {
         execution->compile(width, height);
@@ -264,7 +282,7 @@ struct Instance::Storage {
         };
         std::array<FieldWrites, 4> fields;
         const auto capacity =
-            plan->buffers[size_t(BufferRole::StateWrites)].initial.size() / (3 * sizeof(uint32_t));
+            plan->buffers[size_t(BufferRole::StateWrites)].wordCount() / 3;
         for (uint32_t field = 0; field < fields.size(); ++field) {
             auto reserve = std::min(assignments[field], capacity);
             fields[field].words.reserve(reserve * 2);
@@ -407,7 +425,7 @@ PublishedState Instance::publish() {
     auto copy = std::make_shared<PublishedState::Storage>();
     const std::array<BufferRole, 3> roles = {BufferRole::Values, BufferRole::Velocity, BufferRole::History};
     for (uint32_t i = 0; i < 3; ++i) {
-        auto size = plan().buffers[size_t(roles[i])].initial.size();
+        auto size = plan().buffers[size_t(roles[i])].byteSize();
         auto d = declaration("snapshot" + std::to_string(i), size, false, false);
         copy->output[i] = copy->registry.declare(d);
         d.lifetime = rg::Lifetime::Imported;

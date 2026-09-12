@@ -56,67 +56,215 @@ uint32_t checked(size_t n) {
 }
 template <class T> uint32_t append(BufferData& target, const std::vector<T>& values) {
     static_assert(sizeof(T) == 4);
-    auto first = checked(target.initial.size() / 4);
+    if (target.wordCount() != target.initial.size() / 4)
+        throw std::logic_error("Cannot append CPU data after deferred buffer initialization");
+    auto first = checked(target.wordCount());
     if (uint64_t(first) + values.size() > UINT32_MAX)
         throw std::overflow_error("Dynamics buffer element capacity");
     auto offset = target.initial.size();
     target.initial.resize(offset + values.size() * 4);
     if (!values.empty())
         std::memcpy(target.initial.data() + offset, values.data(), values.size() * 4);
+    target.words = target.initial.size() / 4;
     return first;
 }
-uint32_t field(BufferData& target, const Field& values) {
+uint32_t reserve(BufferData& target, uint64_t words, std::optional<uint32_t> fill = {}) {
+    const auto first = checked(target.wordCount());
+    if (uint64_t(first) + words > UINT32_MAX)
+        throw std::overflow_error("Dynamics buffer element capacity");
+    target.words = uint64_t(first) + words;
+    if (fill && words)
+        target.fills.push_back({first, words, *fill});
+    return first;
+}
+uint32_t field(BufferData& target, const Field& values, bool deferUniform = false) {
+    if (deferUniform) {
+        const auto first = reserve(target, uint64_t(values.count()) * values.width());
+        const auto& uniform = values.uniformValue();
+        for (uint32_t c = 0; c < values.width(); ++c) {
+            uint32_t value;
+            std::memcpy(&value, &uniform[c], sizeof(value));
+            target.fills.push_back({uint64_t(first) + uint64_t(c) * values.count(), values.count(), value});
+        }
+        return first;
+    }
     return append(target, values.columnMajor());
 }
-void setWord(BufferData& target, uint32_t index, uint32_t value) {
-    std::memcpy(target.initial.data() + size_t(index) * 4, &value, 4);
-}
-
 // Per-row scheduling state is a color byte. Everything else is an immutable
 // projection of the logical set range, not a Cartesian array of instance structs.
 class InstanceRows {
     const CompiledPlan& plan_;
-    std::vector<int8_t> colors_;
-    uint32_t currentSet_ = 0;
+    struct Segment {
+        uint32_t first = 0, count = 0, set = 0;
+        std::vector<int8_t> colors;
+        std::vector<uint32_t> endpoints, contributions, contributionStrides;
+        uint32_t deferredEndpoint = 0;
+    };
+    std::vector<Segment> segments_;
+    uint32_t size_ = 0, materialized_ = 0, currentSegment_ = 0;
+    int8_t deferredColor_ = -1;
+
+    uint32_t locate(uint32_t id) {
+        if (currentSegment_ < segments_.size()) {
+            const auto& current = segments_[currentSegment_];
+            if (id >= current.first && id - current.first < current.count)
+                return currentSegment_;
+        }
+        auto found = std::upper_bound(
+            segments_.begin(), segments_.end(), id,
+            [](uint32_t row, const Segment& segment) { return row < segment.first; });
+        currentSegment_ = uint32_t(std::prev(found) - segments_.begin());
+        return currentSegment_;
+    }
   public:
     struct Row {
         uint32_t id, set, local, type;
         int8_t& color;
         uint32_t arity;
     };
-    InstanceRows(const CompiledPlan& plan, uint32_t count) : plan_(plan), colors_(count, -1) {}
-    uint32_t size() const { return uint32_t(colors_.size()); }
-    Row at(uint32_t id, uint32_t set) {
-        const auto& layout = plan_.relations[set];
-        return {id, set, id - layout.first, layout.type, colors_[id],
+    InstanceRows(const CompiledPlan& plan, uint32_t count) : plan_(plan), size_(count) {
+        for (uint32_t set = 0; set < plan.relations.size(); ++set)
+            for (uint32_t domain = 0; domain < plan.bindings[set].domains.size(); ++domain) {
+                const auto& binding = plan.bindings[set].domains[domain];
+                Segment segment{plan.relations[set].first + binding.first, binding.count, set};
+                const bool deferred = std::any_of(
+                    plan.deferredJacobiDomains.begin(), plan.deferredJacobiDomains.end(),
+                    [&](const DeferredJacobiDomain& candidate) {
+                        return candidate.set == set && candidate.domain == domain;
+                    });
+                if (!deferred) {
+                    segment.colors.assign(binding.count, -1);
+                    segment.endpoints.resize(binding.count);
+                    segment.contributions.resize(binding.count);
+                    segment.contributionStrides.resize(binding.count);
+                    materialized_ += binding.count;
+                }
+                segments_.push_back(std::move(segment));
+            }
+    }
+    uint32_t size() const { return size_; }
+    uint32_t materializedSize() const { return materialized_; }
+    bool deferred(uint32_t id) {
+        return segments_[locate(id)].colors.empty();
+    }
+    void set(uint32_t id, uint32_t column, uint32_t value) {
+        auto& segment = segments_[locate(id)];
+        if (segment.colors.empty())
+            throw std::logic_error("Deferred relation metadata is affine");
+        auto row = id - segment.first;
+        if (column == 0)
+            segment.endpoints[row] = value;
+        else if (column == 5)
+            segment.contributions[row] = value;
+        else if (column == 7)
+            segment.contributionStrides[row] = value;
+        else
+            throw std::logic_error("Unsupported mutable relation metadata column");
+    }
+    void setDomainEndpoint(uint32_t set, uint32_t domain, uint32_t value) {
+        const auto& binding = plan_.bindings[set].domains[domain];
+        if (!binding.count)
+            return;
+        const auto first = plan_.relations[set].first + binding.first;
+        auto& segment = segments_[locate(first)];
+        if (segment.first != first)
+            throw std::logic_error("Binding domain metadata range mismatch");
+        if (segment.colors.empty())
+            segment.deferredEndpoint = value;
+        else
+            std::fill(segment.endpoints.begin(), segment.endpoints.end(), value);
+    }
+    void packMetadata(BufferData& buffer, std::vector<MetadataRange<9>>& ranges) const {
+        std::vector<uint8_t> packed;
+        auto values = [&](const Segment& segment, uint32_t row) {
+            const auto& layout = plan_.relations[segment.set];
+            const auto local = segment.first - layout.first + row;
+            const auto endpoint = segment.colors.empty() ? segment.deferredEndpoint : segment.endpoints[row];
+            const auto contribution = segment.colors.empty() ? 0u : segment.contributions[row];
+            const auto contributionStride =
+                segment.colors.empty() ? 0u : segment.contributionStrides[row];
+            return std::array<uint32_t, 9>{
+                endpoint, layout.parameters + local, layout.compliance + local,
+                layout.history + local, layout.multipliers + local, contribution,
+                layout.count, contributionStride, layout.type};
+        };
+        for (const auto& segment : segments_) {
+            if (!segment.count)
+                continue;
+            MetadataRange<9> metadata;
+            metadata.first = segment.first;
+            metadata.count = segment.count;
+            metadata.base = values(segment, 0);
+            metadata.affine = segment.count >= 128;
+            if (segment.count > 1) {
+                metadata.stride = values(segment, 1);
+                for (uint32_t column = 0; column < 9; ++column)
+                    metadata.stride[column] -= metadata.base[column];
+            }
+            // Deferred segments are affine by construction: their endpoint
+            // descriptor is uniform and every logical row field above is either
+            // uniform or base + row. Materialized segments still prove the table.
+            for (uint32_t row = 2;
+                 metadata.affine && !segment.colors.empty() && row < segment.count; ++row) {
+                const auto rowValues = values(segment, row);
+                for (uint32_t column = 0; column < 9; ++column)
+                    metadata.affine = metadata.affine &&
+                        rowValues[column] == metadata.base[column] + row * metadata.stride[column];
+            }
+            metadata.offset = checked(packed.size() / 4);
+            if (!metadata.affine)
+                for (uint32_t row = 0; row < segment.count; ++row) {
+                    const auto rowValues = values(segment, row);
+                    const auto* first = reinterpret_cast<const uint8_t*>(rowValues.data());
+                    packed.insert(packed.end(), first, first + sizeof(rowValues));
+                }
+            if (!metadata.affine && !ranges.empty() && !ranges.back().affine &&
+                ranges.back().first + ranges.back().count == metadata.first)
+                ranges.back().count += metadata.count;
+            else
+                ranges.push_back(metadata);
+        }
+        buffer.initial = std::move(packed);
+        buffer.words = buffer.initial.size() / 4;
+        buffer.fills.clear();
+    }
+    Row at(uint32_t id, uint32_t segment) {
+        const auto& range = segments_[segment];
+        const auto& layout = plan_.relations[range.set];
+        auto& color = range.colors.empty() ? deferredColor_ : segments_[segment].colors[id - range.first];
+        return {id, range.set, id - layout.first, layout.type, color,
                 uint32_t(plan_.types[layout.type]->spaces.size())};
     }
     Row operator[](uint32_t id) {
-        const auto& current = plan_.relations[currentSet_];
-        if (id >= current.first && id - current.first < current.count) return at(id, currentSet_);
-        auto found = std::upper_bound(plan_.relations.begin(), plan_.relations.end(), id,
-            [](uint32_t row, const RelationLayout& layout) { return row < layout.first; });
-        currentSet_ = uint32_t(std::prev(found) - plan_.relations.begin());
-        return at(id, currentSet_);
+        return at(id, locate(id));
     }
     struct Iterator {
         InstanceRows& rows;
-        uint32_t id, set;
-        bool operator!=(const Iterator& other) const { return id != other.id; }
-        Row operator*() const { return rows.at(id, set); }
+        uint32_t segment, row;
+        bool operator!=(const Iterator& other) const {
+            return segment != other.segment || row != other.row;
+        }
+        Row operator*() const {
+            return rows.at(rows.segments_[segment].first + row, segment);
+        }
         Iterator& operator++() {
-            ++id;
-            while (set < rows.plan_.relations.size() &&
-                   id >= rows.plan_.relations[set].first + rows.plan_.relations[set].count) ++set;
+            ++row;
+            while (segment < rows.segments_.size() &&
+                   (rows.segments_[segment].colors.empty() ||
+                    row >= rows.segments_[segment].count)) {
+                ++segment;
+                row = 0;
+            }
             return *this;
         }
     };
     Iterator begin() {
-        uint32_t set = 0;
-        while (set < plan_.relations.size() && !plan_.relations[set].count) ++set;
-        return {*this, 0, set};
+        uint32_t segment = 0;
+        while (segment < segments_.size() && segments_[segment].colors.empty())
+            ++segment;
+        return {*this, segment, 0};
     }
-    Iterator end() { return {*this, size(), uint32_t(plan_.relations.size())}; }
+    Iterator end() { return {*this, uint32_t(segments_.size()), 0}; }
 };
 template <size_t Width, class Layout>
 void packMetadata(BufferData& buffer, const std::vector<Layout>& layouts,
@@ -150,6 +298,8 @@ void packMetadata(BufferData& buffer, const std::vector<Layout>& layouts,
             ranges.push_back(m);
     }
     buffer.initial = std::move(packed);
+    buffer.words = buffer.initial.size() / 4;
+    buffer.fills.clear();
 }
 template <size_t Width>
 void metadataAccess(std::ostringstream& source, const std::vector<MetadataRange<Width>>& ranges,
@@ -204,10 +354,24 @@ std::string signature(const RelationType& t) {
     return s;
 }
 } // namespace
-uint32_t CompiledPlan::endpoint(uint32_t relation, uint32_t slot) const {
+uint32_t CompiledPlan::relationSet(uint32_t relation) const {
     auto found = std::upper_bound(relations.begin(), relations.end(), relation,
         [](uint32_t id, const RelationLayout& layout) { return id < layout.first; });
-    const auto set = uint32_t(std::prev(found) - relations.begin());
+    return uint32_t(std::prev(found) - relations.begin());
+}
+uint32_t CompiledPlan::relationType(uint32_t relation) const {
+    return relations[relationSet(relation)].type;
+}
+uint32_t CompiledPlan::variableSet(uint32_t variable) const {
+    auto found = std::upper_bound(variables.begin(), variables.end(), variable,
+        [](uint32_t id, const VariableLayout& layout) { return id < layout.first; });
+    return uint32_t(std::prev(found) - variables.begin());
+}
+bool CompiledPlan::variableReadOnly(uint32_t variable) const {
+    return model.data->variables[variableSet(variable)].readOnly;
+}
+uint32_t CompiledPlan::endpoint(uint32_t relation, uint32_t slot) const {
+    const auto set = relationSet(relation);
     auto ref = bindings[set].at(relation - relations[set].first, slot);
     return variables[ref.set].first + ref.index;
 }
@@ -284,6 +448,18 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         p->buffers[i].integers = integer(BufferRole(i));
     }
     auto buffer = [&](BufferRole r) -> BufferData& { return p->buffers[size_t(r)]; };
+    auto allUniform = [](const auto& sets, auto field) {
+        return std::all_of(sets.begin(), sets.end(),
+                           [&](const auto& set) { return (set.*field).isUniform(); });
+    };
+    const bool uniformValues = allUniform(model.data->variables, &VariableSet::initial);
+    const bool uniformVelocity = allUniform(model.data->variables, &VariableSet::velocity);
+    const bool uniformMetric = allUniform(model.data->variables, &VariableSet::inverseMetric);
+    const bool uniformVariableEnabled = allUniform(model.data->variables, &VariableSet::enabled);
+    const bool uniformParameters = allUniform(model.data->relations, &RelationSet::parameters);
+    const bool uniformCompliance = allUniform(model.data->relations, &RelationSet::compliance);
+    const bool uniformHistory = allUniform(model.data->relations, &RelationSet::initialHistory);
+    const bool uniformRelationEnabled = allUniform(model.data->relations, &RelationSet::enabled);
     std::map<std::string, uint32_t> spaceIds, typeIds;
     std::vector<std::vector<uint32_t>> variableGroups;
     std::vector<bool> writable;
@@ -303,11 +479,11 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         VariableLayout layout{checked(writable.size()),
                               set.count,
                               space,
-                              field(buffer(BufferRole::Values), set.initial),
-                              field(buffer(BufferRole::Velocity), set.velocity),
-                              field(buffer(BufferRole::Metric), set.inverseMetric)};
+                              field(buffer(BufferRole::Values), set.initial, uniformValues),
+                              field(buffer(BufferRole::Velocity), set.velocity, uniformVelocity),
+                              field(buffer(BufferRole::Metric), set.inverseMetric, uniformMetric)};
         p->variables.push_back(layout);
-        field(buffer(BufferRole::VariableEnabled), set.enabled);
+        field(buffer(BufferRole::VariableEnabled), set.enabled, uniformVariableEnabled);
         for (uint32_t i = 0; i < set.count; ++i) {
             // Metrics are symmetric positive semidefinite. Reject negative diagonal or
             // asymmetric input instead of silently turning model errors into damping.
@@ -327,13 +503,14 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     }
     append(buffer(BufferRole::Variables), variableMeta);
     p->statistics.variables = writable.size();
-    buffer(BufferRole::Previous).initial = buffer(BufferRole::Values).initial;
-    buffer(BufferRole::Acceleration).initial.resize(buffer(BufferRole::Velocity).initial.size());
+    buffer(BufferRole::Previous) = buffer(BufferRole::Values);
+    buffer(BufferRole::Previous).name = Names[size_t(BufferRole::Previous)];
+    reserve(buffer(BufferRole::Acceleration), buffer(BufferRole::Velocity).wordCount(), 0u);
     // Resolve named fields and access effects before choosing numerical kernels.
     // Scheduling traverses the domains without making a second endpoint graph.
     uint64_t relationCount = 0;
     for (const auto& set : model.data->relations) relationCount += set.count;
-    buffer(BufferRole::Relations).initial.resize(size_t(checked(relationCount * 9)) * 4);
+    checked(relationCount);
     uint32_t relationFirst = 0;
     for (uint32_t setId = 0; setId < model.data->relations.size(); ++setId) {
         const auto& set = model.data->relations[setId];
@@ -362,16 +539,16 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             relationFirst,
             set.count,
             type,
-            field(buffer(BufferRole::Parameters), set.parameters),
-            field(buffer(BufferRole::Compliance), set.compliance),
-            field(buffer(BufferRole::History), set.initialHistory),
-            append(buffer(BufferRole::Multipliers), std::vector<float>(size_t(set.count) * set.type->rows)),
+            field(buffer(BufferRole::Parameters), set.parameters, uniformParameters),
+            field(buffer(BufferRole::Compliance), set.compliance, uniformCompliance),
+            field(buffer(BufferRole::History), set.initialHistory, uniformHistory),
+            reserve(buffer(BufferRole::Multipliers), uint64_t(set.count) * set.type->rows, 0u),
             0};
         p->dynamicTopology = p->dynamicTopology || set.dynamicEndpoints;
         if (set.dynamicEndpoints && policy.mode == SolveMode::Colored)
             throw std::invalid_argument("Dynamic endpoint sets require Hybrid or Jacobi policy");
         p->relations.push_back(layout);
-        field(buffer(BufferRole::RelationEnabled), set.enabled);
+        field(buffer(BufferRole::RelationEnabled), set.enabled, uniformRelationEnabled);
         std::vector<uint32_t> endpointSpaces;
         for (const auto& space : set.type->spaces) {
             auto found = spaceIds.find(signature(*space));
@@ -404,18 +581,23 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         for (uint32_t e = 0; e < binding.readOnly.size(); ++e)
             if (binding.readOnly[e])
                 p->statistics.eliminatedDerivativeColumns += uint64_t(set.count) * set.type->spaces[e]->tangentSize;
-        for (uint32_t row = 0; row < set.count; ++row) {
-            for (uint32_t r = 0; r < set.type->rows; ++r)
-                if (set.compliance.at(row, r) < 0)
+        if (set.compliance.isUniform()) {
+            for (auto value : set.compliance.uniformValue())
+                if (value < 0)
                     throw std::invalid_argument("Compliance must be nonnegative: " + set.name);
-            const uint32_t metadata[] = {0, layout.parameters + row, layout.compliance + row, layout.history + row,
-                                         layout.multipliers + row, 0, set.count, 0, type};
-            std::memcpy(buffer(BufferRole::Relations).initial.data() + size_t(layout.first + row) * sizeof(metadata),
-                        metadata, sizeof(metadata));
+        } else {
+            for (uint32_t row = 0; row < set.count; ++row)
+                for (uint32_t r = 0; r < set.type->rows; ++r)
+                    if (set.compliance.at(row, r) < 0)
+                        throw std::invalid_argument("Compliance must be nonnegative: " + set.name);
         }
         p->statistics.endpointReferences += uint64_t(set.count) * set.type->spaces.size();
         relationFirst += set.count;
     }
+    for (uint32_t set = 0; set < p->relations.size(); ++set)
+        for (uint32_t domain = 0; domain < p->bindings[set].domains.size(); ++domain)
+            if (canDeferCandidateDomain(*p, set, p->bindings[set].domains[domain]))
+                p->deferredJacobiDomains.push_back({set, domain});
     InstanceRows instances(*p, relationFirst);
     auto endpointId = [&](const InstanceRows::Row& instance, uint32_t slot) {
         auto ref = p->bindings[instance.set].at(instance.local, slot);
@@ -440,7 +622,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         }
     };
     std::vector<uint32_t> coloringOrder;
-    if (policy.mode != SolveMode::Jacobi) {
+    if (policy.mode != SolveMode::Jacobi && p->deferredJacobiDomains.empty()) {
         // Stable buckets retain the exact priority/row order without sorting a
         // Cartesian number of identical type priorities against one another.
         std::map<std::array<uint32_t, 4>, std::vector<uint32_t>> priorities;
@@ -448,7 +630,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         for (uint32_t type = 0; type < p->types.size(); ++type)
             typePriority.push_back({0, UINT32_MAX - p->types[type]->rows,
                 UINT32_MAX - uint32_t(p->types[type]->residual.nodes.size()), UINT32_MAX - p->activeTangent(type)});
-        coloringOrder.reserve(instances.size());
+        coloringOrder.reserve(instances.materializedSize());
         for (const auto& instance : instances) {
             if (model.data->relations[instance.set].dynamicEndpoints)
                 continue;
@@ -481,7 +663,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         uint32_t color = 0;
         while (!(available & (uint64_t(1) << color)))
             ++color;
-        instance.color = int32_t(color);
+        instance.color = int8_t(color);
         p->statistics.colors = std::max(p->statistics.colors, color + 1);
         writableEndpoints(instance,
                           [&](uint32_t variable) { used[variable] |= uint64_t(1) << color; });
@@ -573,57 +755,75 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             ++p->statistics.jacobiRelations;
             p->statistics.directJacobiRelations += directJacobi[instance.type];
         }
-    buffer(BufferRole::Diagnostics).initial.resize(8);
+    for (const auto& deferred : p->deferredJacobiDomains) {
+        const auto& domain = p->bindings[deferred.set].domains[deferred.domain];
+        const auto type = p->relations[deferred.set].type;
+        p->statistics.jacobiRelations += domain.count;
+        p->statistics.directJacobiRelations += domain.count;
+        for (uint32_t slot = 0; slot < domain.fields.size(); ++slot) {
+            const auto& source = domain.fields[slot];
+            const auto [first, end] = domain.memberRange(slot);
+            for (uint32_t member = first; member < end; ++member) {
+                const auto ref = source.at(member);
+                const auto id = p->variables[ref.set].first + ref.index;
+                if (writable[id]) {
+                    directVariables[id] = true;
+                    degree[id] = std::max(degree[id], 1u);
+                }
+                if (source.broadcast())
+                    break;
+            }
+        }
+        if (!directJacobi[type])
+            throw std::logic_error("Deferred candidate domains require sparse scalar Jacobi work");
+    }
+    reserve(buffer(BufferRole::Diagnostics), 2, 0u);
     p->statistics.relations = instances.size();
     std::vector<uint32_t> offsets(writable.size() + 1);
     for (size_t i = 0; i < gatheredDegree.size(); ++i)
         offsets[i + 1] = checked(uint64_t(offsets[i]) + gatheredDegree[i]);
     std::vector<uint32_t> entries(size_t(offsets.back()) * 2), cursor = offsets;
     if (p->statistics.directJacobiRelations) {
-        buffer(BufferRole::Contributions).initial.resize(buffer(BufferRole::Velocity).initial.size());
+        reserve(buffer(BufferRole::Contributions), buffer(BufferRole::Velocity).wordCount(), 0u);
         append(buffer(BufferRole::AdjacencyCursors), degree);
     }
+    for (const auto& in : instances)
+        if (in.color < 0 && directJacobi[in.type]) {
+            uint32_t maximumDegree = 1;
+            writableEndpoints(
+                in, [&](uint32_t id) { maximumDegree = std::max(maximumDegree, degree[id]); });
+            instances.set(in.id, 7, maximumDegree);
+        }
+    std::vector<std::vector<uint32_t>> gatheredRows(p->relations.size());
+    for (const auto& in : instances)
+        if (in.color < 0 && !directJacobi[in.type])
+            gatheredRows[in.set].push_back(in.id);
     for (uint32_t setId = 0; setId < p->relations.size(); ++setId) {
         const auto& layout = p->relations[setId];
-        if (directJacobi[layout.type]) {
-            for (uint32_t i = 0; i < layout.count; ++i) {
-                const auto& in = instances[layout.first + i];
-                if (in.color >= 0)
-                    continue;
-                uint32_t maximumDegree = 1;
-                writableEndpoints(
-                    in, [&](uint32_t id) { maximumDegree = std::max(maximumDegree, degree[id]); });
-                setWord(buffer(BufferRole::Relations), in.id * 9 + 7, maximumDegree);
-            }
+        const auto count = uint32_t(gatheredRows[setId].size());
+        if (!count)
             continue;
-        }
-        uint32_t count = 0;
-        for (uint32_t i = 0; i < layout.count; ++i)
-            if (instances[layout.first + i].color < 0)
-                ++count;
-        auto base =
-            append(buffer(BufferRole::Contributions), std::vector<float>(size_t(count) * p->activeTangent(layout.type)));
+        auto base = reserve(buffer(BufferRole::Contributions),
+                            uint64_t(count) * p->activeTangent(layout.type), 0u);
         uint32_t index = 0;
-        for (uint32_t i = 0; i < layout.count; ++i) {
-            const auto& in = instances[layout.first + i];
-            if (in.color >= 0)
-                continue;
+        for (auto id : gatheredRows[setId]) {
+            const auto in = instances[id];
             auto rowBase = base + index++;
             uint32_t local = 0;
             for (uint32_t e = 0; e < in.arity; ++e) {
-                auto id = endpointId(in, e);
+                auto variable = endpointId(in, e);
                 bool repeated = false;
                 for (uint32_t before = 0; before < e; ++before)
-                    repeated = repeated || endpointId(in, before) == id;
-                if (writable[id] && !repeated) {
-                    auto at = cursor[id]++;
+                    repeated = repeated || endpointId(in, before) == variable;
+                if (writable[variable] && !repeated) {
+                    auto at = cursor[variable]++;
                     entries[size_t(at) * 2] = rowBase + local * count;
                     entries[size_t(at) * 2 + 1] = count;
                 }
                 local += p->activeTangent(layout.type, e);
             }
-            setWord(buffer(BufferRole::Relations), in.id * 9 + 5, rowBase);
-            setWord(buffer(BufferRole::Relations), in.id * 9 + 7, count);
+            instances.set(in.id, 5, rowBase);
+            instances.set(in.id, 7, count);
         }
     }
     if (p->dynamicTopology) {
@@ -744,9 +944,9 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         BufferRole::Values, BufferRole::Velocity, BufferRole::Acceleration, BufferRole::History};
     uint64_t stateWords = 0;
     for (const auto& field : stateFields)
-        stateWords += buffer(field).initial.size() / 4;
+        stateWords += buffer(field).wordCount();
     const auto stateWriteCapacity = uint32_t(std::min<uint64_t>(stateWords, StateWriteCapacity));
-    buffer(BufferRole::StateWrites).initial.resize(std::max(1u, stateWriteCapacity * 3) * sizeof(uint32_t));
+    reserve(buffer(BufferRole::StateWrites), std::max(1u, stateWriteCapacity * 3));
     p->stateWriteKernel = kernel("Scatter Dynamics state", R"(
 void main(){uint i=invocation();if(i>=step.count)return;uint record=(step.first+i)*3u;
 uint field=x_stateWrites[record],at=x_stateWrites[record+1u];
@@ -780,7 +980,8 @@ void main(){uint i=invocation();if(i<step.count)x_scanScratch[step.first+i]+=x_s
         auto& layout = p->relations[setId];
         layout.endpoints = checked(endpointData.size());
         const auto arity = uint32_t(p->types[layout.type]->spaces.size());
-        for (const auto& domain : p->bindings[setId].domains) {
+        for (uint32_t domainId = 0; domainId < p->bindings[setId].domains.size(); ++domainId) {
+            const auto& domain = p->bindings[setId].domains[domainId];
             const auto base = checked(endpointData.size());
             const bool compact = domain.endpointMode(model.data->relations[setId].dynamicEndpoints) > 0;
             if (compact) {
@@ -791,15 +992,16 @@ void main(){uint i=invocation();if(i<step.count)x_scanScratch[step.first+i]+=x_s
                     endpointData.push_back(source.broadcast() ? 0 : source.stride);
                 }
                 p->statistics.implicitEndpointReferences += uint64_t(domain.count) * arity;
-            }
-            for (uint32_t row = 0; row < domain.count; ++row) {
-                const auto address = compact ? base | Indirect : checked(endpointData.size());
-                if (!compact)
+                instances.setDomainEndpoint(setId, domainId, base | Indirect);
+            } else {
+                for (uint32_t row = 0; row < domain.count; ++row) {
+                    const auto address = checked(endpointData.size());
                     for (uint32_t slot = 0; slot < arity; ++slot) {
                         const auto ref = domain.at(row, slot);
                         endpointData.push_back(p->variables[ref.set].first + ref.index);
                     }
-                setWord(buffer(BufferRole::Relations), (layout.first + domain.first + row) * 9, address);
+                    instances.set(layout.first + domain.first + row, 0, address);
+                }
             }
             if (endpointData.size() >= Indirect)
                 throw std::overflow_error("Endpoint storage exceeds tagged address capacity");
@@ -809,12 +1011,12 @@ void main(){uint i=invocation();if(i<step.count)x_scanScratch[step.first+i]+=x_s
     p->statistics.endpointStorageWords = endpointData.size();
     // Scheduling has finished inspecting row metadata. Select physical storage
     // now, without constraining the logical domain or its patch/read contract.
-    packMetadata(buffer(BufferRole::Relations), p->relations, p->relationMetadata);
+    instances.packMetadata(buffer(BufferRole::Relations), p->relationMetadata);
     packMetadata(buffer(BufferRole::Variables), p->variables, p->variableMetadata);
     for (auto& b : p->buffers) {
-        if (b.initial.empty())
-            b.initial.resize(4);
-        p->statistics.storageBytes += b.initial.size();
+        if (!b.wordCount())
+            reserve(b, 1, 0u);
+        p->statistics.storageBytes += b.byteSize();
     }
     p->statistics.compileMilliseconds = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - started).count();

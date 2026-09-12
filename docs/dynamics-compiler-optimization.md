@@ -2,7 +2,8 @@
 
 后续逻辑域分析、关系行视图及执行实验的实测见 [逻辑域编译优化与执行实验](dynamics-compiler-domain-cache.md)。
 
-最新一轮集合域、元数据与执行宽度优化见 [2026-09-11 编译器对照记录](dynamics-compiler-sep11.md)。
+最新一轮 deferred relation domain、仿射元数据和有界活动队列见
+[候选域实施说明](../engine/physics/dynamics/compiler/CandidateDomains.md#逻辑域延迟物化与有界活动存储2026-09-12)。
 
 当前实现保留高层连接域，再按读写效果、数学需求和后端容量选择导数专门化、端点布局及区域融合。优化位于 Compiler / Runtime 内，不包含项目或具体约束名称的判断，RenderCore 不需要理解求解语义。下文架构描述当前状态，后续各节保留各轮优化的历史实测。
 
@@ -314,3 +315,13 @@ Release 构建、现有回归和经用户许可的两组候选覆盖/生命周�
 真实界面同条件各两次对照：500 规模 GPU 提交均值 3.750 → 2.994 ms，CPU 计划生成 124.10 → 101.46 ms；2,000 规模分别为 3.889 → 3.068 ms、2,281.02 → 1,549.64 ms。未锁频，运行间有明显波动，数据不构成跨设备或逐次提速保证。两种规模完整状态在三个固定 tick 的回读均与基线一致，诊断与 Vulkan validation 均无错误。Release 构建和既有检查通过，没有新增测试。
 
 网格门槛、dense 公开字段及逻辑关系容量不变。详细来源、队列不变量、显示容量限制、重复采样和剩余复杂度见 [候选域后续优化说明](../engine/physics/dynamics/compiler/CandidateDomains.md#后续优化索引复用与活动队列2026-09-11)。
+
+## Deferred relation domain 与稀疏容量回退（2026-09-12）
+
+Compiler 现在可以在着色前证明某个大型仿射关系域将进入候选 Jacobi 路径，并让该域以 `BindingDomain` 形式直接穿过 CPU 调度。每行颜色、端点和 relation metadata 不再是选择候选执行前必须支付的成本。最终 metadata 按域选择表地址或仿射地址计算，逻辑 ID、参数/history/enable 的逐行索引和迁移契约不变。
+
+Compiler 现在沿用 Model 已有的 uniform fallback 加不可变页 `Field` 表示；编译计划的 uniform/zero buffer 使用逻辑容量和 GPU fill，不建立同尺寸 CPU 临时数组。该表示服务所有数学字段，不根据对象、字段名称或具体模拟类别做选择。
+
+候选队列以普通行加成员数线性预算分配，overflow 后完整遍历原逻辑域；上一轮 overflow 会使活动集从完整域重建。空间索引始终只是保守过滤，精确 residual、非零乘子生命周期、活动 degree 和原关系求解仍决定最终行为。计划摘要新增 `candidateQueueCapacity`。
+
+同一 4,000 自由度 / 8,022,000 关系 DSL 的 CPU 计划为 1,754 → 6 ms；10,000 自由度 / 50,055,000 关系为 10,656 → 13–14 ms。10,000 规模的双队列关系 ID 主体由约 400.44 MB 降为 10.72 MB，稳态提交仍约 6.2 ms。两个规模的 tick-1 状态前缀与既有基线一致，diagnostics 均通过；原子活动队列的长期轨迹不承诺逐位确定。详细容量不变量、密集 overflow 检查、GPU 分项和 MPM 取舍见上面的实施说明。

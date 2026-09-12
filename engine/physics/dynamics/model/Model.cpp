@@ -86,10 +86,16 @@ void defaults(RelationSet& set) {
     shape(set.compliance, set.count, set.type->rows, "compliance");
     shape(set.initialHistory, set.count, set.type->history, "history");
     shape(set.enabled, set.count, 1, "enabled");
-    for (uint32_t i = 0; i < set.count; ++i)
-        for (uint32_t c = 0; c < set.type->rows; ++c)
-            if (set.compliance.at(i, c) < 0)
+    if (set.compliance.isUniform()) {
+        for (auto value : set.compliance.uniformValue())
+            if (value < 0)
                 throw std::invalid_argument("Compliance must be nonnegative");
+    } else {
+        for (uint32_t i = 0; i < set.count; ++i)
+            for (uint32_t c = 0; c < set.type->rows; ++c)
+                if (set.compliance.at(i, c) < 0)
+                    throw std::invalid_argument("Compliance must be nonnegative");
+    }
     if (set.pairs) {
         if (set.type->objects.size() != 2 || !set.endpoints.empty() || set.dynamicEndpoints)
             throw std::invalid_argument("Object pairs require two formal objects and static object bindings");
@@ -168,6 +174,9 @@ Field Field::dense(uint32_t count, uint32_t width, const std::vector<float>& val
     auto result = uniform(count, std::vector<float>(width));
     result.patch(0, values);
     return result;
+}
+bool Field::isUniform() const {
+    return std::none_of(pages_.begin(), pages_.end(), [](const auto& page) { return bool(page); });
 }
 float Field::at(uint32_t row, uint32_t component) const {
     if (row >= count_ || component >= width_)

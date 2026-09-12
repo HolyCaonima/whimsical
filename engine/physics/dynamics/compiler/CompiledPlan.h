@@ -1,6 +1,7 @@
 #pragma once
 #include "physics/dynamics/model/Model.h"
 #include "BindingIR.h"
+#include <algorithm>
 #include <array>
 
 namespace whimsical::dynamics {
@@ -51,9 +52,21 @@ enum class BufferRole : uint32_t {
 };
 constexpr size_t BufferCount = size_t(BufferRole::Count);
 struct BufferData {
+    struct Fill {
+        uint64_t first = 0, count = 0; // 32-bit words
+        uint32_t value = 0;
+    };
     const char* name;
     bool integers;
     std::vector<uint8_t> initial;
+    uint64_t words = 0;
+    std::vector<Fill> fills;
+    uint64_t wordCount() const {
+        return std::max<uint64_t>(words, initial.size() / 4);
+    }
+    uint64_t byteSize() const {
+        return wordCount() * 4;
+    }
 };
 struct VariableLayout {
     uint32_t first, count, space, values, velocity, metric;
@@ -69,12 +82,15 @@ struct Batch {
     uint32_t kernel, first, count;
     int32_t color = -1;
 };
+struct DeferredJacobiDomain {
+    uint32_t set = 0, domain = 0;
+};
 struct PlanStatistics {
     uint64_t variables = 0, relations = 0, endpointReferences = 0;
     uint64_t coloredRelations = 0, jacobiRelations = 0, incidenceEntries = 0;
     uint64_t directJacobiRelations = 0;
     uint32_t candidateDomains = 0;
-    uint64_t candidateRelations = 0, activeJacobiRelations = 0;
+    uint64_t candidateRelations = 0, activeJacobiRelations = 0, candidateQueueCapacity = 0;
     uint32_t colors = 0, candidateColors = 0;
     uint64_t storageBytes = 0;
     uint32_t components = 0, localRegions = 0;
@@ -104,6 +120,9 @@ struct CompiledPlan {
     std::vector<RelationRef> types;
     std::vector<VariableLayout> variables;
     std::vector<RelationLayout> relations;
+    // Large, provably bounded logical domains can enter candidate lowering
+    // without first materializing every relation row in CPU scheduling tables.
+    std::vector<DeferredJacobiDomain> deferredJacobiDomains;
     // Final physical metadata layout. Logical row IDs and mutable fields keep
     // their public indexing; affine metadata columns become address arithmetic.
     using RelationMetadata = MetadataRange<9>;
@@ -113,6 +132,10 @@ struct CompiledPlan {
     std::vector<BindingIR> bindings;
     std::vector<std::vector<bool>> typeReadOnly;
     std::vector<int32_t> typeEndpointMode;
+    uint32_t relationSet(uint32_t relation) const;
+    uint32_t relationType(uint32_t relation) const;
+    uint32_t variableSet(uint32_t variable) const;
+    bool variableReadOnly(uint32_t variable) const;
     uint32_t endpoint(uint32_t relation, uint32_t slot) const;
     uint32_t activeTangent(uint32_t type, uint32_t slot) const;
     uint32_t activeTangent(uint32_t type) const;

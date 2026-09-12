@@ -23,7 +23,7 @@ KernelFunction relationFunction(const RelationType&, const std::vector<bool>& re
 // affine invocation; the predicate and endpoint field loads are shared.
 KernelFunction relationActivityFunction(const RelationType&, const std::vector<bool>& readOnly,
                                        int32_t endpointMode, const std::string& name, bool countDegrees = true,
-                                       bool mappedEndpoints = false);
+                                       bool mappedEndpoints = false, bool residualChecked = false);
 KernelFunction relationDispatchFunction(
     const std::vector<std::pair<uint32_t, KernelFunction>>&, bool jacobi, const std::string& name);
 std::string globalKernel(const KernelFunction&);
@@ -32,6 +32,7 @@ std::string stateAccess(bool local, uint32_t variableCount = 0, bool externalInp
 // Preserve the semantic batch ordering; choose ownership and execution placement.
 // Layouts and work IDs remain stable across this lowering pass.
 void lowerSchedule(CompiledPlan&, const std::vector<KernelFunction>&);
+bool canDeferCandidateDomain(const CompiledPlan&, uint32_t set, const BindingDomain&);
 void lowerCandidateDomains(CompiledPlan&);
 void prunePlanKernels(CompiledPlan&);
 } // namespace whimsical::dynamics

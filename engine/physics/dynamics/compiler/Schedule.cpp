@@ -25,6 +25,8 @@ void store(BufferData& data, const std::vector<uint32_t>& values) {
     data.initial.resize(values.size() * 4);
     if (!values.empty())
         std::memcpy(data.initial.data(), values.data(), data.initial.size());
+    data.words = values.size();
+    data.fills.clear();
 }
 uint64_t dispatchCount(const CompiledPlan& p) {
     auto count = [](const std::vector<Batch>& batches) {
@@ -134,7 +136,6 @@ void collapseRelationDispatches(CompiledPlan& p) {
 }
 bool buildColorWindow(const CompiledPlan& p, const std::vector<Batch>& stages,
                       const std::vector<uint32_t>& work,
-                      const std::vector<uint32_t>& relations, const std::vector<uint32_t>& variables,
                       std::vector<std::vector<std::vector<uint32_t>>>& regions) {
     struct Item {
         uint32_t relation, phase;
@@ -150,10 +151,10 @@ bool buildColorWindow(const CompiledPlan& p, const std::vector<Batch>& stages,
     std::vector<uint32_t> variableOwner(p.statistics.variables, NoRegion);
     for (uint32_t i = 0; i < items.size(); ++i) {
         auto relation = items[i].relation;
-        auto type = relations[size_t(relation) * 9 + 8];
+        auto type = p.relationType(relation);
         for (uint32_t slot = 0; slot < p.types[type]->spaces.size(); ++slot) {
             auto variable = p.endpoint(relation, slot);
-            if (variables[size_t(variable) * 5 + 4])
+            if (p.variableReadOnly(variable))
                 continue;
             if (variableOwner[variable] == NoRegion)
                 variableOwner[variable] = i;
@@ -211,8 +212,6 @@ void fuseColorWindows(CompiledPlan& p, const std::vector<KernelFunction>& functi
 
     auto relationWork = words(p.buffers[size_t(BufferRole::RelationWork)]);
     auto ranges = words(p.buffers[size_t(BufferRole::RegionRanges)]);
-    auto relations = words(p.buffers[size_t(BufferRole::Relations)]);
-    auto variables = words(p.buffers[size_t(BufferRole::Variables)]);
     std::map<uint32_t, uint32_t> kernels;
     auto windowKernel = [&](const std::vector<Batch>& stages) {
         auto function = stages.front().kernel;
@@ -257,8 +256,7 @@ void fuseColorWindows(CompiledPlan& p, const std::vector<KernelFunction>& functi
         for (size_t end = first + 2; end <= limit; ++end) {
             std::vector<Batch> candidate(p.solve.begin() + first, p.solve.begin() + end);
             std::vector<std::vector<std::vector<uint32_t>>> candidateRegions;
-            if (!buildColorWindow(p, candidate, relationWork, relations, variables,
-                                  candidateRegions))
+            if (!buildColorWindow(p, candidate, relationWork, candidateRegions))
                 break;
             stages = std::move(candidate);
             regions = std::move(candidateRegions);
@@ -385,7 +383,8 @@ uint64_t temporaryWords(const CompiledPlan& p, uint32_t type) {
 void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions) {
     p.statistics.referenceDispatches = dispatchCount(p);
     // Dynamic endpoints can connect any compatible variable at a later tick.
-    if (p.dynamicTopology || p.policy.execution == ExecutionMode::Global) {
+    if (p.dynamicTopology || p.policy.execution == ExecutionMode::Global ||
+        !p.deferredJacobiDomains.empty()) {
         collapseVariableDispatches(p, functions);
         collapseRelationDispatches(p);
         fuseColorWindows(p, functions);
@@ -395,8 +394,7 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     }
     const auto variableCount = uint32_t(p.statistics.variables);
     Components components(variableCount);
-    auto variables = words(p.buffers[size_t(BufferRole::Variables)]);
-    auto readOnly = [&](uint32_t id) { return variables[size_t(id) * 5 + 4] != 0; };
+    auto readOnly = [&](uint32_t id) { return p.variableReadOnly(id); };
     // Components are defined by writes. Shared read-only input is an effect at a
     // substep boundary, not a reason to merge independent solve regions.
     for (uint32_t set = 0; set < p.relations.size(); ++set) {

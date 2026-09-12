@@ -19,12 +19,16 @@ std::vector<uint32_t> words(const BufferData& b) {
     if (!result.empty()) std::memcpy(result.data(), b.initial.data(), b.initial.size());
     return result;
 }
-uint32_t word(const BufferData& b, size_t index) {
-    uint32_t value;
-    std::memcpy(&value, b.initial.data() + index * 4, 4);
-    return value;
-}
 std::string number(uint32_t n) { return std::to_string(n) + "u"; }
+void reserveZero(BufferData& buffer, uint64_t words) {
+    if (buffer.wordCount())
+        throw std::logic_error("Candidate buffers must be reserved once");
+    if (words > UINT32_MAX)
+        throw std::overflow_error("Candidate buffer exceeds 32-bit addressing");
+    buffer.words = words;
+    if (words)
+        buffer.fills.push_back({0, words, 0});
+}
 // Only the selected mathematical input columns become index coordinates. Neither
 // state width nor object/field names imply a geometric interpretation.
 std::string coordinate(const CompiledPlan& p, const Domain& d, uint32_t input) {
@@ -80,7 +84,44 @@ std::string domainSource(const CompiledPlan& p, const Domain& d) {
     s << ";}\n";
     return s.str();
 }
+std::optional<DifferenceBound> candidateBound(
+    const CompiledPlan& p, uint32_t set, const BindingDomain& binding) {
+    const auto& layout = p.relations[set];
+    const auto& type = *p.types[layout.type];
+    if (type.rows != 1 || type.kind == RelationKind::Equality || type.history || type.update ||
+        !binding.affineFields() || binding.map == BindingDomain::Map::Zip || binding.count < 4096)
+        return {};
+    const uint32_t parameterFirst = type.inputSize() - type.parameters - type.history - 2;
+    auto bound = differenceBound(type.residual, type.kind == RelationKind::GreaterEqual,
+                                 parameterFirst, type.parameters);
+    if (!bound || bound->coordinates.size() > 3)
+        return {};
+    uint32_t splitInput = 0;
+    for (uint32_t endpoint = 0; endpoint < binding.split; ++endpoint)
+        splitInput += type.spaces[endpoint]->stateSize;
+    for (auto& [left, right] : bound->coordinates) {
+        if (left >= splitInput && right < splitInput)
+            std::swap(left, right);
+        if (left >= splitInput || right < splitInput || right >= parameterFirst)
+            return {};
+    }
+    return bound;
+}
+bool indexingWins(const BindingDomain& binding, uint32_t dimensions) {
+    constexpr uint64_t ProbeCost = 12;
+    const uint64_t neighbors = dimensions == 3 ? 27 : dimensions == 2 ? 9 : 3;
+    return binding.count >= ProbeCost * (uint64_t(binding.left) * neighbors + binding.right);
+}
 } // namespace
+
+bool canDeferCandidateDomain(const CompiledPlan& p, uint32_t set, const BindingDomain& binding) {
+    if (p.dynamicTopology || p.policy.execution != ExecutionMode::Auto ||
+        p.policy.mode == SolveMode::Colored || p.policy.weighting == JacobiWeighting::Static ||
+        !p.policy.spatialCandidates)
+        return false;
+    auto bound = candidateBound(p, set, binding);
+    return bound && indexingWins(binding, uint32_t(bound->coordinates.size()));
+}
 
 void lowerCandidateDomains(CompiledPlan& p) {
     // Region ownership and dynamic endpoints have their own scheduling contracts.
@@ -89,7 +130,7 @@ void lowerCandidateDomains(CompiledPlan& p) {
         return;
     const uint32_t relations = uint32_t(p.statistics.relations);
     auto work = words(p.buffers[size_t(BufferRole::RelationWork)]);
-    std::vector<bool> jacobi(relations), selected(relations);
+    std::vector<bool> jacobi(relations);
     std::vector<uint32_t> all;
     for (const auto& batch : p.solve)
         if (batch.color < 0)
@@ -98,32 +139,26 @@ void lowerCandidateDomains(CompiledPlan& p) {
                 jacobi[id] = true;
                 all.push_back(id);
             }
-    if (all.empty()) return;
+    if (all.empty() && p.deferredJacobiDomains.empty()) return;
     std::vector<Domain> domains;
     for (uint32_t set = 0; set < p.relations.size(); ++set) {
         const auto& layout = p.relations[set];
-        const auto& t = *p.types[layout.type];
-        if (t.rows != 1 || t.kind == RelationKind::Equality || t.history || t.update)
-            continue;
-        uint32_t parameters = t.inputSize() - t.parameters - t.history - 2;
-        auto bound = differenceBound(t.residual, t.kind == RelationKind::GreaterEqual, parameters, t.parameters);
-        if (!bound || bound->coordinates.size() > 3) continue;
-        for (const auto& binding : p.bindings[set].domains) {
-            if (!binding.affineFields() || binding.map == BindingDomain::Map::Zip || binding.count < 4096)
+        for (uint32_t domain = 0; domain < p.bindings[set].domains.size(); ++domain) {
+            const auto& binding = p.bindings[set].domains[domain];
+            auto bound = candidateBound(p, set, binding);
+            if (!bound)
                 continue;
-            uint32_t splitInput = 0;
-            for (uint32_t e = 0; e < binding.split; ++e) splitInput += t.spaces[e]->stateSize;
-            auto oriented = *bound;
+            const bool deferred = std::any_of(
+                p.deferredJacobiDomains.begin(), p.deferredJacobiDomains.end(),
+                [&](const DeferredJacobiDomain& candidate) {
+                    return candidate.set == set && candidate.domain == domain;
+                });
             bool valid = true;
-            for (auto& [a, b] : oriented.coordinates) {
-                if (a >= splitInput && b < splitInput) std::swap(a, b);
-                valid = valid && a < splitInput && b >= splitInput && b < parameters;
-            }
-            for (uint32_t row = 0; valid && row < binding.count; ++row)
+            for (uint32_t row = 0; valid && !deferred && row < binding.count; ++row)
                 valid = jacobi[layout.first + binding.first + row];
             if (!valid) continue;
             domains.push_back({set, layout.first + binding.first, binding.count, 0, 0, 0, 0, 0,
-                               binding, std::move(oriented)});
+                               binding, std::move(*bound)});
         }
     }
     const bool active = p.policy.weighting == JacobiWeighting::Active ||
@@ -131,41 +166,64 @@ void lowerCandidateDomains(CompiledPlan& p) {
     // A proof enables indexing; it does not establish that indexing is cheaper.
     // Hash probes involve integer indirection, linked-list reads and an extra
     // dispatch. Small, cheap domains benefit more from a parallel activity scan.
-    constexpr uint64_t ProbeCost = 12;
     domains.erase(std::remove_if(domains.begin(), domains.end(), [&](const Domain& d) {
-        uint64_t neighbors = d.bound.coordinates.size() == 3 ? 27 : d.bound.coordinates.size() == 2 ? 9 : 3;
         return !p.policy.spatialCandidates ||
-               d.count < ProbeCost * (uint64_t(d.binding.left) * neighbors + d.binding.right);
+               !indexingWins(d.binding, uint32_t(d.bound.coordinates.size()));
     }), domains.end());
     if (domains.empty() && !active) return;
 
-    struct TypeQueue { uint32_t type, first, count, lanes; };
+    struct TypeQueue { uint32_t type, first, count, capacity, lanes; };
     std::vector<TypeQueue> typed;
     std::set<uint32_t> types;
-    // Read the needed type column without duplicating the entire dense table.
-    // Physical metadata packing happens after this lowering pass.
-    const auto& metadata = p.buffers[size_t(BufferRole::Relations)];
     std::vector<uint32_t> typeCounts(p.types.size());
-    for (auto id : all) ++typeCounts[word(metadata, size_t(id) * 9 + 8)];
-    uint32_t typeFirst = 0, solveLanes = 0;
+    for (auto id : all) ++typeCounts[p.relationType(id)];
+    for (const auto& deferred : p.deferredJacobiDomains) {
+        const auto& binding = p.bindings[deferred.set].domains[deferred.domain];
+        typeCounts[p.relations[deferred.set].type] += binding.count;
+    }
+    // Logical domains remain exact, while their active execution representation
+    // has linear capacity. Dense activity falls back to a full domain traversal.
+    constexpr uint64_t QueueRowsPerMember = 64;
+    std::vector<uint64_t> domainCounts(p.types.size()), domainCapacities(p.types.size());
+    for (const auto& d : domains) {
+        const auto type = p.relations[d.set].type;
+        domainCounts[type] += d.count;
+        domainCapacities[type] +=
+            std::min<uint64_t>(d.count, QueueRowsPerMember * (uint64_t(d.binding.left) + d.binding.right));
+    }
+    uint64_t logicalQueueCount64 = 0, queueCapacity64 = 0;
+    uint32_t solveLanes = 0;
     for (uint32_t type = 0; type < typeCounts.size(); ++type) {
         auto count = typeCounts[type];
         if (!count) continue;
+        if (domainCounts[type] > count)
+            throw std::logic_error("Candidate domain accounting exceeds type rows");
+        const uint64_t capacity =
+            uint64_t(count) - domainCounts[type] + domainCapacities[type];
+        if (!capacity || capacity > UINT32_MAX || queueCapacity64 + capacity > UINT32_MAX)
+            throw std::overflow_error("Candidate queue capacity exceeds 32-bit addressing");
         // Keep enough independent groups for a wide GPU. The previous 32-group
         // ceiling serialized long active queues even when many SMs were idle.
         // This is a bounded execution budget, never a cap on queued relations.
         constexpr uint64_t SolveGroups = 128;
-        auto width = uint32_t(std::min(SolveGroups * 128, ((uint64_t(count) + 127) / 128) * 128));
-        typed.push_back({type, typeFirst, count, width});
+        auto width =
+            uint32_t(std::min(SolveGroups * 128, ((capacity + 127) / 128) * 128));
+        typed.push_back(
+            {type, uint32_t(queueCapacity64), count, uint32_t(capacity), width});
         types.insert(type);
-        typeFirst += count;
+        logicalQueueCount64 += count;
+        queueCapacity64 += capacity;
         solveLanes += width;
     }
+    if (logicalQueueCount64 > UINT32_MAX)
+        throw std::overflow_error("Candidate logical work exceeds 32-bit addressing");
+    const uint32_t logicalQueueCount = uint32_t(logicalQueueCount64);
+    const uint32_t queueCapacity = uint32_t(queueCapacity64);
 
-    // Full logical capacity guarantees correctness even when all pairs are active.
-    // Queues compact execution; public row-indexed fields are intentionally dense.
     // The solve publishes its queue side separately: gather may reset the next
     // side while other workgroups still consume the completed queue for cleanup.
+    // Overflow is side-specific so the next iteration can rebuild from the full
+    // logical domain without reading a truncated predecessor.
     constexpr uint32_t counters = 2;
     uint64_t storage = counters + 2 * typed.size();
     auto reserve = [&](uint64_t n) {
@@ -174,7 +232,8 @@ void lowerCandidateDomains(CompiledPlan& p) {
         if (storage > UINT32_MAX) throw std::overflow_error("Candidate storage exceeds 32-bit addressing");
         return uint32_t(first);
     };
-    uint32_t queues = reserve(uint64_t(all.size()) * 2);
+    const uint32_t overflows = reserve(2);
+    const uint32_t queues = reserve(uint64_t(queueCapacity) * 2);
     for (auto& d : domains) {
         d.header = reserve(3); // squared bound, invalid bound, invalid coordinate
         d.buckets = 1;
@@ -190,18 +249,18 @@ void lowerCandidateDomains(CompiledPlan& p) {
                 return coordinate(p, d, inputs.first) == coordinate(p, d, inputs.second);
             });
         d.leftCells = sameFeatures ? d.cells : reserve(uint64_t(d.binding.left) * 3);
-        for (uint32_t row = 0; row < d.count; ++row) selected[d.first + row] = true;
         p.statistics.candidateRelations += d.count;
     }
     p.statistics.candidateDomains = uint32_t(domains.size());
-    p.statistics.activeJacobiRelations = active ? all.size() : 0;
-    p.buffers[size_t(BufferRole::Candidates)].initial.resize(size_t(storage) * 4);
-    p.buffers[size_t(BufferRole::ActiveDegrees)].initial.resize(size_t(p.statistics.variables) * 4);
+    p.statistics.activeJacobiRelations = active ? logicalQueueCount : 0;
+    p.statistics.candidateQueueCapacity = queueCapacity;
+    reserveZero(p.buffers[size_t(BufferRole::Candidates)], storage);
+    reserveZero(p.buffers[size_t(BufferRole::ActiveDegrees)], p.statistics.variables);
     auto add = [&](const std::string& label, const std::string& source, uint32_t count, std::vector<Batch>& stages) {
         stages.push_back({uint32_t(p.kernels.size()), 0, count});
         p.kernels.push_back({label, source});
     };
-    const uint32_t lanes = std::min(4096u, uint32_t((all.size() + 127) / 128) * 128);
+    const uint32_t lanes = std::min(4096u, uint32_t((uint64_t(logicalQueueCount) + 127) / 128) * 128);
     std::ostringstream activity;
     activity << stateAccess(false);
     for (auto type : types)
@@ -211,8 +270,9 @@ void lowerCandidateDomains(CompiledPlan& p) {
         const auto& q = typed[slot];
         const auto& t = *p.types[q.type];
         activity << "void enqueue" << q.type << "(uint id){uint side=x_candidates[0],at=atomicAdd(x_candidates["
-                 << counters + slot << "u+side*" << typed.size() << "u],1u);x_candidates[" << queues + q.first
-                 << "u+side*" << all.size() << "u+at]=id;}\n";
+                 << counters + slot << "u+side*" << typed.size() << "u],1u);if(at<" << q.capacity
+                 << "u)x_candidates[" << queues + q.first << "u+side*" << queueCapacity
+                 << "u+at]=id;else atomicOr(x_candidates[" << overflows << "u+side],1u);}\n";
         activity << "void consider" << q.type << "(uint id){bool participates=activity" << q.type
                  << "(id,step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration);";
         // Ordinary multirow work must still clear its CSR contributions when
@@ -233,9 +293,10 @@ void lowerCandidateDomains(CompiledPlan& p) {
             continue;
         std::ostringstream mapped;
         mapped << relationActivityFunction(*p.types[q.type], p.typeReadOnly[q.type], p.typeEndpointMode[q.type],
-                                            "mappedActivity", active, true).source;
-        mapped << "void considerNew(uint id,uint left,uint right){if(x_lambda[relation(id).l]!=0.0)return;"
-                  "if(!mappedActivity(id,step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration,left,right))return;"
+                                            "mappedActivity", active, true, true).source;
+        mapped << "void considerNew(uint id,uint left,uint right,float residual){"
+                  "if(step.iteration!=0u&&x_lambda[relation(id).l]!=0.0)return;"
+                  "if(!mappedActivity(id,step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration,left,right,residual))return;"
                   "enqueue" << q.type << "(id);}\n";
         mappedActivity[q.type] = mapped.str();
     }
@@ -270,11 +331,15 @@ void lowerCandidateDomains(CompiledPlan& p) {
     indexed << "bool indexed(uint id){return false";
     for (const auto& d : domains) indexed << "||(id>=" << d.first << "u&&id-" << d.first << "u<" << d.count << "u)";
     indexed << ";}\n";
+    const std::string rebuild =
+        "bool rebuildCandidates(){uint side=x_candidates[0];return step.iteration!=0u&&"
+        "x_candidates[" + std::to_string(overflows) + "u+1u-side]!=0u;}\n";
     std::ostringstream reset;
     reset << indexed.str() << "void resetCandidates(uint iteration){uint i=invocation();if(i>=step.count)return;"
              "if(i==0u){uint side=1u-x_candidates[0];"
              "x_candidates[0]=side;for(uint k=0u;k<" << typed.size()
-          << "u;++k)x_candidates[" << counters << "u+side*" << typed.size() << "u+k]=0u;}";
+          << "u;++k)x_candidates[" << counters << "u+side*" << typed.size()
+          << "u+k]=0u;x_candidates[" << overflows << "u+side]=0u;}";
     if (active)
         reset << "for(uint j=i;j<" << p.statistics.variables << "u;j+=step.count)x_activeDegrees[j]=0u;";
     for (const auto& d : domains) {
@@ -290,8 +355,9 @@ void lowerCandidateDomains(CompiledPlan& p) {
         if (std::none_of(domains.begin(), domains.end(), [&](const Domain& d) { return p.relations[d.set].type == q.type; }))
             continue;
         reset << "if(iteration==0u){uint side=x_candidates[1],count=x_candidates["
-              << counters + slot << "u+side*" << typed.size() << "u];for(uint k=i;k<count;k+=step.count){"
-                 "uint id=x_candidates[" << queues + q.first << "u+side*" << all.size()
+              << counters + slot << "u+side*" << typed.size() << "u];count=min(count," << q.capacity
+              << "u);for(uint k=i;k<count;k+=step.count){uint id=x_candidates[" << queues + q.first
+              << "u+side*" << queueCapacity
               << "u+k];if(indexed(id))x_lambda[relation(id).l]=0.0;}}";
     }
     reset << "}";
@@ -309,7 +375,11 @@ void lowerCandidateDomains(CompiledPlan& p) {
     std::string firstQueryBody;
     for (const auto& d : domains) {
         std::ostringstream source;
-        source << domainSource(p, d) << "void main(){uint member=invocation();";
+        const auto& layout = p.relations[d.set];
+        const auto& relationType = *p.types[layout.type];
+        const uint32_t firstParameter = relationType.inputSize() - relationType.parameters - 2;
+        source << rebuild << domainSource(p, d)
+               << "void main(){if(rebuildCandidates())return;uint member=invocation();";
         // Cache the feature-to-cell map once per member and snapshot. Identical
         // affine feature maps share the same column, including self-products.
         if (d.leftCells != d.cells)
@@ -334,24 +404,37 @@ void lowerCandidateDomains(CompiledPlan& p) {
             (d.binding.map == BindingDomain::Map::Upper || d.binding.map == BindingDomain::Map::UpperDiagonal);
         const uint32_t neighborFirst = halfNeighborhood ? fullNeighbors / 2 : 0;
         const uint32_t neighbors = fullNeighbors - neighborFirst;
-        auto type = p.relations[d.set].type;
-        source << activity.str() << domainSource(p, d);
+        auto type = layout.type;
+        source << activity.str() << rebuild << domainSource(p, d);
+        source << emitGlsl(d.bound.squaredRadius, "candidateRadius")
+               << "float candidateResidual(uint id,float distanceSquared){Relation r=relation(id);float x["
+               << relationType.inputSize() << "],radius[1];";
+        for (uint32_t k = 0; k < relationType.parameters; ++k)
+            source << "x[" << firstParameter + k << "]=x_parameters[r.p+" << k << "u*r.stride];";
+        source << "candidateRadius(x,radius);return "
+               << (relationType.kind == RelationKind::GreaterEqual
+                       ? "distanceSquared-radius[0]"
+                       : "radius[0]-distanceSquared")
+               << ";}\n";
         // The query already owns the two member indices. Feed them into the
         // same predicate generator instead of inverting rowOf's triangle again.
         if (!mappedActivity[type].empty())
             source << mappedActivity[type];
         else
-            source << "void considerNew(uint id,uint left,uint right){if(x_lambda[relation(id).l]==0.0)consider"
+            source << "void considerNew(uint id,uint left,uint right,float residual){"
+                      "if(step.iteration==0u||x_lambda[relation(id).l]==0.0)consider"
                    << type << "(id);}\n";
         // Apply the proven feature bound before touching row-indexed fields.
         // The same 25% radius margin as cellOf covers float reassociation; this
         // is only a conservative rejection, never a replacement for the formula.
-        source << "void queryDomain(){uint lane=invocation(),i=lane/" << neighbors << "u,neighbor=lane%" << neighbors
-               << "u;if(i>=" << d.binding.left << "u)return;"
+        source << "void queryDomain(){if(rebuildCandidates())return;uint lane=invocation(),i=lane/"
+               << neighbors << "u,neighbor=lane%" << neighbors
+               << "u;if(i>=" << d.binding.left << "u)return;vec3 leftFeature=feature(i,true);"
                   "if(x_candidates[" << d.header + 2 << "u]!=0u){"
                   "for(uint j=neighbor;j<" << d.binding.right << "u;j+=" << neighbors
-               << "u)if(accepts(i,j))considerNew(rowOf(i,j),i,j);return;}"
-                  "vec3 leftFeature=feature(i,true);float bound=1.5625*uintBitsToFloat(x_candidates[" << d.header << "u]);"
+               << "u)if(accepts(i,j)){uint id=rowOf(i,j);vec3 delta=leftFeature-feature(j,false);"
+                  "float distanceSquared=dot(delta,delta);considerNew(id,i,j,candidateResidual(id,distanceSquared));}return;}"
+                  "float bound=1.5625*uintBitsToFloat(x_candidates[" << d.header << "u]);"
                   "uint featureAt=" << d.leftCells << "u+i*3u;ivec3 c=ivec3(x_candidates[featureAt],"
                   "x_candidates[featureAt+1u],x_candidates[featureAt+2u]);"
                   "uint offsetIndex=neighbor+" << neighborFirst << "u;"
@@ -364,31 +447,65 @@ void lowerCandidateDomains(CompiledPlan& p) {
                << "){uint at=" << d.cells << "u+j*3u;"
                   "ivec3 actual=ivec3(x_candidates[at],x_candidates[at+1u],x_candidates[at+2u]);"
                   "if(all(equal(cell,actual))){vec3 delta=leftFeature-feature(j,false);"
-                  "if(dot(delta,delta)<=bound){";
+                  "float distanceSquared=dot(delta,delta);if(distanceSquared<=bound){";
         if (halfNeighborhood)
-            source << "uint left=min(i,j),right=max(i,j);considerNew(rowOf(left,right),left,right);";
+            source << "uint left=min(i,j),right=max(i,j),id=rowOf(left,right);"
+                      "considerNew(id,left,right,candidateResidual(id,distanceSquared));";
         else
-            source << "considerNew(rowOf(i,j),i,j);";
+            source << "uint id=rowOf(i,j);considerNew(id,i,j,candidateResidual(id,distanceSquared));";
         source << "}}}j=x_candidates["
                << d.next << "u+j];}}";
         if (uint64_t(d.binding.left) * neighbors > UINT32_MAX)
             throw std::overflow_error("Candidate query dispatch exceeds 32-bit addressing");
         if (firstQuery == UINT32_MAX) {
             firstQuery = uint32_t(p.kernels.size());
-            firstQueryBody = source.str().substr(activity.str().size());
+            firstQueryBody = source.str().substr(activity.str().size() + rebuild.size());
         }
         add("Query candidate domain", source.str() + "void main(){queryDomain();}", d.binding.left * neighbors, stages);
     }
     std::vector<std::vector<uint32_t>> ordinaryByType(p.types.size());
-    for (auto id : all) if (!selected[id]) ordinaryByType[word(metadata, size_t(id) * 9 + 8)].push_back(id);
+    auto selected = [&](uint32_t id) {
+        return std::any_of(domains.begin(), domains.end(), [&](const Domain& domain) {
+            return id >= domain.first && id - domain.first < domain.count;
+        });
+    };
+    for (auto id : all)
+        if (!selected(id))
+            ordinaryByType[p.relationType(id)].push_back(id);
     uint32_t ordinaryFirst = uint32_t(work.size());
     for (const auto& rows : ordinaryByType) work.insert(work.end(), rows.begin(), rows.end());
+    uint64_t ordinaryCount64 = 0;
+    for (const auto& rows : ordinaryByType) ordinaryCount64 += rows.size();
+    uint64_t fallbackCount = ordinaryCount64;
+    for (const auto& d : domains) fallbackCount += d.count;
+    if (fallbackCount != logicalQueueCount)
+        throw std::logic_error("Candidate fallback domain does not cover logical work");
+    std::ostringstream fallbackRows;
+    fallbackRows << "bool fallbackRow(uint lane,out uint id){";
+    if (ordinaryCount64) {
+        fallbackRows << "if(lane<" << ordinaryCount64 << "u){id=x_relationWork[" << ordinaryFirst
+                     << "u+lane];return true;}lane-=" << ordinaryCount64 << "u;";
+    }
+    for (const auto& d : domains)
+        fallbackRows << "if(lane<" << d.count << "u){id=" << d.first
+                     << "u+lane;return true;}lane-=" << d.count << "u;";
+    fallbackRows << "return false;}\n";
+    std::ostringstream fallbackCollect;
+    fallbackCollect << fallbackRows.str()
+                    << "void considerFallback(uint id){switch(relation(id).type){";
+    for (auto type : types)
+        fallbackCollect << "case " << type << "u:consider" << type << "(id);break;";
+    fallbackCollect << "}}\n";
     auto& workBuffer = p.buffers[size_t(BufferRole::RelationWork)].initial;
     workBuffer.resize(work.size() * 4);
     std::memcpy(workBuffer.data(), work.data(), workBuffer.size());
+    p.buffers[size_t(BufferRole::RelationWork)].words = work.size();
     std::ostringstream collect;
-    collect << activity.str() << indexed.str()
-            << "shared uint activityCount,activityBase;\nvoid collectActivity(){uint i=invocation();";
+    collect << activity.str() << indexed.str() << rebuild << fallbackCollect.str()
+            << "shared uint activityCount,activityBase;\nvoid collectActivity(){uint i=invocation();"
+               "if(i>=step.count)return;if(rebuildCandidates()){for(uint k=i;k<"
+            << logicalQueueCount
+            << "u;k+=step.count){uint id;if(fallbackRow(k,id))considerFallback(id);}return;}";
     uint64_t ordinaryLanes = 0;
     uint32_t rowFirst = ordinaryFirst;
     for (uint32_t slot = 0; slot < typed.size(); ++slot) {
@@ -412,8 +529,11 @@ void lowerCandidateDomains(CompiledPlan& p) {
                     << ";}if(append)rank=atomicAdd(activityCount,1u);barrier();"
                        "if(activityCount!=0u){uint side=x_candidates[0];if(gl_LocalInvocationIndex==0u)"
                        "activityBase=atomicAdd(x_candidates[" << counters + slot << "u+side*" << typed.size()
-                    << "u],activityCount);barrier();if(append)x_candidates[" << queues + q.first
-                    << "u+side*" << all.size() << "u+activityBase+rank]=id;}";
+                    << "u],activityCount);if(gl_LocalInvocationIndex==0u&&activityBase+activityCount>"
+                    << q.capacity << "u)atomicOr(x_candidates[" << overflows
+                    << "u+side],1u);barrier();if(append&&activityBase+rank<" << q.capacity
+                    << "u)x_candidates[" << queues + q.first << "u+side*" << queueCapacity
+                    << "u+activityBase+rank]=id;}";
         }
         collect << "}";
         ordinaryLanes += width;
@@ -427,7 +547,8 @@ void lowerCandidateDomains(CompiledPlan& p) {
         if (std::none_of(domains.begin(), domains.end(), [&](const Domain& d) { return p.relations[d.set].type == q.type; }))
             continue;
         collect << "{uint count=x_candidates[" << counters + slot << "u+side*" << typed.size() << "u];"
-                   "for(uint k=i;k<count;k+=step.count){uint id=x_candidates[" << queues + q.first << "u+side*" << all.size()
+                   "count=min(count," << q.capacity << "u);for(uint k=i;k<count;k+=step.count){"
+                   "uint id=x_candidates[" << queues + q.first << "u+side*" << queueCapacity
                 << "u+k];if(indexed(id)&&x_lambda[relation(id).l]!=0.0)consider" << q.type << "(id);}}";
     }
     collect << "}";
@@ -440,17 +561,42 @@ void lowerCandidateDomains(CompiledPlan& p) {
     } else {
         add("Collect Jacobi activity", collect.str() + "void main(){collectActivity();}", uint32_t(ordinaryLanes), stages);
     }
-    std::vector<std::pair<uint32_t, KernelFunction>> solve;
+    std::vector<std::pair<uint32_t, KernelFunction>> solve, fallbackActivity;
     for (auto type : types) {
         const auto& t = *p.types[type];
         solve.emplace_back(type, relationFunction(t, p.typeReadOnly[type], p.typeEndpointMode[type], true,
                             t.rows == 1 && t.kind != RelationKind::Equality,
                             p.statistics.directJacobiRelations != 0, false, "candidateSolve" + std::to_string(type), active, true));
+        fallbackActivity.emplace_back(
+            type, relationActivityFunction(t, p.typeReadOnly[type], p.typeEndpointMode[type],
+                                           "fallbackActivity" + std::to_string(type), false));
     }
     std::ostringstream source;
     source << stateAccess(false);
     for (const auto& item : solve) source << item.second.source;
-    source << "void main(){uint lane=invocation(),side=x_candidates[0];if(lane==0u)x_candidates[1]=side;";
+    for (const auto& item : fallbackActivity) source << item.second.source;
+    source << fallbackRows.str()
+           << "void solveFallback(uint id){switch(relation(id).type){";
+    for (auto type : types) {
+        const auto& t = *p.types[type];
+        source << "case " << type << "u:";
+        if (t.rows == 1 && t.kind != RelationKind::Equality)
+            source << "if(fallbackActivity" << type
+                   << "(id,step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration))"
+                      "candidateSolve" << type
+                   << "(id,step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration);";
+        else
+            source << "fallbackActivity" << type
+                   << "(id,step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration);"
+                      "candidateSolve" << type
+                   << "(id,step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration);";
+        source << "break;";
+    }
+    source << "}}\nvoid main(){uint lane=invocation(),side=x_candidates[0];"
+              "if(lane==0u)x_candidates[1]=side;if(x_candidates["
+           << overflows << "u+side]!=0u){if(lane<step.count)for(uint k=lane;k<"
+           << logicalQueueCount
+           << "u;k+=step.count){uint id;if(fallbackRow(k,id))solveFallback(id);}return;}";
     uint32_t laneFirst = 0;
     // Whole workgroups consume one mathematical type. Interleaving unlike active
     // rows would serialize branches and inflate the per-warp register footprint.
@@ -458,8 +604,9 @@ void lowerCandidateDomains(CompiledPlan& p) {
         const auto& q = typed[slot];
         source << "if(lane>=" << laneFirst << "u&&lane<" << laneFirst + q.lanes
                << "u){uint count=x_candidates[" << counters + slot << "u+side*" << typed.size()
-               << "u];for(uint i=lane-" << laneFirst << "u;i<count;i+=" << q.lanes << "u)candidateSolve" << q.type
-               << "(x_candidates[" << queues + q.first << "u+side*" << all.size()
+               << "u];count=min(count," << q.capacity << "u);for(uint i=lane-" << laneFirst
+               << "u;i<count;i+=" << q.lanes << "u)candidateSolve" << q.type
+               << "(x_candidates[" << queues + q.first << "u+side*" << queueCapacity
                << "u+i],step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration);}";
         laneFirst += q.lanes;
     }

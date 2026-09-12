@@ -32,9 +32,11 @@ std::string endpointAccess(uint32_t slot, int32_t mode) {
         return "linearEndpoint(r," + index + ")";
     return "endpoint(r," + index + "," + std::to_string(mode) + ")";
 }
-void relationInputs(std::ostringstream& s, const RelationType& t, int32_t endpointMode, bool mappedEndpoints = false) {
+void relationInputs(std::ostringstream& s, const RelationType& t, int32_t endpointMode,
+                    bool mappedEndpoints = false, bool loadInputs = true) {
     const auto n = t.inputSize();
-    local(s, "x", n);
+    if (loadInputs)
+        local(s, "x", n);
     if (endpointMode > 0) {
         const auto map = endpointMode - 1;
         s << "uint endpointAt=r.e&0x7fffffffu;\n";
@@ -77,16 +79,20 @@ void relationInputs(std::ostringstream& s, const RelationType& t, int32_t endpoi
         } else
             s << endpointAccess(e, endpointMode);
         s << "; Variable v" << e << "=variable(id" << e << ");\n";
-        for (uint32_t c = 0; c < t.spaces[e]->stateSize; ++c)
-            s << "x[" << offset + c << "]=loadValue(v" << e << "," << c << "u);\n";
+        if (loadInputs)
+            for (uint32_t c = 0; c < t.spaces[e]->stateSize; ++c)
+                s << "x[" << offset + c << "]=loadValue(v" << e << "," << c << "u);\n";
         offset += t.spaces[e]->stateSize;
     }
-    for (uint32_t i = 0; i < t.parameters; ++i)
-        s << "x[" << offset + i << "]=x_parameters[r.p+" << i << "u*r.stride];\n";
+    if (loadInputs)
+        for (uint32_t i = 0; i < t.parameters; ++i)
+            s << "x[" << offset + i << "]=x_parameters[r.p+" << i << "u*r.stride];\n";
     offset += t.parameters;
-    for (uint32_t i = 0; i < t.history; ++i)
-        s << "x[" << offset + i << "]=loadHistory(r," << i << "u);\n";
-    s << "x[" << n - 2 << "]=h; x[" << n - 1 << "]=time;\n";
+    if (loadInputs) {
+        for (uint32_t i = 0; i < t.history; ++i)
+            s << "x[" << offset + i << "]=loadHistory(r," << i << "u);\n";
+        s << "x[" << n - 2 << "]=h; x[" << n - 1 << "]=time;\n";
+    }
 }
 } // namespace
 KernelFunction variableFunction(
@@ -578,22 +584,29 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
 }
 KernelFunction relationActivityFunction(const RelationType& t, const std::vector<bool>& readOnly,
                                        int32_t endpointMode, const std::string& name, bool countDegrees,
-                                       bool mappedEndpoints) {
+                                       bool mappedEndpoints, bool residualChecked) {
     std::ostringstream s;
     const bool guarded = t.rows == 1 && t.kind != RelationKind::Equality;
-    if (guarded)
+    if (guarded && !residualChecked)
         s << emitGlsl(t.residual, name + "_value");
     s << "bool " << name
       << "(uint id,float h,float time,float relaxation,float inverseH2,uint iteration";
     if (mappedEndpoints)
         s << ",uint endpointLeft,uint endpointRight";
+    if (residualChecked)
+        s << ",float checkedResidual";
     s << "){Relation r=relation(id);\n";
     for (uint32_t row = 0; row < t.rows; ++row)
         s << "if(iteration==0u)storeMultiplier(r," << row << "u,0.0);\n";
     s << "if(x_relationEnabled[id]==0.0)return false;\n";
-    relationInputs(s, t, endpointMode, mappedEndpoints);
+    relationInputs(s, t, endpointMode, mappedEndpoints, !residualChecked);
     if (guarded) {
-        s << "float c[1];" << name << "_value(x,c);\n"
+        s << "float c[1];";
+        if (residualChecked)
+            s << "c[0]=checkedResidual;\n";
+        else
+            s << name << "_value(x,c);\n";
+        s
           << "if(!isnan(c[0])&&!isinf(c[0])&&c[0]" << (t.kind == RelationKind::GreaterEqual ? ">=" : "<=")
           << "0.0&&loadMultiplier(r,0u)==0.0)return false;\n";
     }
