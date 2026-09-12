@@ -326,10 +326,17 @@ void lowerCandidateDomains(CompiledPlan& p) {
         std::ostringstream mapped;
         mapped << relationActivityFunction(*p.types[q.type], p.typeReadOnly[q.type], p.typeEndpointMode[q.type],
                                             "mappedActivity", active, true, true).source;
-        mapped << "void considerNew(uint id,uint left,uint right,float residual){"
-                  "if(step.iteration!=0u&&x_lambda[relation(id).l]!=0.0)return;"
-                  "if(!mappedActivity(id,step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration,left,right,residual))return;"
-                  "enqueue" << q.type << "(id);}\n";
+        // The previous queue owns every nonzero multiplier. A new row can only
+        // enter through a violated (or invalid) residual, so reject satisfied
+        // rows before loading state from the logical domain's much larger span.
+        mapped << "bool newActivity(uint id,uint left,uint right,float residual){"
+                  "if(!isnan(residual)&&!isinf(residual)&&residual"
+               << (p.types[q.type]->kind == RelationKind::GreaterEqual ? ">=" : "<=")
+               << "0.0)return false;"
+                  "if(step.iteration!=0u&&x_lambda[relation(id).l]!=0.0)return false;"
+                  "return mappedActivity(id,step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration,left,right,residual);}\n"
+                  "void considerNew(uint id,uint left,uint right,float residual){"
+                  "if(newActivity(id,left,right,residual))enqueue" << q.type << "(id);}\n";
         mappedActivity[q.type] = mapped.str();
     }
     // Parameter expressions run on the GPU using the same float generator as the
@@ -481,6 +488,23 @@ void lowerCandidateDomains(CompiledPlan& p) {
             source << "void considerNew(uint id,uint left,uint right,float residual){"
                       "if(step.iteration==0u||x_lambda[relation(id).l]==0.0)consider"
                    << type << "(id);}\n";
+        const auto queue = std::find_if(typed.begin(), typed.end(),
+                                        [&](const TypeQueue& q) { return q.type == type; });
+        const auto queueSlot = uint32_t(queue - typed.begin());
+        const bool grouped = !mappedActivity[type].empty();
+        if (grouped)
+            source << "shared uint newCount,newBase;\n"
+                      "void enqueueNewGroup(uint id,bool append){"
+                      "if(gl_LocalInvocationIndex==0u)newCount=0u;barrier();"
+                      "uint rank=0u;if(append)rank=atomicAdd(newCount,1u);barrier();"
+                      "uint side=x_candidates[0];if(newCount!=0u){"
+                      "if(gl_LocalInvocationIndex==0u){newBase=atomicAdd(x_candidates["
+                   << counters + queueSlot << "u+side*" << typed.size()
+                   << "u],newCount);if(newBase+newCount>" << queue->capacity
+                   << "u)atomicOr(x_candidates[" << overflows << "u+side],1u);}barrier();"
+                      "if(append&&newBase+rank<" << queue->capacity
+                   << "u)x_candidates[" << queues + queue->first << "u+side*" << queueCapacity
+                   << "u+newBase+rank]=id;}barrier();}\n";
         source << "void appendNeighbor(uint left,uint right){uint at=atomicAdd(x_candidates["
                << d.header + 6 << "u],1u);if(at<" << d.nearCapacity
                << "u){";
@@ -501,7 +525,14 @@ void lowerCandidateDomains(CompiledPlan& p) {
                << "u]==0u){uint count=min(x_candidates[" << d.header + 5 << "u],"
                << d.nearCapacity
                << "u);float bound=1.96*uintBitsToFloat(x_candidates[" << d.header
-               << "u]);for(uint k=lane;k<count;k+=step.count){";
+               << "u]);";
+        // Cached rows have a uniform traversal bound. Compact per workgroup so
+        // the global queue counter is reserved once per group, not once per row.
+        if (grouped)
+            source << "for(uint base=0u;base<count;base+=step.count){uint k=base+lane,id=0u;"
+                      "bool append=false;if(k<count){";
+        else
+            source << "for(uint k=lane;k<count;k+=step.count){";
         if (d.packedNearRows)
             source << "uint packed=x_candidates[" << d.nearRows
                    << "u+k],left=packed&65535u,right=packed>>16u;";
@@ -511,8 +542,12 @@ void lowerCandidateDomains(CompiledPlan& p) {
                    << "u+k*2u+1u];";
         source << "vec3 delta=feature(left,true)-feature(right,false);"
                   "float distanceSquared=dot(delta,delta);if(distanceSquared<=bound){"
-                  "uint id=rowOf(left,right);considerNew(id,left,right,"
-                  "candidateResidual(id,distanceSquared));}}return;}";
+               << (grouped ? "id=" : "uint id=") << "rowOf(left,right);"
+               << (grouped ? "append=newActivity" : "considerNew")
+               << "(id,left,right,candidateResidual(id,distanceSquared));}}";
+        if (grouped)
+            source << "enqueueNewGroup(id,append);}";
+        source << "return;}";
         if (d.leftReferences != d.references)
             source << "for(uint member=lane;member<" << d.binding.left
                    << "u;member+=step.count)saveReference(feature(member,true),member,true);";
@@ -547,13 +582,14 @@ void lowerCandidateDomains(CompiledPlan& p) {
                       "considerNew(id,i,j,candidateResidual(id,distanceSquared));";
         source << "}}}j=x_candidates["
                << d.next << "u+j];}}";
-        if (uint64_t(d.binding.left) * neighbors > UINT32_MAX)
+        const uint64_t queryLanes = (uint64_t(d.binding.left) * neighbors + 127) / 128 * 128;
+        if (queryLanes > UINT32_MAX)
             throw std::overflow_error("Candidate query dispatch exceeds 32-bit addressing");
         if (firstQuery == UINT32_MAX) {
             firstQuery = uint32_t(p.kernels.size());
             firstQueryBody = source.str().substr(activity.str().size() + rebuild.size());
         }
-        add("Query candidate domain", source.str() + "void main(){queryDomain();}", d.binding.left * neighbors, stages);
+        add("Query candidate domain", source.str() + "void main(){queryDomain();}", uint32_t(queryLanes), stages);
     }
     std::vector<std::vector<uint32_t>> ordinaryByType(p.types.size());
     auto selected = [&](uint32_t id) {

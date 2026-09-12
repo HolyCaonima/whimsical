@@ -87,6 +87,8 @@ struct Instance::Storage {
     bool recordingSequence = false;
     std::string interface;
     std::vector<uint32_t> variableFieldMasks, relationFieldMasks;
+    std::array<std::vector<uint32_t>, BufferCount> fieldPages;
+    std::array<bool, BufferCount> dirtyFieldPages{};
     bool candidateBoundsDirty = true;
     explicit Storage(rc::RenderCore& core, PlanRef value) : plan(std::move(value)) {
         for (const auto& mode : plan->variableFieldModes)
@@ -96,6 +98,11 @@ struct Instance::Storage {
         for (uint32_t i = 0; i < BufferCount; ++i) {
             const auto& b = plan->buffers[i];
             auto d = declaration(b.name, b.byteSize(), b.integers);
+            if (b.paged) {
+                fieldPages[i].resize(b.initial.size() / 4);
+                std::memcpy(fieldPages[i].data(), b.initial.data(), b.initial.size());
+                d.bytes = [this, i](uint32_t, uint32_t) { return uint64_t(fieldPages[i].size()) * 4; };
+            }
             // Model fields and compiled tables may be uploaded between steps, but
             // no kernel writes them. Preserve that fact in the shader interface.
             switch (BufferRole(i)) {
@@ -229,6 +236,11 @@ struct Instance::Storage {
         }
     }
     void submit(uint64_t tick = 0, uint64_t profile = 0, uint32_t width = 1, uint32_t height = 1) {
+        for (uint32_t i = 0; i < BufferCount; ++i)
+            if (dirtyFieldPages[i]) {
+                execution->upload(resources[i], bytes(fieldPages[i]));
+                dirtyFieldPages[i] = false;
+            }
         execution->compile(width, height);
         execution->record({profile, tick});
         execution->submit();
@@ -347,9 +359,33 @@ struct Instance::Storage {
         for (uint32_t c = 0; c < destination.width; ++c) {
             for (uint32_t i = 0; i < count; ++i)
                 column[i] = values[size_t(i) * destination.width + c];
-            execution->uploadRange(id(destination.role),
-                                   uint64_t(destination.first + first + c * destination.stride) * 4,
-                                   bytes(column));
+            writeColumn(destination.role, destination.first + first + c * destination.stride,
+                        count, column.data());
+        }
+    }
+    void writeColumn(BufferRole role, uint32_t first, uint32_t count, const float* values) {
+        auto& packed = fieldPages[size_t(role)];
+        if (packed.empty()) {
+            execution->uploadRange(id(role), uint64_t(first) * 4,
+                                   bytes(std::vector<float>(values, values + count)));
+            return;
+        }
+        dirtyFieldPages[size_t(role)] = true;
+        for (uint32_t i = 0; i < count;) {
+            const uint32_t word = first + i, page = word / BufferData::PageWords;
+            const uint32_t offset = word % BufferData::PageWords;
+            const auto length = std::min(count - i, BufferData::PageWords - offset);
+            auto entry = packed[page], address = entry & ~BufferData::UniformPage;
+            if (entry & BufferData::UniformPage) {
+                if (packed.size() + BufferData::PageWords >= BufferData::UniformPage)
+                    throw std::overflow_error("Paged field exceeds tagged address capacity");
+                const auto oldValue = packed[address];
+                address = uint32_t(packed.size());
+                packed.insert(packed.end(), BufferData::PageWords, oldValue);
+                packed[page] = address;
+            }
+            std::memcpy(packed.data() + address + offset, values + i, length * 4);
+            i += length;
         }
     }
     void writes(const std::vector<StateWrite>& inputs, uint64_t tick) {

@@ -259,3 +259,28 @@ Release 的 Whimsical、dynamics_run、dynamics_tests 构建成功；既有 Dyna
 `candidateQueueCapacity` 已加入计划摘要，用于区分逻辑活动行数和实际队列容量。当前仍按逻辑行分配 Parameters、Compliance、Enabled 和 Multiplier 的 GPU 地址空间；uniform fill 已消除 CPU 展开和上传，却没有消除这些 Vulkan buffer 的虚拟/物理容量。若继续压缩它们，需要让 Runtime 支持 uniform base + patch pages 或可重建的物理字段资源；这属于下一层存储架构，而不是在 Compiler 中加入具体模拟类别。
 
 最终 Release 的 `dynamics_tests`、`dynamics_run` 和 `Whimsical` 均构建成功；既有 Dynamics focused checks（包含候选生命周期及 bound/fallback）通过，Vulkan validation 未报告错误。本轮没有新增或修改测试。
+
+## 统一字段的物理分页与候选批量追加（2026-09-12）
+
+40,000 成员的现有例子在 GPU 安装计划时失败，实际错误为 `vkAllocateMemory ... failed: -2`。CPU 计划编译已经完成，问题来自只读数值字段仍按完整逻辑行数分配：799,980,000 个组合关系，加上其他关系后，Parameters、Compliance、RelationEnabled 共占 9,602,800,000 bytes；还要另外分配可写乘子和其他缓冲区。
+
+Compiler 现在在调度结束后按存储成本为这些字段选择分页表示。每页覆盖 1,024 个逻辑 word；页表项指向共享常量或完整数据页。跨字段边界的混合页保留原值，不能节省至少一半空间时仍使用直接寻址。逻辑行 ID、字段列跨度、DSL 和公式全部保留，生成的字段读取函数负责物理寻址。该例三个字段的初始物理数据合计为 9,385,948 bytes（约 9.39 MB，按字段宽度和最终页布局计算）。
+
+Runtime 保存紧凑字段的主机镜像。逐行 patch 首次触及常量页时，只分配该页的实际数据；后续修改复用它。一次 commit 完成后上传更新的紧凑缓冲区，资源大小由现有 RenderCore 声明回调计算，因此无需改动 RenderCore 或重新生成求解计划。全域回退同样经过字段读取函数，不会遗漏补丁。
+
+候选查询同时利用既有队列不变量：非零乘子由上一轮队列继续处理；新候选可以先排除有限且已满足的残差，再读取乘子。缓存候选列表具有统一遍历上界，因此各工作组可先在共享内存中收集命中，再一次性预留全局队列区间。重建列表时仍保留原有遍历；队列溢出继续走完整域回退。查询工作量向完整工作组取整，避免尾部物理 invocation 与下一轮 stride 重叠。
+
+### 验证与性能样本
+
+使用项目当前 `lab.js` 和 `particles.js` 的原始定义，固定随机种子 12345，Hybrid、4 子步 × 12 迭代、colorBudget 12，Release、RTX 3080、Vulkan validation。2 万配置使用现有选项的半径 0.0175，4 万使用默认半径 0.014。每次执行 90 步，统计预热 60 步后的 tick 61–90；下表只包含求解提交，不包含渲染或 UI。
+
+| 规模 | 修改前 | 最终版本 |
+| --- | --- | --- |
+| 20,000 | 两轮 GPU 均值 6.04 / 6.06 ms | GPU 均值 5.74 ms，约下降 5.2% |
+| 40,000 | GPU 分配失败，无法求解 | 正常完成 90 步，GPU 均值 11.34 ms |
+
+2 万样本的候选查询 profile 均值从两轮 2.86 / 2.69 ms 降到 2.28 ms。没有锁定 GPU 频率；启动阶段存在明显变频，长期轨迹也受原子累加顺序影响，因此这些是本机预热后的样本，不是逐位一致性或固定加速比承诺。完成运行的 invalid / singular 均为 0 / 0，Vulkan validation 未报错。
+
+Release 的 `dynamics_run`、`dynamics_tests`、`Whimsical` 构建成功；现有 focused checks，包括参数局部修改、候选生命周期及范围回退，全部通过。没有新增或修改测试源码，没有修改项目脚本。记录位于 `captures/compiler-40k/`，最终运行是 `final-20k.log`、`final-40k.log`，原始基线是 `before-20k.log`、`before-20k-repeat.log`、`before.err`，摘要为 `summary.json`。
+
+这一步消除了统一只读字段的密集 GPU 分配，不是所有状态的稀疏化：可写乘子仍按逻辑行数分配，4 万配置的乘子约为 3.20 GB；非统一输入和高密度回退仍有相应成本。后续若压缩可写状态，必须单独解决活动状态的生命周期与溢出保真，不能用截断关系数代替。

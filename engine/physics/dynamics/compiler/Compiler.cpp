@@ -97,6 +97,61 @@ uint32_t field(BufferData& target, const Field& values, bool deferUniform = fals
     }
     return append(target, values.columnMajor());
 }
+void packField(BufferData& buffer) {
+    const auto count = buffer.wordCount();
+    if (count < BufferData::PageWords * 2 || buffer.fills.empty())
+        return;
+    const auto pages = uint32_t((count + BufferData::PageWords - 1) / BufferData::PageWords);
+    std::vector<uint32_t> packed(pages);
+    std::map<uint32_t, uint32_t> constants;
+    auto constantPage = [&](uint32_t page, uint32_t value) {
+        auto [at, inserted] = constants.emplace(value, uint32_t(packed.size()));
+        if (inserted)
+            packed.push_back(value);
+        packed[page] = at->second | BufferData::UniformPage;
+    };
+    size_t fillIndex = 0;
+    for (uint32_t page = 0; page < pages; ++page) {
+        if (packed.size() + BufferData::PageWords >= BufferData::UniformPage)
+            return; // Dense addressing can represent the larger physical span.
+        const uint64_t first = uint64_t(page) * BufferData::PageWords;
+        const auto end = std::min(count, first + BufferData::PageWords);
+        while (fillIndex < buffer.fills.size() &&
+               buffer.fills[fillIndex].first + buffer.fills[fillIndex].count <= first)
+            ++fillIndex;
+        if (fillIndex < buffer.fills.size()) {
+            const auto& fill = buffer.fills[fillIndex];
+            if (fill.first <= first && fill.first + fill.count >= end) {
+                constantPage(page, fill.value);
+                continue;
+            }
+        }
+        std::array<uint32_t, BufferData::PageWords> values{};
+        const auto initialEnd = std::min(end, uint64_t(buffer.initial.size() / 4));
+        if (initialEnd > first)
+            std::memcpy(values.data(), buffer.initial.data() + first * 4, (initialEnd - first) * 4);
+        for (size_t i = fillIndex; i < buffer.fills.size() && buffer.fills[i].first < end; ++i) {
+            const auto& part = buffer.fills[i];
+            std::fill(values.begin() + (std::max(first, part.first) - first),
+                      values.begin() + (std::min(end, part.first + part.count) - first), part.value);
+        }
+        const bool constant = std::all_of(values.begin() + 1, values.begin() + (end - first),
+                                         [&](uint32_t value) { return value == values[0]; });
+        if (constant)
+            constantPage(page, values[0]);
+        else {
+            packed[page] = uint32_t(packed.size());
+            packed.insert(packed.end(), values.begin(), values.end());
+        }
+    }
+    if (packed.size() * 2 >= count)
+        return;
+    buffer.initial.resize(packed.size() * 4);
+    std::memcpy(buffer.initial.data(), packed.data(), buffer.initial.size());
+    buffer.words = packed.size();
+    buffer.fills.clear();
+    buffer.paged = true;
+}
 // Per-row scheduling state is a color byte. Everything else is an immutable
 // projection of the logical set range, not a Cartesian array of instance structs.
 class InstanceRows {
@@ -393,6 +448,17 @@ uint32_t CompiledPlan::activeTangent(uint32_t type) const {
 }
 std::string CompiledPlan::interface() const {
     std::ostringstream source;
+    for (auto role : {BufferRole::Parameters, BufferRole::Compliance, BufferRole::RelationEnabled}) {
+        const auto& buffer = buffers[size_t(role)];
+        source << "float read_" << buffer.name << "(uint word){";
+        if (buffer.paged)
+            source << "uint page=floatBitsToUint(x_" << buffer.name << "[word/"
+                   << BufferData::PageWords << "u]);return x_" << buffer.name
+                   << "[(page&0x7fffffffu)+((page&0x80000000u)!=0u?0u:word%"
+                   << BufferData::PageWords << "u)];}\n";
+        else
+            source << "return x_" << buffer.name << "[word];}\n";
+    }
     auto anyMode = [](const std::vector<FieldModeLayout>& fields, uint32_t mode) {
         return std::any_of(fields.begin(), fields.end(),
                            [&](const FieldModeLayout& field) { return (field.mask & mode) != 0; });
@@ -1087,6 +1153,8 @@ void main(){uint i=invocation();if(i<step.count)x_scanScratch[step.first+i]+=x_s
     // now, without constraining the logical domain or its patch/read contract.
     instances.packMetadata(buffer(BufferRole::Relations), p->relationMetadata);
     packMetadata(buffer(BufferRole::Variables), p->variables, p->variableMetadata);
+    for (auto role : {BufferRole::Parameters, BufferRole::Compliance, BufferRole::RelationEnabled})
+        packField(buffer(role));
     for (auto& b : p->buffers) {
         if (!b.wordCount())
             reserve(b, 1, 0u);

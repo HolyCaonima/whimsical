@@ -675,9 +675,9 @@ std::string fieldAccess(bool localFields) {
         return R"(
 bool variableEnabled(Variable v){return x_variableEnabled[v.id]!=0.0;}
 bool identityMetric(Variable v){return false;}
-bool relationEnabled(Relation r){return x_relationEnabled[r.id]!=0.0;}
-float loadParameter(Relation r,uint c){return x_parameters[r.p+c*r.stride];}
-float loadCompliance(Relation r,uint c,uint uniformOffset){return x_compliance[r.a+c*r.stride];}
+bool relationEnabled(Relation r){return read_relationEnabled(r.id)!=0.0;}
+float loadParameter(Relation r,uint c){return read_parameters(r.p+c*r.stride);}
+float loadCompliance(Relation r,uint c,uint uniformOffset){return read_compliance(r.a+c*r.stride);}
 )";
     return R"(
 #if DYNAMICS_UNIFORM_VARIABLE_ENABLED
@@ -696,27 +696,27 @@ bool identityMetric(Variable v){return false;}
 #if DYNAMICS_UNIFORM_RELATION_ENABLED
 bool relationEnabled(Relation r){
     uint modes=x_fieldModes[r.u];
-    return (modes&1u)!=0u?(modes&8u)!=0u:x_relationEnabled[r.id]!=0.0;
+    return (modes&1u)!=0u?(modes&8u)!=0u:read_relationEnabled(r.id)!=0.0;
 }
 #else
-bool relationEnabled(Relation r){return x_relationEnabled[r.id]!=0.0;}
+bool relationEnabled(Relation r){return read_relationEnabled(r.id)!=0.0;}
 #endif
 #if DYNAMICS_UNIFORM_PARAMETERS
 float loadParameter(Relation r,uint c){
     return (x_fieldModes[r.u]&2u)!=0u?uintBitsToFloat(x_fieldModes[r.u+2u+c]):
-        x_parameters[r.p+c*r.stride];
+        read_parameters(r.p+c*r.stride);
 }
 #else
-float loadParameter(Relation r,uint c){return x_parameters[r.p+c*r.stride];}
+float loadParameter(Relation r,uint c){return read_parameters(r.p+c*r.stride);}
 #endif
 #if DYNAMICS_UNIFORM_COMPLIANCE
 float loadCompliance(Relation r,uint c,uint uniformOffset){
     uint modes=x_fieldModes[r.u];
     return (modes&4u)!=0u?((modes&16u)!=0u?0.0:
-        uintBitsToFloat(x_fieldModes[r.u+uniformOffset+c])):x_compliance[r.a+c*r.stride];
+        uintBitsToFloat(x_fieldModes[r.u+uniformOffset+c])):read_compliance(r.a+c*r.stride);
 }
 #else
-float loadCompliance(Relation r,uint c,uint uniformOffset){return x_compliance[r.a+c*r.stride];}
+float loadCompliance(Relation r,uint c,uint uniformOffset){return read_compliance(r.a+c*r.stride);}
 #endif
 )";
 }

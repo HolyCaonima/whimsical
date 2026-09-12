@@ -64,6 +64,10 @@ struct BufferData {
     std::vector<uint8_t> initial;
     uint64_t words = 0;
     std::vector<Fill> fills;
+    // Read-only fields can keep logical word addresses through a page table.
+    // A tagged entry points to a shared constant; other entries point to a full page.
+    static constexpr uint32_t PageWords = 1024, UniformPage = 0x80000000u;
+    bool paged = false;
     uint64_t wordCount() const {
         return std::max<uint64_t>(words, initial.size() / 4);
     }
