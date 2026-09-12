@@ -13,6 +13,9 @@ struct Domain {
     BindingDomain binding;
     DifferenceBound bound;
     uint32_t leftCells = 0;
+    uint32_t references = 0, leftReferences = 0;
+    uint32_t nearRows = 0, nearCapacity = 0;
+    bool packedNearRows = false;
 };
 std::vector<uint32_t> words(const BufferData& b) {
     std::vector<uint32_t> result(b.initial.size() / 4);
@@ -54,14 +57,30 @@ std::string domainSource(const CompiledPlan& p, const Domain& d) {
         }
     }
     s << ");}\n"
-         // A 25% margin dominates float subtraction/squaring and quantization
-         // error with scaled coordinates bounded by 2^18 before conversion.
+         // The list radius is 1.4r. It is rebuilt once either endpoint feature
+         // moves more than .19r, so an interacting pair was at most 1.38r apart
+         // at construction (triangle inequality). The remaining .02r is float
+         // margin; the cached list cannot change the represented relation set.
          "bool cellOf(vec3 f,out ivec3 cell){"
          "float r=uintBitsToFloat(x_candidates[" << d.header << "u]);"
-         "vec3 q=f/(1.25*sqrt(r));"
+         "vec3 q=f/(1.4*sqrt(r));"
          "if(any(isnan(q))||any(isinf(q))||any(greaterThan(abs(q),vec3(262144.0)))"
          "||any(greaterThan(abs(f),vec3(1e15))))return false;"
          "cell=ivec3(floor(q));return true;}\n"
+         "vec3 referenceFeature(uint member,bool left){uint at=(left?" << d.leftReferences
+      << "u:" << d.references
+      << "u)+member*3u;return vec3(uintBitsToFloat(x_candidates[at]),"
+         "uintBitsToFloat(x_candidates[at+1u]),uintBitsToFloat(x_candidates[at+2u]));}\n"
+         "void saveReference(vec3 f,uint member,bool left){uint at=(left?" << d.leftReferences
+      << "u:" << d.references
+      << "u)+member*3u;x_candidates[at]=floatBitsToUint(f.x);"
+         "x_candidates[at+1u]=floatBitsToUint(f.y);x_candidates[at+2u]=floatBitsToUint(f.z);}\n"
+         "void detectMovement(vec3 f,uint member,bool left){if(x_candidates[" << d.header + 4
+      << "u]==0u){if(member==0u)atomicOr(x_candidates[" << d.header + 3
+      << "u],1u);return;}if(x_candidates[" << d.header + 3
+      << "u]!=0u)return;vec3 delta=f-referenceFeature(member,left);"
+         "if(dot(delta,delta)>0.0361*uintBitsToFloat(x_candidates[" << d.header
+      << "u]))atomicOr(x_candidates[" << d.header + 3 << "u],1u);}\n"
          "uint bucket(ivec3 c){uvec3 u=uvec3(c);return ((u.x*73856093u)^(u.y*19349663u)^(u.z*83492791u))&"
       << d.buckets - 1 << "u;}\n"
          "uint rowOf(uint i,uint j){return " << d.first << "u+";
@@ -235,7 +254,9 @@ void lowerCandidateDomains(CompiledPlan& p) {
     const uint32_t overflows = reserve(2);
     const uint32_t queues = reserve(uint64_t(queueCapacity) * 2);
     for (auto& d : domains) {
-        d.header = reserve(3); // squared bound, invalid bound, invalid coordinate
+        // bound, invalid-bound snapshot, invalid coordinate, dirty, valid,
+        // active neighbor count, build count, build overflow
+        d.header = reserve(8);
         d.buckets = 1;
         while (d.buckets < uint64_t(d.binding.right) * 2) {
             if (d.buckets >= (1u << 30)) throw std::overflow_error("Candidate bucket capacity");
@@ -249,6 +270,17 @@ void lowerCandidateDomains(CompiledPlan& p) {
                 return coordinate(p, d, inputs.first) == coordinate(p, d, inputs.second);
             });
         d.leftCells = sameFeatures ? d.cells : reserve(uint64_t(d.binding.left) * 3);
+        d.references = reserve(uint64_t(d.binding.right) * 3);
+        d.leftReferences =
+            sameFeatures ? d.references : reserve(uint64_t(d.binding.left) * 3);
+        const uint64_t nearCapacity =
+            std::min<uint64_t>(d.count, QueueRowsPerMember *
+                                            (uint64_t(d.binding.left) + d.binding.right));
+        if (nearCapacity > UINT32_MAX)
+            throw std::overflow_error("Candidate neighbor capacity exceeds 32-bit addressing");
+        d.nearCapacity = uint32_t(nearCapacity);
+        d.packedNearRows = d.binding.left <= 65536 && d.binding.right <= 65536;
+        d.nearRows = reserve(nearCapacity * (d.packedNearRows ? 1 : 2));
         p.statistics.candidateRelations += d.count;
     }
     p.statistics.candidateDomains = uint32_t(domains.size());
@@ -306,7 +338,11 @@ void lowerCandidateDomains(CompiledPlan& p) {
         std::ostringstream reset;
         reset << "void main(){if(invocation()!=0u)return;";
         for (const auto& d : domains)
-            reset << "x_candidates[" << d.header << "u]=0u;x_candidates[" << d.header + 1 << "u]=0u;";
+            reset << "x_candidates[" << d.header << "u]=0u;x_candidates[" << d.header + 1
+                  << "u]=0u;x_candidates[" << d.header + 4
+                  << "u]=0u;x_candidates[" << d.header + 5
+                  << "u]=0u;x_candidates[" << d.header + 6
+                  << "u]=0u;x_candidates[" << d.header + 7 << "u]=0u;";
         reset << "}";
         add("Reset candidate bounds", reset.str(), 1, p.candidateBounds);
         for (const auto& d : domains) {
@@ -348,7 +384,10 @@ void lowerCandidateDomains(CompiledPlan& p) {
     if (active)
         reset << "for(uint j=i;j<" << p.statistics.variables << "u;j+=step.count)x_activeDegrees[j]=0u;";
     for (const auto& d : domains) {
-        reset << "if(i==0u)x_candidates[" << d.header + 2 << "u]=x_candidates[" << d.header + 1 << "u];"
+        reset << "if(i==0u){x_candidates[" << d.header + 2 << "u]=x_candidates["
+              << d.header + 1 << "u];x_candidates[" << d.header + 3
+              << "u]=0u;x_candidates[" << d.header + 6
+              << "u]=0u;x_candidates[" << d.header + 7 << "u]=0u;}"
               << "for(uint j=i;j<" << d.buckets << "u;j+=step.count)x_candidates[" << d.heads << "u+j]=0xffffffffu;";
     }
     // Every nonzero indexed multiplier remains in the completed active queue.
@@ -388,13 +427,18 @@ void lowerCandidateDomains(CompiledPlan& p) {
         // Cache the feature-to-cell map once per member and snapshot. Identical
         // affine feature maps share the same column, including self-products.
         if (d.leftCells != d.cells)
-            source << "if(member<" << d.binding.left << "u){ivec3 c;if(!cellOf(feature(member,true),c))"
-                      "atomicOr(x_candidates[" << d.header + 2 << "u],1u);else{uint at=" << d.leftCells
+            source << "if(member<" << d.binding.left
+                   << "u){vec3 f=feature(member,true);detectMovement(f,member,true);ivec3 c;"
+                      "if(!cellOf(f,c)){atomicOr(x_candidates[" << d.header + 2
+                   << "u],1u);atomicOr(x_candidates[" << d.header + 3
+                   << "u],1u);}else{uint at=" << d.leftCells
                    << "u+member*3u;x_candidates[at]=uint(c.x);x_candidates[at+1u]=uint(c.y);"
                       "x_candidates[at+2u]=uint(c.z);}}";
         source << "if(member>=" << d.binding.right
-               << "u)return;ivec3 c;if(!cellOf(feature(member,false),c)){atomicOr(x_candidates["
-               << d.header + 2 << "u],1u);return;}uint at=" << d.cells << "u+member*3u;"
+               << "u)return;vec3 f=feature(member,false);detectMovement(f,member,false);ivec3 c;"
+                  "if(!cellOf(f,c)){atomicOr(x_candidates["
+               << d.header + 2 << "u],1u);atomicOr(x_candidates[" << d.header + 3
+               << "u],1u);return;}uint at=" << d.cells << "u+member*3u;"
                   "x_candidates[at]=uint(c.x);x_candidates[at+1u]=uint(c.y);x_candidates[at+2u]=uint(c.z);"
                   "x_candidates[" << d.next << "u+member]=atomicExchange(x_candidates[" << d.heads << "u+bucket(c)],member);}";
         add("Index candidate domain", source.str(), std::max(d.binding.left, d.binding.right), stages);
@@ -437,17 +481,50 @@ void lowerCandidateDomains(CompiledPlan& p) {
             source << "void considerNew(uint id,uint left,uint right,float residual){"
                       "if(step.iteration==0u||x_lambda[relation(id).l]==0.0)consider"
                    << type << "(id);}\n";
+        source << "void appendNeighbor(uint left,uint right){uint at=atomicAdd(x_candidates["
+               << d.header + 6 << "u],1u);if(at<" << d.nearCapacity
+               << "u){";
+        if (d.packedNearRows)
+            source << "x_candidates[" << d.nearRows
+                   << "u+at]=left|(right<<16u);";
+        else
+            source << "x_candidates[" << d.nearRows
+                   << "u+at*2u]=left;x_candidates[" << d.nearRows
+                   << "u+at*2u+1u]=right;";
+        source << "}else atomicOr(x_candidates[" << d.header + 7
+               << "u],1u);}\n";
         // Apply the proven feature bound before touching row-indexed fields.
-        // The same 25% radius margin as cellOf covers float reassociation; this
-        // is only a conservative rejection, never a replacement for the formula.
-        source << "void queryDomain(){if(rebuildCandidates())return;uint lane=invocation(),i=lane/"
-               << neighbors << "u,neighbor=lane%" << neighbors
+        // The skinned list is only an execution representation. Every retained
+        // row still runs the original generated predicate.
+        source << "void queryDomain(){if(rebuildCandidates())return;uint lane=invocation();"
+                  "if(x_candidates[" << d.header + 3
+               << "u]==0u){uint count=min(x_candidates[" << d.header + 5 << "u],"
+               << d.nearCapacity
+               << "u);float bound=1.96*uintBitsToFloat(x_candidates[" << d.header
+               << "u]);for(uint k=lane;k<count;k+=step.count){";
+        if (d.packedNearRows)
+            source << "uint packed=x_candidates[" << d.nearRows
+                   << "u+k],left=packed&65535u,right=packed>>16u;";
+        else
+            source << "uint left=x_candidates[" << d.nearRows
+                   << "u+k*2u],right=x_candidates[" << d.nearRows
+                   << "u+k*2u+1u];";
+        source << "vec3 delta=feature(left,true)-feature(right,false);"
+                  "float distanceSquared=dot(delta,delta);if(distanceSquared<=bound){"
+                  "uint id=rowOf(left,right);considerNew(id,left,right,"
+                  "candidateResidual(id,distanceSquared));}}return;}";
+        if (d.leftReferences != d.references)
+            source << "for(uint member=lane;member<" << d.binding.left
+                   << "u;member+=step.count)saveReference(feature(member,true),member,true);";
+        source << "for(uint member=lane;member<" << d.binding.right
+               << "u;member+=step.count)saveReference(feature(member,false),member,false);"
+                  "uint i=lane/" << neighbors << "u,neighbor=lane%" << neighbors
                << "u;if(i>=" << d.binding.left << "u)return;vec3 leftFeature=feature(i,true);"
                   "if(x_candidates[" << d.header + 2 << "u]!=0u){"
                   "for(uint j=neighbor;j<" << d.binding.right << "u;j+=" << neighbors
                << "u)if(accepts(i,j)){uint id=rowOf(i,j);vec3 delta=leftFeature-feature(j,false);"
                   "float distanceSquared=dot(delta,delta);considerNew(id,i,j,candidateResidual(id,distanceSquared));}return;}"
-                  "float bound=1.5625*uintBitsToFloat(x_candidates[" << d.header << "u]);"
+                  "float bound=1.96*uintBitsToFloat(x_candidates[" << d.header << "u]);"
                   "uint featureAt=" << d.leftCells << "u+i*3u;ivec3 c=ivec3(x_candidates[featureAt],"
                   "x_candidates[featureAt+1u],x_candidates[featureAt+2u]);"
                   "uint offsetIndex=neighbor+" << neighborFirst << "u;"
@@ -463,9 +540,11 @@ void lowerCandidateDomains(CompiledPlan& p) {
                   "float distanceSquared=dot(delta,delta);if(distanceSquared<=bound){";
         if (halfNeighborhood)
             source << "uint left=min(i,j),right=max(i,j),id=rowOf(left,right);"
+                      "appendNeighbor(left,right);"
                       "considerNew(id,left,right,candidateResidual(id,distanceSquared));";
         else
-            source << "uint id=rowOf(i,j);considerNew(id,i,j,candidateResidual(id,distanceSquared));";
+            source << "uint id=rowOf(i,j);appendNeighbor(i,j);"
+                      "considerNew(id,i,j,candidateResidual(id,distanceSquared));";
         source << "}}}j=x_candidates["
                << d.next << "u+j];}}";
         if (uint64_t(d.binding.left) * neighbors > UINT32_MAX)
@@ -606,8 +685,16 @@ void lowerCandidateDomains(CompiledPlan& p) {
         source << "break;";
     }
     source << "}}\nvoid main(){uint lane=invocation(),side=x_candidates[0];"
-              "if(lane==0u)x_candidates[1]=side;if(x_candidates["
-           << overflows << "u+side]!=0u){if(lane<step.count)for(uint k=lane;k<"
+              "if(lane==0u){x_candidates[1]=side;";
+    for (const auto& d : domains)
+        source << "if(x_candidates[" << d.header + 3 << "u]!=0u){if(x_candidates["
+               << d.header + 2 << "u]==0u&&x_candidates[" << d.header + 7
+               << "u]==0u){x_candidates[" << d.header + 5 << "u]=min(x_candidates["
+               << d.header + 6 << "u]," << d.nearCapacity << "u);x_candidates["
+               << d.header + 4 << "u]=1u;}else x_candidates[" << d.header + 4
+               << "u]=0u;}";
+    source << "}if(x_candidates[" << overflows
+           << "u+side]!=0u){if(lane<step.count)for(uint k=lane;k<"
            << logicalQueueCount
            << "u;k+=step.count){uint id;if(fallbackRow(k,id))solveFallback(id);}return;}";
     uint32_t laneFirst = 0;
