@@ -8,7 +8,7 @@ var cloth={id:'cloth',tab:'布料',eyebrow:'实验 01',title:'布料实验',
     hint:'↑ ↓ 调整提起高度',
     legend:'<span class="rose">■</span>布面<span class="gold">■</span>抓取角点',
     panelTitle:'布料与抓取',
-    side:64,span:5.6,height:3.7,patches:0,
+    side:96,span:5.6,height:3.7,patches:0,
     held:false,wind:false,gust:1,phase:0,lift:0,target:0,kick:false,
     forceInput:false,gripDirty:false,base:null};
 var strength=[3.5,8,15],gustName=['微风','阵风','强风'];
