@@ -8,11 +8,11 @@ var net={id:'woven',tab:'绳布拼网',eyebrow:'实验 03',title:'绳布拼接�
     hint:'↑ ↓ 收紧或放松布块间短绳',
     legend:'<span class="rose">■</span>独立布块<span class="teal">■</span>短连接绳<span class="gold">■</span>四根角绳',
     panelTitle:'绳布网格',
-    tiles:4,resolution:6,tileSize:1.25,gap:0.44,shortScale:1,
+    tiles:8,resolution:6,span:6.32,gapRatio:0.44/1.25,shortScale:1,
     patches:0,wind:false,drive:false,phase:0,kick:false,forceInput:false,anchorDirty:false};
 var windStrength=4.5;
 
-net.sizes={label:'布块阵列',options:[{label:'2 × 2',value:2},{label:'3 × 3',value:3},{label:'4 × 4',value:4}],
+net.sizes={label:'布块阵列',options:[{label:'3 × 3',value:3},{label:'4 × 4',value:4},{label:'8 × 8',value:8}],
     get:function(){return net.tiles;},
     set:function(value){if(net.tiles===value)return '';net.tiles=value;Lab.reset();
         return '重新编译 '+value+' × '+value+' 块布组成的绳网';}};
@@ -48,7 +48,10 @@ net.families=function(){
 
 net.build=function(model){
     var X=Lab.X,t=net.tiles,r=net.resolution,positions=[],fixed=[],
-        span=t*net.tileSize+(t-1)*net.gap,pitch=net.tileSize+net.gap;
+        span=net.span;
+    // Keep the outer footprint fixed, preserving the gap-to-patch ratio.
+    net.tileSize=span/(t+(t-1)*net.gapRatio);
+    var gap=net.tileSize*net.gapRatio,pitch=net.tileSize+gap;
     var tx,tz,u,v,i,k,lane;
     function addPoint(x,y,z,isFixed){
         var id=positions.length;positions.push([x,y,z]);fixed.push(!!isFixed);return id;
@@ -69,7 +72,7 @@ net.build=function(model){
     }
     function shortRope(a,b){
         var pa=positions[a],pb=positions[b],
-            middle=addPoint((pa[0]+pb[0])/2,(pa[1]+pb[1])/2-0.055,(pa[2]+pb[2])/2,false),
+            middle=addPoint((pa[0]+pb[0])/2,(pa[1]+pb[1])/2-gap*0.125,(pa[2]+pb[2])/2,false),
             path=[a,middle,b];
         addSegment(a,middle);addSegment(middle,b);net.shortPaths.push(path);
     }
@@ -165,7 +168,7 @@ net.build=function(model){
 };
 
 net.stage=function(){
-    var t=net.tiles,r=net.resolution,span=t*net.tileSize+(t-1)*net.gap,i,k,tx,tz,u,v;
+    var t=net.tiles,r=net.resolution,span=net.span,i,k,tx,tz,u,v;
     net.patches=t*t*(r-1)*(r-1);
     Lab.mesh('Patch net platform',[0,-0.18,0],[11,0.35,10],'Floor');
     for(k=-5;k<=5;++k)Lab.mesh('Floor line',[k,0,0],[0.012,0.012,10],'Grid');
@@ -186,30 +189,30 @@ net.stage=function(){
             dynamicsBinding:{model:Lab.modelId,direction:'input',variables:[{set:Lab.variables,index:index}],
                 mapping:input.finish([input.input(0),input.input(1),input.input(2)])}}});
         Lab.entities.push(controller);net.controllers.push(controller);
-        var marker=Lab.mesh('Fixed corner rope '+corner,p,[0.13,0.13,0.13],'Anchor',Lab.sphereMesh);
-        Lab.bindPoint(marker,index,0,0,0.13);
-        var shared=Lab.mesh('Shared net corner '+corner,[0,4,0],[0.1,0.1,0.1],'Anchor',Lab.sphereMesh);
-        Lab.bindPoint(shared,net.cornerNodes[corner],0,0,0.1);
     });
-    for(tz=0;tz<t;++tz)for(tx=0;tx<t;++tx)
-        for(v=0;v+1<r;++v)for(u=0;u+1<r;++u){
-            var plate=Lab.mesh('Cloth tile '+tz+'/'+tx+' patch '+v+'/'+u,[0,4,0],
-                [net.tileSize/(r-1),0.026,net.tileSize/(r-1)],'Cloth');
-            Lab.bindPatch(plate,net.node(tx,tz,u,v),net.node(tx,tz,u+1,v),
-                net.node(tx,tz,u,v+1),net.node(tx,tz,u+1,v+1),0.026,1);
-        }
-    function drawRope(path,name,radius,material){
-        for(var p=0;p+1<path.length;++p){
-            var wire=Lab.mesh(name+' segment '+p,[0,4,0],[radius,0.2,radius],material,Lab.rodMesh);
-            Lab.bindSpan(wire,path[p],path[p+1],0,0,radius);
-        }
-        for(var p=1;p+1<path.length;++p){
-            var node=Lab.mesh(name+' joint '+p,[0,4,0],[radius*0.9,radius*0.9,radius*0.9],material,Lab.sphereMesh);
-            Lab.bindPoint(node,path[p],0,0,radius*0.9);
-        }
+    Lab.instanceBatches('Fixed corner ropes',Lab.sphereMesh,'Anchor',net.anchorIndices.map(function(index){return [index];}),
+        Lab.pointMapping(0,0,0.13),[0.13,0.13,0.13],0.07);
+    Lab.instanceBatches('Shared net corners',Lab.sphereMesh,'Anchor',net.cornerNodes.map(function(index){return [index];}),
+        Lab.pointMapping(0,0,0.1),[0.1,0.1,0.1],0.07);
+    var plates=[],cell=net.tileSize/(r-1);
+    // Corresponding cells across all tiles share the same four stream strides.
+    for(v=0;v+1<r;++v)for(u=0;u+1<r;++u)
+        for(tz=0;tz<t;++tz)for(tx=0;tx<t;++tx)
+            plates.push([net.node(tx,tz,u,v),net.node(tx,tz,u+1,v),
+                net.node(tx,tz,u,v+1),net.node(tx,tz,u+1,v+1)]);
+    Lab.instanceBatches('Cloth patches',Lab.boxMesh,'Cloth',plates,Lab.patchMapping(0.026,1),[cell,0.026,cell],0.05);
+    function drawRopes(paths,name,radius,material){
+        var segments=[],joints=[];
+        for(var p=0;p+1<paths[0].length;++p)
+            paths.forEach(function(path){segments.push([path[p],path[p+1]]);});
+        for(var p=1;p+1<paths[0].length;++p)
+            paths.forEach(function(path){joints.push([path[p]]);});
+        Lab.instanceBatches(name+' segments',Lab.rodMesh,material,segments,Lab.spanMapping(0,0,radius),[radius,0.2,radius],0.07);
+        var size=radius*0.9;
+        Lab.instanceBatches(name+' joints',Lab.sphereMesh,material,joints,Lab.pointMapping(0,0,size),[size,size,size],0.07);
     }
-    net.shortPaths.forEach(function(path,index){drawRope(path,'Short connector '+index,0.045,'Obstacle');});
-    net.cornerPaths.forEach(function(path,index){drawRope(path,'Corner rope '+index,0.06,'Edge');});
+    drawRopes(net.shortPaths,'Short connectors',0.045,'Obstacle');
+    drawRopes(net.cornerPaths,'Corner ropes',0.06,'Edge');
     Lab.lights(1.15);
     Engine.log('LAB woven stage: '+t*t+' cloth tiles, '+net.shortRopes+' short ropes, 4 corner ropes');
 };

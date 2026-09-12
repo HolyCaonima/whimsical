@@ -8,11 +8,11 @@ var thread={id:'threaded',tab:'连续穿布',eyebrow:'实验 04',title:'连续�
     hint:'↑ ↓ 收紧或放松整根穿绳',
     legend:'<span class="rose">■</span>整块布面<span class="gold">■</span>布前穿绳<span class="teal">■</span>侧边绳环',
     panelTitle:'连续穿绳',
-    side:32,width:5.8,height:4.5,ropeScale:1,
+    side:64,width:5.8,height:4.5,ropeScale:1,
     patches:0,wind:false,drive:false,phase:0,kick:false,forceInput:false,anchorDirty:false};
 var windStrength=4.2;
 
-thread.sizes={label:'布面网格',options:[{label:'16²',value:16},{label:'24²',value:24},{label:'32²',value:32}],
+thread.sizes={label:'布面网格',options:[{label:'24²',value:24},{label:'32²',value:32},{label:'64²',value:64}],
     get:function(){return thread.side;},
     set:function(value){if(thread.side===value)return '';thread.side=value;Lab.reset();
         return '重新编译 '+value+' × '+value+' 布面中的连续穿绳';}};
@@ -150,7 +150,7 @@ thread.build=function(model){
 };
 
 thread.stage=function(){
-    var n=thread.side,patches=Math.min(n-1,22),i,j,k;
+    var n=thread.side,patches=n-1,i,j,k;
     thread.patches=patches;
     Lab.mesh('Threaded platform',[0,-0.18,0],[9,0.35,5.5],'Floor');
     for(k=-4;k<=4;++k)Lab.mesh('Floor line',[k,0,0],[0.012,0.012,5.5],'Grid');
@@ -166,28 +166,35 @@ thread.stage=function(){
             dynamicsBinding:{model:Lab.modelId,direction:'input',variables:[{set:Lab.variables,index:index}],
                 mapping:input.finish([input.input(0),input.input(1),input.input(2)])}}});
         Lab.entities.push(controller);thread.controllers.push(controller);
-        var marker=Lab.mesh('Shared thread corner '+side,p,[0.13,0.13,0.13],'Anchor',Lab.sphereMesh);
-        Lab.bindPoint(marker,index,0,0,0.13);
     });
+    Lab.instanceBatches('Shared thread corners',Lab.sphereMesh,'Anchor',
+        thread.anchorIndices.map(function(index){return [index];}),
+        Lab.pointMapping(0,0,0.13),[0.13,0.13,0.13],0.07);
+    var plates=[];
     for(j=0;j<patches;++j)for(i=0;i<patches;++i){
-        var i0=Math.round(i*(n-1)/patches),i1=Math.round((i+1)*(n-1)/patches),
-            j0=Math.round(j*(n-1)/patches),j1=Math.round((j+1)*(n-1)/patches);
-        var plate=Lab.mesh('Threaded patch '+j+'/'+i,[0,3.5,0],
-            [thread.width/patches,0.027,thread.height/patches],'Cloth');
-        Lab.bindPatch(plate,j0*n+i0,j0*n+i1,j1*n+i0,j1*n+i1,0.027,1);
+        var first=j*n+i;
+        plates.push([first,first+1,first+n,first+n+1]);
     }
+    Lab.instanceBatches('Threaded patches',Lab.boxMesh,'Cloth',plates,Lab.patchMapping(0.027,1),
+        [thread.width/patches,0.027,thread.height/patches],0.05);
+    var ropeGroups=[[],[],[]],offsets=[0,0.075,-0.075];
     for(k=0;k<thread.ropeRows;++k){
-        var a=thread.ropeA[k],b=thread.ropeB[k],offset=0;
+        var a=thread.ropeA[k],b=thread.ropeB[k],group=0;
         if(a<thread.fabricCount&&b<thread.fabricCount&&Math.floor(a/n)===Math.floor(b/n)){
-            var layer=thread.rowLayer[Math.floor(a/n)];offset=layer%2?-0.075:0.075;
+            var layer=thread.rowLayer[Math.floor(a/n)];group=layer%2?2:1;
         }
-        var wire=Lab.mesh('Continuous thread '+k,[0,3.5,0],[0.055,0.2,0.055],'Edge',Lab.rodMesh);
-        Lab.bindSpan(wire,a,b,0,offset,0.055);
+        // Rendering order is independent of rope traversal; order endpoints for positive strides.
+        ropeGroups[group].push([Math.min(a,b),Math.max(a,b)]);
     }
-    for(k=thread.fabricCount;k<Lab.total;++k){
-        var node=Lab.mesh('Exposed thread joint '+k,[0,3.5,0],[0.052,0.052,0.052],'Obstacle',Lab.sphereMesh);
-        Lab.bindPoint(node,k,0,0,0.052);
-    }
+    ropeGroups.forEach(function(segments,group){
+        segments.sort(function(a,b){return a[0]-b[0]||a[1]-b[1];});
+        Lab.instanceBatches('Continuous thread '+group,Lab.rodMesh,'Edge',segments,
+            Lab.spanMapping(0,offsets[group],0.055),[0.055,0.2,0.055],0.07);
+    });
+    var joints=[];
+    for(k=thread.fabricCount;k<Lab.total;++k)joints.push([k]);
+    Lab.instanceBatches('Exposed thread joints',Lab.sphereMesh,'Obstacle',joints,
+        Lab.pointMapping(0,0,0.052),[0.052,0.052,0.052],0.07);
     Lab.lights(1);
     Engine.log('LAB threaded stage: one rope, '+thread.ropeRows+' spans, '+thread.patches*thread.patches+' cloth patches');
 };

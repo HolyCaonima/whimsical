@@ -8,12 +8,12 @@ var cloth={id:'cloth',tab:'布料',eyebrow:'实验 01',title:'布料实验',
     hint:'↑ ↓ 调整提起高度',
     legend:'<span class="rose">■</span>布面<span class="gold">■</span>抓取角点',
     panelTitle:'布料与抓取',
-    side:32,span:5.6,height:3.7,patches:0,
+    side:64,span:5.6,height:3.7,patches:0,
     held:false,wind:false,gust:1,phase:0,lift:0,target:0,kick:false,
     forceInput:false,gripDirty:false,base:null};
 var strength=[3.5,8,15],gustName=['微风','阵风','强风'];
 
-cloth.sizes={label:'网格',options:[{label:'16²',value:16},{label:'24²',value:24},{label:'32²',value:32}],
+cloth.sizes={label:'网格',options:[{label:'32²',value:32},{label:'64²',value:64},{label:'96²',value:96}],
     get:function(){return cloth.side;},
     set:function(value){if(cloth.side===value)return '';cloth.side=value;Lab.reset();return '求解 '+value+' × '+value+' 个布料节点';}};
 cloth.actions=[
@@ -95,7 +95,7 @@ cloth.build=function(model){
     return initial;
 };
 cloth.stage=function(){
-    var n=cloth.side,patches=Math.min(n-1,26),half=cloth.span/2,i,j;
+    var n=cloth.side,patches=n-1,half=cloth.span/2,i,j;
     cloth.patches=patches;
     Lab.platform();
     var grip=Lab.X.expression(10);
@@ -111,15 +111,29 @@ cloth.stage=function(){
         Lab.bindPoint(marker,cloth.corners[index],0,0,0.12);
         Engine.visible(marker,false);cloth.anchors.push(marker);
     });
-    // One oriented plate per visual cell; the solver keeps every node regardless of this budget.
-    for(j=0;j<patches;++j)for(i=0;i<patches;++i){
-        var i0=Math.round(i*(n-1)/patches),i1=Math.round((i+1)*(n-1)/patches),
-            j0=Math.round(j*(n-1)/patches),j1=Math.round((j+1)*(n-1)/patches);
-        var plate=Lab.mesh('Cloth patch '+j+'/'+i,[0,cloth.height,0],[cloth.span/patches,0.028,cloth.span/patches],'Cloth');
-        Lab.bindPatch(plate,j0*n+i0,j0*n+i1,j1*n+i0,j1*n+i1,0.028,1);
+    // Each row is one instance batch: all four corner streams advance by one node.
+    var mapping=Lab.patchMapping(0.028,1),cell=cloth.cell,q=Lab.sample;
+    for(j=0;j<patches;++j){
+        var transforms=[],first=j*n;
+        for(i=0;i<patches;++i){
+            var a=(first+i)*3,b=a+3,c=a+n*3,d=c+3;
+            transforms.push({position:[(q[a]+q[b]+q[c]+q[d])*0.25,
+                (q[a+1]+q[b+1]+q[c+1]+q[d+1])*0.25,
+                (q[a+2]+q[b+2]+q[c+2]+q[d+2])*0.25],scale:[cell,0.028,cell]});
+        }
+        var row=Engine.create({name:'Cloth row '+j,persistent:false,components:{
+            transform:{},
+            render:{mesh:Lab.boxMesh,material:Lab.materials.Cloth,
+                instanceCount:patches,instanceTransforms:transforms},
+            dynamicsBinding:{model:Lab.modelId,direction:'output',target:'renderInstances',interpolation:0.05,
+                variables:[{set:Lab.variables,index:first},{set:Lab.variables,index:first+1},
+                    {set:Lab.variables,index:first+n},{set:Lab.variables,index:first+n+1}],
+                mapping:mapping}
+        }});
+        Lab.entities.push(row);
     }
     Lab.lights(1);
-    Engine.log('LAB cloth stage: '+patches*patches+' plates over '+n*n+' nodes');
+    Engine.log('LAB cloth stage: '+patches*patches+' instances in '+patches+' rows over '+n*n+' nodes');
 };
 cloth.restage=function(){
     cloth.handles.forEach(function(handle){Engine.enabled(handle,false);});

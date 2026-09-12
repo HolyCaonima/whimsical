@@ -6,8 +6,8 @@ var cloud={id:'particles',tab:'粒子群',eyebrow:'实验 06',title:'集合关�
     equation:'C₁ = (pᵢ − pⱼ)² − d² ≥ 0； C₂ = n·p − h − r ≥ 0',
     hint:'I 给粒子一个向上冲量',
     legend:'<span class="teal">■</span>粒子<span class="gold">■</span>容器边界',
-    panelTitle:'集合 pair',count:10000,radius:0.035,kick:false,forceInput:false};
-cloud.sizes={label:'数量',options:[{label:'10,000 个',value:cloud.count}],
+    panelTitle:'集合 pair',count:20000,radius:0.0175,kick:false,forceInput:false};
+cloud.sizes={label:'数量',options:[{label:'20,000 个',value:cloud.count}],
     get:function(){return cloud.count;},set:function(){return '';}};
 cloud.actions=[];cloud.rows=[];cloud.keys={};
 cloud.define=function(){

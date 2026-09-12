@@ -159,19 +159,25 @@ Lab.frame=function(e,tangent,normal){
                e.mul(e.mul(normal[1],sine),scale),e.mul(e.mul(normal[2],sine),scale)];
     return Lab.qmul(e,twist,swing);
 };
-Lab.bindPoint=function(id,index,ox,oz,size){
+Lab.pointMapping=function(ox,oz,size){
     var e=Lab.X.expression(3);
-    Engine.addComponent(id,'dynamicsBinding',{model:Lab.modelId,direction:'output',interpolation:0.07,variables:[{set:Lab.variables,index:index}],
-        mapping:e.finish([e.add(e.input(0),ox),e.input(1),e.add(e.input(2),oz),1,0,0,0,size,size,size])});
+    return e.finish([e.add(e.input(0),ox),e.input(1),e.add(e.input(2),oz),1,0,0,0,size,size,size]);
 };
-Lab.bindSpan=function(id,a,b,ox,oz,radius){
+Lab.bindPoint=function(id,index,ox,oz,size){
+    Engine.addComponent(id,'dynamicsBinding',{model:Lab.modelId,direction:'output',interpolation:0.07,variables:[{set:Lab.variables,index:index}],
+        mapping:Lab.pointMapping(ox,oz,size)});
+};
+Lab.spanMapping=function(ox,oz,radius){
     var e=Lab.X.expression(6),p=[e.input(0),e.input(1),e.input(2)],q=[e.input(3),e.input(4),e.input(5)],d=e.vsub(q,p);
     var length=e.max(e.length(d),0.000001),rotation=Lab.swing(e,e.scale(d,e.div(1,length))),mid=e.scale(e.vadd(p,q),0.5);
+    return e.finish([e.add(mid[0],ox),mid[1],e.add(mid[2],oz),rotation[0],rotation[1],rotation[2],rotation[3],radius,length,radius]);
+};
+Lab.bindSpan=function(id,a,b,ox,oz,radius){
     Engine.addComponent(id,'dynamicsBinding',{model:Lab.modelId,direction:'output',interpolation:0.07,variables:[{set:Lab.variables,index:a},{set:Lab.variables,index:b}],
-        mapping:e.finish([e.add(mid[0],ox),mid[1],e.add(mid[2],oz),rotation[0],rotation[1],rotation[2],rotation[3],radius,length,radius])});
+        mapping:Lab.spanMapping(ox,oz,radius)});
 };
 // Four corner variables become one oriented plate; its extent follows the deforming cell.
-Lab.bindPatch=function(id,a,b,c,d,thickness,overlap){
+Lab.patchMapping=function(thickness,overlap){
     var e=Lab.X.expression(12),corner=[];
     for(var i=0;i<4;++i)corner.push([e.input(i*3),e.input(i*3+1),e.input(i*3+2)]);
     var centre=e.scale(e.vadd(e.vadd(corner[0],corner[1]),e.vadd(corner[2],corner[3])),0.25);
@@ -181,8 +187,45 @@ Lab.bindPatch=function(id,a,b,c,d,thickness,overlap){
     // A sheared cell is a parallelogram; the plate takes its extent in the plate's own axes.
     var width=e.add(e.length(u),e.abs(e.dot(v,tangent))),depth=e.abs(e.dot(v,across));
     var rotation=Lab.frame(e,tangent,normal);
+    return e.finish([centre[0],centre[1],centre[2],rotation[0],rotation[1],rotation[2],rotation[3],
+        e.mul(width,overlap),thickness,e.mul(depth,overlap)]);
+};
+Lab.bindPatch=function(id,a,b,c,d,thickness,overlap){
     Engine.addComponent(id,'dynamicsBinding',{model:Lab.modelId,direction:'output',interpolation:0.05,
         variables:[{set:Lab.variables,index:a},{set:Lab.variables,index:b},{set:Lab.variables,index:c},{set:Lab.variables,index:d}],
-        mapping:e.finish([centre[0],centre[1],centre[2],rotation[0],rotation[1],rotation[2],rotation[3],
-            e.mul(width,overlap),thickness,e.mul(depth,overlap)])});
+        mapping:Lab.patchMapping(thickness,overlap)});
+};
+
+// A binding stream has a fixed, unsigned stride. Split only where that stride changes.
+Lab.instanceBatches=function(name,mesh,material,rows,mapping,scale,interpolation){
+    var first=0,batch=0,q=Lab.sample;
+    while(first<rows.length){
+        var start=rows[first],strides=start.map(function(){return 0;}),end=first+1;
+        if(end<rows.length){
+            var next=rows[end],candidate=start.map(function(value,j){return next[j]-value;});
+            if(candidate.every(function(value){return value>=0;})){
+                strides=candidate;++end;
+                while(end<rows.length&&rows[end].every(function(value,j){
+                    return value===start[j]+(end-first)*strides[j];
+                }))++end;
+            }
+        }
+        var transforms=[];
+        for(var at=first;at<end;++at){
+            var centre=[0,0,0],nodes=rows[at];
+            nodes.forEach(function(node){
+                for(var axis=0;axis<3;++axis)centre[axis]+=q[node*3+axis]/nodes.length;
+            });
+            transforms.push({position:centre,scale:scale});
+        }
+        var entity=Engine.create({name:name+' batch '+batch++,persistent:false,components:{
+            transform:{},render:{mesh:mesh,material:Lab.materials[material],
+                instanceCount:end-first,instanceTransforms:transforms},
+            dynamicsBinding:{model:Lab.modelId,direction:'output',target:'renderInstances',
+                interpolation:interpolation,variables:start.map(function(index,j){
+                    return {set:Lab.variables,index:index,stride:strides[j]};
+                }),mapping:mapping}
+        }});
+        Lab.entities.push(entity);first=end;
+    }
 };
