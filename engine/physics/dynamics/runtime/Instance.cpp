@@ -77,8 +77,13 @@ struct Instance::Storage {
     std::unique_ptr<rc::GraphContext> execution;
     std::vector<const rg::Program*> programs;
     std::string interface;
+    std::vector<uint32_t> variableFieldMasks, relationFieldMasks;
     bool candidateBoundsDirty = true;
     explicit Storage(rc::RenderCore& core, PlanRef value) : plan(std::move(value)) {
+        for (const auto& mode : plan->variableFieldModes)
+            variableFieldMasks.push_back(mode.mask);
+        for (const auto& mode : plan->relationFieldModes)
+            relationFieldMasks.push_back(mode.mask);
         for (uint32_t i = 0; i < BufferCount; ++i) {
             const auto& b = plan->buffers[i];
             auto d = declaration(b.name, b.byteSize(), b.integers);
@@ -86,6 +91,7 @@ struct Instance::Storage {
             // no kernel writes them. Preserve that fact in the shader interface.
             switch (BufferRole(i)) {
             case BufferRole::Metric:
+            case BufferRole::FieldModes:
             case BufferRole::Variables:
             case BufferRole::VariableWork:
             case BufferRole::Relations:
@@ -598,6 +604,30 @@ void Instance::apply(const ModelCommit& commit) {
                 field = &data.enabled;
                 r = {BufferRole::RelationEnabled, layout.first, layout.count, 1, layout.count};
             }
+        }
+        uint32_t clearMode = 0;
+        std::vector<uint32_t>* masks = nullptr;
+        const std::vector<FieldModeLayout>* modes = nullptr;
+        if (kind == FieldKind::InverseMetric || kind == FieldKind::VariableEnabled) {
+            clearMode = kind == FieldKind::InverseMetric ? CompiledPlan::IdentityMetric
+                                                        : CompiledPlan::UniformEnabled |
+                                                              CompiledPlan::EnabledValue;
+            masks = &s.variableFieldMasks;
+            modes = &s.plan->variableFieldModes;
+        } else {
+            clearMode = kind == FieldKind::Parameters     ? CompiledPlan::UniformParameters
+                        : kind == FieldKind::Compliance   ? CompiledPlan::UniformCompliance |
+                                                              CompiledPlan::ZeroCompliance
+                                                          : CompiledPlan::UniformEnabled |
+                                                              CompiledPlan::EnabledValue;
+            masks = &s.relationFieldMasks;
+            modes = &s.plan->relationFieldModes;
+        }
+        if ((*masks)[set] & clearMode) {
+            (*masks)[set] &= ~clearMode;
+            s.execution->uploadRange(
+                s.id(BufferRole::FieldModes), uint64_t((*modes)[set].first) * 4,
+                bytes(std::vector<uint32_t>{(*masks)[set]}));
         }
         auto& ranges = group.second;
         std::sort(ranges.begin(), ranges.end());

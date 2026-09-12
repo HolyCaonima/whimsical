@@ -314,15 +314,20 @@ void lowerCandidateDomains(CompiledPlan& p) {
             const auto& t = *p.types[layout.type];
             uint32_t firstParameter = t.inputSize() - t.parameters - 2;
             std::ostringstream source;
-            source << emitGlsl(d.bound.squaredRadius, "boundValue")
-                   << "void main(){for(uint i=invocation();i<" << d.count << "u;i+=step.count){float x["
-                   << t.inputSize() << "],r[1];";
+            source << fieldAccess(false) << emitGlsl(d.bound.squaredRadius, "boundValue")
+                   << "void reduceBound(uint i){float x[" << t.inputSize()
+                   << "],r[1];Relation boundRelation=relation(" << d.first << "u+i);";
             for (uint32_t k = 0; k < t.parameters; ++k)
-                source << "x[" << firstParameter + k << "]=x_parameters["
-                       << layout.parameters + d.binding.first + k * layout.count << "u+i];";
+                source << "x[" << firstParameter + k << "]=loadParameter(boundRelation," << k << "u);";
             source << "boundValue(x,r);if(isnan(r[0])||isinf(r[0])||r[0]<1e-20||r[0]>1e20)"
                       "atomicOr(x_candidates[" << d.header + 1 << "u],1u);else atomicMax(x_candidates["
-                   << d.header << "u],floatBitsToUint(r[0]));}}";
+                   << d.header << "u],floatBitsToUint(r[0]));}"
+                      "void main(){";
+            if (p.relationFieldModes[d.set].mask & CompiledPlan::UniformParameters)
+                source << "Relation firstRelation=relation(" << d.first
+                       << "u);if((x_fieldModes[firstRelation.u]&2u)!=0u){"
+                          "if(invocation()==0u)reduceBound(0u);return;}";
+            source << "for(uint i=invocation();i<" << d.count << "u;i+=step.count)reduceBound(i);}";
             add("Reduce candidate bound", source.str(), lanes, p.candidateBounds);
         }
     }
@@ -407,10 +412,18 @@ void lowerCandidateDomains(CompiledPlan& p) {
         auto type = layout.type;
         source << activity.str() << rebuild << domainSource(p, d);
         source << emitGlsl(d.bound.squaredRadius, "candidateRadius")
-               << "float candidateResidual(uint id,float distanceSquared){Relation r=relation(id);float x["
-               << relationType.inputSize() << "],radius[1];";
+               << "float candidateResidual(uint id,float distanceSquared){";
+        if (p.relationFieldModes[d.set].mask & CompiledPlan::UniformParameters)
+            source << "if((x_fieldModes[" << layout.modes << "u]&2u)!=0u&&x_candidates["
+                   << d.header + 1 << "u]==0u)return "
+                   << (relationType.kind == RelationKind::GreaterEqual
+                           ? "distanceSquared-uintBitsToFloat(x_candidates[" +
+                                 std::to_string(d.header) + "u]);"
+                           : "uintBitsToFloat(x_candidates[" + std::to_string(d.header) +
+                                 "u])-distanceSquared;");
+        source << "Relation r=relation(id);float x[" << relationType.inputSize() << "],radius[1];";
         for (uint32_t k = 0; k < relationType.parameters; ++k)
-            source << "x[" << firstParameter + k << "]=x_parameters[r.p+" << k << "u*r.stride];";
+            source << "x[" << firstParameter + k << "]=loadParameter(r," << k << "u);";
         source << "candidateRadius(x,radius);return "
                << (relationType.kind == RelationKind::GreaterEqual
                        ? "distanceSquared-radius[0]"

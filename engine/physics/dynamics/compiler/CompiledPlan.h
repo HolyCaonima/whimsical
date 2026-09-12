@@ -24,6 +24,7 @@ enum class BufferRole : uint32_t {
     Previous,
     Velocity,
     Metric,
+    FieldModes,
     Acceleration,
     Variables,
     VariableWork,
@@ -69,11 +70,14 @@ struct BufferData {
     }
 };
 struct VariableLayout {
-    uint32_t first, count, space, values, velocity, metric;
+    uint32_t first, count, space, values, velocity, metric, modes;
 };
 struct RelationLayout {
-    uint32_t first, count, type, parameters, compliance, history, multipliers;
+    uint32_t first, count, type, parameters, compliance, history, multipliers, modes;
     uint32_t endpoints = 0;
+};
+struct FieldModeLayout {
+    uint32_t first = 0, mask = 0;
 };
 struct Kernel {
     std::string name, source; // local_size and main; runtime supplies the resource interface
@@ -125,9 +129,10 @@ struct CompiledPlan {
     std::vector<DeferredJacobiDomain> deferredJacobiDomains;
     // Final physical metadata layout. Logical row IDs and mutable fields keep
     // their public indexing; affine metadata columns become address arithmetic.
-    using RelationMetadata = MetadataRange<9>;
+    using RelationMetadata = MetadataRange<10>;
     std::vector<RelationMetadata> relationMetadata;
-    std::vector<MetadataRange<5>> variableMetadata;
+    std::vector<MetadataRange<6>> variableMetadata;
+    std::vector<FieldModeLayout> variableFieldModes, relationFieldModes;
     // High-level index maps survive analysis, scheduling and GPU lowering.
     std::vector<BindingIR> bindings;
     std::vector<std::vector<bool>> typeReadOnly;
@@ -160,6 +165,12 @@ struct CompiledPlan {
     PlanStatistics statistics;
     // The native-independent kernel ABI. Values in push constants are per dispatch.
     static constexpr uint32_t ConstantBytes = 32;
+    static constexpr uint32_t UniformEnabled = 1u;
+    static constexpr uint32_t IdentityMetric = 2u;
+    static constexpr uint32_t UniformParameters = 2u;
+    static constexpr uint32_t UniformCompliance = 4u;
+    static constexpr uint32_t EnabledValue = 8u;
+    static constexpr uint32_t ZeroCompliance = 16u;
     std::string interface() const;
 };
 using PlanRef = std::shared_ptr<const CompiledPlan>;

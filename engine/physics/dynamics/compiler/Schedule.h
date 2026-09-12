@@ -27,6 +27,7 @@ KernelFunction relationActivityFunction(const RelationType&, const std::vector<b
 KernelFunction relationDispatchFunction(
     const std::vector<std::pair<uint32_t, KernelFunction>>&, bool jacobi, const std::string& name);
 std::string globalKernel(const KernelFunction&);
+std::string fieldAccess(bool local);
 std::string stateAccess(bool local, uint32_t variableCount = 0, bool externalInputs = false);
 
 // Preserve the semantic batch ordering; choose ownership and execution placement.

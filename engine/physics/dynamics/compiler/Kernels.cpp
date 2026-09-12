@@ -86,7 +86,7 @@ void relationInputs(std::ostringstream& s, const RelationType& t, int32_t endpoi
     }
     if (loadInputs)
         for (uint32_t i = 0; i < t.parameters; ++i)
-            s << "x[" << offset + i << "]=x_parameters[r.p+" << i << "u*r.stride];\n";
+            s << "x[" << offset + i << "]=loadParameter(r," << i << "u);\n";
     offset += t.parameters;
     if (loadInputs) {
         for (uint32_t i = 0; i < t.history; ++i)
@@ -109,7 +109,7 @@ KernelFunction variableFunction(
         for (uint32_t i = 0; i < S; ++i)
             s << "inputValue[" << i << "]=loadValue(v," << i << "u);storePrevious(v," << i
               << "u,inputValue[" << i << "]);\n";
-        s << "if(x_variableEnabled[id]==0.0)return;\n";
+        s << "if(!variableEnabled(v))return;\n";
         for (uint32_t i = 0; i < T; ++i)
             s << "inputValue[" << S + i << "]=h*loadVelocity(v," << i
               << "u)+h*h*x_acceleration[v.v+" << i << "u*v.stride];\n";
@@ -118,7 +118,7 @@ KernelFunction variableFunction(
         for (uint32_t i = 0; i < S; ++i)
             s << "storeValue(v," << i << "u,outputValue[" << i << "]);\n";
     } else if (op == "recover") {
-        s << "if(x_variableEnabled[id]==0.0)return;\n";
+        s << "if(!variableEnabled(v))return;\n";
         local(s, "inputValue", S * 2);
         local(s, "outputValue", T);
         for (uint32_t i = 0; i < S; ++i)
@@ -135,7 +135,7 @@ KernelFunction variableFunction(
             for (uint32_t i = 0; i < T; ++i)
                 s << "inputValue[" << S + i << "]=uintBitsToFloat(x_contributions[v.v+" << i
                   << "u*v.stride]);x_contributions[v.v+" << i << "u*v.stride]=0u;\n";
-        s << "if(v.flags!=0u || x_variableEnabled[id]==0.0)return;\n";
+        s << "if(v.flags!=0u || !variableEnabled(v))return;\n";
         for (uint32_t i = 0; i < S; ++i)
             s << "inputValue[" << i << "]=loadValue(v," << i << "u);\n";
         if (!directContributions)
@@ -231,7 +231,7 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
     if (jacobi && !directContributions)
         for (uint32_t c = 0; c < D; ++c)
             s << "x_contributions[r.c+" << c << "u*r.cs]=0u;\n";
-    s << "if(x_relationEnabled[id]==0.0)return;\n";
+    s << "if(!relationEnabled(r))return;\n";
     relationInputs(s, t, endpointMode);
     if (update) {
         local(s, "nextHistory", t.history);
@@ -373,8 +373,13 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
         for (uint32_t col = 0; col < T; ++col)
             for (uint32_t row = 0; row < M; ++row) {
                 s << "wjt[" << (vo + col) * M + row << "]=0.0;\nif(v" << e
-                  << ".flags==0u && x_variableEnabled[id" << e << "]!=0.0)wjt[" << (vo + col) * M + row
-                  << "]=";
+                  << ".flags==0u && variableEnabled(v" << e << ")){if(identityMetric(v" << e << "))wjt["
+                  << (vo + col) * M + row << "]=";
+                if (singleJacobian)
+                    s << literal((*singleJacobian)[row * T + col]);
+                else
+                    s << "j[" << row * D + vo + col << "]";
+                s << ";else wjt[" << (vo + col) * M + row << "]=";
                 if (singleJacobian) {
                     bool emitted = false;
                     for (uint32_t k = 0; k < T; ++k) {
@@ -397,7 +402,7 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
                     for (uint32_t k = 0; k < T; ++k)
                         s << (k ? "+" : "") << "x_metric[v" << e << ".m+" << col * T + k << "u*v"
                           << e << ".stride]*j[" << row * D + vo + k << "]";
-                s << ";\n";
+                s << ";}\n";
             }
         vo += T;
     }
@@ -405,7 +410,8 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
     local(s, "rhs", M);
     local(s, "dl", M);
     for (uint32_t row = 0; row < M; ++row) {
-        s << "float alpha" << row << "=x_compliance[r.a+" << row << "u*r.stride]*inverseH2;\n";
+        s << "float alpha" << row << "=loadCompliance(r," << row << "u,"
+          << 2 + t.parameters << "u)*inverseH2;\n";
         s << "rhs[" << row << "]=-c[" << row << "]-alpha" << row << "*loadMultiplier(r," << row
           << "u);\n";
         for (uint32_t col = 0; col < M; ++col) {
@@ -537,7 +543,7 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
         if (jacobi) {
             finite(s, "input" + std::to_string(e), S + T);
         } else {
-            s << "if(v" << e << ".flags==0u && x_variableEnabled[id" << e << "]!=0.0";
+            s << "if(v" << e << ".flags==0u && variableEnabled(v" << e << ")";
             for (uint32_t b = 0; b < e; ++b)
                 s << " && id" << e << "!=id" << b;
             s << ") {\n";
@@ -556,7 +562,7 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
         const auto S = t.spaces[e]->stateSize, T = t.spaces[e]->tangentSize;
         if (jacobi) {
             if (directContributions) {
-                s << "if(v" << e << ".flags==0u && x_variableEnabled[id" << e << "]!=0.0";
+                s << "if(v" << e << ".flags==0u && variableEnabled(v" << e << ")";
                 for (uint32_t b = 0; b < e; ++b)
                     s << " && id" << e << "!=id" << b;
                 s << ") {\n";
@@ -569,7 +575,7 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
                     s << "x_contributions[r.c+" << vo + col << "u*r.cs]=floatBitsToUint(input" << e
                       << "[" << S + col << "]);\n";
         } else {
-            s << "if(v" << e << ".flags==0u && x_variableEnabled[id" << e << "]!=0.0";
+            s << "if(v" << e << ".flags==0u && variableEnabled(v" << e << ")";
             for (uint32_t b = 0; b < e; ++b)
                 s << " && id" << e << "!=id" << b;
             s << ") {\n";
@@ -598,7 +604,7 @@ KernelFunction relationActivityFunction(const RelationType& t, const std::vector
     s << "){Relation r=relation(id);\n";
     for (uint32_t row = 0; row < t.rows; ++row)
         s << "if(iteration==0u)storeMultiplier(r," << row << "u,0.0);\n";
-    s << "if(x_relationEnabled[id]==0.0)return false;\n";
+    s << "if(!relationEnabled(r))return false;\n";
     relationInputs(s, t, endpointMode, mappedEndpoints, !residualChecked);
     if (guarded) {
         s << "float c[1];";
@@ -613,7 +619,7 @@ KernelFunction relationActivityFunction(const RelationType& t, const std::vector
     for (uint32_t e = 0; countDegrees && e < t.spaces.size(); ++e) {
         if (readOnly[e])
             continue;
-        s << "if(v" << e << ".flags==0u&&x_variableEnabled[id" << e << "]!=0.0";
+        s << "if(v" << e << ".flags==0u&&variableEnabled(v" << e << ")";
         for (uint32_t before = 0; before < e; ++before)
             s << "&&id" << e << "!=id" << before;
         s << ")atomicAdd(x_activeDegrees[id" << e << "],1u);\n";
@@ -638,8 +644,8 @@ KernelFunction relationDispatchFunction(
 }
 std::string incidenceKernel(const RelationType& t, const std::vector<bool>& readOnly, int32_t endpointMode, bool scatter) {
     std::ostringstream s;
-    s << "void main(){uint i=invocation();if(i>=step.count)return;uint "
-         "id=x_relationWork[step.first+i];if(x_relationEnabled[id]==0.0)return;Relation r=relation(id);\n";
+    s << fieldAccess(false) << "void main(){uint i=invocation();if(i>=step.count)return;uint "
+         "id=x_relationWork[step.first+i];Relation r=relation(id);if(!relationEnabled(r))return;\n";
     uint32_t offset = 0;
     for (uint32_t e = 0; e < t.spaces.size(); ++e) {
         s << "uint id" << e << "=" << endpointAccess(e, endpointMode) << ";\n";
@@ -666,6 +672,56 @@ std::string globalKernel(const KernelFunction& function) {
            function.entry + "(x_" + work +
            "[step.first+lane],step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration); }\n";
 }
+std::string fieldAccess(bool localFields) {
+    if (localFields)
+        return R"(
+bool variableEnabled(Variable v){return x_variableEnabled[v.id]!=0.0;}
+bool identityMetric(Variable v){return false;}
+bool relationEnabled(Relation r){return x_relationEnabled[r.id]!=0.0;}
+float loadParameter(Relation r,uint c){return x_parameters[r.p+c*r.stride];}
+float loadCompliance(Relation r,uint c,uint uniformOffset){return x_compliance[r.a+c*r.stride];}
+)";
+    return R"(
+#if DYNAMICS_UNIFORM_VARIABLE_ENABLED
+bool variableEnabled(Variable v){
+    uint modes=x_fieldModes[v.u];
+    return (modes&1u)!=0u?(modes&8u)!=0u:x_variableEnabled[v.id]!=0.0;
+}
+#else
+bool variableEnabled(Variable v){return x_variableEnabled[v.id]!=0.0;}
+#endif
+#if DYNAMICS_IDENTITY_METRIC
+bool identityMetric(Variable v){return (x_fieldModes[v.u]&2u)!=0u;}
+#else
+bool identityMetric(Variable v){return false;}
+#endif
+#if DYNAMICS_UNIFORM_RELATION_ENABLED
+bool relationEnabled(Relation r){
+    uint modes=x_fieldModes[r.u];
+    return (modes&1u)!=0u?(modes&8u)!=0u:x_relationEnabled[r.id]!=0.0;
+}
+#else
+bool relationEnabled(Relation r){return x_relationEnabled[r.id]!=0.0;}
+#endif
+#if DYNAMICS_UNIFORM_PARAMETERS
+float loadParameter(Relation r,uint c){
+    return (x_fieldModes[r.u]&2u)!=0u?uintBitsToFloat(x_fieldModes[r.u+2u+c]):
+        x_parameters[r.p+c*r.stride];
+}
+#else
+float loadParameter(Relation r,uint c){return x_parameters[r.p+c*r.stride];}
+#endif
+#if DYNAMICS_UNIFORM_COMPLIANCE
+float loadCompliance(Relation r,uint c,uint uniformOffset){
+    uint modes=x_fieldModes[r.u];
+    return (modes&4u)!=0u?((modes&16u)!=0u?0.0:
+        uintBitsToFloat(x_fieldModes[r.u+uniformOffset+c])):x_compliance[r.a+c*r.stride];
+}
+#else
+float loadCompliance(Relation r,uint c,uint uniformOffset){return x_compliance[r.a+c*r.stride];}
+#endif
+)";
+}
 std::string stateAccess(bool localState, uint32_t variableCount, bool externalInputs) {
     struct FieldAccess {
         const char* name;
@@ -677,6 +733,7 @@ std::string stateAccess(bool localState, uint32_t variableCount, bool externalIn
                                   {"Velocity", "velocity", "v", true}, {"History", "history", "h", false},
                                   {"Multiplier", "lambda", "l", false}};
     std::ostringstream s;
+    s << fieldAccess(localState);
     s << "void addContribution(uint at,float value){if(value==0.0)return;uint expected=x_contributions[at];"
          "for(;;){uint desired=floatBitsToUint(uintBitsToFloat(expected)+value);"
          "uint observed=atomicCompSwap(x_contributions[at],expected,desired);"

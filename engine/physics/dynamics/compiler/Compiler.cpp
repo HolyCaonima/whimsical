@@ -18,6 +18,7 @@ constexpr const char* Names[] = {"q",
                                  "oldq",
                                  "velocity",
                                  "metric",
+                                 "fieldModes",
                                  "acceleration",
                                  "variables",
                                  "variableWork",
@@ -47,12 +48,17 @@ bool integer(BufferRole r) {
            r == BufferRole::Contributions || r == BufferRole::AdjacencyEntries || r == BufferRole::Diagnostics ||
            r == BufferRole::ScanScratch || r == BufferRole::AdjacencyCursors || r == BufferRole::RegionRanges ||
            r == BufferRole::RegionState || r == BufferRole::LocalOffsets || r == BufferRole::StateWrites ||
-           r == BufferRole::Candidates || r == BufferRole::ActiveDegrees;
+           r == BufferRole::Candidates || r == BufferRole::ActiveDegrees || r == BufferRole::FieldModes;
 }
 uint32_t checked(size_t n) {
     if (n > UINT32_MAX)
         throw std::overflow_error("Dynamics plan exceeds 32-bit element addressing");
     return uint32_t(n);
+}
+uint32_t bits(float value) {
+    uint32_t result;
+    std::memcpy(&result, &value, sizeof(result));
+    return result;
 }
 template <class T> uint32_t append(BufferData& target, const std::vector<T>& values) {
     static_assert(sizeof(T) == 4);
@@ -174,7 +180,7 @@ class InstanceRows {
         else
             std::fill(segment.endpoints.begin(), segment.endpoints.end(), value);
     }
-    void packMetadata(BufferData& buffer, std::vector<MetadataRange<9>>& ranges) const {
+    void packMetadata(BufferData& buffer, std::vector<MetadataRange<10>>& ranges) const {
         std::vector<uint8_t> packed;
         auto values = [&](const Segment& segment, uint32_t row) {
             const auto& layout = plan_.relations[segment.set];
@@ -183,22 +189,22 @@ class InstanceRows {
             const auto contribution = segment.colors.empty() ? 0u : segment.contributions[row];
             const auto contributionStride =
                 segment.colors.empty() ? 0u : segment.contributionStrides[row];
-            return std::array<uint32_t, 9>{
+            return std::array<uint32_t, 10>{
                 endpoint, layout.parameters + local, layout.compliance + local,
                 layout.history + local, layout.multipliers + local, contribution,
-                layout.count, contributionStride, layout.type};
+                layout.count, contributionStride, layout.type, layout.modes};
         };
         for (const auto& segment : segments_) {
             if (!segment.count)
                 continue;
-            MetadataRange<9> metadata;
+            MetadataRange<10> metadata;
             metadata.first = segment.first;
             metadata.count = segment.count;
             metadata.base = values(segment, 0);
             metadata.affine = segment.count >= 128;
             if (segment.count > 1) {
                 metadata.stride = values(segment, 1);
-                for (uint32_t column = 0; column < 9; ++column)
+                for (uint32_t column = 0; column < metadata.stride.size(); ++column)
                     metadata.stride[column] -= metadata.base[column];
             }
             // Deferred segments are affine by construction: their endpoint
@@ -207,7 +213,7 @@ class InstanceRows {
             for (uint32_t row = 2;
                  metadata.affine && !segment.colors.empty() && row < segment.count; ++row) {
                 const auto rowValues = values(segment, row);
-                for (uint32_t column = 0; column < 9; ++column)
+                for (uint32_t column = 0; column < metadata.stride.size(); ++column)
                     metadata.affine = metadata.affine &&
                         rowValues[column] == metadata.base[column] + row * metadata.stride[column];
             }
@@ -386,6 +392,19 @@ uint32_t CompiledPlan::activeTangent(uint32_t type) const {
 }
 std::string CompiledPlan::interface() const {
     std::ostringstream source;
+    auto anyMode = [](const std::vector<FieldModeLayout>& fields, uint32_t mode) {
+        return std::any_of(fields.begin(), fields.end(),
+                           [&](const FieldModeLayout& field) { return (field.mask & mode) != 0; });
+    };
+    source << "#define DYNAMICS_UNIFORM_VARIABLE_ENABLED "
+           << anyMode(variableFieldModes, UniformEnabled) << "\n"
+           << "#define DYNAMICS_IDENTITY_METRIC " << anyMode(variableFieldModes, IdentityMetric) << "\n"
+           << "#define DYNAMICS_UNIFORM_RELATION_ENABLED "
+           << anyMode(relationFieldModes, UniformEnabled) << "\n"
+           << "#define DYNAMICS_UNIFORM_PARAMETERS "
+           << anyMode(relationFieldModes, UniformParameters) << "\n"
+           << "#define DYNAMICS_UNIFORM_COMPLIANCE "
+           << anyMode(relationFieldModes, UniformCompliance) << "\n";
     source << R"(
 layout(local_size_x=128) in;
 layout(push_constant) uniform Step {
@@ -393,13 +412,13 @@ layout(push_constant) uniform Step {
     uint tick; uint iteration; float relaxation; uint reserved;
 } step;
 uint invocation() { return gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * 8388480u; }
-struct Variable {uint q; uint v; uint m; uint stride; uint flags; uint id;};
+struct Variable {uint q; uint v; uint m; uint stride; uint flags; uint u; uint id;};
 Variable variable(uint id) {
 )";
     metadataAccess(source, variableMetadata, "Variable", "x_variables");
     source << R"(
 }
-struct Relation {uint e; uint p; uint a; uint h; uint l; uint c; uint stride; uint cs; uint type; uint id;};
+struct Relation {uint e; uint p; uint a; uint h; uint l; uint c; uint stride; uint cs; uint type; uint u; uint id;};
 Relation relation(uint id) {
 )";
     metadataAccess(source, relationMetadata, "Relation", "x_relations");
@@ -476,13 +495,32 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             variableGroups.emplace_back();
         } else
             space = it->second;
+        uint32_t modeMask = 0;
+        if (set.enabled.isUniform()) {
+            modeMask |= CompiledPlan::UniformEnabled;
+            if (set.enabled.uniformValue()[0] != 0.0f)
+                modeMask |= CompiledPlan::EnabledValue;
+        }
+        bool identity = set.inverseMetric.isUniform();
+        for (uint32_t row = 0; identity && row < set.space->tangentSize; ++row)
+            for (uint32_t column = 0; identity && column < set.space->tangentSize; ++column)
+                identity = set.inverseMetric.uniformValue()[row * set.space->tangentSize + column] ==
+                           (row == column ? 1.0f : 0.0f);
+        if (identity)
+            modeMask |= CompiledPlan::IdentityMetric;
+        const auto modes = append(
+            buffer(BufferRole::FieldModes),
+            std::vector<uint32_t>{modeMask,
+                                  bits(set.enabled.isUniform() ? set.enabled.uniformValue()[0] : 0.0f)});
         VariableLayout layout{checked(writable.size()),
                               set.count,
                               space,
                               field(buffer(BufferRole::Values), set.initial, uniformValues),
                               field(buffer(BufferRole::Velocity), set.velocity, uniformVelocity),
-                              field(buffer(BufferRole::Metric), set.inverseMetric, uniformMetric)};
+                              field(buffer(BufferRole::Metric), set.inverseMetric, uniformMetric),
+                              modes};
         p->variables.push_back(layout);
+        p->variableFieldModes.push_back({modes, modeMask});
         field(buffer(BufferRole::VariableEnabled), set.enabled, uniformVariableEnabled);
         for (uint32_t i = 0; i < set.count; ++i) {
             // Metrics are symmetric positive semidefinite. Reject negative diagonal or
@@ -496,7 +534,8 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
                             "Inverse metric must be symmetric with nonnegative diagonal: " + set.name);
                 }
             variableMeta.insert(variableMeta.end(), {layout.values + i, layout.velocity + i,
-                                                     layout.metric + i, set.count, set.readOnly ? 1u : 0u});
+                                                     layout.metric + i, set.count, set.readOnly ? 1u : 0u,
+                                                     layout.modes});
             variableGroups[space].push_back(layout.first + i);
             writable.push_back(!set.readOnly);
         }
@@ -535,6 +574,30 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             p->typeEndpointMode.push_back(endpointMode);
         } else
             type = it->second;
+        uint32_t modeMask = 0;
+        if (set.enabled.isUniform()) {
+            modeMask |= CompiledPlan::UniformEnabled;
+            if (set.enabled.uniformValue()[0] != 0.0f)
+                modeMask |= CompiledPlan::EnabledValue;
+        }
+        if (set.parameters.isUniform())
+            modeMask |= CompiledPlan::UniformParameters;
+        if (set.compliance.isUniform()) {
+            modeMask |= CompiledPlan::UniformCompliance;
+            if (std::all_of(set.compliance.uniformValue().begin(),
+                            set.compliance.uniformValue().end(),
+                            [](float value) { return value == 0.0f; }))
+                modeMask |= CompiledPlan::ZeroCompliance;
+        }
+        std::vector<uint32_t> modeWords{
+            modeMask, bits(set.enabled.isUniform() ? set.enabled.uniformValue()[0] : 0.0f)};
+        for (uint32_t c = 0; c < set.type->parameters; ++c)
+            modeWords.push_back(
+                bits(set.parameters.isUniform() ? set.parameters.uniformValue()[c] : 0.0f));
+        for (uint32_t c = 0; c < set.type->rows; ++c)
+            modeWords.push_back(
+                bits(set.compliance.isUniform() ? set.compliance.uniformValue()[c] : 0.0f));
+        const auto modes = append(buffer(BufferRole::FieldModes), modeWords);
         RelationLayout layout{
             relationFirst,
             set.count,
@@ -543,11 +606,13 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             field(buffer(BufferRole::Compliance), set.compliance, uniformCompliance),
             field(buffer(BufferRole::History), set.initialHistory, uniformHistory),
             reserve(buffer(BufferRole::Multipliers), uint64_t(set.count) * set.type->rows, 0u),
+            modes,
             0};
         p->dynamicTopology = p->dynamicTopology || set.dynamicEndpoints;
         if (set.dynamicEndpoints && policy.mode == SolveMode::Colored)
             throw std::invalid_argument("Dynamic endpoint sets require Hybrid or Jacobi policy");
         p->relations.push_back(layout);
+        p->relationFieldModes.push_back({modes, modeMask});
         field(buffer(BufferRole::RelationEnabled), set.enabled, uniformRelationEnabled);
         std::vector<uint32_t> endpointSpaces;
         for (const auto& space : set.type->spaces) {
