@@ -41,32 +41,9 @@ void relationInputs(std::ostringstream& s, const RelationType& t, int32_t endpoi
         const auto map = endpointMode - 1;
         s << "uint endpointAt=r.e&0x7fffffffu;\n";
         if (!mappedEndpoints)
-            s << "uint endpointRow=r.id-x_endpoints[endpointAt+1u];"
-                 "uint endpointLeft=endpointRow,endpointRight=endpointRow;\n";
-        if (!mappedEndpoints && map == int(BindingDomain::Map::Product))
-            s << "{uint count=x_endpoints[endpointAt+3u];endpointLeft=endpointRow/count;"
-                 "endpointRight=endpointRow%count;}\n";
-        else if (!mappedEndpoints && map == int(BindingDomain::Map::Directed))
-            s << "{uint count=x_endpoints[endpointAt+3u];endpointLeft=endpointRow/(count-1u);"
-                 "endpointRight=endpointRow%(count-1u);"
-                 "if(endpointRight>=endpointLeft)++endpointRight;}\n";
-        else if (!mappedEndpoints && (map == int(BindingDomain::Map::Upper) ||
-                 map == int(BindingDomain::Map::UpperDiagonal))) {
-            const bool diagonal = map == int(BindingDomain::Map::UpperDiagonal);
-            s << "{uint count=x_endpoints[endpointAt+3u];float b=2.0*float(count)"
-              << (diagonal ? "+1.0" : "-1.0")
-              << ";endpointLeft=min(count-1u,uint(max(0.0,floor((b-sqrt(max(0.0,b*b-8.0*float("
-                 "endpointRow))))*0.5))));"
-                 "while(endpointLeft>0u&&trianglePrefix(endpointLeft,count,"
-              << (diagonal ? "true" : "false")
-              << ")>endpointRow)--endpointLeft;"
-                 "while(endpointLeft+1u<count&&trianglePrefix(endpointLeft+1u,count,"
-              << (diagonal ? "true" : "false")
-              << ")<=endpointRow)++endpointLeft;"
-                 "endpointRight=endpointLeft+"
-              << (diagonal ? "0u" : "1u") << "+endpointRow-trianglePrefix(endpointLeft,count,"
-              << (diagonal ? "true" : "false") << ");}\n";
-        }
+            s << "uvec2 endpointMembers=bindingMembers(r.id-x_endpoints[endpointAt+1u],"
+                 "x_endpoints[endpointAt+3u]," << map << "u);"
+                 "uint endpointLeft=endpointMembers.x,endpointRight=endpointMembers.y;\n";
     }
     uint32_t offset = 0;
     for (uint32_t e = 0; e < t.spaces.size(); ++e) {

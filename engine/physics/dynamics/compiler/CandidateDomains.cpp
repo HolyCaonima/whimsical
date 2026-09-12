@@ -147,18 +147,19 @@ void lowerCandidateDomains(CompiledPlan& p) {
     // This lowering consumes only global, static Jacobi snapshots.
     if (p.dynamicTopology || !p.local.empty() || p.policy.execution != ExecutionMode::Auto)
         return;
-    const uint32_t relations = uint32_t(p.statistics.relations);
     auto work = words(p.buffers[size_t(BufferRole::RelationWork)]);
-    std::vector<bool> jacobi(relations);
     std::vector<uint32_t> all;
     for (const auto& batch : p.solve)
         if (batch.color < 0)
             for (uint32_t k = 0; k < batch.count; ++k) {
                 uint32_t id = work[batch.first + k];
-                jacobi[id] = true;
                 all.push_back(id);
             }
     if (all.empty() && p.deferredJacobiDomains.empty()) return;
+    // Only materialized work needs row membership. Deferred domains carry their
+    // Jacobi proof; allocating a bit for every logical product defeats deferral.
+    auto jacobi = all;
+    std::sort(jacobi.begin(), jacobi.end());
     std::vector<Domain> domains;
     for (uint32_t set = 0; set < p.relations.size(); ++set) {
         const auto& layout = p.relations[set];
@@ -172,9 +173,15 @@ void lowerCandidateDomains(CompiledPlan& p) {
                 [&](const DeferredJacobiDomain& candidate) {
                     return candidate.set == set && candidate.domain == domain;
                 });
-            bool valid = true;
-            for (uint32_t row = 0; valid && !deferred && row < binding.count; ++row)
-                valid = jacobi[layout.first + binding.first + row];
+            bool valid = deferred;
+            if (!deferred) {
+                const auto first = layout.first + binding.first;
+                const auto begin = std::lower_bound(jacobi.begin(), jacobi.end(), first);
+                // Solve batches partition logical rows. A sorted range with this
+                // cardinality and both endpoints contains the whole interval.
+                valid = uint64_t(jacobi.end() - begin) >= binding.count && *begin == first &&
+                        begin[binding.count - 1] == first + binding.count - 1;
+            }
             if (!valid) continue;
             domains.push_back({set, layout.first + binding.first, binding.count, 0, 0, 0, 0, 0,
                                binding, std::move(*bound)});
@@ -190,6 +197,10 @@ void lowerCandidateDomains(CompiledPlan& p) {
                !indexingWins(d.binding, uint32_t(d.bound.coordinates.size()));
     }), domains.end());
     if (domains.empty() && !active) return;
+    // One indexed domain can own the union of its geometric candidates and the
+    // carried nonzero multiplier rows. Its valid list is then a complete work
+    // domain, rather than a source that must be joined with the old queue again.
+    const bool unifiedCache = domains.size() == 1 && p.typeEndpointMode[p.relations[domains[0].set].type] > 0;
 
     struct TypeQueue { uint32_t type, first, count, capacity, lanes; };
     std::vector<TypeQueue> typed;
@@ -337,6 +348,9 @@ void lowerCandidateDomains(CompiledPlan& p) {
                   "return mappedActivity(id,step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration,left,right,residual);}\n"
                   "void considerNew(uint id,uint left,uint right,float residual){"
                   "if(newActivity(id,left,right,residual))enqueue" << q.type << "(id);}\n";
+        if (unifiedCache)
+            mapped << "bool cachedActivity(uint id,uint left,uint right,float residual){"
+                      "return mappedActivity(id,step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration,left,right,residual);}\n";
         mappedActivity[q.type] = mapped.str();
     }
     // Parameter expressions run on the GPU using the same float generator as the
@@ -406,10 +420,18 @@ void lowerCandidateDomains(CompiledPlan& p) {
         if (std::none_of(domains.begin(), domains.end(), [&](const Domain& d) { return p.relations[d.set].type == q.type; }))
             continue;
         reset << "if(iteration==0u){uint side=x_candidates[1],count=x_candidates["
-              << counters + slot << "u+side*" << typed.size() << "u];count=min(count," << q.capacity
+              << counters + slot << "u+side*" << typed.size() << "u];if(x_candidates[" << overflows
+              << "u+side]!=0u){";
+        // A truncated queue cannot enumerate all multipliers written by the
+        // complete-domain fallback. Reset those domains explicitly at this rare
+        // substep boundary, before returning to sparse execution.
+        for (const auto& d : domains)
+            if (p.relations[d.set].type == q.type)
+                reset << "for(uint k=i;k<" << d.count << "u;k+=step.count)x_lambda[relation(" << d.first << "u+k).l]=0.0;";
+        reset << "}else{count=min(count," << q.capacity
               << "u);for(uint k=i;k<count;k+=step.count){uint id=x_candidates[" << queues + q.first
               << "u+side*" << queueCapacity
-              << "u+k];if(indexed(id))x_lambda[relation(id).l]=0.0;}}";
+              << "u+k];if(indexed(id))x_lambda[relation(id).l]=0.0;}}}";
     }
     reset << "}";
     if (p.apply.size() == 1) {
@@ -517,6 +539,18 @@ void lowerCandidateDomains(CompiledPlan& p) {
                    << "u+at*2u+1u]=right;";
         source << "}else atomicOr(x_candidates[" << d.header + 7
                << "u],1u);}\n";
+        if (unifiedCache) {
+            // New bounded rows and carried outliers are disjoint at the same
+            // snapshot. The latter must remain represented until their multiplier
+            // is released, even if they have left the geometric query radius.
+            source << "void retainOutside(uint id){if(x_candidates[" << d.header + 2
+                   << "u]!=0u)return;uvec2 members=bindingMembers(id-" << d.first << "u,"
+                   << d.binding.right << "u," << uint32_t(d.binding.map)
+                   << "u);uint left=members.x,right=members.y;";
+            source << "vec3 delta=feature(left,true)-feature(right,false);"
+                      "if(dot(delta,delta)>1.96*uintBitsToFloat(x_candidates[" << d.header
+                   << "u]))appendNeighbor(left,right);}\n";
+        }
         // Apply the proven feature bound before touching row-indexed fields.
         // The skinned list is only an execution representation. Every retained
         // row still runs the original generated predicate.
@@ -529,7 +563,7 @@ void lowerCandidateDomains(CompiledPlan& p) {
         // Cached rows have a uniform traversal bound. Compact per workgroup so
         // the global queue counter is reserved once per group, not once per row.
         if (grouped)
-            source << "for(uint base=0u;base<count;base+=step.count){uint k=base+lane,id=0u;"
+            source << "for(uint base=lane-gl_LocalInvocationIndex;base<count;base+=step.count){uint k=base+gl_LocalInvocationIndex,id=0u;"
                       "bool append=false;if(k<count){";
         else
             source << "for(uint k=lane;k<count;k+=step.count){";
@@ -541,9 +575,12 @@ void lowerCandidateDomains(CompiledPlan& p) {
                    << "u+k*2u],right=x_candidates[" << d.nearRows
                    << "u+k*2u+1u];";
         source << "vec3 delta=feature(left,true)-feature(right,false);"
-                  "float distanceSquared=dot(delta,delta);if(distanceSquared<=bound){"
-               << (grouped ? "id=" : "uint id=") << "rowOf(left,right);"
-               << (grouped ? "append=newActivity" : "considerNew")
+                  "float distanceSquared=dot(delta,delta);";
+        if (unifiedCache)
+            source << "id=rowOf(left,right);if(distanceSquared<=bound||x_lambda[relation(id).l]!=0.0){";
+        else
+            source << "if(distanceSquared<=bound){" << (grouped ? "id=" : "uint id=") << "rowOf(left,right);";
+        source << (grouped ? (unifiedCache ? "append=cachedActivity" : "append=newActivity") : "considerNew")
                << "(id,left,right,candidateResidual(id,distanceSquared));}}";
         if (grouped)
             source << "enqueueNewGroup(id,append);}";
@@ -629,6 +666,7 @@ void lowerCandidateDomains(CompiledPlan& p) {
     std::memcpy(workBuffer.data(), work.data(), workBuffer.size());
     p.buffers[size_t(BufferRole::RelationWork)].words = work.size();
     std::ostringstream collect;
+    if (unifiedCache) collect << "void retainOutside(uint id);\n";
     collect << activity.str() << indexed.str() << rebuild << fallbackCollect.str()
             << "shared uint activityCount,activityBase;\nvoid collectActivity(){uint i=invocation();"
                "if(i>=step.count)return;if(rebuildCandidates()){for(uint k=i;k<"
@@ -670,6 +708,8 @@ void lowerCandidateDomains(CompiledPlan& p) {
     if (ordinaryLanes > UINT32_MAX)
         throw std::overflow_error("Candidate activity dispatch exceeds 32-bit addressing");
     collect << "if(i>=step.count||step.iteration==0u)return;uint side=1u-x_candidates[0];";
+    if (unifiedCache)
+        collect << "if(x_candidates[" << domains[0].header + 3 << "u]==0u)return;";
     for (uint32_t slot = 0; slot < typed.size(); ++slot) {
         const auto& q = typed[slot];
         if (std::none_of(domains.begin(), domains.end(), [&](const Domain& d) { return p.relations[d.set].type == q.type; }))
@@ -677,7 +717,8 @@ void lowerCandidateDomains(CompiledPlan& p) {
         collect << "{uint count=x_candidates[" << counters + slot << "u+side*" << typed.size() << "u];"
                    "count=min(count," << q.capacity << "u);for(uint k=i;k<count;k+=step.count){"
                    "uint id=x_candidates[" << queues + q.first << "u+side*" << queueCapacity
-                << "u+k];if(indexed(id)&&x_lambda[relation(id).l]!=0.0)consider" << q.type << "(id);}}";
+                << "u+k];if(indexed(id)&&x_lambda[relation(id).l]!=0.0){consider" << q.type << "(id);"
+                << (unifiedCache ? "retainOutside(id);" : "") << "}}}";
     }
     collect << "}";
     if (firstQuery != UINT32_MAX) {
@@ -700,7 +741,7 @@ void lowerCandidateDomains(CompiledPlan& p) {
                                            "fallbackActivity" + std::to_string(type), false));
     }
     std::ostringstream source;
-    source << stateAccess(StateStorage::Global);
+    source << stateAccess(StateStorage::Global) << rebuild;
     for (const auto& item : solve) source << item.second.source;
     for (const auto& item : fallbackActivity) source << item.second.source;
     source << fallbackRows.str()
@@ -729,6 +770,9 @@ void lowerCandidateDomains(CompiledPlan& p) {
                << d.header + 6 << "u]," << d.nearCapacity << "u);x_candidates["
                << d.header + 4 << "u]=1u;}else x_candidates[" << d.header + 4
                << "u]=0u;}";
+    if (unifiedCache)
+        source << "if(rebuildCandidates()||x_candidates[" << overflows << "u+side]!=0u)x_candidates["
+               << domains[0].header + 4 << "u]=0u;";
     source << "}if(x_candidates[" << overflows
            << "u+side]!=0u){if(lane<step.count)for(uint k=lane;k<"
            << logicalQueueCount

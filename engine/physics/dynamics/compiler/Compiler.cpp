@@ -499,10 +499,8 @@ uint linearEndpoint(Relation r,uint slot){
     uint at=r.e&0x7fffffffu,field=at+5u+2u*slot;
     return x_endpoints[field]+(r.id-x_endpoints[at+1u])*x_endpoints[field+1u];
 }
-uint endpoint(Relation r,uint slot,int mapping){
-    if(mapping==0||(mapping<0&&(r.e&0x80000000u)==0u))return x_endpoints[r.e+slot];
-    uint at=r.e&0x7fffffffu,mode=mapping<0?x_endpoints[at]:uint(mapping-1),row=r.id-x_endpoints[at+1u];
-    uint n=x_endpoints[at+3u],i=row,j=row;
+uvec2 bindingMembers(uint row,uint n,uint mode){
+    uint i=row,j=row;
     if(mode==1u){i=row/n;j=row%n;}
     else if(mode==2u){i=row/(n-1u);j=row%(n-1u);if(j>=i)++j;}
     else if(mode>=3u){
@@ -513,7 +511,13 @@ uint endpoint(Relation r,uint slot,int mapping){
         while(i+1u<n&&trianglePrefix(i+1u,n,diagonal)<=row)++i;
         j=i+(diagonal?0u:1u)+row-trianglePrefix(i,n,diagonal);
     }
-    uint member=slot<x_endpoints[at+4u]?i:j,field=at+5u+2u*slot;
+    return uvec2(i,j);
+}
+uint endpoint(Relation r,uint slot,int mapping){
+    if(mapping==0||(mapping<0&&(r.e&0x80000000u)==0u))return x_endpoints[r.e+slot];
+    uint at=r.e&0x7fffffffu,mode=mapping<0?x_endpoints[at]:uint(mapping-1),row=r.id-x_endpoints[at+1u];
+    uvec2 members=bindingMembers(row,x_endpoints[at+3u],mode);
+    uint member=slot<x_endpoints[at+4u]?members.x:members.y,field=at+5u+2u*slot;
     return x_endpoints[field]+member*x_endpoints[field+1u];
 }
 )";
