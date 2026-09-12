@@ -4,7 +4,7 @@
 var Lab={experiments:{},order:[],current:'',test:null,
     stiffness:2,mode:'hybrid',paused:false,
     phase:'',tick:0,time:0,gpu:0,invalid:0,singular:0,reads:0,strain:0,drawClock:0,
-    total:0,relations:0,variables:0,sample:null,lastSampleTick:0,
+    total:0,relations:0,variables:0,sample:null,lastSampleTick:0,measuredTick:0,measureJob:null,
     dirty:false,oneStep:false,resetPending:false,error:'',
     owner:0,entities:[],stageKey:''};
 Lab.X=Engine.dynamics;Lab.S=Lab.X.scene;Lab.modelId=Engine.content.newId();
@@ -46,7 +46,8 @@ Lab.rebuild=function(){
     var X=Lab.X,test=Lab.test=Lab.experiments[Lab.current];
     if(Lab.owner)Engine.destroy(Lab.owner);
     Lab.tick=0;Lab.time=0;Lab.gpu=0;Lab.invalid=0;Lab.singular=0;Lab.reads=0;Lab.strain=0;
-    Lab.lastSampleTick=0;Lab.dirty=false;Lab.oneStep=false;Lab.resetPending=false;Lab.error='';
+    Lab.lastSampleTick=0;Lab.measuredTick=0;Lab.drawClock=0;Lab.measureJob=null;
+    Lab.dirty=false;Lab.oneStep=false;Lab.resetPending=false;Lab.error='';
     var handle=X.model();
     Lab.sample=test.build(handle);
     Lab.owner=Engine.create({id:Lab.modelId,name:test.title,persistent:false,components:{dynamics:{
@@ -88,8 +89,18 @@ Lab.pump=function(){
     Lab.S.control(Lab.owner,Lab.paused,step);Lab.oneStep=false;
 };
 Lab.draw=function(dt){
-    Lab.drawClock+=dt;if(!Lab.sample||Lab.drawClock<0.1)return;Lab.drawClock=0;
-    Lab.strain=Lab.test.measure(Lab.sample);
+    Lab.drawClock=Math.min(0.1,Lab.drawClock+dt);
+    // Expensive display-only diagnostics can consume one immutable sample in
+    // bounded chunks. Publish only a finished result; resets discard the job.
+    if(Lab.measureJob){
+        var strain=Lab.measureJob.step();
+        if(strain!==undefined){Lab.strain=strain;Lab.measureJob=null;}
+        return;
+    }
+    if(Lab.lastSampleTick===Lab.measuredTick||Lab.drawClock<0.1)return;
+    Lab.drawClock=0;Lab.measuredTick=Lab.lastSampleTick;
+    if(Lab.test.beginMeasure)Lab.measureJob=Lab.test.beginMeasure(Lab.sample);
+    else Lab.strain=Lab.test.measure(Lab.sample);
 };
 Lab.input=function(input){
     if(input.pointerCaptured||!Lab.test)return;

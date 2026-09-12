@@ -6,9 +6,9 @@ var cloud={id:'particles',tab:'粒子群',eyebrow:'实验 06',title:'集合关�
     equation:'C₁ = (pᵢ − pⱼ)² − d² ≥ 0； C₂ = n·p − h − r ≥ 0',
     hint:'I 给粒子一个向上冲量',
     legend:'<span class="teal">■</span>粒子<span class="gold">■</span>容器边界',
-    panelTitle:'集合 pair',count:4000,radius:0.05,kick:false,forceInput:false};
-cloud.sizes={label:'数量',options:[{label:'4,000 个',value:4000}],
-    get:function(){return 4000;},set:function(){return '';}};
+    panelTitle:'集合 pair',count:10000,radius:0.035,kick:false,forceInput:false};
+cloud.sizes={label:'数量',options:[{label:'10,000 个',value:cloud.count}],
+    get:function(){return cloud.count;},set:function(){return '';}};
 cloud.actions=[];cloud.rows=[];cloud.keys={};
 cloud.define=function(){
     var X=Lab.X;
@@ -29,7 +29,8 @@ cloud.build=function(model){
     var halfWidth=1.5-cloud.radius;
     cloud.acceleration=new Float32Array(n*3);
     cloud.measureGrid={stamp:0,marks:new Uint32Array(1),heads:new Uint32Array(1),
-        x:new Int32Array(n),y:new Int32Array(n),z:new Int32Array(n),next:new Uint32Array(n)};
+        x:new Int32Array(n),y:new Int32Array(n),z:new Int32Array(n),next:new Uint32Array(n),
+        cells:new Uint32Array(n),neighbours:new Int32Array(13)};
     for(var i=0;i<n;++i){
         initial[i*3]=(Math.random()*2-1)*halfWidth;
         initial[i*3+1]=1+Math.random()*2;
@@ -59,7 +60,9 @@ cloud.build=function(model){
 };
 cloud.layout=function(){return cloud.count+'/'+cloud.radius;};
 cloud.camera=function(){return {target:[0,1.2,0],yaw:0.48,pitch:0.55,distance:8,fov:0.65};};
-cloud.note=function(){return '4,000 个粒子 · 7,998,000 个无向成员组合 · 20,000 个粒子—边界组合';};
+cloud.note=function(){return Lab.grouped(cloud.count)+' 个粒子 · '+
+    Lab.grouped(cloud.count*(cloud.count-1)/2)+' 个无向成员组合 · '+
+    Lab.grouped(cloud.count*5)+' 个粒子—边界组合';};
 cloud.families=function(){return [
     {name:'粒子集合 × 自身',kind:'不等式',rows:cloud.count*(cloud.count-1)/2},
     {name:'粒子集合 × 边界集合',kind:'不等式',rows:cloud.count*5},
@@ -97,18 +100,18 @@ cloud.inputs=function(writes){
     }
     var step=cloud.kick;cloud.kick=false;return step;
 };
-cloud.measure=function(q){
+cloud.beginMeasure=function(q){
     // A pair can overlap only in the same diameter-sized cell or one of its
     // 26 neighbours. This preserves the exact maximum without an all-pairs scan.
-    var overlap=0,d=2*cloud.radius,d2=d*d,inverse=1/d,grid=cloud.measureGrid;
+    var d=2*cloud.radius,closest2=d*d,inverse=1/d,grid=cloud.measureGrid,n=cloud.count;
     var cellX=grid.x,cellY=grid.y,cellZ=grid.z,next=grid.next;
     var minX=Infinity,minY=Infinity,minZ=Infinity,maxX=-Infinity,maxY=-Infinity,maxZ=-Infinity;
-    for(var i=0;i<cloud.count;++i){
+    for(var i=0;i<n;++i){
         var at=3*i,cx=Math.floor(q[at]*inverse),cy=Math.floor(q[at+1]*inverse),
             cz=Math.floor(q[at+2]*inverse);
         cellX[i]=cx;cellY[i]=cy;cellZ[i]=cz;
-        minX=Math.min(minX,cx);minY=Math.min(minY,cy);minZ=Math.min(minZ,cz);
-        maxX=Math.max(maxX,cx);maxY=Math.max(maxY,cy);maxZ=Math.max(maxZ,cz);
+        if(cx<minX)minX=cx;if(cy<minY)minY=cy;if(cz<minZ)minZ=cz;
+        if(cx>maxX)maxX=cx;if(cy>maxY)maxY=cy;if(cz>maxZ)maxZ=cz;
     }
     var originX=minX-1,originY=minY-1,originZ=minZ-1;
     var sizeX=maxX-minX+3,sizeY=maxY-minY+3,sizeZ=maxZ-minZ+3;
@@ -117,39 +120,55 @@ cloud.measure=function(q){
         while(capacity<volume)capacity*=2;
         grid.marks=new Uint32Array(capacity);grid.heads=new Uint32Array(capacity);
     }
-    var stamp=++grid.stamp,marks=grid.marks,heads=grid.heads;
-    for(var i=0;i<cloud.count;++i){
+    var stamp=++grid.stamp,marks=grid.marks,heads=grid.heads,cells=grid.cells,cellCount=0;
+    for(var i=0;i<n;++i){
         var cx=cellX[i],cy=cellY[i],cz=cellZ[i];
         var slot=((cx-originX)*sizeY+(cy-originY))*sizeZ+cz-originZ;
-        if(marks[slot]!==stamp){marks[slot]=stamp;heads[slot]=0;}
+        if(marks[slot]!==stamp){marks[slot]=stamp;heads[slot]=0;cells[cellCount++]=slot;}
         next[i]=heads[slot];heads[slot]=i+1;
     }
-    // The positive half-neighbourhood visits each cross-cell pair exactly once.
-    for(var i=0;i<cloud.count;++i){
-        var at=3*i,px=q[at],py=q[at+1],pz=q[at+2],cx=cellX[i],cy=cellY[i],cz=cellZ[i];
-        var slot=((cx-originX)*sizeY+(cy-originY))*sizeZ+cz-originZ;
-        var entry=heads[slot];
-        while(entry&&entry-1>i){
-            var j=entry-1,jat=3*j,x=px-q[jat],y=py-q[jat+1],z=pz-q[jat+2];
-            var distance2=x*x+y*y+z*z;
-            if(distance2<d2)overlap=Math.max(overlap,1-Math.sqrt(distance2)*inverse);
-            entry=next[j];
-        }
-        for(var ox=0;ox<=1;++ox)for(var oy=ox?-1:0;oy<=1;++oy){
-            var firstZ=ox===0&&oy===0?1:-1;
-            var base=((cx+ox-originX)*sizeY+(cy+oy-originY))*sizeZ+cz-originZ;
-            for(var oz=firstZ;oz<=1;++oz){
-                entry=marks[base+oz]===stamp?heads[base+oz]:0;
-                while(entry){
-                    var j=entry-1,jat=3*j,x=px-q[jat],y=py-q[jat+1],z=pz-q[jat+2];
-                    var distance2=x*x+y*y+z*z;
-                    if(distance2<d2)overlap=Math.max(overlap,1-Math.sqrt(distance2)*inverse);
-                    entry=next[j];
+    // Resolve the half-neighbourhood once per occupied cell, rather than for
+    // every particle. The one-cell border makes these linear offsets valid.
+    var neighbours=grid.neighbours,neighbourCount=0;
+    for(var ox=0;ox<=1;++ox)for(var oy=ox?-1:0;oy<=1;++oy)
+        for(var oz=ox===0&&oy===0?1:-1;oz<=1;++oz)
+            neighbours[neighbourCount++]=(ox*sizeY+oy)*sizeZ+oz;
+    var cell=0;
+    return {step:function(){
+        // The snapshot q stays fixed while the solver continues. Yield between
+        // small groups of cells to keep telemetry from monopolising an update.
+        var deadline=Date.now()+2;
+        for(;cell<cellCount;++cell){
+            var slot=cells[cell],head=heads[slot];
+            // -1 is the same cell; following next skips self and duplicate pairs.
+            for(var neighbour=-1;neighbour<neighbourCount;++neighbour){
+                var other=head;
+                if(neighbour>=0){
+                    var target=slot+neighbours[neighbour];
+                    if(marks[target]!==stamp)continue;
+                    other=heads[target];
+                }
+                for(var source=head;source;source=next[source-1]){
+                    var i=source-1,at=3*i,px=q[at],py=q[at+1],pz=q[at+2];
+                    var entry=neighbour<0?next[i]:other;
+                    while(entry){
+                        var j=entry-1,jat=3*j,x=px-q[jat],distance2=x*x;
+                        if(distance2<closest2){
+                            var y=py-q[jat+1];distance2+=y*y;
+                            if(distance2<closest2){
+                                var z=pz-q[jat+2];distance2+=z*z;
+                                if(distance2<closest2)closest2=distance2;
+                            }
+                        }
+                        entry=next[j];
+                    }
                 }
             }
+            if((cell&15)===15&&Date.now()>=deadline){++cell;return;}
         }
-    }
-    return overlap;
+        // Maximum overlap is determined by the minimum squared distance: one sqrt.
+        return Math.max(0,1-Math.sqrt(closest2)*inverse);
+    }};
 };
 return cloud;
 }()));
