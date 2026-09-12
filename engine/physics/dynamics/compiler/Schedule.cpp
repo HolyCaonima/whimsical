@@ -35,7 +35,7 @@ uint64_t dispatchCount(const CompiledPlan& p) {
     if (!count(p.predict))
         return 0;
     return p.policy.substeps *
-           (count(p.predict) + p.policy.iterations * (count(p.solve) + count(p.apply)) +
+           (count(p.predict) + p.policy.iterations * (count(p.solve) + count(p.apply) + count(p.iteration)) +
             count(p.recover) + count(p.update));
 }
 struct Components {
@@ -81,7 +81,7 @@ void collapseVariableDispatches(CompiledPlan& p, const std::vector<KernelFunctio
         if (sourceBytes > SourceByteBudget)
             continue;
         std::ostringstream source;
-        source << stateAccess(false);
+        source << stateAccess(StateStorage::Global);
         for (auto kernel : kernels)
             source << functions[kernel].source;
         source << "void main(){uint lane=invocation();if(lane>=step.count)return;"
@@ -228,7 +228,7 @@ void fuseColorWindows(CompiledPlan& p, const std::vector<KernelFunction>& functi
         std::ostringstream source;
         // Window components own their writes. Only invocations in this workgroup
         // consume the preceding color, so a device-scope memory fence is needless.
-        source << stateAccess(false) << functions[function].source
+        source << stateAccess(StateStorage::Global) << functions[function].source
                << "void main(){uint region=gl_WorkGroupID.x+gl_WorkGroupID.y*65535u;"
                   "if(region>=step.count/128u)return;uint lane=gl_LocalInvocationID.x;"
                   "uint at=x_regionRanges[step.first+region],phases=x_regionRanges[at++];"
@@ -240,7 +240,8 @@ void fuseColorWindows(CompiledPlan& p, const std::vector<KernelFunction>& functi
                << "(x_relationWork[first+j],step.h,step.time,step.relaxation,inverseH2,step.iteration);"
                   "if(phase+1u<phases){groupMemoryBarrier();barrier();}}}\n";
         auto kernel = uint32_t(p.kernels.size());
-        p.kernels.push_back({"Solve color windows / " + p.kernels[function].name, source.str()});
+        p.kernels.push_back({"Solve color windows / " + p.kernels[function].name, source.str(),
+                             {BufferRole::Values}});
         kernels.emplace(function, kernel);
         return kernel;
     };
@@ -305,6 +306,7 @@ void pruneKernels(CompiledPlan& p) {
     mark(p.predict);
     mark(p.solve);
     mark(p.apply);
+    mark(p.iteration);
     mark(p.recover);
     mark(p.update);
     mark(p.local);
@@ -345,6 +347,7 @@ void pruneKernels(CompiledPlan& p) {
     remap(p.predict);
     remap(p.solve);
     remap(p.apply);
+    remap(p.iteration);
     remap(p.recover);
     remap(p.update);
     remap(p.local);
@@ -558,6 +561,12 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
         packed = packed + costs[id];
     }
     if (!regionCount) {
+        if (lowerTiledSchedule(p, functions)) {
+            collapseVariableDispatches(p, functions);
+            p.statistics.dispatches = dispatchCount(p);
+            pruneKernels(p);
+            return;
+        }
         collapseVariableDispatches(p, functions);
         collapseRelationDispatches(p);
         fuseColorWindows(p, functions);
@@ -715,7 +724,8 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     lower(p.update);
 
     std::ostringstream source;
-    source << "shared float regionState[" << sharedWords << "];\n" << stateAccess(true, variableCount, p.localPerSubstep);
+    source << "shared float regionState[" << sharedWords << "];\n"
+           << stateAccess(StateStorage::Region, variableCount, p.localPerSubstep);
     std::set<uint32_t> emitted;
     for (const auto& stage : phases)
         if (stage.kernel != NoRegion && emitted.insert(stage.kernel).second)
@@ -771,12 +781,15 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     if (uint64_t(regionCount) * Lanes > UINT32_MAX)
         throw std::overflow_error("Dynamics region dispatch exceeds 32-bit addressing");
     p.local.push_back({uint32_t(p.kernels.size()), 0, regionCount * Lanes});
-    p.kernels.push_back({"Solve local regions", source.str()});
-    // Remaining global work still benefits from one type-dispatch per dependency
-    // color. Local work has already retained its specialized calls above.
+    p.kernels.push_back({"Solve local regions", source.str(), {BufferRole::Contributions}});
+    // Complete regions and overlapping epochs own disjoint writable state. A
+    // small independent component must not disable tiling of the remaining graph.
+    const bool tiled = lowerTiledSchedule(p, functions);
     collapseVariableDispatches(p, functions);
-    collapseRelationDispatches(p);
-    fuseColorWindows(p, functions);
+    if (!tiled) {
+        collapseRelationDispatches(p);
+        fuseColorWindows(p, functions);
+    }
     p.statistics.dispatches = dispatchCount(p) + (p.localPerSubstep ? p.policy.substeps : 1);
     pruneKernels(p);
 }

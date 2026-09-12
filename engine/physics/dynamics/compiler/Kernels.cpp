@@ -14,7 +14,7 @@ void local(std::ostringstream& s, const char* name, uint32_t n) {
 }
 void finite(std::ostringstream& s, const std::string& name, uint32_t n) {
     s << "for(int k=0;k<" << n << ";++k)if(isnan(" << name << "[k])||isinf(" << name
-      << "[k])){atomicAdd(x_diagnostics[0],1u);return;}\n";
+      << "[k])){invalidEvaluation();return;}\n";
 }
 std::string literal(float value) {
     if (value == 0)
@@ -81,7 +81,7 @@ void relationInputs(std::ostringstream& s, const RelationType& t, int32_t endpoi
         s << "; Variable v" << e << "=variable(id" << e << ");\n";
         if (loadInputs)
             for (uint32_t c = 0; c < t.spaces[e]->stateSize; ++c)
-                s << "x[" << offset + c << "]=loadValue(v" << e << "," << c << "u);\n";
+                s << "x[" << offset + c << "]=loadEndpointValue(v" << e << "," << c << "u," << e << "u);\n";
         offset += t.spaces[e]->stateSize;
     }
     if (loadInputs)
@@ -141,11 +141,9 @@ KernelFunction variableFunction(
         if (!directContributions)
             for (uint32_t i = 0; i < T; ++i)
                 s << "inputValue[" << S + i << "]=0.0;\n";
-        s << "for(uint j=x_adjOffsets[id];j<x_adjOffsets[id+1u];++j){uint "
-             "at=x_adjEntries[j*2u],stride=x_adjEntries[j*2u+1u];\n";
+        s << "for(uint j=incidenceBegin(id);j<incidenceEnd(id);++j){\n";
         for (uint32_t i = 0; i < T; ++i)
-            s << "inputValue[" << S + i << "]+=uintBitsToFloat(x_contributions[at+" << i
-              << "u*stride]);\n";
+            s << "inputValue[" << S + i << "]+=incidenceContribution(j," << i << "u);\n";
         s << "}\n" << name << "_retractValue(inputValue,outputValue);\n";
         finite(s, "outputValue", S);
         for (uint32_t i = 0; i < S; ++i)
@@ -159,7 +157,7 @@ KernelFunction variableFunction(
 KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& readOnly,
                                 int32_t endpointMode, bool jacobi, bool directContributions,
                                 bool separateDegrees, bool update, const std::string& name,
-                                bool activeDegrees, bool activityChecked) {
+                                bool activeDegrees, bool activityChecked, bool distinctWritableEndpoints) {
     std::ostringstream s;
     const auto M = t.rows;
     uint32_t Q = 0, D = 0, activeSlots = 0, singleSlot = 0;
@@ -230,7 +228,7 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
             s << "if(iteration==0u)storeMultiplier(r," << row << "u,0.0);\n";
     if (jacobi && !directContributions)
         for (uint32_t c = 0; c < D; ++c)
-            s << "x_contributions[r.c+" << c << "u*r.cs]=0u;\n";
+            s << "storeContribution(r," << c << "u,0.0);\n";
     s << "if(!relationEnabled(r))return;\n";
     relationInputs(s, t, endpointMode);
     if (update) {
@@ -343,7 +341,7 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
     // Repeated endpoint identities describe one variable. Merge their Jacobians
     // before forming the effective mass; otherwise cross terms would be lost.
     vo = 0;
-    for (uint32_t e = 0; e < t.spaces.size(); ++e) {
+    for (uint32_t e = 0; !distinctWritableEndpoints && e < t.spaces.size(); ++e) {
         if (readOnly[e])
             continue;
         uint32_t before = 0;
@@ -440,17 +438,17 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
         // The scalar block has no pivot choice or elimination. Emitting the quotient
         // directly avoids materializing the generic matrix normalization path.
         s << "if(isnan(a[0])||isinf(a[0])||isnan(rhs[0])||isinf(rhs[0]))"
-             "{atomicAdd(x_diagnostics[0],1u);return;}\n";
-        s << "if(a[0]==0.0){if(rhs[0]!=0.0)atomicAdd(x_diagnostics[1],1u);return;}\n";
+             "{invalidEvaluation();return;}\n";
+        s << "if(a[0]==0.0){if(rhs[0]!=0.0)singularSystem();return;}\n";
         s << "rhs[0]/=a[0];\n";
     } else {
         s << "float scale=0.0;for(int k=0;k<" << M * M
-          << ";++k){if(isnan(a[k])||isinf(a[k])){atomicAdd(x_diagnostics[0],1u);return;}scale=max(scale,abs(a[k])"
+          << ";++k){if(isnan(a[k])||isinf(a[k])){invalidEvaluation();return;}scale=max(scale,abs(a[k])"
              ");}\n";
         s << "for(int k=0;k<" << M
-          << ";++k)if(isnan(rhs[k])||isinf(rhs[k])){atomicAdd(x_diagnostics[0],1u);return;}\n";
+          << ";++k)if(isnan(rhs[k])||isinf(rhs[k])){invalidEvaluation();return;}\n";
         s << "if(scale==0.0){for(int k=0;k<" << M
-          << ";++k)if(rhs[k]!=0.0){atomicAdd(x_diagnostics[1],1u);break;}return;}\n";
+          << ";++k)if(rhs[k]!=0.0){singularSystem();break;}return;}\n";
     }
     // Small block dimensions are compile-time facts. Static matrix accesses let
     // the GPU keep these blocks in registers instead of dynamically indexed arrays.
@@ -461,7 +459,7 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
             for (uint32_t row = col + 1; row < M; ++row)
                 s << "if(abs(a[" << row * M + col << "])>largest){largest=abs(a[" << row * M + col
                   << "]);pivot=" << row << "u;}\n";
-            s << "if(largest<=scale*1e-7){atomicAdd(x_diagnostics[1],1u);return;}\n";
+            s << "if(largest<=scale*1e-7){singularSystem();return;}\n";
             for (uint32_t row = col + 1; row < M; ++row) {
                 s << "if(pivot==" << row << "u){\n";
                 for (uint32_t k = 0; k < M; ++k)
@@ -487,7 +485,7 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
     } else if (M > 4) {
         s << "for(int col=0;col<" << M << ";++col){int pivot=col;for(int row=col+1;row<" << M
           << ";++row)if(abs(a[row*" << M << "+col])>abs(a[pivot*" << M << "+col]))pivot=row;\n";
-        s << "if(abs(a[pivot*" << M << "+col])<=scale*1e-7){atomicAdd(x_diagnostics[1],1u);return;}\n";
+        s << "if(abs(a[pivot*" << M << "+col])<=scale*1e-7){singularSystem();return;}\n";
         s << "for(int k=0;k<" << M << ";++k){float v=a[col*" << M << "+k];a[col*" << M << "+k]=a[pivot*" << M
           << "+k];a[pivot*" << M << "+k]=v;}\n";
         s << "float b=rhs[col];rhs[col]=rhs[pivot];rhs[pivot]=b;float inverse=1.0/a[col*" << M
@@ -544,7 +542,7 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
             finite(s, "input" + std::to_string(e), S + T);
         } else {
             s << "if(v" << e << ".flags==0u && variableEnabled(v" << e << ")";
-            for (uint32_t b = 0; b < e; ++b)
+            for (uint32_t b = 0; !distinctWritableEndpoints && b < e; ++b)
                 s << " && id" << e << "!=id" << b;
             s << ") {\n";
             s << name << "_retract" << e << "Value(input" << e << ",output" << e << ");\n";
@@ -563,7 +561,7 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
         if (jacobi) {
             if (directContributions) {
                 s << "if(v" << e << ".flags==0u && variableEnabled(v" << e << ")";
-                for (uint32_t b = 0; b < e; ++b)
+                for (uint32_t b = 0; !distinctWritableEndpoints && b < e; ++b)
                     s << " && id" << e << "!=id" << b;
                 s << ") {\n";
                 for (uint32_t col = 0; col < T; ++col)
@@ -572,15 +570,15 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
                 s << "}\n";
             } else
                 for (uint32_t col = 0; col < T; ++col)
-                    s << "x_contributions[r.c+" << vo + col << "u*r.cs]=floatBitsToUint(input" << e
+                    s << "storeContribution(r," << vo + col << "u,input" << e
                       << "[" << S + col << "]);\n";
         } else {
             s << "if(v" << e << ".flags==0u && variableEnabled(v" << e << ")";
-            for (uint32_t b = 0; b < e; ++b)
+            for (uint32_t b = 0; !distinctWritableEndpoints && b < e; ++b)
                 s << " && id" << e << "!=id" << b;
             s << ") {\n";
             for (uint32_t col = 0; col < S; ++col)
-                s << "storeValue(v" << e << "," << col << "u,output" << e << "[" << col << "]);\n";
+                s << "storeEndpointValue(v" << e << "," << col << "u," << e << "u,output" << e << "[" << col << "]);\n";
             s << "}\n";
         }
         vo += T;
@@ -668,7 +666,7 @@ std::string incidenceKernel(const RelationType& t, const std::vector<bool>& read
 }
 std::string globalKernel(const KernelFunction& function) {
     const char* work = function.work == BufferRole::VariableWork ? "variableWork" : "relationWork";
-    return stateAccess(false) + function.source + "void main(){uint lane=invocation();if(lane>=step.count)return;" +
+    return stateAccess(StateStorage::Global) + function.source + "void main(){uint lane=invocation();if(lane>=step.count)return;" +
            function.entry + "(x_" + work +
            "[step.first+lane],step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration); }\n";
 }
@@ -722,7 +720,8 @@ float loadCompliance(Relation r,uint c,uint uniformOffset){return x_compliance[r
 #endif
 )";
 }
-std::string stateAccess(bool localState, uint32_t variableCount, bool externalInputs) {
+std::string stateAccess(StateStorage storage, uint32_t variableCount, bool externalInputs) {
+    const bool localState = storage == StateStorage::Region, epoch = storage == StateStorage::Epoch;
     struct FieldAccess {
         const char* name;
         const char* buffer;
@@ -734,6 +733,29 @@ std::string stateAccess(bool localState, uint32_t variableCount, bool externalIn
                                   {"Multiplier", "lambda", "l", false}};
     std::ostringstream s;
     s << fieldAccess(localState);
+    s << "void invalidEvaluation(){" << (epoch ? "if(epochOwned)" : "")
+      << "atomicAdd(x_diagnostics[0],1u);}\n"
+         "void singularSystem(){" << (epoch ? "if(epochOwned)" : "")
+      << "atomicAdd(x_diagnostics[1],1u);}\n";
+    if (epoch)
+        s << R"(
+uint incidenceBegin(uint id){return 0u;}
+uint incidenceEnd(uint id){return epochIncidenceCount;}
+float incidenceContribution(uint j,uint c){
+    uint at=epochIncidenceFirst+j*2u;
+    return epochState[x_epochData[at]+c*x_epochData[at+1u]];
+}
+void storeContribution(Relation r,uint c,float value){epochState[epochContribution+c*epochContributionStride]=value;}
+)";
+    else
+        s << R"(
+uint incidenceBegin(uint id){return x_adjOffsets[id];}
+uint incidenceEnd(uint id){return x_adjOffsets[id+1u];}
+float incidenceContribution(uint j,uint c){
+    return uintBitsToFloat(x_contributions[x_adjEntries[j*2u]+c*x_adjEntries[j*2u+1u]]);
+}
+void storeContribution(Relation r,uint c,float value){x_contributions[r.c+c*r.cs]=floatBitsToUint(value);}
+)";
     s << "void addContribution(uint at,float value){if(value==0.0)return;uint expected=x_contributions[at];"
          "for(;;){uint desired=floatBitsToUint(uintBitsToFloat(expected)+value);"
          "uint observed=atomicCompSwap(x_contributions[at],expected,desired);"
@@ -742,6 +764,18 @@ std::string stateAccess(bool localState, uint32_t variableCount, bool externalIn
         const auto& field = fields[i];
         const char* type = field.variable ? "Variable" : "Relation";
         std::string address = std::string("x_") + field.buffer + "[v." + field.offset + "+c*v.stride]";
+        if (epoch && i == 0) {
+            s << "float loadValue(Variable v,uint c){return epochState[epochVariableOffset+c];}\n"
+                 "void storeValue(Variable v,uint c,float value){epochState[epochVariableOffset+c]=value;}\n";
+            continue;
+        }
+        if (epoch && i == 4) {
+            s << "float loadMultiplier(Relation v,uint c){return step.iteration==0u?0.0:"
+              << address << ";}\n"
+                 "void storeMultiplier(Relation v,uint c,float value){if(epochOwned)"
+                 "x_epochOutput[EPOCH_VALUE_WORDS+v.l+c*v.stride]=value;}\n";
+            continue;
+        }
         const auto globalAddress = address;
         if (localState)
             address = "regionState[x_localOffsets[" +
@@ -759,6 +793,20 @@ std::string stateAccess(bool localState, uint32_t variableCount, bool externalIn
             s << "if(" << external << ")" << globalAddress << "=value;else ";
         s << address << "=value;}\n";
     }
+    if (epoch)
+        s << R"(
+float loadEndpointValue(Variable v,uint c,uint slot){
+    return v.flags!=0u?x_q[v.q+c*v.stride]:epochState[x_epochData[epochEndpointFirst+slot]+c];
+}
+void storeEndpointValue(Variable v,uint c,uint slot,float value){
+    epochState[x_epochData[epochEndpointFirst+slot]+c]=value;
+}
+)";
+    else
+        s << R"(
+float loadEndpointValue(Variable v,uint c,uint slot){return loadValue(v,c);}
+void storeEndpointValue(Variable v,uint c,uint slot,float value){storeValue(v,c,value);}
+)";
     return s.str();
 }
 } // namespace whimsical::dynamics

@@ -2,6 +2,7 @@
 #include "Instance.h"
 #include "renderCore/graph/RenderGraph.h"
 #include "renderCore/vulkan/GraphAccess.h"
+#include "renderCore/vulkan/ProgramStorage.h"
 #include "renderCore/vulkan/VulkanAccess.h"
 #include <algorithm>
 #include <cmath>
@@ -76,6 +77,14 @@ struct Instance::Storage {
     rg::ResourceId readback, oldValues, oldVelocity, oldHistory, oldAcceleration, migration;
     std::unique_ptr<rc::GraphContext> execution;
     std::vector<const rg::Program*> programs;
+    struct Invocation {
+        uint32_t kernel;
+        Constants constants;
+    };
+    std::vector<Invocation> sequence;
+    std::vector<rg::ShaderAccess> sequenceAccesses;
+    std::vector<uint8_t> sequenceBarriers; // 0: none, 1: execution, 2: memory
+    bool recordingSequence = false;
     std::string interface;
     std::vector<uint32_t> variableFieldMasks, relationFieldMasks;
     bool candidateBoundsDirty = true;
@@ -105,15 +114,14 @@ struct Instance::Storage {
             case BufferRole::RegionState:
             case BufferRole::LocalOffsets:
             case BufferRole::StateWrites:
+            case BufferRole::EpochData:
                 d.view.readOnly = true;
                 break;
             default:
                 break;
             }
-            if (plan->statistics.colorWindows && BufferRole(i) == BufferRole::Values)
-                d.view.body = "coherent " + d.view.body;
-            if (!plan->local.empty() && BufferRole(i) == BufferRole::Contributions)
-                d.view.body = "coherent " + d.view.body;
+            d.view.body = "#ifdef DYNAMICS_COHERENT_" + std::to_string(i) +
+                          "\ncoherent\n#endif\n" + d.view.body;
             if (BufferRole(i) == BufferRole::Diagnostics)
                 d.handover = rg::Access::Host;
             resources[i] = registry.declare(std::move(d));
@@ -138,8 +146,14 @@ struct Instance::Storage {
             core, registry, "Dynamics model " + std::to_string(plan->model.model), rc::QueueClass::Compute,
             "Dynamics");
         interface = "#version 450\n" + registry.glsl().at("graph.compute.glsl") + plan->interface();
-        for (const auto& kernel : plan->kernels)
-            programs.push_back(&execution->compute(kernel.name + ".comp", interface + kernel.source));
+        for (const auto& kernel : plan->kernels) {
+            std::string qualifiers;
+            for (auto role : kernel.coherentBuffers)
+                qualifiers += "#define DYNAMICS_COHERENT_" + std::to_string(uint32_t(role)) + "\n";
+            auto source = interface;
+            source.insert(source.find('\n') + 1, qualifiers);
+            programs.push_back(&execution->compute(kernel.name + ".comp", source + kernel.source));
+        }
     }
     rg::ResourceId id(BufferRole role) const {
         return resources[size_t(role)];
@@ -229,8 +243,87 @@ struct Instance::Storage {
         pass.dispatch(program, extent(constants.count)).constants(bytes(constants));
     }
     void batch(const Batch& batch, float h, float time, uint64_t tick, uint32_t iteration) {
+        if (recordingSequence) {
+            if (batch.count)
+                sequence.push_back({batch.kernel,
+                    {batch.first, batch.count, h, time, uint32_t(tick), iteration, plan->policy.relaxation}});
+            return;
+        }
         dispatch(*programs[batch.kernel], plan->kernels[batch.kernel].name,
                  {batch.first, batch.count, h, time, uint32_t(tick), iteration, plan->policy.relaxation});
+    }
+    void finishSequence() {
+        recordingSequence = false;
+        if (sequence.empty())
+            return;
+        // The numerical schedule is immutable for this Storage. Resolve its
+        // effects and dependencies once; only invocation constants change per tick.
+        if (sequenceBarriers.empty()) {
+            std::vector<bool> included(programs.size());
+            std::vector<bool> reads(registry.size()), writes(registry.size());
+            for (const auto& invocation : sequence) {
+                const auto& program = *programs[invocation.kernel];
+                if (!included[invocation.kernel]) {
+                    included[invocation.kernel] = true;
+                    rg::merge(sequenceAccesses, program.accesses);
+                }
+                bool hazard = false, memory = false;
+                for (const auto& access : program.accesses) {
+                    const auto resource = registry.binding(access.binding);
+                    if (resource.id == id(BufferRole::Diagnostics))
+                        continue; // independent atomic counters; graph owns the final host dependency
+                    const auto index = resource.id.index;
+                    hazard = hazard || (access.writes && reads[index]) || writes[index];
+                    memory = memory || writes[index];
+                }
+                sequenceBarriers.push_back(memory ? 2 : hazard ? 1 : 0);
+                if (hazard) {
+                    std::fill(reads.begin(), reads.end(), false);
+                    if (memory)
+                        std::fill(writes.begin(), writes.end(), false);
+                }
+                for (const auto& access : program.accesses) {
+                    const auto index = registry.binding(access.binding).id.index;
+                    reads[index] = reads[index] || access.reads;
+                    writes[index] = writes[index] || access.writes;
+                }
+            }
+        }
+        auto pass = execution->graph().add("Execute Dynamics schedule");
+        for (const auto& access : sequenceAccesses)
+            if (access.writes)
+                pass.modify(registry.binding(access.binding), access.access);
+        pass.shader(sequenceAccesses).record([this](const rg::PassContext& context) {
+            vkCmdBindDescriptorSets(context.command, VK_PIPELINE_BIND_POINT_COMPUTE, context.layout,
+                                    0, 1, &context.descriptors, 0, nullptr);
+            uint32_t previousKernel = UINT32_MAX;
+            for (size_t i = 0; i < sequence.size(); ++i) {
+                const auto& invocation = sequence[i];
+                const auto& program = *programs[invocation.kernel];
+                GpuScope scope(context.profiler(), context.command, plan->kernels[invocation.kernel].name.c_str());
+                if (sequenceBarriers[i]) {
+                    VkMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+                    barrier.srcStageMask = barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+                    if (sequenceBarriers[i] == 2) {
+                        barrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+                        barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
+                    }
+                    VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+                    dependency.memoryBarrierCount = 1;
+                    dependency.pMemoryBarriers = &barrier;
+                    vkCmdPipelineBarrier2(context.command, &dependency);
+                }
+                if (previousKernel != invocation.kernel) {
+                    vkCmdBindPipeline(context.command, VK_PIPELINE_BIND_POINT_COMPUTE, program.storage->pipeline);
+                    previousKernel = invocation.kernel;
+                }
+                vkCmdPushConstants(context.command, context.layout, VK_SHADER_STAGE_ALL, 0,
+                                    sizeof(Constants), &invocation.constants);
+                const auto size = extent(invocation.constants.count);
+                vkCmdDispatch(context.command, (size.x + program.localSize.x - 1) / program.localSize.x,
+                              (size.y + program.localSize.y - 1) / program.localSize.y, 1);
+            }
+        });
     }
     uint32_t writeRows(Range destination, uint32_t first, const std::vector<float>& values) const {
         if (!destination.width) {
@@ -500,6 +593,8 @@ void Instance::step(const TickInput& input) {
             s.batch(batch, h, float(completed_.time), input.tick, 0);
         s.candidateBoundsDirty = false;
     }
+    s.sequence.clear();
+    s.recordingSequence = s.plan->policy.execution == ExecutionMode::Auto;
     for (const auto& batch : s.plan->prepareCandidates)
         s.batch(batch, h, float(completed_.time), input.tick, 0);
     for (uint32_t substep = 0; !s.plan->predict.empty() && substep < s.plan->policy.substeps; ++substep) {
@@ -512,6 +607,8 @@ void Instance::step(const TickInput& input) {
             for (const auto& batch : s.plan->local)
                 s.batch(batch, h, time - h, input.tick, 0);
         for (uint32_t iteration = 0; iteration < s.plan->policy.iterations; ++iteration) {
+            for (const auto& batch : s.plan->iteration)
+                s.batch(batch, h, time, input.tick, iteration);
             for (const auto& batch : s.plan->solve)
                 s.batch(batch, h, time, input.tick, iteration);
             for (const auto& batch : s.plan->apply)
@@ -526,6 +623,7 @@ void Instance::step(const TickInput& input) {
     if (!s.plan->localPerSubstep)
         for (const auto& batch : s.plan->local)
             s.batch(batch, h, float(completed_.time), input.tick, 0);
+    s.finishSequence();
     s.recordReads(input.reads, readSize);
     s.submit(input.tick, input.profileRequest, std::max(1u, readSize), 1);
     submittedReads_ = input.reads;

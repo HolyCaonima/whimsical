@@ -294,7 +294,7 @@ void lowerCandidateDomains(CompiledPlan& p) {
     };
     const uint32_t lanes = std::min(4096u, uint32_t((uint64_t(logicalQueueCount) + 127) / 128) * 128);
     std::ostringstream activity;
-    activity << stateAccess(false);
+    activity << stateAccess(StateStorage::Global);
     for (auto type : types)
         activity << relationActivityFunction(*p.types[type], p.typeReadOnly[type], p.typeEndpointMode[type],
                                              "activity" + std::to_string(type), active).source;
@@ -664,7 +664,7 @@ void lowerCandidateDomains(CompiledPlan& p) {
                                            "fallbackActivity" + std::to_string(type), false));
     }
     std::ostringstream source;
-    source << stateAccess(false);
+    source << stateAccess(StateStorage::Global);
     for (const auto& item : solve) source << item.second.source;
     for (const auto& item : fallbackActivity) source << item.second.source;
     source << fallbackRows.str()

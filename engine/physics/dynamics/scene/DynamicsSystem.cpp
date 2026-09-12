@@ -362,6 +362,8 @@ Json DynamicsSystem::plan(Entity e) const {
             {"activeJacobiRelations", double(s.activeJacobiRelations)},
             {"candidateQueueCapacity", double(s.candidateQueueCapacity)},
             {"colorWindows", s.colorWindows}, {"colorWindowRegions", double(s.colorWindowRegions)},
+            {"overlapTiles", s.overlapTiles}, {"overlapSharedBytes", s.overlapSharedBytes},
+            {"overlapEvaluations", double(s.overlapEvaluations)},
             {"localRelations", double(s.localRelations)},
             {"localPerSubstep", p.localPerSubstep},
             {"referenceDispatches", double(s.referenceDispatches)},

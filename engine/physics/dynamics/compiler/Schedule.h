@@ -15,7 +15,8 @@ KernelFunction variableFunction(
 KernelFunction relationFunction(const RelationType&, const std::vector<bool>& readOnly,
                                 int32_t endpointMode, bool jacobi, bool directContributions,
                                 bool separateDegrees, bool update, const std::string& name,
-                                bool activeDegrees = false, bool activityChecked = false);
+                                bool activeDegrees = false, bool activityChecked = false,
+                                bool distinctWritableEndpoints = false);
 // The predicate counts unique enabled writable endpoints only when a relation
 // participates in this Jacobi snapshot. Invalid residuals reach the solve's
 // existing diagnostic path rather than disappearing during candidate selection.
@@ -28,11 +29,13 @@ KernelFunction relationDispatchFunction(
     const std::vector<std::pair<uint32_t, KernelFunction>>&, bool jacobi, const std::string& name);
 std::string globalKernel(const KernelFunction&);
 std::string fieldAccess(bool local);
-std::string stateAccess(bool local, uint32_t variableCount = 0, bool externalInputs = false);
+enum class StateStorage { Global, Region, Epoch };
+std::string stateAccess(StateStorage, uint32_t variableCount = 0, bool externalInputs = false);
 
 // Preserve the semantic batch ordering; choose ownership and execution placement.
 // Layouts and work IDs remain stable across this lowering pass.
 void lowerSchedule(CompiledPlan&, const std::vector<KernelFunction>&);
+bool lowerTiledSchedule(CompiledPlan&, const std::vector<KernelFunction>&);
 bool canDeferCandidateDomain(const CompiledPlan&, uint32_t set, const BindingDomain&);
 void lowerCandidateDomains(CompiledPlan&);
 void prunePlanKernels(CompiledPlan&);

@@ -1,5 +1,11 @@
 # Dynamics 通用编译器执行计划优化
 
+大型静态依赖图的有界重叠分块，以及同一 cloth 输入的本轮对照，见
+[2026-09-12：依赖闭包与迭代 epoch](dynamics-compiler-epoch-tiling.md)。
+
+当前 cloth 的固定执行序列、字段表示和 kernel 访存要求优化见
+[2026-09-12 实施与对照](dynamics-compiler-cloth-sep12.md)。
+
 后续逻辑域分析、关系行视图及执行实验的实测见 [逻辑域编译优化与执行实验](dynamics-compiler-domain-cache.md)。
 
 最新一轮 deferred relation domain、仿射元数据和有界活动队列见

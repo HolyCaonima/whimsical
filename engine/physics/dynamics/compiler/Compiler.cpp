@@ -38,7 +38,7 @@ constexpr const char* Names[] = {"q",
                                  "scanScratch",
                                  "adjCursors",
                                  "regionRanges", "regionState", "localOffsets", "stateWrites",
-                                 "candidates", "activeDegrees"};
+                                 "candidates", "activeDegrees", "epochData", "epochOutput"};
 static_assert(sizeof(Names) / sizeof(*Names) == BufferCount);
 // Bounded transient input table; larger updates retain the direct upload path.
 constexpr uint32_t StateWriteCapacity = 4096;
@@ -48,7 +48,8 @@ bool integer(BufferRole r) {
            r == BufferRole::Contributions || r == BufferRole::AdjacencyEntries || r == BufferRole::Diagnostics ||
            r == BufferRole::ScanScratch || r == BufferRole::AdjacencyCursors || r == BufferRole::RegionRanges ||
            r == BufferRole::RegionState || r == BufferRole::LocalOffsets || r == BufferRole::StateWrites ||
-           r == BufferRole::Candidates || r == BufferRole::ActiveDegrees || r == BufferRole::FieldModes;
+           r == BufferRole::Candidates || r == BufferRole::ActiveDegrees || r == BufferRole::FieldModes ||
+           r == BufferRole::EpochData;
 }
 uint32_t checked(size_t n) {
     if (n > UINT32_MAX)
@@ -664,6 +665,11 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             if (canDeferCandidateDomain(*p, set, p->bindings[set].domains[domain]))
                 p->deferredJacobiDomains.push_back({set, domain});
     InstanceRows instances(*p, relationFirst);
+    // The existing incidence walk also proves whether alias merging is needed
+    // in a mathematical kernel. Never infer this from initial dynamic endpoints.
+    std::vector<bool> distinctWritableEndpoints(p->types.size(), !p->dynamicTopology);
+    for (const auto& deferred : p->deferredJacobiDomains)
+        distinctWritableEndpoints[p->relations[deferred.set].type] = false;
     auto endpointId = [&](const InstanceRows::Row& instance, uint32_t slot) {
         auto ref = p->bindings[instance.set].at(instance.local, slot);
         return p->variables[ref.set].first + ref.index;
@@ -682,6 +688,8 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             for (uint32_t before = 0; before < endpoint; ++before)
                 repeated = repeated || endpointScratch[before] == id;
             endpointScratch[endpoint] = id;
+            if (writable[id] && repeated)
+                distinctWritableEndpoints[instance.type] = false;
             if (writable[id] && !repeated)
                 visit(id);
         }
@@ -963,7 +971,8 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
                                                  jacobi && directJacobi[type],
                                                  p->statistics.directJacobiRelations != 0, false,
                                                  std::string(jacobi ? "jacobi" : "colored") +
-                                                     std::to_string(type)));
+                                                     std::to_string(type), false, false,
+                                                 distinctWritableEndpoints[type]));
             solveKernels.emplace(key, program);
         } else
             program = found->second;

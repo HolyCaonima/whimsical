@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <stdexcept>
 
@@ -171,6 +172,14 @@ Field Field::uniform(uint32_t count, std::vector<float> value) {
 Field Field::dense(uint32_t count, uint32_t width, const std::vector<float>& values) {
     if (values.size() != size_t(count) * width)
         throw std::invalid_argument("Dense field length mismatch");
+    // Representation must not depend on whether the caller supplied a broadcast
+    // row or repeated that row in an array. Preserve signed zero when comparing.
+    if (count && width) {
+        const bool repeated = std::memcmp(values.data() + width, values.data(),
+                                           (values.size() - width) * sizeof(float)) == 0;
+        if (repeated)
+            return uniform(count, std::vector<float>(values.begin(), values.begin() + width));
+    }
     auto result = uniform(count, std::vector<float>(width));
     result.patch(0, values);
     return result;

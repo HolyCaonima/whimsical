@@ -49,6 +49,8 @@ enum class BufferRole : uint32_t {
     StateWrites,
     Candidates,
     ActiveDegrees,
+    EpochData,
+    EpochOutput,
     Count
 };
 constexpr size_t BufferCount = size_t(BufferRole::Count);
@@ -81,6 +83,9 @@ struct FieldModeLayout {
 };
 struct Kernel {
     std::string name, source; // local_size and main; runtime supplies the resource interface
+    // Only kernels exchanging storage values between invocations require coherent
+    // accesses. Dispatch boundaries are synchronized by the execution schedule.
+    std::vector<BufferRole> coherentBuffers;
 };
 struct Batch {
     uint32_t kernel, first, count;
@@ -102,6 +107,8 @@ struct PlanStatistics {
     uint64_t localVariables = 0, localRelations = 0;
     uint32_t colorWindows = 0;
     uint64_t colorWindowRegions = 0;
+    uint32_t overlapTiles = 0, overlapSharedBytes = 0;
+    uint64_t overlapEvaluations = 0;
     uint64_t referenceDispatches = 0, dispatches = 0; // per tick, excluding topology/transfers
     uint64_t bindingDomains = 0, implicitEndpointReferences = 0, endpointStorageWords = 0;
     uint64_t eliminatedDerivativeColumns = 0;
@@ -146,6 +153,10 @@ struct CompiledPlan {
     uint32_t activeTangent(uint32_t type) const;
     std::vector<Kernel> kernels;
     std::vector<Batch> predict, solve, apply, recover, update;
+    // Physical iteration stages that consume a logical solve/gather sequence.
+    // Keeping them separate prevents later relation-domain passes from treating
+    // tile metadata or state-copy records as relation IDs.
+    std::vector<Batch> iteration;
     std::vector<Batch> prepareCandidates; // once per tick, before prediction
     std::vector<Batch> candidateBounds; // cached until relation parameters change
     // Closed regions execute the same substep/iteration schedule inside a workgroup.
