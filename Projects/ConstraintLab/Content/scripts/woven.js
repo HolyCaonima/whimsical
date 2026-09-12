@@ -52,6 +52,11 @@ net.build=function(model){
     // Keep the outer footprint fixed, preserving the gap-to-patch ratio.
     net.tileSize=span/(t+(t-1)*net.gapRatio);
     var gap=net.tileSize*net.gapRatio,pitch=net.tileSize+gap;
+    // Match the 4×4 reference energy for the same strain or curvature.
+    var referenceTile=span/(4+3*net.gapRatio),lengthScale=net.tileSize/referenceTile,
+        patchCountScale=t*t/16,referenceStep=(4*r-1)/(t*r-1);
+    net.structureScale=patchCountScale*lengthScale*lengthScale;
+    var bendScale=patchCountScale*Math.pow(lengthScale,6);
     var tx,tz,u,v,i,k,lane;
     function addPoint(x,y,z,isFixed){
         var id=positions.length;positions.push([x,y,z]);fixed.push(!!isFixed);return id;
@@ -60,7 +65,7 @@ net.build=function(model){
         var cx=(tx-(t-1)/2)*pitch,cz=(tz-(t-1)/2)*pitch;
         for(v=0;v<r;++v)for(u=0;u<r;++u)
             addPoint(cx+(u/(r-1)-0.5)*net.tileSize,
-                     4+0.012*Math.sin((tx*r+u)*0.9)*Math.cos((tz*r+v)*0.7),
+                     4+0.012*Math.sin((tx*r+u)*referenceStep*0.9)*Math.cos((tz*r+v)*referenceStep*0.7),
                      cz+(v/(r-1)-0.5)*net.tileSize,false);
     }
     net.fabricCount=positions.length;
@@ -88,6 +93,8 @@ net.build=function(model){
             shortRope(net.node(tx,tz,lane,r-1),net.node(tx,tz+1,lane,0));
         }
     net.shortRopes=net.shortPaths.length;net.shortRows=ropeA.length;
+    var referenceShortRopes=2*4*3*lanes.length,shortCountScale=net.shortRopes/referenceShortRopes;
+    net.shortComplianceScale=shortCountScale*lengthScale*lengthScale;
 
     var cornerNodes=[
         net.node(0,0,0,0),net.node(t-1,0,r-1,0),
@@ -114,12 +121,16 @@ net.build=function(model){
     net.cornerNodes=cornerNodes;net.cornerRows=ropeA.length-net.shortRows;
 
     var total=positions.length,initial=new Float32Array(total*3),metric=new Float32Array(total*9),
-        enabled=new Float32Array(total);
+        enabled=new Float32Array(total),dampingCompliance=new Float32Array(total*3);
     net.acceleration=new Float32Array(total*3);net.movable=new Float32Array(total);
     for(i=0;i<total;++i){
         initial[i*3]=positions[i][0];initial[i*3+1]=positions[i][1];initial[i*3+2]=positions[i][2];
+        // Preserve each population's total mass; the four corner ropes are unchanged.
+        var inverseMass=i<net.fabricCount?patchCountScale:
+            (i<net.fabricCount+net.shortRopes?shortCountScale:1);
+        dampingCompliance[i*3]=dampingCompliance[i*3+1]=dampingCompliance[i*3+2]=0.035*inverseMass;
         if(!fixed[i]){
-            metric[i*9]=metric[i*9+4]=metric[i*9+8]=1;
+            metric[i*9]=metric[i*9+4]=metric[i*9+8]=inverseMass;
             net.acceleration[i*3+1]=-9.81;net.movable[i]=1;enabled[i]=1;
         }
     }
@@ -146,20 +157,21 @@ net.build=function(model){
         bend=clothLinks([[2,0],[0,2]]),cell=net.tileSize/(r-1);
     net.structureRows=structure.rows;net.structureA=structure.a;net.structureB=structure.b;
     net.shearRows=shear.rows;net.bendRows=bend.rows;
-    net.structureSet=X.pairs(Lab.distance,structure.pairs,[cell],{compliance:[Lab.compliance()]});
-    net.shearSet=X.pairs(Lab.distance,shear.pairs,[cell*Math.SQRT2],{compliance:[0.00005]});
-    net.bendSet=X.pairs(Lab.distance,bend.pairs,[2*cell],{compliance:[0.0002]});
+    net.structureSet=X.pairs(Lab.distance,structure.pairs,[cell],{compliance:[Lab.compliance()*net.structureScale]});
+    net.shearSet=X.pairs(Lab.distance,shear.pairs,[cell*Math.SQRT2],{compliance:[0.00005*net.structureScale]});
+    net.bendSet=X.pairs(Lab.distance,bend.pairs,[2*cell],{compliance:[0.0002*bendScale]});
 
     net.ropeRows=ropeA.length;net.ropeA=new Uint32Array(ropeA);net.ropeB=new Uint32Array(ropeB);
     net.baseRests=new Float32Array(ropeRest);net.currentRests=new Float32Array(ropeRest.length);
     for(i=0;i<net.ropeRows;++i)
         net.currentRests[i]=net.baseRests[i]*(i<net.shortRows?net.shortScale:1);
-    var ropePairs=[];
+    var ropePairs=[],ropeCompliance=new Float32Array(net.ropeRows);
     for(i=0;i<net.ropeRows;++i)ropePairs.push([members[net.ropeA[i]],members[net.ropeB[i]]]);
-    net.ropeSet=X.pairs(Lab.distance,ropePairs,net.currentRests,{compliance:[Lab.compliance()]});
+    for(i=0;i<net.ropeRows;++i)ropeCompliance[i]=Lab.compliance()*(i<net.shortRows?net.shortComplianceScale:1);
+    net.ropeSet=X.pairs(Lab.distance,ropePairs,net.currentRests,{compliance:ropeCompliance});
     net.floorSet=X.pair(Lab.floor,particles,environment,[0.04],{enabled:enabled});
     net.dampingSet=X.pair(Lab.damping,particles,environment,[],{history:initial,
-        compliance:[0.035,0.035,0.035],enabled:enabled});
+        compliance:dampingCompliance,enabled:enabled});
     net.wind=false;net.drive=false;net.phase=0;net.kick=false;
     net.forceInput=true;net.anchorDirty=true;
     Lab.total=total;
@@ -228,9 +240,9 @@ net.adjust=function(delta){
 net.apply=function(){
     var structureCompliance=new Float32Array(net.structureRows),
         ropeCompliance=new Float32Array(net.ropeRows),i;
-    for(i=0;i<net.structureRows;++i)structureCompliance[i]=Lab.compliance();
+    for(i=0;i<net.structureRows;++i)structureCompliance[i]=Lab.compliance()*net.structureScale;
     for(i=0;i<net.ropeRows;++i){
-        ropeCompliance[i]=Lab.compliance();
+        ropeCompliance[i]=Lab.compliance()*(i<net.shortRows?net.shortComplianceScale:1);
         net.currentRests[i]=net.baseRests[i]*(i<net.shortRows?net.shortScale:1);
     }
     Lab.S.patch(Lab.owner,'compliance',net.structureSet,0,structureCompliance);

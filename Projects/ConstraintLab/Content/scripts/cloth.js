@@ -54,6 +54,12 @@ cloth.families=function(){
 
 cloth.build=function(model){
     var X=Lab.X,n=cloth.side,total=n*n,cell=cloth.span/(n-1),i,j,k;
+    // Calibrate against 64²: preserve total mass and sample spatial inputs in the same coordinates.
+    cloth.inverseMass=total/(64*64);
+    cloth.referenceStep=63/(n-1);
+    // For this two-edge chord surrogate, pure-bending residual is O(h³).
+    // Its squared energy summed over O(h⁻²) links scales as h⁴.
+    var bendScale=Math.pow(cloth.referenceStep,4);
     cloth.cell=cell;cloth.held=false;cloth.lift=0;cloth.target=0;cloth.kick=false;cloth.phase=0;
     cloth.forceInput=true;cloth.gripDirty=false;cloth.base=null;
     cloth.corners=[0,n-1,(n-1)*n,total-1];
@@ -64,9 +70,9 @@ cloth.build=function(model){
         k=j*n+i;
         initial[k*3]=(i/(n-1)-0.5)*cloth.span;
         // A whisper of relief keeps the first contact from being perfectly symmetric.
-        initial[k*3+1]=cloth.height+0.01*Math.sin(i*1.7)*Math.cos(j*2.3);
+        initial[k*3+1]=cloth.height+0.01*Math.sin(i*cloth.referenceStep*1.7)*Math.cos(j*cloth.referenceStep*2.3);
         initial[k*3+2]=(j/(n-1)-0.5)*cloth.span;
-        metric[k*9]=metric[k*9+4]=metric[k*9+8]=1;
+        metric[k*9]=metric[k*9+4]=metric[k*9+8]=cloth.inverseMass;
         cloth.acceleration[k*3+1]=-9.81;enabled[k]=1;}
     var dofs=X.defineDofs(model,{name:'cloth positions',space:Lab.space,count:total,initial:initial,inverseMetric:metric});
     Lab.variables=dofs.set;
@@ -86,11 +92,11 @@ cloth.build=function(model){
     cloth.structureRows=structure.rows;cloth.shearRows=shear.rows;cloth.bendRows=bend.rows;
     cloth.structure=X.pairs(Lab.distance,structure.pairs,[cell],{compliance:[Lab.compliance()]});
     cloth.shear=X.pairs(Lab.distance,shear.pairs,[cell*Math.SQRT2],{compliance:[0.00005]});
-    cloth.bend=X.pairs(Lab.distance,bend.pairs,[2*cell],{compliance:[0.0002]});
+    cloth.bend=X.pairs(Lab.distance,bend.pairs,[2*cell],{compliance:[0.0002*bendScale]});
     cloth.floorSet=X.pair(Lab.floor,particles,environment,[0.03],{enabled:enabled});
     cloth.sphereSet=X.pair(Lab.sphere,particles,environment,[0.03],{enabled:enabled});
     cloth.gripSet=X.pair(cloth.contact,particles,environment,[0.03,0.03,10],{
-        history:initial,compliance:[0.02,0.02,0.02],enabled:enabled});
+        history:initial,compliance:[0.02*cloth.inverseMass,0.02*cloth.inverseMass,0.02*cloth.inverseMass],enabled:enabled});
     Lab.total=total;Lab.relations=structure.rows+shear.rows+bend.rows+3*total;
     return initial;
 };
@@ -143,8 +149,9 @@ cloth.apply=function(){
     var S=Lab.S,softness=new Float32Array(cloth.structureRows);
     for(var i=0;i<softness.length;++i)softness[i]=Lab.compliance();
     S.patch(Lab.owner,'compliance',cloth.structure,0,softness);
+    var w=cloth.inverseMass;
     cloth.corners.forEach(function(k){
-        S.patch(Lab.owner,'inverseMetric',Lab.variables,k,cloth.held?[0,0,0,0,0,0,0,0,0]:[1,0,0,0,1,0,0,0,1]);
+        S.patch(Lab.owner,'inverseMetric',Lab.variables,k,cloth.held?[0,0,0,0,0,0,0,0,0]:[w,0,0,0,w,0,0,0,w]);
         [cloth.floorSet,cloth.sphereSet,cloth.gripSet].forEach(function(set){S.patch(Lab.owner,'relationEnabled',set,k,[cloth.held?0:1]);});
         cloth.acceleration[k*3+1]=cloth.held?0:-9.81;});
     cloth.forceInput=true;
@@ -177,8 +184,8 @@ cloth.inputs=function(writes){
         cloth.phase+=1/30;
         for(j=0;j<n;++j)for(i=0;i<n;++i){
             k=(j*n+i)*3;
-            a[k]=strength[cloth.gust]*(0.55+0.45*Math.sin(cloth.phase*2.3-i*0.4+j*0.15));
-            a[k+2]=strength[cloth.gust]*0.3*Math.sin(cloth.phase*1.1+j*0.3);}
+            a[k]=strength[cloth.gust]*(0.55+0.45*Math.sin(cloth.phase*2.3-i*cloth.referenceStep*0.4+j*cloth.referenceStep*0.15));
+            a[k+2]=strength[cloth.gust]*0.3*Math.sin(cloth.phase*1.1+j*cloth.referenceStep*0.3);}
         cloth.forceInput=true;
     }
     if(cloth.forceInput){writes.push({field:'acceleration',set:Lab.variables,first:0,values:a});cloth.forceInput=false;}

@@ -45,12 +45,17 @@ thread.families=function(){
 thread.build=function(model){
     var X=Lab.X,n=thread.side,positions=[],fixed=[],i,j,k,rank,s;
     var top=5.8,cellX=thread.width/(n-1),cellY=thread.height/(n-1);
+    // Match the 32² reference, excluding the two fixed corners from movable mass.
+    var inverseFabricMass=(n*n-2)/(32*32-2),referenceStep=31/(n-1);
+    thread.referenceStep=referenceStep;
+    // The two-edge chord surrogate has O(h³) pure-bending residual and O(h⁻²) links.
+    var bendScale=Math.pow(referenceStep,4);
     function addPoint(x,y,z,isFixed){
         var id=positions.length;positions.push([x,y,z]);fixed.push(!!isFixed);return id;
     }
     for(j=0;j<n;++j)for(i=0;i<n;++i)
         addPoint((i/(n-1)-0.5)*thread.width,top-j*cellY,
-                 0.025*Math.sin(i*0.73)*Math.sin(j*0.61),j===0&&(i===0||i===n-1));
+                 0.025*Math.sin(i*referenceStep*0.73)*Math.sin(j*referenceStep*0.61),j===0&&(i===0||i===n-1));
     thread.fabricCount=n*n;
     thread.sharedRows=[0.1,0.3,0.5,0.7,0.9].map(function(f){return Math.round(f*(n-1));});
     thread.rowLayer=[];
@@ -91,12 +96,14 @@ thread.build=function(model){
     thread.anchorIndices=[thread.leftAnchor,thread.rightAnchor];
 
     var total=positions.length,initial=new Float32Array(total*3),metric=new Float32Array(total*9),
-        enabled=new Float32Array(total);
+        enabled=new Float32Array(total),dampingCompliance=new Float32Array(total*3);
     thread.acceleration=new Float32Array(total*3);thread.movable=new Float32Array(total);
     for(i=0;i<total;++i){
         initial[i*3]=positions[i][0];initial[i*3+1]=positions[i][1];initial[i*3+2]=positions[i][2];
+        var inverseMass=i<thread.fabricCount?inverseFabricMass:1;
+        dampingCompliance[i*3]=dampingCompliance[i*3+1]=dampingCompliance[i*3+2]=0.04*inverseMass;
         if(!fixed[i]){
-            metric[i*9]=metric[i*9+4]=metric[i*9+8]=1;
+            metric[i*9]=metric[i*9+4]=metric[i*9+8]=inverseMass;
             thread.acceleration[i*3+1]=-9.81;thread.movable[i]=1;enabled[i]=1;
         }
     }
@@ -124,24 +131,31 @@ thread.build=function(model){
     for(i=0;i<bend.rows;++i)thread.bendRests[i]=i<horizontalBend?2*cellX:2*cellY;
     thread.structureSet=X.pairs(Lab.distance,structure.pairs,thread.structureRests,{compliance:[Lab.compliance()]});
     thread.shearSet=X.pairs(Lab.distance,shear.pairs,[Math.sqrt(cellX*cellX+cellY*cellY)],{compliance:[0.00005]});
-    thread.bendSet=X.pairs(Lab.distance,bend.pairs,thread.bendRests,{compliance:[0.0002]});
+    thread.bendSet=X.pairs(Lab.distance,bend.pairs,thread.bendRests,{compliance:[0.0002*bendScale]});
 
     thread.ropeRows=thread.path.length-1;
     thread.ropeA=new Uint32Array(thread.ropeRows);thread.ropeB=new Uint32Array(thread.ropeRows);
     thread.baseRests=new Float32Array(thread.ropeRows);thread.currentRests=new Float32Array(thread.ropeRows);
+    thread.ropeComplianceScale=new Float32Array(thread.ropeRows);
+    var ropeCompliance=new Float32Array(thread.ropeRows);
     for(k=0;k<thread.ropeRows;++k){
         var a=thread.path[k],b=thread.path[k+1],pa=positions[a],pb=positions[b],
             dx=pb[0]-pa[0],dy=pb[1]-pa[1],dz=pb[2]-pa[2];
         thread.ropeA[k]=a;thread.ropeB[k]=b;
         thread.baseRests[k]=Math.sqrt(dx*dx+dy*dy+dz*dz);
         thread.currentRests[k]=thread.baseRests[k]*thread.ropeScale;
+        // The five traversals keep the same series compliance as their segment count changes.
+        // Exposed loops retain their segment count and reference compliance.
+        thread.ropeComplianceScale[k]=a<thread.fabricCount&&b<thread.fabricCount&&
+            Math.floor(a/n)===Math.floor(b/n)?referenceStep:1;
+        ropeCompliance[k]=Lab.compliance()*thread.ropeComplianceScale[k];
     }
     var ropePairs=[];
     for(i=0;i<thread.ropeRows;++i)ropePairs.push([members[thread.ropeA[i]],members[thread.ropeB[i]]]);
-    thread.ropeSet=X.pairs(Lab.distance,ropePairs,thread.currentRests,{compliance:[Lab.compliance()]});
+    thread.ropeSet=X.pairs(Lab.distance,ropePairs,thread.currentRests,{compliance:ropeCompliance});
     thread.floorSet=X.pair(Lab.floor,particles,environment,[0.04],{enabled:enabled});
     thread.dampingSet=X.pair(Lab.damping,particles,environment,[],{history:initial,
-        compliance:[0.04,0.04,0.04],enabled:enabled});
+        compliance:dampingCompliance,enabled:enabled});
     thread.wind=false;thread.drive=false;thread.phase=0;thread.kick=false;
     thread.forceInput=true;thread.anchorDirty=true;
     Lab.total=total;
@@ -212,7 +226,7 @@ thread.apply=function(){
         ropeCompliance=new Float32Array(thread.ropeRows),i;
     for(i=0;i<thread.structureRows;++i)structureCompliance[i]=Lab.compliance();
     for(i=0;i<thread.ropeRows;++i){
-        ropeCompliance[i]=Lab.compliance();
+        ropeCompliance[i]=Lab.compliance()*thread.ropeComplianceScale[i];
         thread.currentRests[i]=thread.baseRests[i]*thread.ropeScale;
     }
     Lab.S.patch(Lab.owner,'compliance',thread.structureSet,0,structureCompliance);
@@ -223,9 +237,13 @@ thread.push=function(){thread.kick=true;return '侧向冲量沿连续穿绳与�
 thread.inputs=function(writes){
     var i;
     if(thread.wind||thread.forceInput){
-        for(i=0;i<Lab.total;++i)
+        for(i=0;i<Lab.total;++i){
+            var referenceIndex=i<thread.fabricCount?
+                (Math.floor(i/thread.side)*32+i%thread.side)*thread.referenceStep:
+                32*32+i-thread.fabricCount;
             thread.acceleration[i*3+2]=thread.wind&&thread.movable[i]?
-                windStrength*(0.62+0.38*Math.sin(thread.phase*2.1+i*0.07)):0;
+                windStrength*(0.62+0.38*Math.sin(thread.phase*2.1+referenceIndex*0.07)):0;
+        }
         thread.forceInput=true;
     }
     if(thread.wind||thread.drive)thread.phase+=1/30;
