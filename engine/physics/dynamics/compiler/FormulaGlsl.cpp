@@ -238,6 +238,11 @@ struct SymbolicJacobian {
     std::vector<MathNode> nodes;
     std::vector<uint32_t> values;
     std::map<NodeKey, uint32_t> common;
+    // Compiler-local predicates preserve the exact min/max tie convention.
+    // They are binary nodes for liveness/CSE, without extending the model DSL.
+    enum class Comparison { LessEqual, GreaterEqual };
+    std::map<uint32_t, Comparison> comparisons;
+    std::map<std::tuple<Comparison, uint32_t, uint32_t>, uint32_t> commonComparisons;
 
     explicit SymbolicJacobian(const Formula& formula) : nodes(formula.nodes) {
         for (uint32_t i = 0; i < nodes.size(); ++i) {
@@ -265,6 +270,24 @@ struct SymbolicJacobian {
     }
     uint32_t constant(float value) {
         return raw({MathOp::Constant, 0, 0, 0, value});
+    }
+    uint32_t compare(Comparison op, uint32_t a, uint32_t b) {
+        auto key = std::make_tuple(op, a, b);
+        if (auto found = commonComparisons.find(key); found != commonComparisons.end())
+            return found->second;
+        const auto id = uint32_t(nodes.size());
+        nodes.push_back({MathOp::Less, a, b});
+        comparisons.emplace(id, op);
+        commonComparisons.emplace(key, id);
+        return id;
+    }
+    uint32_t choose(uint32_t condition, uint32_t yes, uint32_t no) {
+        if (yes == ZeroDerivative) yes = constant(0.0f);
+        if (no == ZeroDerivative) no = constant(0.0f);
+        if (yes == no) return yes;
+        float value;
+        if (constantValue(condition, value)) return value != 0.0f ? yes : no;
+        return raw({MathOp::Select, condition, yes, no});
     }
     uint32_t unary(MathOp op, uint32_t a) {
         return raw({op, a});
@@ -327,8 +350,7 @@ struct SymbolicJacobian {
 };
 bool supportsSymbolicDerivative(const Formula& formula) {
     return std::none_of(formula.nodes.begin(), formula.nodes.end(), [](const MathNode& node) {
-        return node.op == MathOp::Abs || node.op == MathOp::Min || node.op == MathOp::Max ||
-               node.op == MathOp::Select;
+        return node.op == MathOp::Abs || node.op == MathOp::Select;
     });
 }
 std::unique_ptr<SymbolicJacobian> buildSymbolicJacobian(
@@ -336,6 +358,9 @@ std::unique_ptr<SymbolicJacobian> buildSymbolicJacobian(
     const std::vector<int32_t>& derivativeColumn,
     size_t columns) {
     auto result = std::make_unique<SymbolicJacobian>(formula);
+    const bool piecewise = std::any_of(formula.nodes.begin(), formula.nodes.end(), [](const MathNode& node) {
+        return node.op == MathOp::Min || node.op == MathOp::Max;
+    });
     result->values.assign(formula.outputs.size() * columns, ZeroDerivative);
     std::vector<uint8_t> depends(formula.nodes.size());
     for (size_t i = 0; i < formula.nodes.size(); ++i) {
@@ -361,6 +386,12 @@ std::unique_ptr<SymbolicJacobian> buildSymbolicJacobian(
                 continue;
             const auto& n = formula.nodes[i];
             auto add = [&](uint32_t child, uint32_t term) {
+                // A zero adjoint must still suppress a singular derivative in an
+                // unselected branch. Encode that value selection in the DAG so
+                // CSE and liveness also apply to piecewise derivatives.
+                if (piecewise && n.op != MathOp::Add && n.op != MathOp::Subtract &&
+                    n.op != MathOp::Negate && n.op != MathOp::Min && n.op != MathOp::Max)
+                    term = result->choose(d, term, ZeroDerivative);
                 adjoint[child] = result->sum(adjoint[child], term);
             };
             switch (n.op) {
@@ -402,6 +433,20 @@ std::unique_ptr<SymbolicJacobian> buildSymbolicJacobian(
                 if (depends[n.a])
                     add(n.a, result->negative(d));
                 break;
+            case MathOp::Min:
+            case MathOp::Max: {
+                const bool minimum = n.op == MathOp::Min;
+                if (depends[n.a]) {
+                    const auto condition = result->compare(minimum ? SymbolicJacobian::Comparison::LessEqual :
+                        SymbolicJacobian::Comparison::GreaterEqual, n.a, n.b);
+                    add(n.a, result->choose(condition, d, ZeroDerivative));
+                    if (depends[n.b]) add(n.b, result->choose(condition, ZeroDerivative, d));
+                } else if (depends[n.b]) {
+                    const auto condition = result->raw({MathOp::Less, minimum ? n.b : n.a, minimum ? n.a : n.b});
+                    add(n.b, result->choose(condition, d, ZeroDerivative));
+                }
+                break;
+            }
             case MathOp::Sqrt:
                 if (depends[n.a])
                     add(n.a, result->quotient(d, result->product(result->constant(2.0f), uint32_t(i))));
@@ -546,7 +591,11 @@ std::string emit(const Formula& inputFormula, const std::string& name,
             expr = "atan(" + a + "," + b + ")";
             break;
         case MathOp::Less:
-            expr = "(" + a + "<" + b + " ? 1.0 : 0.0)";
+            if (symbolic && symbolic->comparisons.count(uint32_t(i)))
+                expr = "(" + a + (symbolic->comparisons.at(uint32_t(i)) == SymbolicJacobian::Comparison::LessEqual ?
+                    "<=" : ">=") + b + " ? 1.0 : 0.0)";
+            else
+                expr = "(" + a + "<" + b + " ? 1.0 : 0.0)";
             break;
         case MathOp::Select:
             expr = "(" + a + "!=0.0 ? " + b + " : " + c + ")";

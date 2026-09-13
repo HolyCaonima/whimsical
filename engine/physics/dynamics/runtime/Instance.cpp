@@ -153,6 +153,17 @@ struct Instance::Storage {
             core, registry, "Dynamics model " + std::to_string(plan->model.model), rc::QueueClass::Compute,
             "Dynamics");
         interface = "#version 450\n" + registry.glsl().at("graph.compute.glsl") + plan->interface();
+        VkPhysicalDeviceSubgroupProperties subgroup{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES};
+        VkPhysicalDeviceProperties2 properties{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+        properties.pNext = &subgroup;
+        vkGetPhysicalDeviceProperties2(rc::VulkanAccess::device(core).physical, &properties);
+        const auto operations = VK_SUBGROUP_FEATURE_BASIC_BIT | VK_SUBGROUP_FEATURE_SHUFFLE_RELATIVE_BIT;
+        if (subgroup.subgroupSize == 32 && (subgroup.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) &&
+            (subgroup.supportedOperations & operations) == operations)
+            interface.insert(interface.find('\n') + 1,
+                "#extension GL_KHR_shader_subgroup_basic : require\n"
+                "#extension GL_KHR_shader_subgroup_shuffle_relative : require\n"
+                "#define DYNAMICS_SUBGROUP32 1\n");
         for (const auto& kernel : plan->kernels) {
             std::string qualifiers;
             for (auto role : kernel.coherentBuffers)

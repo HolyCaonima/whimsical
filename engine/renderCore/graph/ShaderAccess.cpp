@@ -42,6 +42,8 @@ enum Op : uint16_t {
     LastAtomic = 242,
     Phi = 245,
     ReturnValue = 254,
+    FirstSubgroupShuffle = 345,
+    LastSubgroupShuffle = 348,
     CopyLogical = 400,
     RayQueryInitialize = 4473,
     TypeAccelerationStructure = 5341,
@@ -283,6 +285,7 @@ std::vector<ShaderAccess> reflect(const Registry& registry, const uint32_t* word
                          op == Parameter || op == FunctionEnd || op == Variable || (op >= 77 && op <= 82) ||
                          (op >= 109 && op <= 124) || (op >= 126 && op <= 215) || op == 224 || op == 225 ||
                          (op >= 246 && op <= 257) || op == 317 || (op >= 4472 && op <= 4479) ||
+                         (op >= FirstSubgroupShuffle && op <= LastSubgroupShuffle) ||
                          (op >= 6016 && op <= 6032)) {
                     // Scalar operations cannot consume a descriptor object. In particular,
                     // pointer-to-integer conversion or an extended instruction must not
@@ -291,7 +294,8 @@ std::vector<ShaderAccess> reflect(const Registry& registry, const uint32_t* word
                     if (op == 12)
                         first = 5;
                     else if ((op >= 77 && op <= 82) || op == Transpose || (op >= 109 && op <= 124) ||
-                             (op >= 126 && op <= 215))
+                             (op >= 126 && op <= 215) ||
+                             (op >= FirstSubgroupShuffle && op <= LastSubgroupShuffle))
                         first = 3;
                     if (op == 79 || op == 82)
                         end = 5; // remaining operands are literals

@@ -103,10 +103,13 @@ struct Generator {
     std::optional<DifferenceBound> support;
     uint32_t header = 0, heads = 0, cells = 0, buckets = 0, lists = 0, memberRecords = 0, anchorFeatures = 0;
     static constexpr uint32_t Capacity = 128;
+    static constexpr uint32_t LinearTeam = 32;
     bool fastRecords = false;
     // Snapshot-local blocked sparse matrix. Row headers are compact columns;
     // member coefficients are columns within a row. Its transpose has a CSR
     // column for every writable variable and is reused by all linear sweeps.
+    // Small transposed blocks fit a 16-byte record: linearization scatters the
+    // whole block, and the transpose multiply consumes that same block.
     bool materialized = false;
     uint32_t linearization = 0;
     uint32_t transpose = 0, cursors = 0, inverseEntries = 0, inverseVariables = 0;
@@ -114,6 +117,12 @@ struct Generator {
     uint32_t linearHeader() const { return 2 + M*M + 3*M; }
     uint32_t linearEntry() const { return 3 + M*T; }
     uint32_t linearColumns() const { return linearHeader() + (Capacity + uint32_t(fixed.size()))*linearEntry(); }
+    std::string inverseAccess() const {
+        const auto width = 1 + M*T;
+        return "uint inverseWord(uint entry,uint column){return " + u(inverseEntries) +
+            (width <= 4 ? "+entry*" + u(width) + "+column;" :
+                "+column*" + u(d.count*(Capacity + uint32_t(fixed.size()))) + "+entry;") + "}\n";
+    }
     std::vector<std::pair<std::string, uint32_t>> bounds, index, assembly;
 
     Generator(CompiledPlan& plan, uint32_t setId, uint32_t domain)
@@ -245,12 +254,19 @@ struct Generator {
 };
 
 std::string Generator::linearAccess() const {
-    return "uint linearWord(uint anchor,uint column){return " + u(linearization) +
+    // Subgroup lane numbering need not match local invocation numbering. With
+    // 128 invocations, exactly four 32-lane subgroups proves all lanes are active
+    // at entry. More subgroups can contain holes; use local IDs and shared memory.
+    return "uint sumLocal(){\n#ifdef DYNAMICS_SUBGROUP32\n"
+        "if(gl_NumSubgroups==4u)return gl_SubgroupID*32u+gl_SubgroupInvocationID;\n#endif\n"
+        "return gl_LocalInvocationID.x;}\n"
+        "uint sumInvocation(){return invocation()-gl_LocalInvocationID.x+sumLocal();}\n"
+        "uint linearWord(uint anchor,uint column){return " + u(linearization) +
         "+(column<" + u(linearHeader()) + "?column*" + u(d.count) + "+anchor:" +
         u(linearHeader()*d.count) + "+anchor*" + u(linearColumns()-linearHeader()) +
         "+(column-" + u(linearHeader()) + ")%" + u(linearEntry()) + "*" +
         u(Capacity + uint32_t(fixed.size())) + "+(column-" + u(linearHeader()) + ")/" +
-        u(linearEntry()) + ");}\n";
+        u(linearEntry()) + ");}\n" + inverseAccess();
 }
 
 void Generator::prepareTranspose() {
@@ -306,7 +322,7 @@ void Generator::prepareTranspose() {
     }
     assembly.push_back({stateAccess(StateStorage::Global) + linearAccess() + loop +
         "uint at=x_sumData[" + u(transpose) + "+id]+atomicAdd(x_sumData[" + u(cursors) +
-        "+id],1u);x_sumData[" + u(inverseEntries) + "+at]=anchor;x_sumData[linearWord(anchor," +
+        "+id],1u);x_sumData[inverseWord(at,0u)]=anchor;x_sumData[linearWord(anchor," +
         u(linearHeader()+2+M*T) + "+k*" + u(linearEntry()) + ")]=at;}}", d.count*32});
 }
 
@@ -501,14 +517,13 @@ std::string Generator::generate(const Formula& formula, bool update, bool activi
           << "]){uint column=" << linearHeader() << "u+k*" << linearEntry()
           << "u;x_sumData[linearWord(anchor,column)]=id;x_sumData[linearWord(anchor,column+1u)]=slot;";
         s << "uint at=x_sumData[linearWord(anchor,column+" << 2+M*T << "u)];";
-        const uint32_t entryCapacity = d.count*(Capacity + uint32_t(fixed.size()));
         for (uint32_t k=0;k<M*T;++k) {
             s << "x_sumData[linearWord(anchor,column+" << k+2 << "u)]=floatBitsToUint(j[" << k << "]);";
-            s << "x_sumData[" << inverseEntries+(1+k)*entryCapacity << "u+at]=floatBitsToUint(w[" << k << "]);";
+            s << "x_sumData[inverseWord(at," << 1+k << "u)]=floatBitsToUint(w[" << k << "]);";
         }
         s << "}\nvoid clearEntry(uint anchor,uint k){uint column=" << linearHeader() << "u+k*" << linearEntry()
           << "u;x_sumData[linearWord(anchor,column)]=0xffffffffu;uint at=x_sumData[linearWord(anchor,column+" << 2+M*T << "u)];";
-        for (uint32_t k=0;k<M*T;++k) s << "x_sumData[" << inverseEntries+(1+k)*entryCapacity << "u+at]=0u;";
+        for (uint32_t k=0;k<M*T;++k) s << "x_sumData[inverseWord(at," << 1+k << "u)]=0u;";
         s << "}\n";
     }
     if(R) s << (update ? emitGlsl(program.terms,"terms") : emitGlslDerivative(program.terms,"terms",projection));
@@ -665,7 +680,7 @@ std::string Generator::linearize() const {
     // fixed field. Keep integrand derivatives in registers across both reductions.
     s << "\nshared float partial[" << Capacity*width << "],fixedJ[" << std::max(1u,M*QA)
       << "],outerJ[" << M*O << "],residual[" << M << "];shared uint live;\n"
-         "void main(){uint anchor=invocation()/" << Capacity << "u,lane=gl_LocalInvocationID.x;"
+         "void main(){uint anchor=invocation()/" << Capacity << "u,lane=sumLocal();"
          "if(anchor>=" << d.count << "u)return;if(!canMaterialize(anchor)){"
          "if(lane==0u)streamedActivity(anchor);return;}Relation r=relation(step.first+anchor);"
          "if(lane==0u){x_sumData[linearWord(anchor,0u)]=0xffffffffu;";
@@ -681,10 +696,21 @@ std::string Generator::linearize() const {
             s << "partial[" << (R+k*QA+c)*Capacity << "u+lane]=lane<count?termJ[" << k*Q+c << "]:0.0;";
     }
     auto reduce = [&](uint32_t columns) {
-        s << "barrier();for(uint offset=" << Capacity/2 << "u;offset>0u;offset/=2u){if(lane<offset){";
+        s << "\n#ifdef DYNAMICS_SUBGROUP32\nif(gl_NumSubgroups==4u){barrier();"
+             "for(uint offset=" << Capacity/2 << "u;offset>=32u;offset/=2u){if(lane<offset){";
         for (uint32_t k=0;k<columns;++k)
             s << "partial[" << k*Capacity << "u+lane]+=partial[" << k*Capacity << "u+lane+offset];";
         s << "}barrier();}";
+        for (uint32_t k=0;k<columns;++k) {
+            s << "{float value=partial[" << k*Capacity << "u+lane];"
+                 "for(uint offset=16u;offset>0u;offset/=2u){float other=subgroupShuffleDown(value,offset);"
+                 "if(lane%32u<offset)value+=other;}if(lane==0u)partial[" << k*Capacity << "u]=value;}";
+        }
+        s << "barrier();}else\n#endif\n";
+        s << "{barrier();for(uint offset=" << Capacity/2 << "u;offset>0u;offset/=2u){if(lane<offset){";
+        for (uint32_t k=0;k<columns;++k)
+            s << "partial[" << k*Capacity << "u+lane]+=partial[" << k*Capacity << "u+lane+offset];";
+        s << "}barrier();}}";
     };
     reduce(R*(1+QA));
     for (auto slot:fixed) if (!readOnly[slot])
@@ -773,39 +799,59 @@ std::string Generator::linearize() const {
 
 std::string Generator::cachedSolve(bool refine) const {
     std::ostringstream s;
-    if (!refine) s << "\nshared uint degrees[128];";
-    s << "\nshared float changes[" << 128*M << "];void main(){uint anchor=invocation()/32u,"
-         "local=gl_LocalInvocationID.x,lane=local%32u;bool cached=false;if(anchor<" << d.count
+    const auto team = LinearTeam;
+    s << "\n";
+    if (!refine) s << "shared uint degrees[128];";
+    s << "shared float changes[" << 128*M << "];void main(){uint anchor=sumInvocation()/" << team << "u,"
+         "local=sumLocal(),lane=local%" << team << "u;bool cached=false;if(anchor<" << d.count
       << "u)cached=canMaterialize(anchor);uint count=cached?x_sumData[linearWord(anchor,0u)]:0xffffffffu,degree=1u;";
     array(s,"change",M);
     s << "for(uint row=0u;row<" << M << "u;++row)change[row]=0.0;"
-         "if(count!=0xffffffffu)for(uint k=lane;k<count;k+=32u){uint column=" << linearHeader()
+         "if(count!=0xffffffffu)for(uint k=lane;k<count;k+=" << team << "u){uint column=" << linearHeader()
       << "u+k*" << linearEntry() << "u,id=x_sumData[linearWord(anchor,column)];"
          "if(id!=0xffffffffu){";
     if (!refine) {
         s << "degree=max(degree,x_activeDegrees[id]);";
     }
-    s << "Variable v=variable(id);uint slot=x_sumData[linearWord(anchor,column+1u)],width=0u;switch(slot){";
-    for (uint32_t slot=0;slot<t.spaces.size();++slot)
-        s << "case " << slot << "u:width=" << t.spaces[slot]->tangentSize << "u;break;";
-    s << "}for(uint c=0u;c<width;++c){float dx=uintBitsToFloat(x_contributions[v.v+c*v.stride]);";
+    const bool uniformWidth = std::all_of(t.spaces.begin(), t.spaces.end(),
+        [&](const SpaceRef& space) { return space->tangentSize == T; });
+    s << "Variable v=variable(id);";
+    if (!uniformWidth) {
+        s << "uint slot=x_sumData[linearWord(anchor,column+1u)],width=0u;switch(slot){";
+        for (uint32_t slot=0;slot<t.spaces.size();++slot)
+            s << "case " << slot << "u:width=" << t.spaces[slot]->tangentSize << "u;break;";
+        s << "}";
+    }
+    for (uint32_t c=0;c<T;++c) {
+        s << (uniformWidth ? "{" : "if(width>"+u(c)+"){")
+          << "float dx=uintBitsToFloat(x_contributions[v.v+" << c << "u*v.stride]);";
+        for (uint32_t row=0;row<M;++row)
+            s << "change[" << row << "]+=uintBitsToFloat(x_sumData[linearWord(anchor,column+"
+              << 2+row*T+c << "u)])*dx;";
+        s << "}";
+    }
+    s << "}}";
+    s << "\n#ifdef DYNAMICS_SUBGROUP32\nif(gl_NumSubgroups==4u){for(uint offset=" << team/2 << "u;offset>0u;offset/=2u){";
+    if (!refine) s << "uint otherDegree=subgroupShuffleDown(degree,offset);if(lane<offset)degree=max(degree,otherDegree);";
     for (uint32_t row=0;row<M;++row)
-        s << "change[" << row << "]+=uintBitsToFloat(x_sumData[linearWord(anchor,column+"
-          << 2+row*T << "u+c)])*dx;";
-    s << "}}}";
+        s << "{float other=subgroupShuffleDown(change[" << row << "],offset);if(lane<offset)change[" << row << "]+=other;}";
+    s << "}}else\n#endif\n{";
     if (!refine) s << "degrees[local]=degree;";
     for (uint32_t row=0;row<M;++row) s << "changes[" << row*128 << "u+local]=change[" << row << "];";
-    s << "barrier();for(uint offset=16u;offset>0u;offset/=2u){if(lane<offset){";
+    s << "barrier();for(uint offset=" << team/2 << "u;offset>0u;offset/=2u){if(lane<offset){";
     if (!refine) s << "degrees[local]=max(degrees[local],degrees[local+offset]);";
     for (uint32_t row=0;row<M;++row)
         s << "changes[" << row*128 << "u+local]+=changes[" << row*128 << "u+local+offset];";
-    s << "}barrier();}if(lane!=0u||anchor>=" << d.count << "u)return;if(!cached){"
+    s << "}barrier();}";
+    if (!refine) s << "degree=degrees[local];";
+    for (uint32_t row=0;row<M;++row) s << "change[" << row << "]=changes[" << row*128 << "u+local];";
+    s << "}if(lane!=0u||anchor>=" << d.count << "u)return;if(!cached){"
       << (refine ? "" : "streamedSolve(anchor);") << "return;}"
          "if(count==0xffffffffu)return;";
     if (refine)
         s << "degree=x_sumData[linearWord(anchor," << linearHeader()-1 << "u)];";
     else
-        s << "degree=degrees[local];x_sumData[linearWord(anchor," << linearHeader()-1 << "u)]=degree;";
+        s << "x_sumData[linearWord(anchor," << linearHeader()-1 << "u)]=degree;";
     s << "Relation r=relation(step.first+anchor);";
     array(s,"a",M*M);array(s,"rhs",M);array(s,"dl",M);array(s,"nextLambda",M);
     // A singular/invalid block returns before publishing a correction. Clear
@@ -819,7 +865,7 @@ std::string Generator::cachedSolve(bool refine) const {
     // the nonlinear expression or changing the physical integration time step.
     for (uint32_t k=0;k<M;++k)
         s << "rhs[" << k << "]=uintBitsToFloat(x_sumData[linearWord(anchor," << 1+M*M+k
-          << "u)])-changes[" << k*128 << "u+local]-loadCompliance(r," << k << "u," << 2+t.parameters
+          << "u)])-change[" << k << "]-loadCompliance(r," << k << "u," << 2+t.parameters
           << "u)/(step.h*step.h)*(loadMultiplier(r," << k << "u)-uintBitsToFloat(x_sumData[linearWord(anchor,"
           << 1+M*M+2*M+k << "u)]));";
     s << solveAndProject();
@@ -831,27 +877,33 @@ std::string Generator::cachedSolve(bool refine) const {
 
 std::string Generator::cachedGather() const {
     std::ostringstream s;
+    const auto team = LinearTeam;
     s << stateAccess(StateStorage::Global) << linearAccess()
-      << "shared float partial[" << 128*T << "];void main(){uint i=invocation()/32u,"
-         "local=gl_LocalInvocationID.x,lane=local%32u;bool valid=i<" << degrees.size()
+      << "shared float partial[" << 128*T << "];void main(){uint i=sumInvocation()/" << team << "u,"
+         "local=sumLocal(),lane=local%" << team << "u;bool valid=i<" << degrees.size()
       << "u;uint id=valid?x_sumData[" << inverseVariables << "u+i]:0u;";
     array(s,"sum",T);
     s << "for(uint c=0u;c<" << T << "u;++c)sum[c]=0.0;if(valid){uint end=x_sumData["
-      << transpose << "u+id+1u];for(uint at=x_sumData[" << transpose << "u+id]+lane;at<end;at+=32u){"
-         "uint anchor=x_sumData[" << inverseEntries << "u+at];";
-    const uint32_t entryCapacity = d.count*(Capacity + uint32_t(fixed.size()));
+      << transpose << "u+id+1u];for(uint at=x_sumData[" << transpose << "u+id]+lane;at<end;at+=" << team << "u){"
+         "uint anchor=x_sumData[inverseWord(at,0u)];";
     for (uint32_t row=0;row<M;++row) {
         s << "float dl" << row << "=uintBitsToFloat(x_sumData[linearWord(anchor," << 1+M*M+M+row << "u)]);";
         for (uint32_t c=0;c<T;++c)
-            s << "if(dl" << row << "!=0.0)sum[" << c << "]+=uintBitsToFloat(x_sumData["
-              << inverseEntries + (1+row*T+c)*entryCapacity << "u+at])*dl" << row << ";";
+            s << "if(dl" << row << "!=0.0)sum[" << c << "]+=uintBitsToFloat(x_sumData[inverseWord(at,"
+              << 1+row*T+c << "u)])*dl" << row << ";";
     }
     s << "}}";
+    s << "\n#ifdef DYNAMICS_SUBGROUP32\nif(gl_NumSubgroups==4u){for(uint offset=" << team/2 << "u;offset>0u;offset/=2u){";
+    for (uint32_t c=0;c<T;++c)
+        s << "{float other=subgroupShuffleDown(sum[" << c << "],offset);if(lane<offset)sum[" << c << "]+=other;}";
+    s << "}}else\n#endif\n{";
     for (uint32_t c=0;c<T;++c) s << "partial[" << c*128 << "u+local]=sum[" << c << "];";
-    s << "barrier();for(uint offset=16u;offset>0u;offset/=2u){if(lane<offset){";
+    s << "barrier();for(uint offset=" << team/2 << "u;offset>0u;offset/=2u){if(lane<offset){";
     for (uint32_t c=0;c<T;++c)
         s << "partial[" << c*128 << "u+local]+=partial[" << c*128 << "u+local+offset];";
-    s << "}barrier();}if(lane==0u&&valid){Variable v=variable(id);";
+    s << "}barrier();}";
+    for (uint32_t c=0;c<T;++c) s << "sum[" << c << "]=partial[" << c*128 << "u+local];";
+    s << "}if(lane==0u&&valid){Variable v=variable(id);";
     // A variable can have a narrower tangent than the widest slot in this domain.
     for (uint32_t c=0;c<T;++c) {
         s << "if(";
@@ -862,7 +914,7 @@ std::string Generator::cachedGather() const {
         }
         if (first) s << "false";
         s << "){uint at=v.v+" << c << "u*v.stride;x_contributions[at]=floatBitsToUint("
-             "uintBitsToFloat(x_contributions[at])+partial[" << c*128 << "u+local]);}";
+             "uintBitsToFloat(x_contributions[at])+sum[" << c << "]);}";
     }
     s << "}}\n";
     return s.str();
@@ -880,11 +932,11 @@ std::vector<SumDomain> lowerSumRelations(CompiledPlan& p) {
             if (p.policy.weighting != JacobiWeighting::Static)
                 out.activity = generator.generate(generator.t.residual, false, true);
             if (generator.materialized) {
-                out.solveCount = generator.d.count * 32;
+                out.solveCount = generator.d.count * Generator::LinearTeam;
                 out.activityCount = generator.d.count * Generator::Capacity;
                 out.gather = generator.cachedGather();
                 out.refine = generator.generate(generator.t.residual, false, false, true);
-                out.gatherCount = uint32_t(generator.degrees.size()) * 32;
+                out.gatherCount = uint32_t(generator.degrees.size()) * Generator::LinearTeam;
             }
             out.bounds = std::move(generator.bounds);
             out.index = std::move(generator.index);
