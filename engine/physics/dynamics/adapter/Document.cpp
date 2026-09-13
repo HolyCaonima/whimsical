@@ -7,7 +7,7 @@ Formula formula(const Json& j) {
     f.inputs = j.at("inputs").uint();
     const std::vector<std::string> names = {"constant", "input", "add", "sub",   "mul",  "div",
                                             "neg",      "sqrt",  "sin", "cos",   "exp",  "log",
-                                            "abs",      "min",   "max", "atan2", "less", "select"};
+                                            "abs",      "min",   "max", "atan2", "less", "select", "sum"};
     for (const auto& row : j.at("nodes").elements()) {
         auto name = row.at(0).string();
         auto found = std::find(names.begin(), names.end(), name);
@@ -58,7 +58,7 @@ FieldKind modelField(const std::string& name) {
 }
 Json document(const Formula& f) {
     static const char* names[] = {"constant", "input", "add", "sub", "mul", "div", "neg",   "sqrt", "sin",
-                                  "cos",      "exp",   "log", "abs", "min", "max", "atan2", "less", "select"};
+                                  "cos",      "exp",   "log", "abs", "min", "max", "atan2", "less", "select", "sum"};
     Json nodes = Json::array(), outputs = Json::array();
     for (const auto& n : f.nodes) {
         auto row = Json::array({names[uint32_t(n.op)]});

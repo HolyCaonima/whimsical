@@ -23,7 +23,9 @@ enum class MathOp : uint8_t {
     Max,
     Atan2,
     Less,
-    Select
+    Select,
+    // a is the integrand node; b names the bound formal object (0 or 1).
+    Sum
 };
 struct MathNode {
     MathOp op;
@@ -83,6 +85,8 @@ Scalar max(Scalar, Scalar);
 Scalar atan2(Scalar y, Scalar x);
 Scalar less(Scalar, Scalar);
 Scalar select(Scalar condition, Scalar yes, Scalar no);
+Scalar sum(Scalar contribution, uint32_t object);
+Vector sum(const Vector& contribution, uint32_t object);
 Vector operator+(const Vector&, const Vector&);
 Vector operator-(const Vector&, const Vector&);
 Vector operator*(const Vector&, Scalar);

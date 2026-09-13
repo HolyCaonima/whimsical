@@ -112,6 +112,110 @@ static void candidateDomainChecks(rc::RenderCore& core, SpaceRef scalar) {
     check(q[1] - q[0] >= 3.875f, "Unsafe cell coordinates did not fall back to the full domain");
     std::cout << "Candidate iteration/lifetime and bound/fallback checks passed\n";
 }
+static void collectionSumChecks(rc::RenderCore& core, SpaceRef scalar) {
+    // Compare against the same small mathematical constraint written explicitly.
+    // This covers outer chain rules, several sums, left/right binding, aliasing,
+    // static incidence weighting, and the independently evaluated history update.
+    for (uint32_t axis : {0u, 1u}) {
+        auto make = [&](bool summed) {
+            Model model;
+            VariableSet values;
+            values.space = scalar; values.count = 3;
+            values.initial = Field::dense(3, 1, {1, 2, 4});
+            auto variables = model.variables(values);
+            RelationSet relation;
+            if (summed) {
+                Object collection;
+                collection.kind = Object::Kind::Collection; collection.count = 3;
+                collection.dofs["u"] = EndpointSource::collection(variables, 0, 3);
+                auto object = model.object(collection);
+                RelationBuilder definition("summed polynomial", {scalar, scalar}, 1, 1);
+                auto a = definition.endpoint(1-axis)[0], b = definition.endpoint(axis)[0];
+                auto delta = a-b;
+                auto squares = sum(delta*delta, axis), linear = sum(a+b, axis);
+                auto type = std::make_shared<RelationType>(*definition.finish(
+                    {squares*squares*.001f+linear-definition.parameter(0)}, RelationKind::Equality, {linear}));
+                type->objects = {{"u"}, {"u"}};
+                relation.type = type;
+                relation.pairs = std::vector<PairBinding>{{object, object, PairBinding::Self::Directed, true}};
+                relation.count = pairCount(*model.snapshot().data, relation.pairs->front(), type->summedObject());
+                check(relation.count == 3, "A sum must own one relation row per unbound member");
+            } else {
+                RelationBuilder definition("explicit polynomial", {scalar, scalar, scalar, scalar}, 1, 1);
+                auto a = definition.endpoint(0)[0];
+                auto squares = a*0, linear = a*0;
+                for (uint32_t j=0;j<3;++j) {
+                    auto b=definition.endpoint(j+1)[0], delta=a-b;
+                    squares=squares+delta*delta; linear=linear+a+b;
+                }
+                relation.type = definition.finish({squares*squares*.001f+linear-definition.parameter(0)},
+                                                 RelationKind::Equality, {linear});
+                relation.count=3;
+                relation.endpoints={EndpointSource::collection(variables,0,3), EndpointSource::object({variables,0}),
+                                    EndpointSource::object({variables,1}), EndpointSource::object({variables,2})};
+            }
+            relation.parameters = Field::uniform(3,{12});
+            model.relations(relation);
+            return model.commit();
+        };
+        auto summed=make(true), expanded=make(false);
+        SolverPolicy policy; policy.mode=SolveMode::Jacobi; policy.substeps=1; policy.iterations=2;
+        auto plan=Compiler().compile(summed.snapshot,policy);
+        check(plan->statistics.relations==3 && plan->summedRelations,"Summed plan row count");
+        Instance actual(core,plan), expected(core,Compiler().compile(expanded.snapshot,policy));
+        actual.step({1,summed.snapshot.version}); expected.step({1,expanded.snapshot.version});
+        const auto a=actual.wait(), b=expected.wait();
+        check(!a.invalidEvaluations&&!a.singularSystems&&!b.invalidEvaluations&&!b.singularSystems,"Sum solve diagnostics");
+        for(auto field:{StateField::Value,StateField::History}) {
+            auto x=actual.read(field,0,0,3), y=expected.read(field,0,0,3);
+            for(uint32_t k=0;k<x.size();++k) near(x[k],y[k]);
+        }
+    }
+    std::cout << "Collection sum and aliased derivative checks passed\n";
+}
+static void indexedSumChecks(rc::RenderCore& core, SpaceRef scalar) {
+    Model model;
+    VariableSet values; values.space=scalar; values.count=160;
+    std::vector<float> initial(160);
+    for(uint32_t i=0;i<160;++i) initial[i]=float(i/2)*3.f+float(i%2)*.4f;
+    values.initial=Field::dense(160,1,initial);
+    const auto variables=model.variables(values);
+    Object object; object.kind=Object::Kind::Collection; object.count=160;
+    object.dofs["u"]=EndpointSource::collection(variables,0,160);
+    const auto collection=model.object(object);
+    RelationBuilder definition("compact polynomial sum",{scalar,scalar},1);
+    auto delta=definition.endpoint(0)[0]-definition.endpoint(1)[0], h=definition.parameter(0);
+    auto shape=max(1-delta*delta/(h*h),definition.constant(0));
+    auto type=std::make_shared<RelationType>(*definition.finish({sum(shape*shape*shape,1)-1},RelationKind::LessEqual));
+    type->objects={{"u"},{"u"}};
+    RelationSet relation; relation.type=type; relation.count=160;
+    relation.parameters=Field::uniform(160,{1});
+    relation.pairs=std::vector<PairBinding>{{collection,collection,PairBinding::Self::Directed,true}};
+    model.relations(relation);
+    auto committed=model.commit();
+    SolverPolicy policy; policy.mode=SolveMode::Jacobi; policy.substeps=1; policy.iterations=1;
+    auto indexed=Compiler().compile(committed.snapshot,policy);
+    check(indexed->statistics.candidateDomains==1,"Sum support was not indexed");
+    policy.spatialCandidates=false;
+    Instance actual(core,indexed), expected(core,Compiler().compile(committed.snapshot,policy));
+    for(uint64_t tick=1;tick<=2;++tick) {
+        if(tick==2) {
+            // Expand support beyond the bounded member-list capacity. A parameter
+            // patch must invalidate the radius and use the exact dense fallback.
+            model.patch(FieldKind::Parameters,0,0,std::vector<float>(160,500));
+            committed=model.commit(); actual.apply(committed); expected.apply(committed);
+        }
+        actual.step({tick,committed.snapshot.version}); expected.step({tick,committed.snapshot.version});
+        auto a=actual.wait(),b=expected.wait();
+        check(!a.invalidEvaluations&&!a.singularSystems&&!b.invalidEvaluations&&!b.singularSystems,"Indexed sum diagnostics");
+        auto x=actual.read(StateField::Value,0,0,160),y=expected.read(StateField::Value,0,0,160);
+        for(uint32_t i=0;i<160;++i) near(x[i],y[i]);
+        // Each isolated pair has two identical constraints. Remote zero terms
+        // must not dilute the analytic first Newton correction by all 160 rows.
+        if(tick==1) near(x[0],-.175f);
+    }
+    std::cout << "Indexed sum, active incidence and overflow checks passed\n";
+}
 int main() {
     try {
         Expression e(2);
@@ -267,6 +371,8 @@ int main() {
         near(solution[1], 1);
         near(coupledSolve.read(StateField::History, 0, 0, 1)[0], 1);
         candidateDomainChecks(core, space);
+        collectionSumChecks(core, space);
+        indexedSumChecks(core, space);
         check(core.errors() == 0, "Vulkan validation errors");
         std::cout << "Dynamics focused checks passed\n";
         return 0;

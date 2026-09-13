@@ -11,6 +11,7 @@
     "/Game/scripts/threaded",
     "/Game/scripts/clockwork",
     "/Game/scripts/particles",
+    "/Game/scripts/fluid",
     "/Game/scripts/main"
   ]
 }

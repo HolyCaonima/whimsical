@@ -195,6 +195,8 @@ var contact = X.pair(separation, particles, particles, {diameter: 0.36}, {
 
 `parameters` 可以是分量数，此时绑定提供平铺数组、数学使用 `op.parameter(i)`；也可以是具名 schema，如 `{diameter:'scalar', centre:3}`，此时绑定提供 `{diameter:0.36, centre:[0,1,0]}`，数学通过 `p.diameter`、`p.centre` 引用。具名参数当前用于统一值；逐行参数使用分量数及平铺数组。
 
+`op.sum(expression, b)` 对形式对象 `b` 的绑定成员求和，支持标量和向量。该索引被求和后，每个 `a` 成员产生一个关系实例，参数、compliance、history 也按这些实例排列。求和结果可以继续参与普通数学表达式，Compiler 自动处理跨成员求导及重合自由度。当前支持单个求和索引、静态 Hybrid / Jacobi 执行；具体语义与性能范围见 [集合求和](dynamics-collection-sums.md)。
+
 ### 对象及绑定语义
 
 | 两侧对象 | 展开结果与行顺序 |
@@ -205,6 +207,8 @@ var contact = X.pair(separation, particles, particles, {diameter: 0.36}, {
 | 不同集合 | 完整笛卡尔积，左侧成员为外层、右侧为内层 |
 | 同一集合，`directed` | 上述顺序；`includeSelf:false` 排除 `i == j` |
 | 同一集合，`undirected` | 上述顺序，仅保留 `i < j`；`includeSelf:true` 时保留 `i <= j` |
+
+上表描述没有求和时的实例展开。含 `op.sum` 时，组合规则仍决定求和包含哪些成员，实例只按另一侧的成员顺序排列；空的成员域求和为零，仍保留另一侧的实例。
 
 同一集合必须显式提供 `self:'directed'/'undirected'` 和 `includeSelf:true/false`。单体和自身绑定仍是一个实例。不做按自由度地址的隐式去重；不同对象即便引用相同状态，仍按声明的组合规则处理。无向表示只保留上述一种参数顺序，并不自动对关系数学做对称化。
 

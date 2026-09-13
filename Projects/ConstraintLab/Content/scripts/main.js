@@ -28,6 +28,7 @@ Lab.renderPanel=function(){
     Lab.text('eyebrow',test.eyebrow);Lab.text('title',test.title);Lab.text('subtitle',test.subtitle);
     Lab.text('equation',test.equation);Lab.ui.legend.setInnerRML(test.legend);
     Lab.text('hint',test.hint+' · 中键旋转 · 滚轮缩放');
+    Lab.text('strain-label',test.strainLabel||'关系平均长度误差');
     Lab.text('size-label',test.sizes.label);
     Lab.ui.sizes.setInnerRML(test.sizes.options.map(function(option,i){
         return '<button id="size-'+i+'">'+option.label+'</button>';}).join(''));
@@ -58,7 +59,7 @@ Lab.renderPanel=function(){
 function initialize(){
     Lab.definitions();Lab.assets();
     Lab.document=Engine.ui.loadDocument('/Game/UI/lab.rml').show();Lab.ui={};
-    ['viewport','status','status-dot','population','relation-count','tick','time','gpu','strain','diagnostics',
+    ['viewport','status','status-dot','population','relation-count','tick','time','gpu','strain','strain-label','diagnostics',
      'stiffness-label','pause','pause-label','mode','notice','sample-note','equation','hint','meter','footer-state',
      'eyebrow','title','subtitle','legend','size-label','sizes','actions','panel','tabs','families','family-count']
         .forEach(function(id){Lab.ui[id]=Lab.document.getElementById(id);});

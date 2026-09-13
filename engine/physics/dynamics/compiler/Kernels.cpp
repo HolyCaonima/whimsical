@@ -131,6 +131,71 @@ KernelFunction variableFunction(
     // schedules must publish that clear before the next iteration's atomics.
     return {name, s.str(), BufferRole::VariableWork, directContributions};
 }
+std::string solveBlock(uint32_t M) {
+    std::ostringstream s;
+    // A singular local model does not have a defined XPBD correction. Leave it
+    // unchanged; diagnostics expose it instead of inventing an epsilon compliance.
+    if (M == 1) {
+        // The scalar block has no pivot choice or elimination. Emitting the quotient
+        // directly avoids materializing the generic matrix normalization path.
+        s << "if(isnan(a[0])||isinf(a[0])||isnan(rhs[0])||isinf(rhs[0]))"
+             "{invalidEvaluation();return;}\n";
+        s << "if(a[0]==0.0){if(rhs[0]!=0.0)singularSystem();return;}\n";
+        s << "rhs[0]/=a[0];\n";
+    } else {
+        s << "float scale=0.0;for(int k=0;k<" << M * M
+          << ";++k){if(isnan(a[k])||isinf(a[k])){invalidEvaluation();return;}scale=max(scale,abs(a[k])"
+             ");}\n";
+        s << "for(int k=0;k<" << M
+          << ";++k)if(isnan(rhs[k])||isinf(rhs[k])){invalidEvaluation();return;}\n";
+        s << "if(scale==0.0){for(int k=0;k<" << M
+          << ";++k)if(rhs[k]!=0.0){singularSystem();break;}return;}\n";
+    }
+    // Small block dimensions are compile-time facts. Static matrix accesses let
+    // the GPU keep these blocks in registers instead of dynamically indexed arrays.
+    // Preserve partial pivoting and the same elimination order as the general path.
+    if (M > 1 && M <= 4) {
+        for (uint32_t col = 0; col < M; ++col) {
+            s << "{uint pivot=" << col << "u;float largest=abs(a[" << col * M + col << "]);\n";
+            for (uint32_t row = col + 1; row < M; ++row)
+                s << "if(abs(a[" << row * M + col << "])>largest){largest=abs(a[" << row * M + col
+                  << "]);pivot=" << row << "u;}\n";
+            s << "if(largest<=scale*1e-7){singularSystem();return;}\n";
+            for (uint32_t row = col + 1; row < M; ++row) {
+                s << "if(pivot==" << row << "u){\n";
+                for (uint32_t k = 0; k < M; ++k)
+                    s << "{float v=a[" << col * M + k << "];a[" << col * M + k << "]=a[" << row * M + k
+                      << "];a[" << row * M + k << "]=v;}\n";
+                s << "float b=rhs[" << col << "];rhs[" << col << "]=rhs[" << row << "];rhs[" << row
+                  << "]=b;}\n";
+            }
+            s << "float inverse=1.0/a[" << col * M + col << "];\n";
+            for (uint32_t k = 0; k < M; ++k)
+                s << "a[" << col * M + k << "]*=inverse;\n";
+            s << "rhs[" << col << "]*=inverse;\n";
+            for (uint32_t row = 0; row < M; ++row) {
+                if (row == col)
+                    continue;
+                s << "{float f=a[" << row * M + col << "];\n";
+                for (uint32_t k = 0; k < M; ++k)
+                    s << "a[" << row * M + k << "]-=f*a[" << col * M + k << "];\n";
+                s << "rhs[" << row << "]-=f*rhs[" << col << "];}\n";
+            }
+            s << "}\n";
+        }
+    } else if (M > 4) {
+        s << "for(int col=0;col<" << M << ";++col){int pivot=col;for(int row=col+1;row<" << M
+          << ";++row)if(abs(a[row*" << M << "+col])>abs(a[pivot*" << M << "+col]))pivot=row;\n";
+        s << "if(abs(a[pivot*" << M << "+col])<=scale*1e-7){singularSystem();return;}\n";
+        s << "for(int k=0;k<" << M << ";++k){float v=a[col*" << M << "+k];a[col*" << M << "+k]=a[pivot*" << M
+          << "+k];a[pivot*" << M << "+k]=v;}\n";
+        s << "float b=rhs[col];rhs[col]=rhs[pivot];rhs[pivot]=b;float inverse=1.0/a[col*" << M
+          << "+col];for(int k=0;k<" << M << ";++k)a[col*" << M << "+k]*=inverse;rhs[col]*=inverse;\n";
+        s << "for(int row=0;row<" << M << ";++row)if(row!=col){float f=a[row*" << M << "+col];for(int k=0;k<" << M
+          << ";++k)a[row*" << M << "+k]-=f*a[col*" << M << "+k];rhs[row]-=f*rhs[col];}}\n";
+    }
+    return s.str();
+}
 KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& readOnly,
                                 int32_t endpointMode, bool jacobi, bool directContributions,
                                 bool separateDegrees, bool update, const std::string& name,
@@ -409,67 +474,7 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
             s << ";\n";
         }
     }
-    // A singular local model does not have a defined XPBD correction. Leave it
-    // unchanged; diagnostics expose it instead of inventing an epsilon compliance.
-    if (M == 1) {
-        // The scalar block has no pivot choice or elimination. Emitting the quotient
-        // directly avoids materializing the generic matrix normalization path.
-        s << "if(isnan(a[0])||isinf(a[0])||isnan(rhs[0])||isinf(rhs[0]))"
-             "{invalidEvaluation();return;}\n";
-        s << "if(a[0]==0.0){if(rhs[0]!=0.0)singularSystem();return;}\n";
-        s << "rhs[0]/=a[0];\n";
-    } else {
-        s << "float scale=0.0;for(int k=0;k<" << M * M
-          << ";++k){if(isnan(a[k])||isinf(a[k])){invalidEvaluation();return;}scale=max(scale,abs(a[k])"
-             ");}\n";
-        s << "for(int k=0;k<" << M
-          << ";++k)if(isnan(rhs[k])||isinf(rhs[k])){invalidEvaluation();return;}\n";
-        s << "if(scale==0.0){for(int k=0;k<" << M
-          << ";++k)if(rhs[k]!=0.0){singularSystem();break;}return;}\n";
-    }
-    // Small block dimensions are compile-time facts. Static matrix accesses let
-    // the GPU keep these blocks in registers instead of dynamically indexed arrays.
-    // Preserve partial pivoting and the same elimination order as the general path.
-    if (M > 1 && M <= 4) {
-        for (uint32_t col = 0; col < M; ++col) {
-            s << "{uint pivot=" << col << "u;float largest=abs(a[" << col * M + col << "]);\n";
-            for (uint32_t row = col + 1; row < M; ++row)
-                s << "if(abs(a[" << row * M + col << "])>largest){largest=abs(a[" << row * M + col
-                  << "]);pivot=" << row << "u;}\n";
-            s << "if(largest<=scale*1e-7){singularSystem();return;}\n";
-            for (uint32_t row = col + 1; row < M; ++row) {
-                s << "if(pivot==" << row << "u){\n";
-                for (uint32_t k = 0; k < M; ++k)
-                    s << "{float v=a[" << col * M + k << "];a[" << col * M + k << "]=a[" << row * M + k
-                      << "];a[" << row * M + k << "]=v;}\n";
-                s << "float b=rhs[" << col << "];rhs[" << col << "]=rhs[" << row << "];rhs[" << row
-                  << "]=b;}\n";
-            }
-            s << "float inverse=1.0/a[" << col * M + col << "];\n";
-            for (uint32_t k = 0; k < M; ++k)
-                s << "a[" << col * M + k << "]*=inverse;\n";
-            s << "rhs[" << col << "]*=inverse;\n";
-            for (uint32_t row = 0; row < M; ++row) {
-                if (row == col)
-                    continue;
-                s << "{float f=a[" << row * M + col << "];\n";
-                for (uint32_t k = 0; k < M; ++k)
-                    s << "a[" << row * M + k << "]-=f*a[" << col * M + k << "];\n";
-                s << "rhs[" << row << "]-=f*rhs[" << col << "];}\n";
-            }
-            s << "}\n";
-        }
-    } else if (M > 4) {
-        s << "for(int col=0;col<" << M << ";++col){int pivot=col;for(int row=col+1;row<" << M
-          << ";++row)if(abs(a[row*" << M << "+col])>abs(a[pivot*" << M << "+col]))pivot=row;\n";
-        s << "if(abs(a[pivot*" << M << "+col])<=scale*1e-7){singularSystem();return;}\n";
-        s << "for(int k=0;k<" << M << ";++k){float v=a[col*" << M << "+k];a[col*" << M << "+k]=a[pivot*" << M
-          << "+k];a[pivot*" << M << "+k]=v;}\n";
-        s << "float b=rhs[col];rhs[col]=rhs[pivot];rhs[pivot]=b;float inverse=1.0/a[col*" << M
-          << "+col];for(int k=0;k<" << M << ";++k)a[col*" << M << "+k]*=inverse;rhs[col]*=inverse;\n";
-        s << "for(int row=0;row<" << M << ";++row)if(row!=col){float f=a[row*" << M << "+col];for(int k=0;k<" << M
-          << ";++k)a[row*" << M << "+k]-=f*a[col*" << M << "+k];rhs[row]-=f*rhs[col];}}\n";
-    }
+    s << solveBlock(M);
     if (jacobi) {
         if (activeDegrees) {
             s << "uint degree=1u;\n";

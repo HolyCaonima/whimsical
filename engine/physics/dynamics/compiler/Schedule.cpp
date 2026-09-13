@@ -385,6 +385,13 @@ uint64_t temporaryWords(const CompiledPlan& p, uint32_t type) {
 
 void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions) {
     p.statistics.referenceDispatches = dispatchCount(p);
+    // A summed relation traverses a variadic dependency domain. Fixed-endpoint
+    // region/color-window fusion cannot consume that domain as one local pair.
+    if (p.summedRelations) {
+        p.statistics.dispatches = dispatchCount(p);
+        pruneKernels(p);
+        return;
+    }
     // Dynamic endpoints can connect any compatible variable at a later tick.
     if (p.dynamicTopology || p.policy.execution == ExecutionMode::Global ||
         !p.deferredJacobiDomains.empty()) {

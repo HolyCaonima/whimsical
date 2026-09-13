@@ -322,7 +322,7 @@ __declspec(noinline) duk_ret_t ScriptBindings::dispatch(duk_context* c, int op) 
         uint64_t count = 0;
         for (const auto& value : bindings.elements()) {
             auto pair = pairFromDocument(value);
-            count += pairCount(*e.model.snapshot().data, pair);
+            count += pairCount(*e.model.snapshot().data, pair, set.type->summedObject());
             set.pairs->push_back(pair);
         }
         if (count > UINT32_MAX)

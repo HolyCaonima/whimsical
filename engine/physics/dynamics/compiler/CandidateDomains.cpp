@@ -1,5 +1,6 @@
 #include "Schedule.h"
 #include "FormulaGlsl.h"
+#include "CandidateIndex.h"
 #include <algorithm>
 #include <cstring>
 #include <set>
@@ -81,9 +82,8 @@ std::string domainSource(const CompiledPlan& p, const Domain& d) {
       << "u]!=0u)return;vec3 delta=f-referenceFeature(member,left);"
          "if(dot(delta,delta)>0.0361*uintBitsToFloat(x_candidates[" << d.header
       << "u]))atomicOr(x_candidates[" << d.header + 3 << "u],1u);}\n"
-         "uint bucket(ivec3 c){uvec3 u=uvec3(c);return ((u.x*73856093u)^(u.y*19349663u)^(u.z*83492791u))&"
-      << d.buckets - 1 << "u;}\n"
-         "uint rowOf(uint i,uint j){return " << d.first << "u+";
+      << candidateHash(d.buckets) << candidateInsert("x_candidates", d.heads, d.next, d.cells)
+      << "uint rowOf(uint i,uint j){return " << d.first << "u+";
     switch (d.binding.map) {
     case BindingDomain::Map::Product: s << "i*" << d.binding.right << "u+j"; break;
     case BindingDomain::Map::Directed:
@@ -134,7 +134,7 @@ bool indexingWins(const BindingDomain& binding, uint32_t dimensions) {
 } // namespace
 
 bool canDeferCandidateDomain(const CompiledPlan& p, uint32_t set, const BindingDomain& binding) {
-    if (p.dynamicTopology || p.policy.execution != ExecutionMode::Auto ||
+    if (p.summedRelations || p.dynamicTopology || p.policy.execution != ExecutionMode::Auto ||
         p.policy.mode == SolveMode::Colored || p.policy.weighting == JacobiWeighting::Static ||
         !p.policy.spatialCandidates)
         return false;
@@ -145,7 +145,7 @@ bool canDeferCandidateDomain(const CompiledPlan& p, uint32_t set, const BindingD
 void lowerCandidateDomains(CompiledPlan& p) {
     // Region ownership and dynamic endpoints have their own scheduling contracts.
     // This lowering consumes only global, static Jacobi snapshots.
-    if (p.dynamicTopology || !p.local.empty() || p.policy.execution != ExecutionMode::Auto)
+    if (p.summedRelations || p.dynamicTopology || !p.local.empty() || p.policy.execution != ExecutionMode::Auto)
         return;
     auto work = words(p.buffers[size_t(BufferRole::RelationWork)]);
     std::vector<uint32_t> all;
@@ -467,9 +467,7 @@ void lowerCandidateDomains(CompiledPlan& p) {
                << "u)return;vec3 f=feature(member,false);detectMovement(f,member,false);ivec3 c;"
                   "if(!cellOf(f,c)){atomicOr(x_candidates["
                << d.header + 2 << "u],1u);atomicOr(x_candidates[" << d.header + 3
-               << "u],1u);return;}uint at=" << d.cells << "u+member*3u;"
-                  "x_candidates[at]=uint(c.x);x_candidates[at+1u]=uint(c.y);x_candidates[at+2u]=uint(c.z);"
-                  "x_candidates[" << d.next << "u+member]=atomicExchange(x_candidates[" << d.heads << "u+bucket(c)],member);}";
+               << "u],1u);return;}insertMember(member,c);}";
         add("Index candidate domain", source.str(), std::max(d.binding.left, d.binding.right), stages);
         source.str(""); source.clear();
         const auto dimensions = d.bound.coordinates.size();

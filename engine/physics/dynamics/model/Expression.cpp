@@ -50,6 +50,7 @@ uint32_t arity(MathOp op) {
     case MathOp::Exp:
     case MathOp::Log:
     case MathOp::Abs:
+    case MathOp::Sum:
         return 1;
     case MathOp::Select:
         return 3;
@@ -119,6 +120,8 @@ std::vector<double> values(const Formula& f, const std::vector<double>& x) {
         case MathOp::Select:
             v[i] = a != 0 ? b : v[n.c];
             break;
+        case MathOp::Sum:
+            throw std::invalid_argument("A collection sum requires bound object members");
         }
     }
     return v;
@@ -187,7 +190,8 @@ void Formula::validate() const {
     for (size_t i = 0; i < nodes.size(); ++i) {
         const auto& n = nodes[i];
         const auto count = arity(n.op);
-        if (uint32_t(n.op) > uint32_t(MathOp::Select) || (count > 0 && n.a >= i) || (count > 1 && n.b >= i) ||
+        if (uint32_t(n.op) > uint32_t(MathOp::Sum) || (n.op == MathOp::Sum && n.b > 1) ||
+            (count > 0 && n.a >= i) || (count > 1 && n.b >= i) ||
             (count > 2 && n.c >= i) || (n.op == MathOp::Input && n.a >= inputs) || !std::isfinite(n.value))
             throw std::invalid_argument("Invalid expression DAG");
     }
@@ -348,6 +352,16 @@ Scalar select(Scalar a, Scalar b, Scalar c) {
     if (a.expression != b.expression || a.expression != c.expression)
         throw std::invalid_argument("Expression owner mismatch");
     return {a.expression, a.expression->add({MathOp::Select, a.node, b.node, c.node})};
+}
+Scalar sum(Scalar contribution, uint32_t object) {
+    if (object > 1)
+        throw std::invalid_argument("Sum requires formal object 0 or 1");
+    return {contribution.expression, contribution.expression->add({MathOp::Sum, contribution.node, object})};
+}
+Vector sum(const Vector& contribution, uint32_t object) {
+    Vector result;
+    for (auto value : contribution) result.push_back(sum(value, object));
+    return result;
 }
 Vector operator+(const Vector& a, const Vector& b) {
     if (a.size() != b.size())

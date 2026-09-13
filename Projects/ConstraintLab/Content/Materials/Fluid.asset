@@ -1,0 +1,3 @@
+ALAS1
+{"id":"76539998407541c8a463f66f4f58eb4c","type":"Material","name":"Fluid","version":1,"storage":"embedded","metadata":{}}
+{"shader":{"id":"09ea3e8ad6a24bb8a7cdf45a42a418aa","path":"/Game/shaders/Surface"},"properties":{"baseColor":[0.08,0.48,0.68],"roughness":0.22,"emission":[0,0,0]},"textures":{}}

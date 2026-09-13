@@ -9,6 +9,7 @@ struct BindingDomain {
     enum class Map : uint32_t { Zip, Product, Directed, Upper, UpperDiagonal };
     Map map = Map::Zip;
     uint32_t first = 0, count = 0, left = 0, right = 0, split = 0;
+    int32_t summedObject = -1;
     std::vector<EndpointSource> fields;
     std::pair<uint32_t, uint32_t> members(uint32_t row) const;
     VariableRef at(uint32_t row, uint32_t slot) const;

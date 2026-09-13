@@ -1,7 +1,7 @@
 // Constraint Lab shell.
 // The shell owns the solver entity, the stage, the camera and the panel frame.
 // An experiment owns only its mathematics, its own props and the rows of its panel.
-var Lab={experiments:{},order:[],current:'',test:null,
+var Lab={experiments:{},order:[],current:'fluid',test:null,
     stiffness:2,mode:'hybrid',paused:false,
     phase:'',tick:0,time:0,gpu:0,invalid:0,singular:0,reads:0,strain:0,drawClock:0,
     total:0,relations:0,variables:0,sample:null,lastSampleTick:0,measuredTick:0,measureJob:null,

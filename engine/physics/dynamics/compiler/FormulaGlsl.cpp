@@ -81,6 +81,8 @@ Formula simplify(const Formula& source) {
     };
     for (size_t i = 0; i < source.nodes.size(); ++i) {
         auto node = source.nodes[i];
+        if (node.op == MathOp::Sum)
+            throw std::logic_error("Collection sums must be lowered before local GLSL generation");
         const auto count = arity(node.op);
         if (count > 0)
             node.a = remap[node.a];
@@ -752,8 +754,24 @@ std::optional<DifferenceBound> differenceBound(const Formula& source, bool nonne
     const auto& root = formula.nodes[formula.outputs[0]];
     if (root.op != MathOp::Subtract)
         return {};
-    const auto sum = nonnegative ? root.a : root.b;
-    const auto radius = nonnegative ? root.b : root.a;
+    auto sum = nonnegative ? root.a : root.b;
+    auto radius = nonnegative ? root.b : root.a;
+    if (formula.nodes[sum].op == MathOp::Divide) {
+        const auto quotient = formula.nodes[sum];
+        // A normalized quadratic bound is valid only for a positive scale.
+        // Invalid parameter values select the existing full-domain fallback.
+        const auto product = uint32_t(formula.nodes.size());
+        formula.nodes.push_back({MathOp::Multiply, radius, quotient.b});
+        const auto zero = uint32_t(formula.nodes.size());
+        formula.nodes.push_back({MathOp::Constant, 0, 0, 0, 0});
+        const auto positive = uint32_t(formula.nodes.size());
+        formula.nodes.push_back({MathOp::Less, zero, quotient.b});
+        const auto invalid = uint32_t(formula.nodes.size());
+        formula.nodes.push_back({MathOp::Constant, 0, 0, 0, -1});
+        radius = uint32_t(formula.nodes.size());
+        formula.nodes.push_back({MathOp::Select, positive, product, invalid});
+        sum = quotient.a;
+    }
     DifferenceBound result;
     std::vector<uint32_t> pending{sum};
     while (!pending.empty()) {
@@ -799,6 +817,36 @@ std::optional<DifferenceBound> differenceBound(const Formula& source, bool nonne
     }
     formula.outputs = {radius};
     result.squaredRadius = std::move(formula);
+    return result;
+}
+std::optional<DifferenceBound> supportBound(const Formula& source, uint32_t parameterFirst,
+                                           uint32_t parameterCount) {
+    const auto formula = simplify(source);
+    auto zero = [&](uint32_t id) {
+        return formula.nodes[id].op == MathOp::Constant && formula.nodes[id].value == 0;
+    };
+    std::optional<DifferenceBound> result;
+    std::string signature;
+    for (auto output : formula.outputs) {
+        std::vector<uint32_t> pending{output};
+        std::optional<DifferenceBound> bound;
+        while (!pending.empty() && !bound) {
+            const auto node = formula.nodes[pending.back()]; pending.pop_back();
+            if (node.op == MathOp::Multiply) {
+                pending.push_back(node.a); pending.push_back(node.b);
+            } else if (node.op == MathOp::Negate) {
+                pending.push_back(node.a);
+            } else if ((node.op == MathOp::Max || node.op == MathOp::Min) && (zero(node.a) || zero(node.b))) {
+                auto part = formula;
+                part.outputs = {zero(node.a) ? node.b : node.a};
+                bound = differenceBound(part, node.op == MathOp::Min, parameterFirst, parameterCount);
+            }
+        }
+        if (!bound) return {};
+        const auto key = emitGlsl(bound->squaredRadius, "supportRadius");
+        if (result && (result->coordinates != bound->coordinates || signature != key)) return {};
+        result = std::move(bound); signature = key;
+    }
     return result;
 }
 } // namespace whimsical::dynamics

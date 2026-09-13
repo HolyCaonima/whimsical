@@ -41,7 +41,7 @@
         <div class="metric"><span>Tick</span><b id="tick">0</b></div>
         <div class="metric odd"><span>模拟时间</span><b id="time">0.00 s</b></div>
         <div class="metric"><span>GPU 求解耗时</span><b id="gpu">0.00 ms</b></div>
-        <div class="metric odd"><span>关系平均长度误差</span><b id="strain">0.0%</b></div>
+        <div class="metric odd"><span id="strain-label">关系平均长度误差</span><b id="strain">0.0%</b></div>
         <div class="meter-track"><div id="meter"/></div>
         <div class="metric"><span>非有限 / 奇异</span><b id="diagnostics">0 / 0</b></div>
       </div>

@@ -1,5 +1,6 @@
 #include "physics/dynamics/compiler/FormulaGlsl.h"
 #include "Schedule.h"
+#include "SumRelations.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -38,7 +39,7 @@ constexpr const char* Names[] = {"q",
                                  "scanScratch",
                                  "adjCursors",
                                  "regionRanges", "regionState", "localOffsets", "stateWrites",
-                                 "candidates", "activeDegrees", "epochData", "epochOutput"};
+                                 "candidates", "activeDegrees", "epochData", "epochOutput", "sumData"};
 static_assert(sizeof(Names) / sizeof(*Names) == BufferCount);
 // Bounded transient input table; larger updates retain the direct upload path.
 constexpr uint32_t StateWriteCapacity = 4096;
@@ -49,7 +50,7 @@ bool integer(BufferRole r) {
            r == BufferRole::ScanScratch || r == BufferRole::AdjacencyCursors || r == BufferRole::RegionRanges ||
            r == BufferRole::RegionState || r == BufferRole::LocalOffsets || r == BufferRole::StateWrites ||
            r == BufferRole::Candidates || r == BufferRole::ActiveDegrees || r == BufferRole::FieldModes ||
-           r == BufferRole::EpochData;
+           r == BufferRole::EpochData || r == BufferRole::SumData;
 }
 uint32_t checked(size_t n) {
     if (n > UINT32_MAX)
@@ -410,9 +411,19 @@ std::string signature(const RelationType& t) {
         std::to_string(t.parameters) + ":" + std::to_string(t.history) + ":" + std::to_string(int(t.kind));
     for (const auto& space : t.spaces)
         s += signature(*space);
-    s += emitGlsl(t.residual, "r");
-    if (t.update)
-        s += emitGlsl(*t.update, "u");
+    if (t.summedObject() >= 0) {
+        s += ":sum" + std::to_string(t.summedObject()) + ":split" + std::to_string(t.objects[0].size());
+        auto expression = [&](const Formula& f, const std::string& name) {
+            const auto program = splitSums(f, t);
+            return (program.terms.outputs.empty() ? std::string{} : emitGlsl(program.terms, name + "Terms")) +
+                   emitGlsl(program.outer, name + "Outer");
+        };
+        s += expression(t.residual, "r");
+        if (t.update) s += expression(*t.update, "u");
+    } else {
+        s += emitGlsl(t.residual, "r");
+        if (t.update) s += emitGlsl(*t.update, "u");
+    }
     return s;
 }
 } // namespace
@@ -625,6 +636,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     for (uint32_t setId = 0; setId < model.data->relations.size(); ++setId) {
         const auto& set = model.data->relations[setId];
         set.type->validate();
+        p->summedRelations = p->summedRelations || set.type->summedObject() >= 0;
         p->bindings.push_back(analyzeBindings(*model.data, set));
         const auto& binding = p->bindings.back();
         p->statistics.bindingDomains += binding.domains.size();
@@ -730,6 +742,10 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         p->statistics.endpointReferences += uint64_t(set.count) * set.type->spaces.size();
         relationFirst += set.count;
     }
+    if (p->summedRelations && (policy.mode == SolveMode::Colored || p->dynamicTopology))
+        throw std::invalid_argument("Collection sums currently require static Hybrid or Jacobi execution");
+    auto summed = lowerSumRelations(*p);
+    const bool activeSums = p->summedRelations && policy.weighting != JacobiWeighting::Static;
     for (uint32_t set = 0; set < p->relations.size(); ++set)
         for (uint32_t domain = 0; domain < p->bindings[set].domains.size(); ++domain)
             if (canDeferCandidateDomain(*p, set, p->bindings[set].domains[domain]))
@@ -749,6 +765,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         endpointScratch.resize(std::max(endpointScratch.size(), type->spaces.size()));
     BindingDomain::Cursor bindingCursor;
     auto writableEndpoints = [&](const InstanceRows::Row& instance, auto&& visit) {
+        if (p->types[instance.type]->summedObject() >= 0) return;
         const auto& domain = p->bindings[instance.set].domain(instance.local);
         const auto members = bindingCursor.seek(domain, instance.local - domain.first);
         for (uint32_t endpoint = 0; endpoint < instance.arity; ++endpoint) {
@@ -775,6 +792,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
                 UINT32_MAX - uint32_t(p->types[type]->residual.nodes.size()), UINT32_MAX - p->activeTangent(type)});
         coloringOrder.reserve(instances.materializedSize());
         for (const auto& instance : instances) {
+            if (p->types[instance.type]->summedObject() >= 0) continue;
             if (model.data->relations[instance.set].dynamicEndpoints)
                 continue;
             uint32_t endpoints = 0;
@@ -882,6 +900,8 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         for (uint32_t type = 0; type < p->types.size(); ++type)
             directJacobi[type] =
                 p->types[type]->rows == 1 && p->types[type]->kind != RelationKind::Equality;
+    for (uint32_t type = 0; type < p->types.size(); ++type)
+        if (p->types[type]->summedObject() >= 0) directJacobi[type] = true;
     std::vector<uint32_t> degree(writable.size()), gatheredDegree(writable.size());
     std::vector<bool> directVariables(writable.size());
     for (const auto& instance : instances)
@@ -920,6 +940,11 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         if (!directJacobi[type])
             throw std::logic_error("Deferred candidate domains require sparse scalar Jacobi work");
     }
+    for (const auto& domain : summed)
+        for (auto [id, count] : domain.degrees) {
+            degree[id] = checked(uint64_t(degree[id]) + count);
+            directVariables[id] = true;
+        }
     reserve(buffer(BufferRole::Diagnostics), 2, 0u);
     p->statistics.relations = instances.size();
     std::vector<uint32_t> offsets(writable.size() + 1);
@@ -1026,8 +1051,10 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     }
     std::map<std::pair<int32_t, uint32_t>, std::vector<uint32_t>> groups;
     for (const auto& in : instances)
-        groups[{in.color < 0 ? int32_t(policy.colorBudget) : in.color, in.type}].push_back(in.id);
+        if (p->types[in.type]->summedObject() < 0)
+            groups[{in.color < 0 ? int32_t(policy.colorBudget) : in.color, in.type}].push_back(in.id);
     std::map<std::pair<uint32_t, bool>, uint32_t> solveKernels;
+    std::vector<Batch> sumActivity;
     for (const auto& group : groups) {
         auto type = group.first.second;
         bool jacobi = group.first.first == int32_t(policy.colorBudget);
@@ -1041,13 +1068,19 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
                                                  jacobi && directJacobi[type],
                                                  p->statistics.directJacobiRelations != 0, false,
                                                  std::string(jacobi ? "jacobi" : "colored") +
-                                                     std::to_string(type), false, false,
+                                                     std::to_string(type), jacobi && activeSums, false,
                                                  distinctWritableEndpoints[type]));
             solveKernels.emplace(key, program);
         } else
             program = found->second;
         p->solve.push_back({program, append(buffer(BufferRole::RelationWork), group.second),
                             checked(group.second.size()), jacobi ? -1 : group.first.first});
+        if (jacobi && activeSums) {
+            auto batch = p->solve.back();
+            batch.kernel = operation("Count active relation members", relationActivityFunction(
+                *p->types[type], p->typeReadOnly[type], p->typeEndpointMode[type], "activeMembers"));
+            sumActivity.push_back(batch);
+        }
         if (p->dynamicTopology && jacobi) {
             auto batch = p->solve.back();
             batch.kernel =
@@ -1071,8 +1104,34 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     };
     p->coloredDispatchKernel = relationDispatch(false);
     p->jacobiDispatchKernel = relationDispatch(true);
+    std::vector<Batch> sumStages;
+    if (activeSums) {
+        reserve(buffer(BufferRole::ActiveDegrees), writable.size(), 0u);
+        sumStages.push_back({kernel("Reset active sum incidence",
+            "void main(){uint i=invocation();if(i<" + std::to_string(writable.size()) +
+            "u)x_activeDegrees[i]=0u;}"), 0, checked(writable.size())});
+    }
+    for (const auto& domain : summed) {
+        const auto& binding = p->bindings[domain.set].domains[domain.domain];
+        const auto first = p->relations[domain.set].first + binding.first;
+        for (const auto& [source, count] : domain.bounds)
+            p->candidateBounds.push_back({kernel("Bound summed expression", source), 0, count});
+        for (const auto& [source, count] : domain.index)
+            sumStages.push_back({kernel("Index summed expression", source), 0, count});
+        if (!domain.activity.empty())
+            sumActivity.push_back({kernel("Count active sum members", domain.activity), first, binding.count});
+        p->solve.push_back({kernel("Solve summed relation", domain.solve), first, binding.count});
+        if (!domain.update.empty())
+            p->update.push_back({kernel("Commit summed relation", domain.update), first, binding.count});
+    }
+    // Colored work changes the snapshot. Build indices and count dependencies
+    // after that work, immediately before the common Jacobi solve/apply stage.
+    sumStages.insert(sumStages.end(), sumActivity.begin(), sumActivity.end());
+    p->solve.insert(std::find_if(p->solve.begin(), p->solve.end(), [](const Batch& batch) {
+        return batch.color < 0;
+    }), sumStages.begin(), sumStages.end());
     for (uint32_t type = 0; type < p->types.size(); ++type)
-        if (p->types[type]->update) {
+        if (p->types[type]->update && p->types[type]->summedObject() < 0) {
             std::vector<uint32_t> work;
             for (const auto& in : instances)
                 if (in.type == type)
@@ -1126,6 +1185,11 @@ void main(){uint i=invocation();if(i<step.count)x_scanScratch[step.first+i]+=x_s
         const auto arity = uint32_t(p->types[layout.type]->spaces.size());
         for (uint32_t domainId = 0; domainId < p->bindings[setId].domains.size(); ++domainId) {
             const auto& domain = p->bindings[setId].domains[domainId];
+            if (domain.summedObject >= 0) {
+                // Member maps and unique-variable incidence live in SumData.
+                instances.setDomainEndpoint(setId, domainId, 0);
+                continue;
+            }
             const auto base = checked(endpointData.size());
             const bool compact = domain.endpointMode(model.data->relations[setId].dynamicEndpoints) > 0;
             if (compact) {

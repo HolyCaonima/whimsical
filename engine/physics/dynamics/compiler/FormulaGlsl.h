@@ -26,4 +26,7 @@ struct DifferenceBound {
 };
 std::optional<DifferenceBound> differenceBound(const Formula&, bool nonnegative,
                                               uint32_t parameterFirst, uint32_t parameterCount);
+// A compactly supported expression and its derivative are zero outside this
+// difference bound. All outputs must share the same proven support.
+std::optional<DifferenceBound> supportBound(const Formula&, uint32_t parameterFirst, uint32_t parameterCount);
 } // namespace whimsical::dynamics

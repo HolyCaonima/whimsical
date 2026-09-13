@@ -5,6 +5,8 @@
 
 namespace whimsical::dynamics {
 std::pair<uint32_t, uint32_t> BindingDomain::members(uint32_t row) const {
+    if (summedObject >= 0)
+        return summedObject == 0 ? std::make_pair(0u, row) : std::make_pair(row, 0u);
     if (map == Map::Zip)
         return {row, row};
     if (map == Map::Product)
@@ -25,12 +27,14 @@ std::pair<uint32_t, uint32_t> BindingDomain::members(uint32_t row) const {
     return {lo, lo + (diagonal ? 0u : 1u) + uint32_t(row - prefix(lo))};
 }
 VariableRef BindingDomain::at(uint32_t row, uint32_t slot) const {
+    if (summedObject >= 0 && int32_t(slot < split ? 0 : 1) == summedObject)
+        throw std::logic_error("A bound sum index has no single relation-row endpoint");
     const auto indices = members(row);
     return fields[slot].at(slot < split ? indices.first : indices.second);
 }
 std::pair<uint32_t, uint32_t> BindingDomain::Cursor::seek(const BindingDomain& d, uint32_t next) {
     if (domain == &d && next == row) return value;
-    if (domain != &d || next != row + 1) {
+    if (domain != &d || next != row + 1 || d.summedObject >= 0) {
         value = d.members(next);
     } else if (d.map == Map::Zip) {
         ++value.first;
@@ -56,12 +60,14 @@ bool BindingDomain::affineFields() const {
 }
 std::pair<uint32_t, uint32_t> BindingDomain::memberRange(uint32_t slot) const {
     if (!count) return {0, 0};
+    if (summedObject >= 0) return {0, slot < split ? left : right};
     if (map == Map::Zip) return {0, count};
     const bool a = slot < split;
     if (map == Map::Upper) return a ? std::make_pair(0u, left - 1) : std::make_pair(1u, right);
     return {0, a ? left : right};
 }
 int32_t BindingDomain::endpointMode(bool dynamic) const {
+    if (summedObject >= 0) return 0;
     return !dynamic && affineFields() && 5ull + 2ull * fields.size() < uint64_t(count) * fields.size()
         ? int32_t(map) + 1 : 0;
 }
@@ -92,7 +98,8 @@ BindingIR analyzeBindings(const ModelData& model, const RelationSet& set) {
             const auto& b = model.objects.at(pair.b);
             BindingDomain domain;
             domain.first = first;
-            domain.count = pairCount(model, pair);
+            domain.summedObject = set.type->summedObject();
+            domain.count = pairCount(model, pair, domain.summedObject);
             domain.left = a.count;
             domain.right = b.count;
             domain.split = uint32_t(set.type->objects[0].size());
@@ -114,7 +121,7 @@ BindingIR analyzeBindings(const ModelData& model, const RelationSet& set) {
             }
             // A product with a singleton is a linear domain. Make that fact
             // explicit before GPU lowering so no division/modulo survives.
-            if (domain.map == BindingDomain::Map::Product && (domain.left == 1 || domain.right == 1)) {
+            if (domain.summedObject < 0 && domain.map == BindingDomain::Map::Product && (domain.left == 1 || domain.right == 1)) {
                 for (uint32_t slot = 0; slot < domain.fields.size(); ++slot)
                     if ((slot < domain.split ? domain.left : domain.right) == 1)
                         domain.fields[slot] = EndpointSource::object(domain.fields[slot].at(0));

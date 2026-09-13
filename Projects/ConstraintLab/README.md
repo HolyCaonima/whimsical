@@ -11,7 +11,7 @@ ConstraintLab 展示 Whimsical 的通用 GPU Dynamics 方案：通过 JavaScript
 
 数学接口、生命周期与代码示例见 [GPU Dynamics](../../docs/dynamics.md)，执行区域分析与融合见 [编译器说明](../../docs/dynamics-compiler-optimization.md)。
 
-双击本目录的 `Run.cmd` 启动（需要先构建 `build/bin/Release/Whimsical.exe`）。顶部标签在实验之间切换，六个实验共用同一个求解外壳、同一套展台和同一个面板框架。
+双击本目录的 `Run.cmd` 启动（需要先构建 `build/bin/Release/Whimsical.exe`），默认打开 Fluid。顶部标签在实验之间切换，七个实验共用同一个求解外壳、同一套展台和同一个面板框架。
 
 界面沿用 [HumanEditor](../HumanEditor) 的编辑器语言：菜单栏放实验标签与当前实验名，工具栏放运行控制和实验自己的动作，左侧「求解模型」列出编译进模型的变量集与各族关系，右侧「实验详情」是规模、参数与遥测，底部状态栏给出最近一条操作反馈。
 
@@ -108,6 +108,28 @@ X.pair(damping, particles, frame, [], {history:initial, compliance:[0.08,0.08,0.
 
 全部 10,000 个粒子由一个显示实体承载：一个 Render 组件共享球体网格与材质，一个 `target:'renderInstances'` 的 Dynamics 输出绑定把位置集合映射到实例变换数组，并保留 0.07 秒姿态插值。粒子群始终只占一个排序项和每个 pass 的一个实例绘制批次，容器和灯仍是独立实体。映射由项目声明，使用框架的通用批量输出路径；模拟样本目前仍经 CPU 回读。
 
+## 实验七：Fluid
+
+固定 2,000 个 R3 位置自由度，初始按 10 × 20 × 10 排成水柱。粒子受到重力、密度上限、五个容器半空间和较弱的位移阻力作用。蓝色球体通过一个实例绘制批次显示；`I` 向右推动水体，`R` 重新释放水柱，柔顺度按钮调整密度约束。
+
+密度采用 [Position Based Fluids](https://mmacklin.com/pbf_sig_preprint.pdf) 中的粒子密度估计形式。这里将 Poly6 多项式直接写为已有 `op` 运算，并由 `op.sum` 生成密度表达式：
+
+```js
+var delta = op.vsub(a.position, b.position);
+var h2 = op.mul(p.support, p.support);
+var shape = op.max(0, op.sub(1, op.div(op.dot(delta, delta), h2)));
+var normalization = op.div(315 / (64 * Math.PI), op.mul(h2, p.support));
+var contribution = op.mul(op.mul(p.volume, normalization), op.mul(op.mul(shape, shape), shape));
+var density = op.sum(contribution, b);
+return {residual: [op.sub(density, 1)]}; // kind: 'lessEqual'
+```
+
+`volume` 是等质量粒子的静止体积；`density` 表示相对于静止密度的比值。`directed + includeSelf:true` 保留全部粒子贡献，包括自身。求和后共有 2,000 条密度约束，加上 10,000 条边界与 2,000 条位移阻力，共 14,000 个关系实例。密度没有单独的自由度、CPU 回填或引擎内置核函数。Compiler 对同一表达式求导，不另写 Spiky 梯度，也不实现论文中的人工压力、涡量补偿和 XSPH 黏性阶段；位移阻力只用于耗散。
+
+面板显示「平均密度超限」，在完整观察样本上分段计算相同的多项式，仅作诊断。2,000 条密度约束逻辑上每轮包含 4,000,000 个成员贡献；Compiler 从上述表达式自动识别有限作用范围，用网格枚举可能非零的成员，并只计入实际影响求解的成员。邻域列表溢出时完整求和，项目无需声明邻居或修改密度公式。实现与支持范围见 [集合求和](../../docs/dynamics-collection-sums.md)。
+
+2026-09-13 在 RTX 3080、Release、1440 × 900、Hybrid、4 子步 × 12 迭代及 Vulkan validation 下运行 900 个渲染帧：最终面板为 457 个求解 tick / 15.23 秒模拟时间、平均密度超限 1.1%、GPU 求解 29.39 ms，非有限 / 奇异诊断为 0 / 0；渲染记录约 39.7 FPS，退出时 validation errors 为 0。这是该次运行末尾的采样，密度仪表使用异步观察快照，不是每一帧的严格不可压缩保证。
+
 ## 通用操作
 
 - `Space`：暂停 / 继续；暂停后 `N` 或「单步」推进一次。
@@ -122,6 +144,7 @@ X.pair(damping, particles, frame, [], {history:initial, compliance:[0.08,0.08,0.
 - `Content/scripts/cloth.js`、`rope.js`、`woven.js`、`threaded.js`：四个标准关系组合实验。
 - `Content/scripts/clockwork.js`：复合对象之间的多行差动、非线性传动与持久棘轮。
 - `Content/scripts/particles.js`：集合与自身、不同集合、集合与单体的高层 pair 绑定。
+- `Content/scripts/fluid.js`：2,000 粒子的密度求和、容器和水柱实验。
 - 每个实验只拥有自己的数学、道具和面板行；外壳按实验声明的 `sizes / actions / rows / keys / families` 渲染并接线，新增实验不需要改界面。
 - `Content/scripts/main.js`：大纲与面板渲染、快捷键与遥测。
 - `Content/UI/`：编辑器风格的操作界面、求解耗时和诊断信息。

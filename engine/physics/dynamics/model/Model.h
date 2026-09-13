@@ -107,6 +107,8 @@ struct RelationType {
     std::vector<std::vector<std::string>> objects;
     uint32_t stateSize() const;
     uint32_t tangentSize() const;
+    // -1 for local expressions; otherwise the formal object bound by sums.
+    int32_t summedObject() const;
     uint32_t inputSize() const {
         return stateSize() + parameters + history + 2;
     }
@@ -159,7 +161,7 @@ struct ModelData {
     std::vector<RelationSet> relations;
     std::vector<Object> objects;
 };
-uint32_t pairCount(const ModelData&, const PairBinding&);
+uint32_t pairCount(const ModelData&, const PairBinding&, int32_t summedObject = -1);
 struct ModelSnapshot {
     uint64_t model = 0, version = 0;
     std::shared_ptr<const ModelData> data;

@@ -12,6 +12,8 @@ struct KernelFunction {
 };
 KernelFunction variableFunction(
     const Space&, const char* operation, const std::string& name, bool directContributions = false);
+// The same small-block linear solve is used by fixed and summed relations.
+std::string solveBlock(uint32_t rows);
 KernelFunction relationFunction(const RelationType&, const std::vector<bool>& readOnly,
                                 int32_t endpointMode, bool jacobi, bool directContributions,
                                 bool separateDegrees, bool update, const std::string& name,

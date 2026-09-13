@@ -102,6 +102,8 @@ void defaults(RelationSet& set) {
             throw std::invalid_argument("Object pairs require two formal objects and static object bindings");
         return;
     }
+    if (set.type->summedObject() >= 0)
+        throw std::invalid_argument("Collection sums require object pair bindings");
     if (set.endpoints.size() != set.type->spaces.size())
         throw std::invalid_argument("Relation endpoint arity mismatch");
     for (const auto& column : set.endpoints)
@@ -311,6 +313,18 @@ uint32_t RelationType::tangentSize() const {
         n += s->tangentSize;
     return n;
 }
+int32_t RelationType::summedObject() const {
+    int32_t object = -1;
+    for (const Formula* formula : {&residual, update ? &*update : nullptr}) {
+        if (!formula) continue;
+        for (const auto& node : formula->nodes) if (node.op == MathOp::Sum) {
+            if (object >= 0 && object != int32_t(node.b))
+                throw std::invalid_argument("A relation currently sums over one formal object");
+            object = int32_t(node.b);
+        }
+    }
+    return object;
+}
 void RelationType::validate() const {
     if (name.empty() || spaces.empty() || !rows)
         throw std::invalid_argument("Relation requires name, endpoints and residual rows");
@@ -336,6 +350,7 @@ void RelationType::validate() const {
     }
     if (update && update->outputs.size() != history)
         throw std::invalid_argument("History update dimension mismatch");
+    summedObject(); // Validate the bound-index consistency of residual and update.
 }
 RelationBuilder::RelationBuilder(std::string name, std::vector<SpaceRef> spaces, uint32_t parameters,
                                  uint32_t history, uint32_t rows)
@@ -416,7 +431,7 @@ uint32_t Model::member(uint32_t id, uint32_t index) {
         child.dofs.emplace(name, EndpointSource::object(source.at(index)));
     return object(std::move(child));
 }
-uint32_t pairCount(const ModelData& data, const PairBinding& pair) {
+uint32_t pairCount(const ModelData& data, const PairBinding& pair, int32_t summedObject) {
     const auto& a = data.objects.at(pair.a);
     const auto& b = data.objects.at(pair.b);
     uint64_t count = uint64_t(a.count) * b.count;
@@ -429,6 +444,8 @@ uint32_t pairCount(const ModelData& data, const PairBinding& pair) {
             count = pair.includeSelf ? (count + a.count) / 2 : count / 2;
     } else if (pair.self != PairBinding::Self::Unspecified)
         throw std::invalid_argument("Self-pair rules apply only to the same collection object");
+    if (summedObject >= 0)
+        count = summedObject == 0 ? b.count : a.count;
     if (count > UINT32_MAX)
         throw std::overflow_error("Expanded pair count exceeds 32-bit addressing");
     return uint32_t(count);
@@ -437,7 +454,7 @@ SetId Model::relations(RelationSet set) {
     if (set.pairs) {
         uint64_t count = 0;
         for (const auto& pair : *set.pairs)
-            count += pairCount(*data_, pair);
+            count += pairCount(*data_, pair, set.type->summedObject());
         if (count != set.count)
             throw std::invalid_argument("Expanded pair field count mismatch");
     }

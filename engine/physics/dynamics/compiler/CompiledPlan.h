@@ -51,6 +51,7 @@ enum class BufferRole : uint32_t {
     ActiveDegrees,
     EpochData,
     EpochOutput,
+    SumData,
     Count
 };
 constexpr size_t BufferCount = size_t(BufferRole::Count);
@@ -171,6 +172,7 @@ struct CompiledPlan {
     // in one dependency color without changing their model definitions.
     uint32_t coloredDispatchKernel = UINT32_MAX, jacobiDispatchKernel = UINT32_MAX;
     bool dynamicTopology = false;
+    bool summedRelations = false;
     std::vector<Batch> countIncidence, scatterIncidence;
     struct ScanLevel {
         uint32_t first, count;

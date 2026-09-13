@@ -18,6 +18,9 @@ R"JS(
             e[op] = function (a) { return emit([op,node(a)]); };
         });
         e.select = function (c,a,b) { return emit(['select',node(c),node(a),node(b)]); };
+        e.sum = function (value,axis) {
+            return Array.isArray(value)?value.map(function(v){return e.sum(v,axis);}):emit(['sum',node(value),axis]);
+        };
         e.vadd = function (a,b) { return a.map(function(v,i){return e.add(v,b[i]);}); };
         e.vsub = function (a,b) { return a.map(function(v,i){return e.sub(v,b[i]);}); };
         e.scale = function (a,b) { return a.map(function(v){return e.mul(v,b);}); };
@@ -27,9 +30,9 @@ R"JS(
         e.finish = function (outputs) {
             if (!Array.isArray(outputs)) outputs=[outputs];
             var roots=outputs.map(node), used={}, remap={}, compact=[];
-            function visit(i) { if(used[i])return;used[i]=true;var row=nodes[i];if(row[0]!=='input'&&row[0]!=='constant')for(var k=1;k<row.length;++k)visit(row[k]); }
+            function visit(i) { if(used[i])return;used[i]=true;var row=nodes[i];if(row[0]!=='input'&&row[0]!=='constant')for(var k=1;k<(row[0]==='sum'?2:row.length);++k)visit(row[k]); }
             roots.forEach(visit);
-            nodes.forEach(function(row,i){if(!used[i])return;var out=row.slice();if(row[0]!=='input'&&row[0]!=='constant')for(var k=1;k<out.length;++k)out[k]=remap[out[k]];remap[i]=compact.length;compact.push(out);});
+            nodes.forEach(function(row,i){if(!used[i])return;var out=row.slice();if(row[0]!=='input'&&row[0]!=='constant')for(var k=1;k<(row[0]==='sum'?2:out.length);++k)out[k]=remap[out[k]];remap[i]=compact.length;compact.push(out);});
             return {inputs:inputs,nodes:compact,outputs:roots.map(function(i){return remap[i];})};
         };
         return e;
@@ -83,6 +86,12 @@ R"JS(
         var objects=names.map(function(fields){var object={};fields.forEach(function(name){
             var v=[],n=sizes[slot++];for(var i=0;i<n;++i)v.push(e.input(offset++));object[name]=v;
         });return object;});
+        var sum=e.sum;
+        e.sum=function(value,object){
+            var axis=objects.indexOf(object);
+            if(axis<0)throw new Error('Sum requires a formal object from this relation');
+            return Array.isArray(value)?value.map(function(v){return sum(v,axis);}):sum(value,axis);
+        };
         e.parameter=function(i){if(i<0||i>=parameters)throw new Error('Parameter index out of range');return e.input(total+i);};
         e.state=function(i){if(i<0||i>=history)throw new Error('History index out of range');return e.input(total+parameters+i);};
         e.dt=e.input(total+parameters+history);e.time=e.input(total+parameters+history+1);
