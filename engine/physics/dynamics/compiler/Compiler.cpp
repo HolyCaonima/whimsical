@@ -1117,29 +1117,27 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             "void main(){uint i=invocation();if(i<" + std::to_string(writable.size()) +
             "u)x_activeDegrees[i]=0u;}"), 0, checked(writable.size())});
     }
-    std::vector<Batch> sumRefinement, sumFinalRefinement;
+    std::map<uint32_t, std::vector<Batch>> sumRefinement;
     for (const auto& domain : summed) {
         const auto& binding = p->bindings[domain.set].domains[domain.domain];
         const auto first = p->relations[domain.set].first + binding.first;
         for (const auto& [source, count] : domain.bounds)
             p->candidateBounds.push_back({kernel("Bound summed expression", source), 0, count});
         uint32_t indexStage = 0;
-        for (const auto& [source, count] : domain.index)
-            sumStages.push_back({kernel("Index summed expression " + std::to_string(indexStage++), source), 0, count});
-        if (!domain.activity.empty())
-            sumActivity.push_back({kernel(domain.gather.empty() ? "Count active sum members" : "Linearize summed relation",
-                domain.activity), first, domain.activityCount ? domain.activityCount : binding.count});
-        if (!domain.solve.empty())
-            p->solve.push_back({kernel("Solve summed relation", domain.solve), first,
-                domain.solveCount ? domain.solveCount : binding.count});
-        if (!domain.gather.empty()) {
-            p->solve.push_back({kernel("Gather summed linearization", domain.gather), first, domain.gatherCount});
-            sumRefinement.push_back({kernel("Refine summed linear system", domain.refine), first, domain.solveCount});
-            sumRefinement.push_back(p->solve.back());
-            sumFinalRefinement.push_back(sumRefinement[sumRefinement.size()-2]);
-            auto final = p->solve.back();
-            if (!domain.finalGather.empty()) final.kernel = kernel("Gather and apply summed operator",domain.finalGather);
-            sumFinalRefinement.push_back(final);
+        for (const auto& [source, count] : domain.index) {
+            const auto program = kernel("Index summed expression " + std::to_string(indexStage), source);
+            if (indexStage++ == 0) p->kernels[program].ownerTransform = domain.snapshot;
+            sumStages.push_back({program, 0, count});
+        }
+        std::map<std::string,uint32_t> programs;
+        for (const auto& step : domain.program) {
+            auto found = programs.find(step.source);
+            if (found == programs.end())
+                found = programs.emplace(step.source,kernel(step.name,step.source)).first;
+            const Batch batch{found->second,first,step.count};
+            if (step.sweep == UINT32_MAX) sumActivity.push_back(batch);
+            else if (step.sweep == 0) p->solve.push_back(batch);
+            else sumRefinement[step.sweep].push_back(batch);
         }
         if (!domain.update.empty())
             p->update.push_back({kernel("Commit summed relation", domain.update), first, binding.count});
@@ -1147,8 +1145,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     // Sparse linear sweeps reuse the same Jacobian and total tangent correction.
     // They improve the block solve while keeping the nonlinear iteration and
     // integration budgets supplied by the caller intact.
-    for (uint32_t sweep = 1; sweep < 4; ++sweep) {
-        const auto& stages = sweep == 3 ? sumFinalRefinement : sumRefinement;
+    for (const auto& [sweep, stages] : sumRefinement) {
         p->solve.insert(p->solve.end(), stages.begin(), stages.end());
     }
     // Colored work changes the snapshot. Build indices and count dependencies

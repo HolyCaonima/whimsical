@@ -103,7 +103,7 @@ auto tail = instance.read(StateField::Value, variables, 99996, 4);
 
 - `Colored`：同一颜色内没有共享可写端点；颜色不足时编译报错。
 - `Jacobi`：关系计算局部贡献，随后按变量的关联表归并。
-- `Hybrid`：在颜色预算内着色，超出预算的关系进入 Jacobi；默认预算 32，上限 64。
+- `Hybrid`：在颜色预算内着色，超出预算的关系进入耦合求解阶段；默认预算 32，上限 64。通常采用 Jacobi；Auto 对已证明可分解且独占修正的集合算子，可选择投影方向与线性化二次型上的线搜索。显式 Jacobi 保留原有迭代。
 
 只读端点不产生写冲突。`readOnly` 是结构承诺，仍可通过速度、加速度或状态命令驱动；逆度量为零不会被编译器自动视为只读。批次按颜色和数学类型形成，不为每个独立连通分量创建一个 pass。Hybrid 的颜色数是上限；Auto 可根据静态 incidence 覆盖率把收益不足的颜色前缀并入已经存在的 Jacobi 阶段。
 
@@ -196,6 +196,8 @@ var contact = X.pair(separation, particles, particles, {diameter: 0.36}, {
 `parameters` 可以是分量数，此时绑定提供平铺数组、数学使用 `op.parameter(i)`；也可以是具名 schema，如 `{diameter:'scalar', centre:3}`，此时绑定提供 `{diameter:0.36, centre:[0,1,0]}`，数学通过 `p.diameter`、`p.centre` 引用。具名参数当前用于统一值；逐行参数使用分量数及平铺数组。
 
 `op.sum(expression, b)` 对形式对象 `b` 的绑定成员求和，支持标量和向量。该索引被求和后，每个 `a` 成员产生一个关系实例，参数、compliance、history 也按这些实例排列。求和结果可以继续参与普通数学表达式，Compiler 自动处理跨成员求导及重合自由度。当前支持单个求和索引、静态 Hybrid / Jacobi 执行；具体语义与性能范围见 [集合求和](dynamics-collection-sums.md)。
+
+集合算子的数学分析、求解计划与候选存储分别选择。最新实现包含投影线搜索、按所有权融合快照，以及跨物理重排保留的候选行缓存；适用证明、数值变化和性能限制见 [集合算子 IR 与执行重构](dynamics-collection-operator-ir-sep13.md)。
 
 ### 对象及绑定语义
 

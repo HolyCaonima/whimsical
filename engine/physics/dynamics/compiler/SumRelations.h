@@ -12,12 +12,18 @@ struct SumDomain {
     uint32_t set, domain;
     // Exact static incidence counts, shared across all rows of this domain.
     std::vector<std::pair<uint32_t, uint32_t>> degrees;
-    std::string solve, update, activity, gather, refine, finalGather;
+    struct Step {
+        std::string name, source;
+        uint32_t count, sweep;
+    };
+    // UINT32_MAX is the shared snapshot preparation epoch; subsequent numbers
+    // are ordered block sweeps. Compiler schedules domains without inventing
+    // additional numerical work or inspecting a physical storage choice.
+    std::vector<Step> program;
+    std::optional<OwnerTransform> snapshot;
+    std::string update;
     std::vector<uint32_t> appliedVariables;
     bool activeDegrees = true;
-    uint32_t gatherCount = 0;
-    uint32_t activityCount = 0;
-    uint32_t solveCount = 0;
     std::vector<std::pair<std::string, uint32_t>> bounds, index, assembly;
 };
 // The colored prefix has already been selected. Non-sum Jacobi incidence is

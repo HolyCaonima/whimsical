@@ -3,6 +3,7 @@
 #include "BindingIR.h"
 #include <algorithm>
 #include <array>
+#include <optional>
 
 namespace whimsical::dynamics {
 enum class SolveMode { Colored, Jacobi, Hybrid };
@@ -11,11 +12,13 @@ enum class JacobiWeighting { Auto, Static, Active };
 struct SolverPolicy {
     uint32_t substeps = 4, iterations = 4;
     SolveMode mode = SolveMode::Hybrid;
-    uint32_t colorBudget = 32; // bounded coloring; Hybrid sends overflow to gather Jacobi
+    uint32_t colorBudget = 32; // bounded coloring; Hybrid lowers overflow as coupled work
     float relaxation = 1;
     ExecutionMode execution = ExecutionMode::Auto;
     // Controls for global static Auto plans; local/dynamic/Global execution keeps
     // its original numerical path. No additional modeling DSL input is required.
+    // Hybrid/Auto can select projected line search for a factored collection
+    // that owns its correction. Explicit Jacobi retains the Jacobi iteration.
     JacobiWeighting weighting = JacobiWeighting::Auto;
     bool spatialCandidates = true; // permit cost-selected indexing
 };
@@ -86,11 +89,18 @@ struct RelationLayout {
 struct FieldModeLayout {
     uint32_t first = 0, mask = 0;
 };
+// A pointwise consumer of a complete owner state. The schedule may compose it
+// with the preceding owner program when their domains agree exactly.
+struct OwnerTransform {
+    uint32_t first = 0, count = 0, stride = 1;
+    std::string source, entry;
+};
 struct Kernel {
     std::string name, source; // local_size and main; runtime supplies the resource interface
     // Only kernels exchanging storage values between invocations require coherent
     // accesses. Dispatch boundaries are synchronized by the execution schedule.
     std::vector<BufferRole> coherentBuffers;
+    std::optional<OwnerTransform> ownerTransform;
 };
 struct Batch {
     uint32_t kernel, first, count;

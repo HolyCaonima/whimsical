@@ -251,12 +251,22 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
     for (const auto& [signature, owners] : recipes)
         if (p.spaces[signature[0]]->stateSize > 32 || signature.size() > RelationBudget)
             return false;
+    std::optional<OwnerTransform> epilogue;
+    if (recipes.size() == 1 && colored < p.solve.size()) {
+        const auto& candidate = p.kernels[p.solve[colored].kernel].ownerTransform;
+        const auto& owners = recipes.begin()->second;
+        bool sameDomain = candidate && candidate->count == owners.size();
+        for (uint32_t i = 0; sameDomain && i < owners.size(); ++i)
+            sameDomain = owners[i] == candidate->first + candidate->stride*i;
+        if (sameDomain) epilogue = candidate;
+    }
     auto ranges = words(p.buffers[size_t(BufferRole::RegionRanges)]);
     std::vector<Batch> stages;
     for (const auto& [signature, owners] : recipes) {
         const auto width = p.spaces[signature[0]]->stateSize;
         std::ostringstream source;
         source << stateAccess(StateStorage::Owner, width);
+        if (epilogue) source << epilogue->source;
         std::set<uint32_t> emitted;
         for (size_t call = 1; call < signature.size(); ++call)
             if (emitted.insert(signature[call]).second)
@@ -275,11 +285,14 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
                    << call*count << "u],step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration);";
         for (uint32_t c = 0; c < width; ++c)
             source << "x_q[owner.q+" << c << "u*owner.stride]=ownedState[" << c << "];";
+        if (epilogue)
+            source << epilogue->entry << "((stateOwner-" << epilogue->first << "u)/"
+                   << epilogue->stride << "u,ownedState);";
         source << "}";
         stages.push_back({uint32_t(p.kernels.size()), first, count, p.solve[colored-1].color});
         p.kernels.push_back({"Solve owned relation chain", source.str()});
     }
-    stages.insert(stages.end(), p.solve.begin()+colored, p.solve.end());
+    stages.insert(stages.end(), p.solve.begin()+colored+uint32_t(bool(epilogue)), p.solve.end());
     p.solve = std::move(stages);
     store(p.buffers[size_t(BufferRole::RegionRanges)], ranges);
     return true;
