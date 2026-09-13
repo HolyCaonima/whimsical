@@ -795,6 +795,43 @@ std::optional<std::vector<float>> constantJacobian(
     }
     return result;
 }
+std::optional<DifferenceFactor> factorDifferenceNorm(
+    const Formula& source, uint32_t stateInputs,
+    const std::vector<std::pair<uint32_t, uint32_t>>& coordinates) {
+    const auto formula = simplify(source);
+    auto ordered = [](auto pairs) {
+        for (auto& pair : pairs) if (pair.second < pair.first) std::swap(pair.first, pair.second);
+        std::sort(pairs.begin(), pairs.end());
+        return pairs;
+    };
+    const auto expected = ordered(coordinates);
+    if (expected.empty()) return {};
+    for (uint32_t root = 0; root < formula.nodes.size(); ++root) {
+        std::vector<std::pair<uint32_t, uint32_t>> found;
+        std::vector<uint32_t> pending{root};
+        bool norm = true;
+        while (!pending.empty() && norm) {
+            const auto node = formula.nodes[pending.back()]; pending.pop_back();
+            if (node.op == MathOp::Constant && node.value == 0) continue;
+            if (node.op == MathOp::Add) { pending.push_back(node.a); pending.push_back(node.b); continue; }
+            if (node.op != MathOp::Multiply || node.a != node.b) { norm = false; break; }
+            const auto difference = formula.nodes[node.a];
+            if (difference.op != MathOp::Subtract) { norm = false; break; }
+            const auto a = formula.nodes[difference.a], b = formula.nodes[difference.b];
+            if (a.op != MathOp::Input || b.op != MathOp::Input) { norm = false; break; }
+            found.emplace_back(a.a, b.a);
+        }
+        if (!norm || ordered(found) != expected) continue;
+        auto scalar = formula;
+        scalar.nodes[root] = {MathOp::Input, scalar.inputs++};
+        scalar = simplify(scalar);
+        if (std::any_of(scalar.nodes.begin(), scalar.nodes.end(), [&](const MathNode& node) {
+                return node.op == MathOp::Input && node.a < stateInputs;
+            })) continue;
+        return DifferenceFactor{std::move(scalar), formula.inputs, coordinates};
+    }
+    return {};
+}
 std::optional<DifferenceBound> differenceBound(const Formula& source, bool nonnegative,
                                               uint32_t parameterFirst, uint32_t parameterCount) {
     auto formula = simplify(source);

@@ -18,6 +18,18 @@ std::string emitGlslJacobian(const Formula&, const std::string& name,
 // This lets downstream lowering compose maps without materializing a matrix.
 std::optional<std::vector<float>> constantJacobian(
     const Formula&, const std::vector<uint32_t>& derivativeInputs);
+// Factor a local expression through a squared difference norm. The returned
+// formula replaces that norm by one extra scalar input; all other state inputs
+// must disappear. Its scalar derivative can be composed with vector consumers
+// without constructing the two endpoint Jacobian blocks.
+struct DifferenceFactor {
+    Formula scalar;
+    uint32_t argument = 0;
+    std::vector<std::pair<uint32_t, uint32_t>> coordinates;
+};
+std::optional<DifferenceFactor> factorDifferenceNorm(
+    const Formula&, uint32_t stateInputs,
+    const std::vector<std::pair<uint32_t, uint32_t>>& coordinates);
 // A violated sum-of-squares bound implies a finite interval for each input
 // difference. This is a mathematical proof, independent of objects and solvers.
 struct DifferenceBound {
