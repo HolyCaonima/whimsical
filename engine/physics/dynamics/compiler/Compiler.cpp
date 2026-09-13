@@ -1120,12 +1120,12 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         for (const auto& [source, count] : domain.index)
             sumStages.push_back({kernel("Index summed expression", source), 0, count});
         if (!domain.activity.empty())
-            sumActivity.push_back({kernel(domain.scatter.empty() ? "Count active sum members" : "Linearize summed relation",
+            sumActivity.push_back({kernel(domain.gather.empty() ? "Count active sum members" : "Linearize summed relation",
                 domain.activity), first, domain.activityCount ? domain.activityCount : binding.count});
         p->solve.push_back({kernel("Solve summed relation", domain.solve), first,
             domain.solveCount ? domain.solveCount : binding.count});
-        if (!domain.scatter.empty()) {
-            p->solve.push_back({kernel("Scatter summed linearization", domain.scatter), first, domain.scatterCount});
+        if (!domain.gather.empty()) {
+            p->solve.push_back({kernel("Gather summed linearization", domain.gather), first, domain.gatherCount});
             sumRefinement.push_back({kernel("Refine summed linear system", domain.refine), first, domain.solveCount});
             sumRefinement.push_back(p->solve.back());
         }
@@ -1139,6 +1139,9 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         p->solve.insert(p->solve.end(), sumRefinement.begin(), sumRefinement.end());
     // Colored work changes the snapshot. Build indices and count dependencies
     // after that work, immediately before the common Jacobi solve/apply stage.
+    for (const auto& domain : summed)
+        for (const auto& [source, count] : domain.assembly)
+            sumStages.push_back({kernel("Transpose summed incidence", source), 0, count});
     sumStages.insert(sumStages.end(), sumActivity.begin(), sumActivity.end());
     p->solve.insert(std::find_if(p->solve.begin(), p->solve.end(), [](const Batch& batch) {
         return batch.color < 0;
