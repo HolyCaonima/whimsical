@@ -744,7 +744,6 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     }
     if (p->summedRelations && (policy.mode == SolveMode::Colored || p->dynamicTopology))
         throw std::invalid_argument("Collection sums currently require static Hybrid or Jacobi execution");
-    auto summed = lowerSumRelations(*p);
     const bool activeSums = p->summedRelations && policy.weighting != JacobiWeighting::Static;
     for (uint32_t set = 0; set < p->relations.size(); ++set)
         for (uint32_t domain = 0; domain < p->bindings[set].domains.size(); ++domain)
@@ -940,6 +939,10 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         if (!directJacobi[type])
             throw std::logic_error("Deferred candidate domains require sparse scalar Jacobi work");
     }
+    auto summed = lowerSumRelations(*p, degree);
+    std::vector<bool> sumApplies(writable.size());
+    for (const auto& domain : summed)
+        for (auto id : domain.appliedVariables) sumApplies[id] = true;
     for (const auto& domain : summed)
         for (auto [id, count] : domain.degrees) {
             degree[id] = checked(uint64_t(degree[id]) + count);
@@ -1037,7 +1040,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         if (p->statistics.jacobiRelations) {
             std::vector<uint32_t> gather;
             for (auto variable : variableGroups[space])
-                if (writable[variable] && (p->dynamicTopology || degree[variable]))
+                if (writable[variable] && !sumApplies[variable] && (p->dynamicTopology || degree[variable]))
                     gather.push_back(variable);
             if (!gather.empty())
                 p->apply.push_back(
@@ -1111,7 +1114,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             "void main(){uint i=invocation();if(i<" + std::to_string(writable.size()) +
             "u)x_activeDegrees[i]=0u;}"), 0, checked(writable.size())});
     }
-    std::vector<Batch> sumRefinement;
+    std::vector<Batch> sumRefinement, sumFinalRefinement;
     for (const auto& domain : summed) {
         const auto& binding = p->bindings[domain.set].domains[domain.domain];
         const auto first = p->relations[domain.set].first + binding.first;
@@ -1128,6 +1131,10 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             p->solve.push_back({kernel("Gather summed linearization", domain.gather), first, domain.gatherCount});
             sumRefinement.push_back({kernel("Refine summed linear system", domain.refine), first, domain.solveCount});
             sumRefinement.push_back(p->solve.back());
+            sumFinalRefinement.push_back(sumRefinement[sumRefinement.size()-2]);
+            auto final = p->solve.back();
+            if (!domain.finalGather.empty()) final.kernel = kernel("Gather and apply summed operator",domain.finalGather);
+            sumFinalRefinement.push_back(final);
         }
         if (!domain.update.empty())
             p->update.push_back({kernel("Commit summed relation", domain.update), first, binding.count});
@@ -1135,8 +1142,10 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     // Sparse linear sweeps reuse the same Jacobian and total tangent correction.
     // They improve the block solve while keeping the nonlinear iteration and
     // integration budgets supplied by the caller intact.
-    for (uint32_t sweep = 1; sweep < 4; ++sweep)
-        p->solve.insert(p->solve.end(), sumRefinement.begin(), sumRefinement.end());
+    for (uint32_t sweep = 1; sweep < 4; ++sweep) {
+        const auto& stages = sweep == 3 ? sumFinalRefinement : sumRefinement;
+        p->solve.insert(p->solve.end(), stages.begin(), stages.end());
+    }
     // Colored work changes the snapshot. Build indices and count dependencies
     // after that work, immediately before the common Jacobi solve/apply stage.
     for (const auto& domain : summed)

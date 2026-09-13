@@ -12,11 +12,14 @@ struct SumDomain {
     uint32_t set, domain;
     // Exact static incidence counts, shared across all rows of this domain.
     std::vector<std::pair<uint32_t, uint32_t>> degrees;
-    std::string solve, update, activity, gather, refine;
+    std::string solve, update, activity, gather, refine, finalGather;
+    std::vector<uint32_t> appliedVariables;
     uint32_t gatherCount = 0;
     uint32_t activityCount = 0;
     uint32_t solveCount = 0;
     std::vector<std::pair<std::string, uint32_t>> bounds, index, assembly;
 };
-std::vector<SumDomain> lowerSumRelations(CompiledPlan&);
+// The colored prefix has already been selected. Non-sum Jacobi incidence is
+// used to prove whether an operator owns its cumulative correction field.
+std::vector<SumDomain> lowerSumRelations(CompiledPlan&, const std::vector<uint32_t>& externalDegrees);
 }
