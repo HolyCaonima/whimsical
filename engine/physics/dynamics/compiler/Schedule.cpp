@@ -201,6 +201,89 @@ bool buildColorWindow(const CompiledPlan& p, const std::vector<Batch>& stages,
         regions.push_back(std::move(packed));
     return !regions.empty();
 }
+// A chain whose only mutable input is its output has no cross-owner dependency.
+// Keep its color order, but place the complete chain on one invocation. The
+// owner state remains private across calls; read-only inputs keep global views.
+bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& functions) {
+    if (p.dynamicTopology || p.policy.execution == ExecutionMode::Global)
+        return false;
+    size_t colored = 0;
+    while (colored < p.solve.size() && p.solve[colored].color >= 0)
+        ++colored;
+    if (colored < 2)
+        return false;
+    const auto work = words(p.buffers[size_t(BufferRole::RelationWork)]);
+    using Call = std::pair<uint32_t, uint32_t>;
+    std::vector<std::vector<Call>> chains(p.statistics.variables);
+    for (size_t stage = 0; stage < colored; ++stage) {
+        const auto& batch = p.solve[stage];
+        if (batch.kernel >= functions.size() || functions[batch.kernel].entry.empty())
+            return false;
+        for (uint32_t row = 0; row < batch.count; ++row) {
+            const auto id = work[batch.first + row];
+            uint32_t owner = NoRegion;
+            for (uint32_t slot = 0; slot < p.types[p.relationType(id)]->spaces.size(); ++slot) {
+                const auto variable = p.endpoint(id, slot);
+                if (p.variableReadOnly(variable))
+                    continue;
+                if (owner != NoRegion && owner != variable)
+                    return false;
+                owner = variable;
+            }
+            if (owner == NoRegion)
+                return false;
+            chains[owner].emplace_back(batch.kernel, id);
+        }
+    }
+    // Identical call signatures share one unrolled program and columnar work
+    // table. Neither relation names nor parameter values enter the signature.
+    std::map<std::vector<uint32_t>, std::vector<uint32_t>> recipes;
+    for (uint32_t owner = 0; owner < chains.size(); ++owner) {
+        if (chains[owner].empty())
+            continue;
+        std::vector<uint32_t> signature{p.variables[p.variableSet(owner)].space};
+        for (auto [kernel, row] : chains[owner])
+            signature.push_back(kernel);
+        recipes[signature].push_back(owner);
+    }
+    if (recipes.size() >= colored)
+        return false;
+    for (const auto& [signature, owners] : recipes)
+        if (p.spaces[signature[0]]->stateSize > 32 || signature.size() > RelationBudget)
+            return false;
+    auto ranges = words(p.buffers[size_t(BufferRole::RegionRanges)]);
+    std::vector<Batch> stages;
+    for (const auto& [signature, owners] : recipes) {
+        const auto width = p.spaces[signature[0]]->stateSize;
+        std::ostringstream source;
+        source << stateAccess(StateStorage::Owner, width);
+        std::set<uint32_t> emitted;
+        for (size_t call = 1; call < signature.size(); ++call)
+            if (emitted.insert(signature[call]).second)
+                source << functions[signature[call]].source;
+        const auto first = uint32_t(ranges.size()), count = uint32_t(owners.size());
+        ranges.insert(ranges.end(), owners.begin(), owners.end());
+        for (size_t call = 1; call < signature.size(); ++call)
+            for (auto owner : owners)
+                ranges.push_back(chains[owner][call-1].second);
+        source << "void main(){uint i=invocation();if(i>=step.count)return;"
+                  "stateOwner=x_regionRanges[step.first+i];Variable owner=variable(stateOwner);";
+        for (uint32_t c = 0; c < width; ++c)
+            source << "ownedState[" << c << "]=x_q[owner.q+" << c << "u*owner.stride];";
+        for (size_t call = 1; call < signature.size(); ++call)
+            source << functions[signature[call]].entry << "(x_regionRanges[step.first+i+"
+                   << call*count << "u],step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration);";
+        for (uint32_t c = 0; c < width; ++c)
+            source << "x_q[owner.q+" << c << "u*owner.stride]=ownedState[" << c << "];";
+        source << "}";
+        stages.push_back({uint32_t(p.kernels.size()), first, count, p.solve[colored-1].color});
+        p.kernels.push_back({"Solve owned relation chain", source.str()});
+    }
+    stages.insert(stages.end(), p.solve.begin()+colored, p.solve.end());
+    p.solve = std::move(stages);
+    store(p.buffers[size_t(BufferRole::RegionRanges)], ranges);
+    return true;
+}
 void fuseColorWindows(CompiledPlan& p, const std::vector<KernelFunction>& functions) {
     if (p.dynamicTopology || p.policy.execution == ExecutionMode::Global)
         return;
@@ -391,8 +474,10 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
         // The variadic Jacobi domain needs its own snapshot stages, but that
         // does not invalidate independent variable work or the colored prefix.
         collapseVariableDispatches(p, functions);
-        collapseRelationDispatches(p, false);
-        fuseColorWindows(p, functions);
+        if (!fuseOwnedRelations(p, functions)) {
+            collapseRelationDispatches(p, false);
+            fuseColorWindows(p, functions);
+        }
         p.statistics.dispatches = dispatchCount(p);
         pruneKernels(p);
         return;

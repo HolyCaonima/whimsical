@@ -31,7 +31,7 @@ KernelFunction relationDispatchFunction(
     const std::vector<std::pair<uint32_t, KernelFunction>>&, bool jacobi, const std::string& name);
 std::string globalKernel(const KernelFunction&);
 std::string fieldAccess(bool local);
-enum class StateStorage { Global, Region, Epoch };
+enum class StateStorage { Global, Region, Epoch, Owner };
 std::string stateAccess(StateStorage, uint32_t variableCount = 0, bool externalInputs = false);
 
 // Preserve the semantic batch ordering; choose ownership and execution placement.

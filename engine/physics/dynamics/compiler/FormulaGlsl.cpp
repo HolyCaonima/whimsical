@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <functional>
 #include <iomanip>
 #include <locale>
 #include <map>
@@ -793,6 +794,47 @@ std::optional<std::vector<float>> constantJacobian(
             return {};
         result.push_back(symbolic->nodes[id].value);
     }
+    return result;
+}
+StagedFormula stageFormula(const Formula& source, const std::vector<uint32_t>& varyingInputs) {
+    const auto formula = simplify(source);
+    std::vector<bool> inputVarying(formula.inputs), varies(formula.nodes.size());
+    for (auto input : varyingInputs)
+        inputVarying.at(input) = true;
+    for (uint32_t id = 0; id < formula.nodes.size(); ++id) {
+        const auto& node = formula.nodes[id];
+        if (node.op == MathOp::Input)
+            varies[id] = inputVarying[node.a];
+        else if (node.op != MathOp::Constant) {
+            varies[id] = varies[node.a];
+            if (arity(node.op) > 1) varies[id] = varies[id] || varies[node.b];
+            if (arity(node.op) > 2) varies[id] = varies[id] || varies[node.c];
+        }
+    }
+    StagedFormula result{formula, {}, formula.inputs};
+    result.invariant.outputs.clear();
+    result.varying.inputs = formula.inputs;
+    std::vector<uint32_t> mapping(formula.nodes.size(), UINT32_MAX);
+    std::function<uint32_t(uint32_t)> visit = [&](uint32_t id) {
+        if (mapping[id] != UINT32_MAX) return mapping[id];
+        auto node = formula.nodes[id];
+        if (!varies[id] && node.op != MathOp::Constant) {
+            node = {MathOp::Input, result.varying.inputs++};
+            result.invariant.outputs.push_back(id);
+        } else if (node.op != MathOp::Input && node.op != MathOp::Constant) {
+            node.a = visit(node.a);
+            if (arity(node.op) > 1) node.b = visit(node.b);
+            if (arity(node.op) > 2) node.c = visit(node.c);
+        }
+        mapping[id] = uint32_t(result.varying.nodes.size());
+        result.varying.nodes.push_back(node);
+        return mapping[id];
+    };
+    for (auto output : formula.outputs)
+        result.varying.outputs.push_back(visit(output));
+    if (!result.invariant.outputs.empty())
+        result.invariant = simplify(result.invariant);
+    result.varying = simplify(result.varying);
     return result;
 }
 std::optional<DifferenceFactor> factorDifferenceNorm(

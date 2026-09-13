@@ -14,6 +14,7 @@ struct SumDomain {
     std::vector<std::pair<uint32_t, uint32_t>> degrees;
     std::string solve, update, activity, gather, refine, finalGather;
     std::vector<uint32_t> appliedVariables;
+    bool activeDegrees = true;
     uint32_t gatherCount = 0;
     uint32_t activityCount = 0;
     uint32_t solveCount = 0;

@@ -121,10 +121,20 @@ struct Generator {
     // chosen. Equal injective index maps provide the reverse traversal without
     // assembling another incidence structure.
     std::optional<DifferenceFactor> factor;
+    StagedFormula parameterProgram;
+    uint32_t parameterValues = 0;
     float factorScale = 0;
-    uint32_t operatorRows = 0, coefficients = 0;
-    bool listedMembers = true, cachedCoefficients = false;
+    uint32_t operatorRows = 0, coefficients = 0, listEntries = 0, edgeCapacity = 0;
+    bool listedMembers = true, cachedCoefficients = false, compactMembers = false;
     bool isolatedCorrection = false;
+    uint32_t operatorRowWidth() const { return 6+2*T; }
+    bool structuralWeighting() const {
+        // Reciprocal candidates bound the number n_v of rows incident on v.
+        // Cauchy-Schwarz gives J B J^T <= diag(sum_v n_v J_iv B_v J_iv^T).
+        // Adding compliance preserves the bound and the residual's fixed point.
+        // Auto may choose this majorizer; explicit Active retains its weighting.
+        return isolatedCorrection && listedMembers && p.policy.weighting == JacobiWeighting::Auto;
+    }
     uint32_t linearization = 0;
     uint32_t transpose = 0, cursors = 0, inverseEntries = 0, inverseVariables = 0;
     uint32_t variableCount = 0;
@@ -199,6 +209,15 @@ struct Generator {
         access = s.str();
         analyzeOperator();
         if (factor) {
+            std::vector<uint32_t> varyingInputs;
+            for (uint32_t column = 0; column < factor->scalar.inputs; ++column)
+                if (column < t.stateSize() || column >= t.stateSize()+t.parameters)
+                    varyingInputs.push_back(column);
+            parameterProgram = stageFormula(factor->scalar, varyingInputs);
+            if (!parameterProgram.invariant.outputs.empty())
+                parameterValues = append(p, std::vector<uint32_t>(
+                    size_t(d.count)*parameterProgram.invariant.outputs.size()));
+            factor->scalar = parameterProgram.varying;
             for (uint32_t member = 0; member < d.count; ++member) {
                 const auto ref = d.fields[fixed[0]].at(member);
                 degrees.emplace_back(p.variables[ref.set].first + ref.index, d.count);
@@ -209,10 +228,9 @@ struct Generator {
             // Cached rows distribute consecutive entries across short teams;
             // streaming queries distribute the independent spatial cells.
             if (!listedMembers) operatorTeam = 32;
-            operatorRows = append(p, std::vector<uint32_t>(size_t(d.count)*(6+2*T)));
-            const uint64_t words = uint64_t((d.count+128/operatorTeam-1)/(128/operatorTeam))*128*Capacity/operatorTeam;
-            cachedCoefficients = listedMembers && p.buffers[size_t(BufferRole::SumData)].wordCount() + words <= 24ull*1024*1024;
-            if (cachedCoefficients) coefficients = append(p, std::vector<uint32_t>(size_t(words)));
+            operatorRows = append(p, std::vector<uint32_t>(size_t(d.count)*operatorRowWidth()));
+            cachedCoefficients = listedMembers;
+            if (cachedCoefficients) coefficients = append(p, std::vector<uint32_t>(edgeCapacity));
             return;
         }
         if (support && fastRecords && recordCount &&
@@ -358,9 +376,12 @@ std::string Generator::groupedAccess() const {
     s << "uint logicalMember(uint i){return x_sumData[" << grouped+3 << "u+i*8u];}\n"
          "ivec3 groupedCell(uint i){uint at=" << grouped << "u+i*8u;return ivec3(x_sumData[at],x_sumData[at+1u],x_sumData[at+2u]);}\n"
          "vec3 groupedPoint(uint i){uint at=" << grouped+4 << "u+i*8u;return vec3(uintBitsToFloat(x_sumData[at]),uintBitsToFloat(x_sumData[at+1u]),uintBitsToFloat(x_sumData[at+2u]));}\n"
-         "uint listWord(uint row,uint entry){return " << lists+d.count << "u+(row/"
-      << 128/operatorTeam << "u)*" << Capacity*128/operatorTeam << "u+(entry/" << operatorTeam
-      << "u)*128u+(row%" << 128/operatorTeam << "u)*" << operatorTeam << "u+entry%" << operatorTeam << "u;}\n";
+         "uint edgeWord(uint row,uint entry){return ";
+    if (compactMembers) s << "x_sumData[" << lists+d.count << "u+row]+entry;";
+    else s << "(row/" << 128/operatorTeam << "u)*" << Capacity*128/operatorTeam << "u+(entry/"
+           << operatorTeam << "u)*128u+(row%" << 128/operatorTeam << "u)*" << operatorTeam
+           << "u+entry%" << operatorTeam << "u;";
+    s << "}\nuint listWord(uint row,uint entry){return " << listEntries << "u+edgeWord(row,entry);}\n";
     // Projection coordinates may be permuted by support analysis. The cached
     // state must keep the declared tangent component order, including for B.
     s << "vec3 currentPoint(uint member){Variable v=variable(field" << fixed[0] << "(member));return vec3(";
@@ -384,17 +405,22 @@ std::string Generator::operatorSource() const {
     // Factor g = k * delta before choosing storage: k is the only edge value.
     // Both consumers reconstruct the vector from the shared state snapshot.
     // Each tile follows invocation order across the short reduction teams.
-    s << "uint coefficientWord(uint row,uint entry){return " << coefficients
-      << "u+(row/" << 128/operatorTeam << "u)*" << Capacity*128/operatorTeam
-      << "u+(entry/REDUCTION_TEAM)*128u+(row%"
-      << 128/operatorTeam << "u)*REDUCTION_TEAM+entry%REDUCTION_TEAM;}\n";
+    s << "uint coefficientWord(uint row,uint entry){return " << coefficients << "u+edgeWord(row,entry);}\n";
     s << "float rowValue(uint row,uint column){return uintBitsToFloat(x_sumData[rowWord(row,column)]);}\n"
          "void rowStore(uint row,uint column,float value){x_sumData[rowWord(row,column)]=floatBitsToUint(value);}\n";
+    if (structuralWeighting()) {
+        s << "float incidenceBound(uint row){uint count=x_sumData[" << lists << "u+row];return float(";
+        if (compactMembers) s << "count";
+        else s << "count<=" << Capacity << "u?count:" << d.count << "u";
+        s << ")" << (d.map == BindingDomain::Map::Directed ? "+1.0" : "") << ";}\n";
+    }
     s << emitGlslDerivative(factor->scalar,"scalarTerm",{factor->argument});
     s << emitGlsl(splitSums(t.residual,t).outer,"outerValue");
     s << "void term(uint anchor,float distance2,out float value,out float coefficient){Relation r=relation(step.first+logicalMember(anchor));";
-    array(s,"x",n+1);array(s,"y",1);array(s,"dy",1);
-    for (uint32_t c=0;c<t.parameters;++c) s << "x[" << t.stateSize()+c << "]=loadParameter(r," << c << "u);";
+    array(s,"x",factor->scalar.inputs);array(s,"y",1);array(s,"dy",1);
+    for (uint32_t c=0;c<parameterProgram.invariant.outputs.size();++c)
+        s << "x[" << parameterProgram.firstInvariant+c << "]=uintBitsToFloat(x_sumData["
+          << parameterValues+c*d.count << "u+logicalMember(anchor)]);";
     for (uint32_t c=0;c<t.history;++c) s << "x[" << t.stateSize()+t.parameters+c << "]=loadHistory(r," << c << "u);";
     s << "x[" << n-2 << "]=step.h;x[" << n-1 << "]=step.time;x[" << n << "]=distance2;scalarTerm(x,y,dy);"
          "value=y[0];coefficient=dy[0]*2.0*" << std::setprecision(9) << factorScale << ";}\n";
@@ -440,7 +466,9 @@ std::string Generator::operatorMembers(const std::string& body) const {
     const auto direct = "MemberCursor cursor=members(anchor,lane);uint member,entry;"
         "while(nextMember(anchor,cursor,member,entry)){" + body + "}";
     if (!listedMembers) return direct;
-    return "uint count=x_sumData[" + u(lists) + "+anchor];if(count<=" + u(Capacity) +
+    const auto cached = compactMembers ? "x_sumData["+u(lists+d.count)+"+anchor]!=0xffffffffu" :
+        "count<="+u(Capacity);
+    return "uint count=x_sumData[" + u(lists) + "+anchor];if(" + cached +
         "){for(uint entry=lane;entry<count;entry+=REDUCTION_TEAM){uint member=x_sumData[listWord(anchor,entry)];" +
         body + "}}else{" + direct + "}";
 }
@@ -475,7 +503,8 @@ std::string Generator::operatorLinearize() const {
     body << "vec3 g=delta*k;total[0]+=value;";
     if(cachedCoefficients)body << "if(entry!=0xffffffffu)x_sumData[coefficientWord(anchor,entry)]=floatBitsToUint(k);";
     for(uint32_t c=0;c<T;++c)body << "total[" << 1+c << "]+=g[" << c << "];";
-    body << "if(member!=anchor)total[" << T+1 << "]+=dot(g,metric(member,g));";
+    body << "if(member!=anchor)total[" << T+1 << "]+=dot(g,metric(member,g))"
+         << (structuralWeighting() ? "*incidenceBound(member)" : "") << ";";
     s << "if(valid){vec3 a=point(anchor);" << operatorMembers(body.str()) << "}" << operatorReduce(T+2);
     s << "if(lane==0u){live[team]=0u;if(valid){Relation r=relation(step.first+logicalMember(anchor));"
          "if(step.iteration==0u)storeMultiplier(r,0u,0.0);rowStore(anchor,4u,0.0);rowStore(anchor,0u,0.0);";
@@ -488,8 +517,17 @@ std::string Generator::operatorLinearize() const {
     if(t.kind!=RelationKind::Equality)s << "if(!(c[0]" << (t.kind==RelationKind::GreaterEqual?">=":"<=") << "0.0&&loadMultiplier(r,0u)==0.0))";
     s << "{live[team]=1u;rowStore(anchor,0u,1.0);vec3 g=diagonal(anchor);"
          "float alpha=loadCompliance(r,0u," << 2+t.parameters << "u)/(step.h*step.h);"
-         "rowStore(anchor,1u,total[" << T+1 << "]+dot(g,metric(anchor,g))+alpha);"
+         "rowStore(anchor,1u,total[" << T+1 << "]+dot(g,metric(anchor,g))"
+      << (structuralWeighting() ? "*incidenceBound(anchor)" : "") << "+alpha);"
          "rowStore(anchor,2u,-c[0]-alpha*loadMultiplier(r,0u));rowStore(anchor,3u,loadMultiplier(r,0u));"
+      ;
+    if (structuralWeighting()) {
+        s << "float a[1],rhs[1],dl[1],nextLambda[1];uint degree=1u;"
+             "a[0]=rowValue(anchor,1u);rhs[0]=rowValue(anchor,2u);"
+          << solveAndProject() << "rowStore(anchor,4u,dl[0]);}}}}}}";
+        return s.str();
+    }
+    s <<
          "if(any(notEqual(g,vec3(0)))&&variableEnabled(mappedVariable(anchor)))"
          "atomicAdd(x_activeDegrees[mappedVariable(anchor).id],1u);}}}}}barrier();"
          "if(valid&&live[team]!=0u){vec3 a=point(anchor);";
@@ -502,10 +540,11 @@ std::string Generator::operatorSolve(bool refine) const {
     std::ostringstream s;
     s << operatorSource() << "shared float partial[128];shared uint degreePartial[128];"
          "void main(){uint local=sumLocal(),lane=local%REDUCTION_TEAM,anchor=sumInvocation()/REDUCTION_TEAM;bool valid=anchor<"
-      << d.count << "u;uint degree=1u;float total[1];total[0]=0.0;bool solveRow=valid&&rowValue(anchor,0u)!=0.0;";
-    // Retain the existing numerical fallback; suppress its unused work before
-    // entering the traversal, without making barriers depend on row validity.
-    if (refine && listedMembers) s << "if(valid&&x_sumData[" << lists << "u+anchor]>" << Capacity << "u)solveRow=false;";
+         << d.count << "u;uint degree=1u;float total[1];total[0]=0.0;bool solveRow=valid&&rowValue(anchor,0u)!=0.0;";
+    // Retain the established single-sweep fallback of the fixed-width plan.
+    // Compact plans use the same refinements for cached and streamed rows.
+    if (refine && listedMembers && !compactMembers)
+        s << "if(valid&&x_sumData[" << lists << "u+anchor]>" << Capacity << "u)solveRow=false;";
     s << "if(solveRow){vec3 a=point(anchor);if(lane==0u){vec3 g=diagonal(anchor);";
     if (refine || !isolatedCorrection) s << "total[0]+=dot(g,displacement(anchor));";
     if(!refine)s << "if(any(notEqual(g,vec3(0)))&&variableEnabled(mappedVariable(anchor)))degree=max(degree,x_activeDegrees[mappedVariable(anchor).id]);";
@@ -516,7 +555,7 @@ std::string Generator::operatorSolve(bool refine) const {
     if(!refine)body << "if(any(notEqual(g,vec3(0)))&&variableEnabled(mappedVariable(member)))degree=max(degree,x_activeDegrees[mappedVariable(member).id]);";
     s << operatorMembers(body.str()) << "}" << operatorReduce(1,!refine) << "if(lane!=0u||!valid)return;rowStore(anchor,4u,0.0);"
          "if(!solveRow)return;";
-    if(refine)s << "degree=x_sumData[rowWord(anchor,5u)];";
+    if(refine && !structuralWeighting())s << "degree=x_sumData[rowWord(anchor,5u)];";
     else s << "x_sumData[rowWord(anchor,5u)]=degree;";
     s << "Relation r=relation(step.first+logicalMember(anchor));float a[1],rhs[1],dl[1],nextLambda[1];"
          "a[0]=rowValue(anchor,1u);rhs[0]=rowValue(anchor,2u)-total[0]-loadCompliance(r,0u," << 2+t.parameters
@@ -693,18 +732,52 @@ void Generator::prepareIndex() {
     if (!factor) anchorFeatures = append(p, std::vector<uint32_t>(size_t(d.count)*3));
     // Storage is a lowering decision. Large domains retain the spatial index
     // and stream members instead of reserving Capacity entries for every row.
-    const uint64_t listWords = factor ? uint64_t((d.count+15u)/16u)*16u*Capacity+d.count :
-        uint64_t(d.count)*(Capacity+1);
-    listedMembers = !factor || p.buffers[size_t(BufferRole::SumData)].wordCount() + listWords <= 24ull*1024*1024;
-    if (listedMembers) lists = append(p, std::vector<uint32_t>(size_t(listWords)));
+    if (factor) {
+        // Storage grows with the relation, rather than assigning a fixed-width
+        // matrix to each row. A common arena admits long rows without changing
+        // their solver. Its budget includes both indices and scalar factors.
+        const auto fixedWords = p.buffers[size_t(BufferRole::SumData)].wordCount() +
+            uint64_t(d.count)*(2*Capacity+1+operatorRowWidth());
+        compactMembers = fixedWords > 24ull*1024*1024;
+        constexpr uint64_t WordBudget = 160ull*1024*1024;
+        uint64_t prefixWords = 0;
+        if (compactMembers)
+            for (uint64_t count = d.count;;) {
+                count = (count+127)/128;
+                prefixWords += count == 1 ? 1 : 2*count;
+                if (count == 1) break;
+            }
+        const auto used = p.buffers[size_t(BufferRole::SumData)].wordCount() +
+            uint64_t(d.count)*(2+operatorRowWidth()) + prefixWords;
+        const auto available = used < WordBudget ? (WordBudget-used)/2 : 0;
+        edgeCapacity = uint32_t(compactMembers ? std::min<uint64_t>(uint64_t(d.count)*64, available) :
+            uint64_t((d.count+15u)/16u)*16u*Capacity);
+        listedMembers = edgeCapacity >= uint64_t(d.count)*8;
+        if (listedMembers) {
+            lists = append(p, std::vector<uint32_t>(size_t(d.count)*(compactMembers?2:1)));
+            listEntries = append(p, std::vector<uint32_t>(edgeCapacity));
+        }
+    } else lists = append(p, std::vector<uint32_t>(size_t(d.count)*(Capacity+1)));
     const auto source = stateAccess(StateStorage::Global) + access + gridSource() + (factor ? groupedAccess() : "");
     bounds.push_back({"void main(){if(invocation()==0u){x_sumData["+u(header)+"]=0u;x_sumData["+
         u(header+1)+"]=0u;}}", 1});
     std::ostringstream s;
     s << stateAccess(StateStorage::Global) << emitGlsl(support->squaredRadius,"boundValue")
+      << (factor && !parameterProgram.invariant.outputs.empty() ?
+          emitGlsl(parameterProgram.invariant,"parameterValues") : "")
       << "void main(){uint i=invocation();if(i>=" << d.count << "u)return;Relation r=relation("
       << p.relations[set].first+d.first << "u+i);float x[" << n << "],value[1];";
     for (uint32_t k = 0; k < t.parameters; ++k) s << "x[" << t.stateSize()+k << "]=loadParameter(r," << k << "u);";
+    if (factor && !parameterProgram.invariant.outputs.empty()) {
+        const auto count = uint32_t(parameterProgram.invariant.outputs.size());
+        array(s,"parameterInput",parameterProgram.invariant.inputs);
+        array(s,"parameterOutput",count);
+        for (uint32_t k=0;k<t.parameters;++k)
+            s << "parameterInput[" << t.stateSize()+k << "]=x[" << t.stateSize()+k << "];";
+        s << "parameterValues(parameterInput,parameterOutput);";
+        for (uint32_t k=0;k<count;++k)
+            s << "x_sumData[" << parameterValues+k*d.count << "u+i]=floatBitsToUint(parameterOutput[" << k << "]);";
+    }
     s << "boundValue(x,value);if(isnan(value[0])||isinf(value[0])||value[0]<1e-20||value[0]>1e20)"
          "atomicOr(x_sumData[" << header+1 << "u],1u);else atomicMax(x_sumData[" << header
       << "u],floatBitsToUint(value[0]));}";
@@ -718,7 +791,8 @@ void Generator::prepareIndex() {
           << "u]!=x_sumData[" << header << "u]);}";
         index.push_back({s.str(),1}); s.str(""); s.clear();
     }
-    s << source << "bool moved(vec3 f,uint at){vec3 previous=vec3(uintBitsToFloat(x_sumData[at]),"
+    s << source << (factor ? "shared uint movedGroup;" : "")
+      << "bool moved(vec3 f,uint at){vec3 previous=vec3(uintBitsToFloat(x_sumData[at]),"
          "uintBitsToFloat(x_sumData[at+1u]),uintBitsToFloat(x_sumData[at+2u]));vec3 delta=f-previous;"
          "return !(dot(delta,delta)<=0.000576*uintBitsToFloat(x_sumData[" << header << "u]));}"
          "void main(){uint i=invocation();if(x_sumData[" << header+2 << "u]!=0u||x_sumData["
@@ -732,7 +806,11 @@ void Generator::prepareIndex() {
     else s << "if(i<" << extent() << "u){vec3 f=currentPoint(i);uint at=" << grouped+4
       << "u+x_sumData[" << ranks << "u+i]*8u;x_sumData[at]=floatBitsToUint(f.x);"
          "x_sumData[at+1u]=floatBitsToUint(f.y);x_sumData[at+2u]=floatBitsToUint(f.z);}";
-    s << "if(changed)" << (factor?"atomicAdd":"atomicOr") << "(x_sumData[" << header+3 << "u],1u);}";
+    if (factor)
+        s << "if(gl_LocalInvocationID.x==0u)movedGroup=0u;barrier();"
+             "if(changed)atomicOr(movedGroup,1u);barrier();"
+             "if(gl_LocalInvocationID.x==0u&&movedGroup!=0u)atomicAdd(x_sumData[" << header+3 << "u],1u);}";
+    else s << "if(changed)atomicOr(x_sumData[" << header+3 << "u],1u);}";
     index.push_back({s.str(),std::max(d.count,extent())}); s.str(""); s.clear();
     s << "void main(){" << skipUnchangedIndex() << "uint i=invocation();if(i<"
       << buckets << "u)x_sumData[" << heads << "u+i]=0xffffffffu;if(i==0u){x_sumData["
@@ -806,24 +884,99 @@ void Generator::prepareGroupedIndex() {
     constexpr uint32_t Team = 32, Teams = 128/Team;
     uint32_t cellCount = 1;
     for (uint32_t c=0;c<T;++c) cellCount *= 3;
-    s << source << "shared uint counts[" << Teams << "],entries[" << Teams*Capacity << "];"
-         "void main(){" << skipUnchangedIndex() << "uint anchor=invocation()/32u,"
-         "lane=gl_LocalInvocationID.x%32u,team=gl_LocalInvocationID.x/32u;bool valid=anchor<" << d.count << "u;"
-         "if(lane==0u)counts[team]=0u;barrier();bool indexed=x_sumData[" << header+2 << "u]==0u;"
-         "if(valid&&indexed&&lane<" << cellCount << "u){ivec3 center=groupedCell(anchor),offset=ivec3(0);"
-         "vec3 f=groupedPoint(anchor);uint code=lane;";
-    for(uint32_t c=0;c<T;++c)s << "offset[" << c << "]=int(code%3u)-1;code/=3u;";
-    s << "ivec3 cell=center+offset;uint key=bucket(cell),end=x_sumData[" << bucketEnds << "u+key];"
-         "for(uint member=x_sumData[" << heads << "u+key];member<end;++member){"
-         "if(all(equal(cell,groupedCell(member)))&&accepts(anchor,member)){vec3 delta=f-groupedPoint(member);"
-         "if(dot(delta,delta)<=1.1029*uintBitsToFloat(x_sumData[" << header << "u])){"
-         "uint entry=atomicAdd(counts[team],1u);if(entry<" << Capacity << "u)entries[team*" << Capacity
-      << "u+entry]=member;else break;}}}}barrier();if(valid){uint count=counts[team];"
-         "if(lane==0u)x_sumData[" << lists << "u+anchor]=indexed?count:0xffffffffu;"
-         "if(indexed&&count<=" << Capacity << "u)for(uint k=lane;k<count;k+=32u)"
-         "x_sumData[listWord(anchor,k)]=entries[team*" << Capacity << "u+k];}}";
-    index.push_back({s.str(),d.count*Team});
-    p.statistics.candidateQueueCapacity += uint64_t(d.count)*Capacity;
+    if (!compactMembers) {
+        s << source << "shared uint counts[" << Teams << "],entries[" << Teams*Capacity << "];"
+             "void main(){" << skipUnchangedIndex() << "uint anchor=invocation()/32u,"
+             "lane=gl_LocalInvocationID.x%32u,team=gl_LocalInvocationID.x/32u;bool valid=anchor<" << d.count << "u;"
+             "if(lane==0u)counts[team]=0u;barrier();bool indexed=x_sumData[" << header+2 << "u]==0u;"
+             "if(valid&&indexed&&lane<" << cellCount << "u){ivec3 center=groupedCell(anchor),offset=ivec3(0);"
+             "vec3 f=groupedPoint(anchor);uint code=lane;";
+        for(uint32_t c=0;c<T;++c)s << "offset[" << c << "]=int(code%3u)-1;code/=3u;";
+        s << "ivec3 cell=center+offset;uint key=bucket(cell),end=x_sumData[" << bucketEnds << "u+key];"
+             "for(uint member=x_sumData[" << heads << "u+key];member<end;++member){"
+             "if(all(equal(cell,groupedCell(member)))&&accepts(anchor,member)){vec3 delta=f-groupedPoint(member);"
+             "if(dot(delta,delta)<=1.1029*uintBitsToFloat(x_sumData[" << header << "u])){"
+             "uint entry=atomicAdd(counts[team],1u);if(entry<" << Capacity << "u)entries[team*" << Capacity
+          << "u+entry]=member;else break;}}}}barrier();if(valid){uint count=counts[team];"
+             "if(lane==0u)x_sumData[" << lists << "u+anchor]=indexed?count:0xffffffffu;"
+             "if(indexed&&count<=" << Capacity << "u)for(uint k=lane;k<count;k+=32u)"
+             "x_sumData[listWord(anchor,k)]=entries[team*" << Capacity << "u+k];}}";
+        index.push_back({s.str(), d.count*Team});
+        p.statistics.candidateQueueCapacity += edgeCapacity;
+        return;
+    }
+    // Count, parallel prefix, fill: no global allocator serializes the query
+    // teams. Prefixes saturate beyond the storage budget; those rows use the
+    // exact streamed operator. A short lane cache avoids revisiting most cells.
+    auto query = [&](bool fill) {
+        s.str(""); s.clear();
+        s << source << linearAccess() << "shared uint partial[128];"
+             "void main(){" << skipUnchangedIndex() << "uint local=sumLocal(),anchor=sumInvocation()/32u,"
+             "lane=local%32u,team=local/32u;bool valid=anchor<" << d.count << "u;"
+             "bool indexed=x_sumData[" << header+2 << "u]==0u;uint cached[8],found=0u,first=0u,end=0u;"
+             "ivec3 cell=ivec3(0);vec3 f=vec3(0);"
+             "if(valid&&indexed&&lane<" << cellCount << "u){cell=groupedCell(anchor);f=groupedPoint(anchor);uint code=lane;";
+        for(uint32_t c=0;c<T;++c)s << "cell[" << c << "]+=int(code%3u)-1;code/=3u;";
+        s << "uint key=bucket(cell);first=x_sumData[" << heads << "u+key];end=x_sumData["
+          << bucketEnds << "u+key];}"
+             "for(uint member=first;member<end;++member){if(!all(equal(cell,groupedCell(member)))||!accepts(anchor,member))continue;"
+             "vec3 delta=f-groupedPoint(member);if(dot(delta,delta)>1.1029*uintBitsToFloat(x_sumData["
+          << header << "u]))continue;";
+        if (fill) s << "if(found<8u)cached[found]=member;";
+        s << "++found;}uint prefix=found;"
+             "\n#ifdef DYNAMICS_SUBGROUP32\nif(gl_NumSubgroups==4u){for(uint offset=1u;offset<32u;offset*=2u){"
+             "uint other=subgroupShuffleUp(prefix,offset);if(lane>=offset)prefix+=other;}}else\n#endif\n{"
+             "partial[local]=prefix;barrier();for(uint offset=1u;offset<32u;offset*=2u){"
+             "uint other=lane>=offset?partial[local-offset]:0u;barrier();partial[local]+=other;barrier();}prefix=partial[local];}";
+        if (!fill) {
+            s << "if(valid&&lane==31u)x_sumData[" << lists << "u+anchor]=indexed?prefix:" << d.count << "u;}";
+            return s.str();
+        }
+        s << "if(!valid)return;uint start=x_sumData[" << lists+d.count << "u+anchor];"
+             "bool fits=indexed&&start<=" << edgeCapacity << "u&&x_sumData[" << lists << "u+anchor]<="
+          << edgeCapacity << "u-min(start," << edgeCapacity << "u);"
+             "if(!fits){if(lane==0u)x_sumData[" << lists+d.count << "u+anchor]=0xffffffffu;return;}"
+             "uint at=" << listEntries << "u+start+prefix-found;"
+             "if(found<=8u){for(uint k=0u;k<found;++k)x_sumData[at+k]=cached[k];}else{"
+             "for(uint member=first;member<end;++member){if(!all(equal(cell,groupedCell(member)))||!accepts(anchor,member))continue;"
+             "vec3 delta=f-groupedPoint(member);if(dot(delta,delta)<=1.1029*uintBitsToFloat(x_sumData["
+          << header << "u]))x_sumData[at++]=member;}}}";
+        return s.str();
+    };
+    index.push_back({query(false),d.count*Team});
+    struct PrefixLevel { uint32_t output, count; };
+    std::vector<PrefixLevel> levels;
+    uint32_t input = lists, output = lists+d.count, count = d.count;
+    const auto limit = edgeCapacity+1;
+    for (;;) {
+        const auto blocks = (count+127)/128;
+        const auto totals = append(p, std::vector<uint32_t>(blocks));
+        s.str(""); s.clear();
+        s << "shared uint partial[128];void main(){" << skipUnchangedIndex()
+          << "uint i=invocation(),lane=gl_LocalInvocationID.x;uint value=i<" << count
+          << "u?x_sumData[" << input << "u+i]:0u;";
+        if (levels.empty()) s << "value=(value+7u)&~7u;";
+        s << "partial[lane]=min(value," << limit << "u);barrier();"
+             "for(uint offset=1u;offset<128u;offset*=2u){uint other=lane>=offset?partial[lane-offset]:0u;"
+             "barrier();partial[lane]=min(partial[lane]+other," << limit << "u);barrier();}"
+             "if(i<" << count << "u)x_sumData[" << output << "u+i]=lane==0u?0u:partial[lane-1u];"
+             "if(lane==127u&&i/128u<" << blocks << "u)x_sumData[" << totals << "u+i/128u]=partial[lane];}";
+        index.push_back({s.str(),count});
+        levels.push_back({output,count});
+        if (blocks==1) break;
+        input=totals; count=blocks;
+        output=append(p,std::vector<uint32_t>(count));
+    }
+    for (size_t level=levels.size()-1;level>0;--level) {
+        const auto child=levels[level-1],parent=levels[level];
+        s.str(""); s.clear();
+        s << "void main(){" << skipUnchangedIndex() << "uint i=invocation();if(i>=" << child.count
+          << "u)return;x_sumData[" << child.output << "u+i]=min(x_sumData[" << child.output
+          << "u+i]+x_sumData[" << parent.output << "u+i/128u]," << limit << "u);}";
+        index.push_back({s.str(),child.count});
+    }
+    index.push_back({query(true),d.count*Team});
+    p.statistics.candidateQueueCapacity += edgeCapacity;
 }
 
 std::string Generator::transforms() const {
@@ -1317,7 +1470,8 @@ std::vector<SumDomain> lowerSumRelations(CompiledPlan& p, const std::vector<uint
                 });
             SumDomain out{set, domain, generator.degrees, {}, {}};
             if (generator.factor) {
-                out.solve = generator.operatorSolve(false);
+                out.activeDegrees = !generator.structuralWeighting();
+                if (out.activeDegrees) out.solve = generator.operatorSolve(false);
                 out.activity = generator.operatorLinearize();
                 out.gather = generator.operatorGather();
                 if (generator.isolatedCorrection) {

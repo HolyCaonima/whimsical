@@ -715,6 +715,8 @@ std::string stateAccess(StateStorage storage, uint32_t variableCount, bool exter
                                   {"Multiplier", "lambda", "l", false}};
     std::ostringstream s;
     s << fieldAccess(localState);
+    if (storage == StateStorage::Owner)
+        s << "uint stateOwner;float ownedState[" << variableCount << "];\n";
     s << "void invalidEvaluation(){" << (epoch ? "if(epochOwned)" : "")
       << "atomicAdd(x_diagnostics[0],1u);}\n"
          "void singularSystem(){" << (epoch ? "if(epochOwned)" : "")
@@ -746,6 +748,11 @@ void storeContribution(Relation r,uint c,float value){x_contributions[r.c+c*r.cs
         const auto& field = fields[i];
         const char* type = field.variable ? "Variable" : "Relation";
         std::string address = std::string("x_") + field.buffer + "[v." + field.offset + "+c*v.stride]";
+        if (storage == StateStorage::Owner && i == 0) {
+            s << "float loadValue(Variable v,uint c){return v.id==stateOwner?ownedState[c]:" << address << ";}\n"
+                 "void storeValue(Variable v,uint c,float value){ownedState[c]=value;}\n";
+            continue;
+        }
         if (epoch && i == 0) {
             s << "float loadValue(Variable v,uint c){return epochState[epochVariableOffset+c];}\n"
                  "void storeValue(Variable v,uint c,float value){epochState[epochVariableOffset+c]=value;}\n";

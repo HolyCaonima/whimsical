@@ -1110,6 +1110,9 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     std::vector<Batch> sumStages;
     if (activeSums) {
         reserve(buffer(BufferRole::ActiveDegrees), writable.size(), 0u);
+    }
+    if (activeSums && (!sumActivity.empty() || std::any_of(summed.begin(), summed.end(),
+            [](const SumDomain& domain) { return domain.activeDegrees; }))) {
         sumStages.push_back({kernel("Reset active sum incidence",
             "void main(){uint i=invocation();if(i<" + std::to_string(writable.size()) +
             "u)x_activeDegrees[i]=0u;}"), 0, checked(writable.size())});
@@ -1120,13 +1123,15 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         const auto first = p->relations[domain.set].first + binding.first;
         for (const auto& [source, count] : domain.bounds)
             p->candidateBounds.push_back({kernel("Bound summed expression", source), 0, count});
+        uint32_t indexStage = 0;
         for (const auto& [source, count] : domain.index)
-            sumStages.push_back({kernel("Index summed expression", source), 0, count});
+            sumStages.push_back({kernel("Index summed expression " + std::to_string(indexStage++), source), 0, count});
         if (!domain.activity.empty())
             sumActivity.push_back({kernel(domain.gather.empty() ? "Count active sum members" : "Linearize summed relation",
                 domain.activity), first, domain.activityCount ? domain.activityCount : binding.count});
-        p->solve.push_back({kernel("Solve summed relation", domain.solve), first,
-            domain.solveCount ? domain.solveCount : binding.count});
+        if (!domain.solve.empty())
+            p->solve.push_back({kernel("Solve summed relation", domain.solve), first,
+                domain.solveCount ? domain.solveCount : binding.count});
         if (!domain.gather.empty()) {
             p->solve.push_back({kernel("Gather summed linearization", domain.gather), first, domain.gatherCount});
             sumRefinement.push_back({kernel("Refine summed linear system", domain.refine), first, domain.solveCount});

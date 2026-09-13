@@ -18,6 +18,15 @@ std::string emitGlslJacobian(const Formula&, const std::string& name,
 // This lets downstream lowering compose maps without materializing a matrix.
 std::optional<std::vector<float>> constantJacobian(
     const Formula&, const std::vector<uint32_t>& derivativeInputs);
+// Split a DAG at the boundary between two iteration scopes. Values depending
+// only on invariant inputs are produced once by invariant and become extra
+// inputs of varying. Differentiating varying in its original varying inputs
+// then composes the same derivative without repeating invariant arithmetic.
+struct StagedFormula {
+    Formula invariant, varying;
+    uint32_t firstInvariant = 0;
+};
+StagedFormula stageFormula(const Formula&, const std::vector<uint32_t>& varyingInputs);
 // Factor a local expression through a squared difference norm. The returned
 // formula replaces that norm by one extra scalar input; all other state inputs
 // must disappear. Its scalar derivative can be composed with vector consumers
