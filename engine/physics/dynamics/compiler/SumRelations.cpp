@@ -127,9 +127,9 @@ struct Generator {
     uint32_t parameterValues = 0;
     float factorScale = 0;
     uint32_t operatorRows = 0, coefficients = 0, listEntries = 0, edgeCapacity = 0;
-    uint32_t memberCapacity = Capacity, motionReference = 0, candidateState = 0, cellVersions = 0;
-    bool persistentMembers = false;
+    uint32_t memberCapacity = Capacity;
     bool listedMembers = true, cachedCoefficients = false, compactMembers = false;
+    CollectionTraversalPlan traversal;
     bool isolatedCorrection = false;
     bool lineSearch = false;
     std::optional<OwnerTransform> snapshot;
@@ -226,11 +226,15 @@ struct Generator {
         } else prepareIncidence();
     }
     void prepareStorage() {
+        if (factor)
+            traversal = planCollectionTraversal(d.count, Capacity, lineSearch ?
+                CollectionSolvePlan::Method::ProjectedLineSearch : CollectionSolvePlan::Method::Jacobi);
         prepareIndex();
         if (factor) {
+            operatorTeam = traversal.reductionLanes;
             // Cached rows distribute consecutive entries across short teams;
             // streaming queries distribute the independent spatial cells.
-            if (!listedMembers) operatorTeam = 32;
+            if (!listedMembers && !traversal.orderedRanges) operatorTeam = 32;
             operatorRows = append(p, std::vector<uint32_t>(size_t(d.count)*operatorRowWidth()));
             cachedCoefficients = listedMembers && !lineSearch;
             if (cachedCoefficients) coefficients = append(p, std::vector<uint32_t>(edgeCapacity));
@@ -260,12 +264,13 @@ struct Generator {
     }
     uint32_t extent() const { return axis == 0 ? d.left : d.right; }
     void analyzeOperator();
-    std::string operatorSource() const;
+    std::string operatorSource(StateStorage storage = StateStorage::Global) const;
     std::string operatorLinearize() const;
     std::string operatorSolve(bool refine) const;
     std::string operatorGather(bool apply = false) const;
     void reduceQuadratic(SumDomain&);
     std::string lineSearchApply() const;
+    OwnerOutput lineSearchOutput() const;
     std::string operatorReduce(uint32_t columns, bool degree = false) const;
     std::string operatorMembers(const std::string& body) const;
     void prepareIncidence() {
@@ -312,7 +317,6 @@ struct Generator {
     void prepareBucketIndex();
     void exclusiveScan(uint32_t input, uint32_t output, uint32_t count);
     std::string groupedAccess() const;
-    std::string candidateAccess() const;
     std::string skipUnchangedIndex() const {
         // The operator consumer acknowledges a completed candidate generation.
         // This keeps invalidation monotonic across all builder dispatches and
@@ -370,15 +374,14 @@ std::string Generator::groupedAccess() const {
     s << "uint logicalMember(uint i){return x_sumData[" << grouped+3 << "u+i*4u];}\n"
          "ivec3 groupedCell(uint i){uint at=" << grouped << "u+i*4u;return ivec3(x_sumData[at],x_sumData[at+1u],x_sumData[at+2u]);}\n"
          "vec3 groupedPoint(uint i){uint at=" << packedState << "u+i*4u;return vec3(uintBitsToFloat(x_sumData[at]),uintBitsToFloat(x_sumData[at+1u]),uintBitsToFloat(x_sumData[at+2u]));}\n"
-         "uint cacheRow(uint row){return " << (persistentMembers?"logicalMember(row)":"row") << ";}\n"
+         "uint cacheRow(uint row){return row;}\n"
          "uint edgeWord(uint row,uint entry){row=cacheRow(row);return ";
     if (compactMembers) s << "x_sumData[" << lists+d.count << "u+row]+entry;";
     else s << "(row/" << 128/operatorTeam << "u)*" << memberCapacity*128/operatorTeam << "u+(entry/"
            << operatorTeam << "u)*128u+(row%" << 128/operatorTeam << "u)*" << operatorTeam
            << "u+entry%" << operatorTeam << "u;";
     s << "}\nuint listWord(uint row,uint entry){return " << listEntries << "u+edgeWord(row,entry);}\n"
-         "uint listedMember(uint row,uint entry){uint member=x_sumData[listWord(row,entry)];return "
-      << (persistentMembers?"x_sumData["+u(ranks)+"+member]":"member") << ";}\n";
+         "uint listedMember(uint row,uint entry){return x_sumData[listWord(row,entry)];}\n";
     // Projection coordinates may be permuted by support analysis. The cached
     // state must keep the declared tangent component order, including for B.
     s << "vec3 currentPoint(uint member){Variable v=variable(field" << fixed[0] << "(member));return vec3(";
@@ -387,10 +390,10 @@ std::string Generator::groupedAccess() const {
     return s.str();
 }
 
-std::string Generator::operatorSource() const {
+std::string Generator::operatorSource(StateStorage storage) const {
     std::ostringstream s;
     s << "#define REDUCTION_TEAM " << operatorTeam << "u\n";
-    s << stateAccess(StateStorage::Global) << access << gridSource() << linearAccess() << groupedAccess();
+    s << stateAccess(storage,T) << access << gridSource() << linearAccess() << groupedAccess();
     const auto& field = d.fields[fixed[0]];
     const auto& layout = p.variables[field.first.set];
     s << "Variable mappedVariable(uint member){uint i=" << field.first.index << "u+logicalMember(member)*" << field.stride
@@ -477,8 +480,31 @@ std::string Generator::operatorSource() const {
 }
 
 std::string Generator::operatorMembers(const std::string& body) const {
-    const auto direct = "MemberCursor cursor=members(anchor,lane);uint member,entry;"
+    auto direct = "MemberCursor cursor=members(anchor,lane);uint member,entry;"
         "while(nextMember(anchor,cursor,member,entry)){" + body + "}";
+    if (traversal.orderedRanges) {
+        // A dense physical ordering maps adjacent cells on the first axis to
+        // one contiguous interval. Enumerate those intervals in coalesced
+        // teams; the relation never needs an explicit row of member IDs.
+        std::ostringstream s;
+        s << "if(x_sumData[" << header+2 << "u]==0u&&x_sumData[" << header+13 << "u]!=0u){"
+             "ivec3 center=groupedCell(anchor),origin=ivec3(";
+        for(uint32_t c=0;c<3;++c)s << (c?",":"") << "int(x_sumData[" << header+7+c << "u]^0x80000000u)";
+        s << "),size=ivec3(";
+        for(uint32_t c=0;c<3;++c)s << (c?",":"") << "x_sumData[" << header+13+c << "u]";
+        s << ");ivec3 relative=center-origin;vec3 query=point(anchor);"
+             "for(int z=" << (T==3?-1:0) << ";z<=" << (T==3?1:0) << ";++z)"
+             "for(int y=" << (T>=2?-1:0) << ";y<=" << (T>=2?1:0) << ";++y){"
+             "int cy=relative.y+y,cz=relative.z+z;if(cy<0||cy>=size.y||cz<0||cz>=size.z)continue;"
+             "uint base=uint((cz*size.y+cy)*size.x),lo=base+uint(max(relative.x-1,0)),"
+             "hi=base+uint(min(relative.x+1,size.x-1));"
+             "uint begin=x_sumData[" << heads << "u+lo],end=x_sumData[" << bucketEnds << "u+hi];"
+             "for(uint member=begin+lane;member<end;member+=REDUCTION_TEAM){"
+             "if(!accepts(anchor,member))continue;vec3 separation=query-point(member);"
+             "if(dot(separation,separation)>1.00001*uintBitsToFloat(x_sumData[" << header << "u]))continue;"
+             "uint entry=0xffffffffu;" << body << "}}}else{" << direct << "}";
+        direct=s.str();
+    }
     if (!listedMembers) return direct;
     const auto cached = compactMembers ? "x_sumData["+u(lists+d.count)+"+anchor]!=0xffffffffu" :
         "count<="+u(memberCapacity);
@@ -677,22 +703,34 @@ void Generator::reduceQuadratic(SumDomain& out) {
     }
 }
 
-std::string Generator::lineSearchApply() const {
+OwnerOutput Generator::lineSearchOutput() const {
     std::ostringstream s;
-    s << operatorSource() << emitGlsl(t.spaces[fixed[0]]->retract,"applyCorrection")
-      << "void main(){uint anchor=invocation();if(anchor>=" << d.count << "u)return;"
-         "float weight=uintBitsToFloat(x_sumData[" << lineSearchWeight << "u]);"
+    s << "uint anchor=invocation();float weight=uintBitsToFloat(x_sumData[" << lineSearchWeight << "u]);"
          "Relation r=relation(step.first+logicalMember(anchor));if(rowValue(anchor,0u)!=0.0)"
          "storeMultiplier(r,0u,rowValue(anchor,3u)+weight*rowValue(anchor,4u));"
-         "Variable v=mappedVariable(anchor);if(!variableEnabled(v))return;"
-         "vec3 q=point(anchor),change=displacement(anchor)*weight;";
+         "Variable v=mappedVariable(anchor);uint ownerId=v.id;vec3 q=point(anchor);";
+    array(s,"ownerValue",T);
+    for(uint32_t c=0;c<T;++c)s << "ownerValue[" << c << "]=q[" << c << "];";
+    s << "if(variableEnabled(v)){vec3 change=displacement(anchor)*weight;";
     array(s,"x",2*T); array(s,"y",T);
     for (uint32_t c=0;c<T;++c)s << "x[" << c << "]=q[" << c << "];x[" << T+c << "]=change[" << c << "];";
     s << "applyCorrection(x,y);";
-    for (uint32_t c=0;c<T;++c)s << "if(isnan(y[" << c << "])||isinf(y[" << c << "])){invalidEvaluation();return;}";
-    for (uint32_t c=0;c<T;++c)s << "storeValue(v," << c << "u,y[" << c << "]);x_contributions[v.v+" << c << "u*v.stride]=0u;";
-    s << "}";
-    return s.str();
+    s << "bool finiteValue=true;";
+    for (uint32_t c=0;c<T;++c)s << "finiteValue=finiteValue&&!isnan(y[" << c << "])&&!isinf(y[" << c << "]);";
+    s << "if(!finiteValue)invalidEvaluation();else{";
+    for (uint32_t c=0;c<T;++c)s << "ownerValue[" << c << "]=y[" << c << "];x_contributions[v.v+" << c << "u*v.stride]=0u;";
+    s << "}}";
+    const auto& field=d.fields[fixed[0]];
+    return {p.variables[field.first.set].first+field.first.index,d.count,field.stride,T,
+        operatorSource(StateStorage::Owner)+emitGlsl(t.spaces[fixed[0]]->retract,"applyCorrection"),s.str()};
+}
+std::string Generator::lineSearchApply() const {
+    const auto output=lineSearchOutput();
+    std::ostringstream s;
+    s << operatorSource() << emitGlsl(t.spaces[fixed[0]]->retract,"applyCorrection")
+      << "void main(){if(invocation()>=" << d.count << "u)return;" << output.body;
+    for (uint32_t c=0;c<T;++c)s << "storeValue(v," << c << "u,ownerValue[" << c << "]);";
+    return s.str()+"}";
 }
 
 void Generator::prepareTranspose() {
@@ -784,8 +822,7 @@ std::string Generator::gridSource() const {
             s << "loadValue(variable(field" << slot << "(member))," << column << "u)";
         }
     }
-    s << ");}\nbool cellOf(vec3 f,out ivec3 c){vec3 v=f/(" << (persistentMembers?"1.1302":"1.0502")
-      << "*sqrt(uintBitsToFloat(x_sumData["
+    s << ");}\nbool cellOf(vec3 f,out ivec3 c){vec3 v=f/(1.0502*sqrt(uintBitsToFloat(x_sumData["
       << header << "u])));if(any(isnan(v))||any(isinf(v))||any(greaterThan(abs(v),vec3(262144.0)))"
          "||any(greaterThan(abs(f),vec3(1e15))))return false;c=ivec3(floor(v));return true;}\n"
          "uint memberCount(uint anchor){uint count=x_sumData[" << lists << "u+anchor*" << Capacity+1
@@ -806,8 +843,7 @@ void Generator::prepareIndex() {
         if (a >= splitInput || b < splitInput || b >= t.stateSize()) { support.reset(); return; }
         if (axis == 0) std::swap(a, b);
     }
-    persistentMembers = bool(factor) && lineSearch && d.count > 32768;
-    header = append(p, std::vector<uint32_t>(factor ? 17 : 5));
+    header = append(p, std::vector<uint32_t>(factor ? 16 : 5));
     buckets = 1;
     while (uint64_t(buckets) < uint64_t(extent())*2) {
         if (buckets >= (1u<<30)) throw std::overflow_error("Sum index bucket capacity");
@@ -821,23 +857,20 @@ void Generator::prepareIndex() {
         ranks = append(p, std::vector<uint32_t>(extent()));
         bucketEnds = append(p, std::vector<uint32_t>(buckets+1));
         bucketCursors = append(p, std::vector<uint32_t>(buckets));
-        if (persistentMembers) {
-            motionReference = append(p, std::vector<uint32_t>(size_t(d.count)*3));
-            candidateState = append(p, std::vector<uint32_t>(size_t(d.count)*4));
-            cellVersions = append(p, std::vector<uint32_t>(buckets));
-        }
     }
     if (!factor) anchorFeatures = append(p, std::vector<uint32_t>(size_t(d.count)*3));
     // Storage is a lowering decision. Large domains retain the spatial index
     // and stream members instead of reserving Capacity entries for every row.
-    if (factor) {
+    if (traversal.orderedRanges) {
+        listedMembers = false;
+    } else if (factor) {
         // Storage grows with the relation, rather than assigning a fixed-width
         // matrix to each row. A common arena admits long rows without changing
         // their solver. Its budget includes both indices and scalar factors.
         const auto fixedWords = p.buffers[size_t(BufferRole::SumData)].wordCount() +
             uint64_t(d.count)*(2*Capacity+1+operatorRowWidth());
         compactMembers = fixedWords > 24ull*1024*1024;
-        const uint64_t WordBudget = (persistentMembers?256ull:160ull)*1024*1024;
+        const uint64_t WordBudget = 160ull*1024*1024;
         uint64_t prefixWords = 0;
         if (compactMembers)
             for (uint64_t count = d.count;;) {
@@ -851,15 +884,6 @@ void Generator::prepareIndex() {
         edgeCapacity = uint32_t(compactMembers ? std::min<uint64_t>(uint64_t(d.count)*64, available) :
             uint64_t((d.count+128/operatorTeam-1)/(128/operatorTeam))*(128/operatorTeam)*Capacity);
         listedMembers = edgeCapacity >= uint64_t(d.count)*8;
-        if (persistentMembers) {
-            compactMembers = false;
-            const uint64_t rows = uint64_t((d.count+15)/16)*16;
-            memberCapacity = Capacity;
-            while (memberCapacity > 8 && rows*memberCapacity > (used<WordBudget?WordBudget-used:0))
-                memberCapacity /= 2;
-            edgeCapacity = uint32_t(rows*memberCapacity);
-            listedMembers = rows*memberCapacity <= (used<WordBudget?WordBudget-used:0);
-        }
         if (listedMembers) {
             lists = append(p, std::vector<uint32_t>(size_t(d.count)*(compactMembers?2:1)));
             listEntries = append(p, std::vector<uint32_t>(edgeCapacity));
@@ -890,8 +914,7 @@ void Generator::prepareIndex() {
       << "u],floatBitsToUint(value[0]));}";
     bounds.push_back({s.str(),d.count}); s.str(""); s.clear();
     // The index certifies endpoint motion of at most 2.4% of the support radius.
-    // Snapshot-local lists use a 5% halo; persistent rows need a 13% halo for
-    // their additional reference epochs (see candidateAccess). AD stays fresh.
+    // Snapshot-local rows and ordered intervals use a 5% halo. AD stays fresh.
     if (!factor) {
         s << "void main(){if(invocation()==0u)x_sumData[" << header+3 << "u]=uint(x_sumData["
           << header+2 << "u]!=0u||x_sumData[" << header+1 << "u]!=0u||x_sumData[" << header+4
@@ -922,28 +945,29 @@ void Generator::prepareIndex() {
     index.push_back({s.str(),std::max(d.count,extent())}); s.str(""); s.clear();
     if (factor) {
         const auto& field = d.fields[fixed[0]];
-        s << "void snapshotCollection(uint member,float state[" << T << "]){"
+        s << "shared uint snapshotChanged;void snapshotCollection(uint member,float state[" << T << "]){"
              "if(x_sumData[" << header+2 << "u]!=0u||x_sumData[" << header+1
           << "u]!=0u||x_sumData[" << header+4 << "u]!=x_sumData[" << header
-          << "u]){atomicExchange(x_sumData[" << header+3 << "u],x_sumData["
-          << header+6 << "u]+1u);return;}uint old=" << cells+4 << "u+member*8u;vec3 delta=vec3(0);";
+          << "u]){atomicOr(snapshotChanged,1u);return;}uint old=" << cells+4 << "u+member*8u;vec3 delta=vec3(0);";
         for (uint32_t c=0;c<T;++c) {
             const auto component = support->coordinates[c].second%T;
             s << "delta[" << c << "]=state[" << component << "]";
             s << "-uintBitsToFloat(x_sumData[old+" << c << "u]);";
         }
         s << "if(!(dot(delta,delta)<=0.000576*uintBitsToFloat(x_sumData[" << header
-          << "u])))atomicExchange(x_sumData[" << header+3 << "u],x_sumData[" << header+6
-          << "u]+1u);uint at=" << packedState << "u+x_sumData[" << ranks << "u+member]*4u;";
+          << "u])))atomicOr(snapshotChanged,1u);uint at=" << packedState << "u+x_sumData[" << ranks << "u+member]*4u;";
         for (uint32_t c=0;c<3;++c)
             s << "x_sumData[at+" << c << "u]=floatBitsToUint(" << (c<T?"state["+std::to_string(c)+"]":"0.0") << ");";
         s << "}";
         snapshot = OwnerTransform{p.variables[field.first.set].first+field.first.index,
                                   d.count,field.stride,s.str(),"snapshotCollection"};
+        snapshot->groupBegin = "if(gl_LocalInvocationID.x==0u)snapshotChanged=0u;barrier();";
+        snapshot->groupEnd = "barrier();if(gl_LocalInvocationID.x==0u&&snapshotChanged!=0u)atomicExchange(x_sumData["+
+            u(header+3)+"],x_sumData["+u(header+6)+"]+1u);";
         s.str(""); s.clear();
         // Prefix ordering amortizes its extra passes on large domains. Short
         // domains pack independent buckets with a single allocation per cell.
-        if (buckets >= 131072) prepareOrderedIndex();
+        if (traversal.orderedRanges || buckets >= 131072) prepareOrderedIndex();
         else prepareBucketIndex();
         ++p.statistics.candidateDomains;
         p.statistics.candidateRelations += uint64_t(d.count)*extent();
@@ -1025,47 +1049,11 @@ void Generator::exclusiveScan(uint32_t source, uint32_t output, uint32_t count) 
     }
 }
 
-std::string Generator::candidateAccess() const {
-    if (!persistentMembers) return {};
-    // Stable logical IDs decouple row-cache validity from the physical sort.
-    // Mark both the old and new hash bucket when a reference moves by delta.
-    // A cached row observes every marked bucket in its current query stencil.
-    // Between marks/builds, a member can move by 3*delta and its anchor by
-    // 2*delta, including an unchanged-index epoch. With delta=.024*R, the .13*R
-    // halo covers their sum. Hash collisions only cause additional rebuilds.
-    std::ostringstream s;
-    s << "void stampMotion(uint member,vec3 f,ivec3 cell){uint at=" << motionReference
-      << "u+member*3u;vec3 old=vec3(uintBitsToFloat(x_sumData[at]),uintBitsToFloat(x_sumData[at+1u]),"
-         "uintBitsToFloat(x_sumData[at+2u]));vec3 delta=f-old;uint epoch=x_sumData[" << header+3
-      << "u];if(epoch==x_sumData[" << header+16 << "u]||!(dot(delta,delta)<=0.000576*uintBitsToFloat(x_sumData["
-      << header << "u]))){ivec3 previous;if(cellOf(old,previous))atomicExchange(x_sumData["
-      << cellVersions << "u+hashBucket(previous)],epoch);atomicExchange(x_sumData[" << cellVersions
-      << "u+hashBucket(cell)],epoch);x_sumData[at]=floatBitsToUint(f.x);"
-         "x_sumData[at+1u]=floatBitsToUint(f.y);x_sumData[at+2u]=floatBitsToUint(f.z);}}\n"
-         "bool cachedMembers(uint anchor,uint cell){uint at=" << candidateState << "u+logicalMember(anchor)*4u;"
-         "uint version=x_sumData[at+3u];if(version==0u||version>x_sumData[" << header+3
-      << "u]||version<x_sumData[" << header+16 << "u])return false;"
-         "vec3 old=vec3(uintBitsToFloat(x_sumData[at]),uintBitsToFloat(x_sumData[at+1u]),"
-         "uintBitsToFloat(x_sumData[at+2u])),delta=groupedPoint(anchor)-old;"
-         "if(!(dot(delta,delta)<=0.000576*uintBitsToFloat(x_sumData[" << header
-      << "u])))return false;if(cell>=" << (T==3?27:T==2?9:3)
-      << "u)return true;ivec3 center=groupedCell(anchor);uint code=cell;ivec3 offset=ivec3(0);";
-    for (uint32_t c=0;c<T;++c)s << "offset[" << c << "]=int(code%3u)-1;code/=3u;";
-    s << "return x_sumData[" << cellVersions << "u+hashBucket(center+offset)]<=version;}\n"
-         "void retainMembers(uint anchor){uint at=" << candidateState << "u+logicalMember(anchor)*4u;vec3 f=groupedPoint(anchor);"
-         "x_sumData[at]=floatBitsToUint(f.x);x_sumData[at+1u]=floatBitsToUint(f.y);"
-         "x_sumData[at+2u]=floatBitsToUint(f.z);x_sumData[at+3u]=x_sumData[" << header+3 << "u];}\n";
-    return s.str();
-}
-
 void Generator::prepareBucketIndex() {
-    const auto source = stateAccess(StateStorage::Global)+access+gridSource()+groupedAccess()+candidateAccess();
+    const auto source = stateAccess(StateStorage::Global)+access+gridSource()+groupedAccess();
     std::ostringstream s;
     s << "void main(){" << skipUnchangedIndex() << "uint i=invocation();if(i<=" << buckets
       << "u)x_sumData[" << heads << "u+i]=0xffffffffu;if(i==0u){";
-    if (persistentMembers)
-        s << "if(x_sumData[" << header+4 << "u]!=x_sumData[" << header << "u]||x_sumData[" << header+2
-          << "u]!=0u)x_sumData[" << header+16 << "u]=x_sumData[" << header+3 << "u];";
     s << "x_sumData[" << header+2
       << "u]=x_sumData[" << header+1 << "u];x_sumData[" << header+4 << "u]=x_sumData["
       << header << "u];x_sumData[" << header+5 << "u]=0u;}}";
@@ -1074,7 +1062,6 @@ void Generator::prepareBucketIndex() {
       << extent() << "u||x_sumData[" << header+1 << "u]!=0u)return;vec3 f=feature(member,true);"
          "ivec3 c;if(!cellOf(f,c)){atomicOr(x_sumData[" << header+2
       << "u],1u);return;}insertMember(member,c,f);";
-    if (persistentMembers) s << "stampMotion(member,f,c);";
     s << "}";
     index.push_back({s.str(),extent()}); s.str(""); s.clear();
     s << source << "void main(){" << skipUnchangedIndex() << "uint key=invocation();"
@@ -1098,15 +1085,12 @@ void Generator::prepareBucketIndex() {
 }
 
 void Generator::prepareOrderedIndex() {
-    const auto source = stateAccess(StateStorage::Global)+access+gridSource()+groupedAccess()+candidateAccess();
+    const auto source = stateAccess(StateStorage::Global)+access+gridSource()+groupedAccess();
     std::ostringstream s;
     s << "void main(){" << skipUnchangedIndex() << "uint i=invocation();if(i<=" << buckets
       << "u){x_sumData[" << heads << "u+i]=0u;x_sumData[" << bucketEnds << "u+i]=0u;}"
          "if(i<3u){x_sumData[" << header+7 << "u+i]=0xffffffffu;x_sumData[" << header+10
       << "u+i]=0u;x_sumData[" << header+13 << "u+i]=0u;}if(i==0u){";
-    if (persistentMembers)
-        s << "if(x_sumData[" << header+4 << "u]!=x_sumData[" << header << "u]||x_sumData[" << header+2
-          << "u]!=0u)x_sumData[" << header+16 << "u]=x_sumData[" << header+3 << "u];";
     s << "x_sumData[" << header+2
       << "u]=x_sumData[" << header+1 << "u];x_sumData[" << header+4 << "u]=x_sumData["
       << header << "u];}}";
@@ -1119,7 +1103,6 @@ void Generator::prepareOrderedIndex() {
     for (uint32_t c=0;c<3;++c)
         s << "x_sumData[at+" << c << "u]=uint(c[" << c << "]);x_sumData[at+" << c+4
           << "u]=floatBitsToUint(f[" << c << "]);";
-    if (persistentMembers) s << "stampMotion(i,f,c);";
     s << "}}uvec3 key=uvec3(c)^uvec3(0x80000000u);minima[lane]=valid?key:uvec3(0xffffffffu);"
          "maxima[lane]=valid?key:uvec3(0u);barrier();for(uint offset=64u;offset>0u;offset/=2u){"
          "if(lane<offset){minima[lane]=min(minima[lane],minima[lane+offset]);"
@@ -1163,7 +1146,7 @@ void Generator::prepareOrderedIndex() {
 }
 
 void Generator::prepareGroupedIndex() {
-    const auto source = stateAccess(StateStorage::Global) + access + gridSource() + groupedAccess()+candidateAccess();
+    const auto source = stateAccess(StateStorage::Global) + access + gridSource() + groupedAccess();
     std::ostringstream s;
     if (!listedMembers) return;
     constexpr uint32_t Team = 32, Teams = 128/Team;
@@ -1171,30 +1154,21 @@ void Generator::prepareGroupedIndex() {
     for (uint32_t c=0;c<T;++c) cellCount *= 3;
     if (!compactMembers) {
         s << source << "shared uint counts[" << Teams << "],entries[" << Teams*memberCapacity << "]";
-        if (persistentMembers) s << ",reuse[" << Teams << "]";
         s << ";"
              "void main(){" << skipUnchangedIndex() << "uint anchor=invocation()/32u,"
              "lane=gl_LocalInvocationID.x%32u,team=gl_LocalInvocationID.x/32u;bool valid=anchor<" << d.count << "u;"
              "bool indexed=x_sumData[" << header+2 << "u]==0u;if(lane==0u){counts[team]=0u;";
-        if (persistentMembers) s << "reuse[team]=uint(valid&&indexed);";
         s << "}barrier();";
-        if (persistentMembers)
-            s << "if(valid&&indexed&&!cachedMembers(anchor,lane))atomicAnd(reuse[team],0u);barrier();";
-        s << "if(valid&&indexed&&" << (persistentMembers?"reuse[team]==0u&&":"")
-          << "lane<" << cellCount << "u){ivec3 center=groupedCell(anchor),offset=ivec3(0);"
+        s << "if(valid&&indexed&&lane<" << cellCount << "u){ivec3 center=groupedCell(anchor),offset=ivec3(0);"
              "vec3 f=groupedPoint(anchor);uint code=lane;";
         for(uint32_t c=0;c<T;++c)s << "offset[" << c << "]=int(code%3u)-1;code/=3u;";
         s << "ivec3 cell=center+offset;uint key=bucket(cell),end=x_sumData[" << bucketEnds << "u+key];"
              "for(uint member=x_sumData[" << heads << "u+key];member<end;++member){"
              "if(all(equal(cell,groupedCell(member)))&&accepts(anchor,member)){vec3 delta=f-groupedPoint(member);"
-             "if(dot(delta,delta)<=" << (persistentMembers?"1.2769":"1.1029")
-          << "*uintBitsToFloat(x_sumData[" << header << "u])){"
+             "if(dot(delta,delta)<=1.1029*uintBitsToFloat(x_sumData[" << header << "u])){"
              "uint entry=atomicAdd(counts[team],1u);if(entry<" << memberCapacity << "u)entries[team*" << memberCapacity
-          << "u+entry]=" << (persistentMembers?"logicalMember(member)":"member")
-          << ";else break;}}}}barrier();if(valid" << (persistentMembers?"&&reuse[team]==0u":"")
-          << "){uint count=counts[team];if(lane==0u){x_sumData[" << lists
+          << "u+entry]=member;else break;}}}}barrier();if(valid){uint count=counts[team];if(lane==0u){x_sumData[" << lists
           << "u+cacheRow(anchor)]=indexed?count:0xffffffffu;";
-        if (persistentMembers) s << "if(indexed)retainMembers(anchor);";
         s << "}if(indexed&&count<=" << memberCapacity << "u)for(uint k=lane;k<count;k+=32u)"
              "x_sumData[listWord(anchor,k)]=entries[team*" << memberCapacity << "u+k];}}";
         index.push_back({s.str(), d.count*Team});
@@ -1788,7 +1762,8 @@ std::vector<SumDomain> lowerSumRelations(CompiledPlan& p, const std::vector<uint
                         out.program.push_back({"Apply transpose and evaluate quadratic", generator.operatorGather(),count,0});
                         generator.reduceQuadratic(out);
                     } else if (step.action == Action::LineSearchRetract)
-                        out.program.push_back({"Apply projected line search",generator.lineSearchApply(),generator.d.count,0});
+                        out.program.push_back({"Apply projected line search",generator.lineSearchApply(),generator.d.count,0,
+                                               generator.lineSearchOutput()});
                     else
                         out.program.push_back({step.action == Action::TransposeRetract ?
                             "Gather and apply summed operator" : "Gather summed linearization",

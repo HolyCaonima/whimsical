@@ -1135,6 +1135,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             if (found == programs.end())
                 found = programs.emplace(step.source,kernel(step.name,step.source)).first;
             const Batch batch{found->second,first,step.count};
+            p->kernels[batch.kernel].ownerOutput = step.ownerOutput;
             if (step.sweep == UINT32_MAX) sumActivity.push_back(batch);
             else if (step.sweep == 0) p->solve.push_back(batch);
             else sumRefinement[step.sweep].push_back(batch);

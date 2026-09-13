@@ -30,4 +30,14 @@ struct CollectionSolvePlan {
     bool ownsCorrection = false;
     std::vector<Step> actions(bool fuseInitialForward) const;
 };
+
+// Physical traversal is selected after the numerical actions. Short domains
+// retain explicit rows; larger domains retain the ordered index and enumerate
+// intervals without materializing the logical relation.
+struct CollectionTraversalPlan {
+    bool orderedRanges = false;
+    uint32_t reductionLanes = 8;
+};
+CollectionTraversalPlan planCollectionTraversal(uint32_t rows, uint32_t rowCapacity,
+                                                CollectionSolvePlan::Method);
 }

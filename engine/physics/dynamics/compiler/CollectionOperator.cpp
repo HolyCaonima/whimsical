@@ -63,4 +63,13 @@ std::vector<CollectionSolvePlan::Step> CollectionSolvePlan::actions(bool fuseIni
     }
     return result;
 }
+
+CollectionTraversalPlan planCollectionTraversal(uint32_t rows, uint32_t rowCapacity,
+                                                CollectionSolvePlan::Method method) {
+    if (method != CollectionSolvePlan::Method::ProjectedLineSearch) return {};
+    constexpr uint64_t RowCacheBytes = 8ull * 1024 * 1024;
+    if (uint64_t(rows) * rowCapacity * sizeof(uint32_t) > RowCacheBytes)
+        return {true, 1};
+    return {};
+}
 }

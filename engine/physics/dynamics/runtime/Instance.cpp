@@ -656,8 +656,12 @@ void Instance::step(const TickInput& input) {
         for (uint32_t iteration = 0; iteration < s.plan->policy.iterations; ++iteration) {
             for (const auto& batch : s.plan->iteration)
                 s.batch(batch, h, time, input.tick, iteration);
-            for (const auto& batch : s.plan->solve)
+            for (size_t stage=0;stage<s.plan->solve.size();++stage) {
+                if (s.plan->iterationJoin && stage==0 && iteration!=0) continue;
+                const auto& batch=s.plan->iterationJoin && stage+1==s.plan->solve.size() &&
+                    iteration+1<s.plan->policy.iterations ? *s.plan->iterationJoin : s.plan->solve[stage];
                 s.batch(batch, h, time, input.tick, iteration);
+            }
             for (const auto& batch : s.plan->apply)
                 s.batch(batch, h, time, input.tick, iteration);
         }

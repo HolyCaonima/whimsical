@@ -36,7 +36,7 @@ uint64_t dispatchCount(const CompiledPlan& p) {
         return 0;
     return p.policy.substeps *
            (count(p.predict) + p.policy.iterations * (count(p.solve) + count(p.apply) + count(p.iteration)) +
-            count(p.recover) + count(p.update));
+            count(p.recover) + count(p.update) - (p.iterationJoin ? p.policy.iterations-1 : 0));
 }
 struct Components {
     std::vector<uint32_t> parent, size;
@@ -276,8 +276,9 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
         for (size_t call = 1; call < signature.size(); ++call)
             for (auto owner : owners)
                 ranges.push_back(chains[owner][call-1].second);
-        source << "void main(){uint i=invocation();if(i>=step.count)return;"
-                  "stateOwner=x_regionRanges[step.first+i];Variable owner=variable(stateOwner);";
+        source << "void main(){uint i=invocation();";
+        if (epilogue) source << epilogue->groupBegin;
+        source << "if(i<step.count){stateOwner=x_regionRanges[step.first+i];Variable owner=variable(stateOwner);";
         for (uint32_t c = 0; c < width; ++c)
             source << "ownedState[" << c << "]=x_q[owner.q+" << c << "u*owner.stride];";
         for (size_t call = 1; call < signature.size(); ++call)
@@ -289,8 +290,37 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
             source << epilogue->entry << "((stateOwner-" << epilogue->first << "u)/"
                    << epilogue->stride << "u,ownedState);";
         source << "}";
+        if (epilogue) source << epilogue->groupEnd;
+        source << "}";
         stages.push_back({uint32_t(p.kernels.size()), first, count, p.solve[colored-1].color});
         p.kernels.push_back({"Solve owned relation chain", source.str()});
+        // Compose the loop tail with the next iteration's pointwise prefix.
+        // The producer has not published its owner state yet, so the original
+        // numerical order can be retained without a global intermediate store.
+        const auto& tail=p.solve.back();
+        const auto& output=p.kernels[tail.kernel].ownerOutput;
+        auto empty=[](const auto& batches) { return std::none_of(batches.begin(),batches.end(),
+            [](const Batch& b) { return b.count!=0; }); };
+        if (recipes.size()==1 && epilogue && output && p.policy.iterations>1 &&
+            empty(p.apply) && empty(p.iteration) &&
+            output->first==epilogue->first && output->count==count &&
+            output->stride==epilogue->stride && output->width==width) {
+            std::ostringstream joined;
+            joined << output->source << epilogue->source;
+            for (auto kernel : emitted) joined << functions[kernel].source;
+            joined << "void main(){" << epilogue->groupBegin << "if(invocation()<step.count){"
+                   << output->body << "stateOwner=ownerId;";
+            for (uint32_t c=0;c<width;++c) joined << "ownedState[" << c << "]=ownerValue[" << c << "];";
+            joined << "uint row=(ownerId-" << output->first << "u)/" << output->stride << "u;";
+            for(size_t call=1;call<signature.size();++call)
+                joined << functions[signature[call]].entry << "(x_regionRanges[" << first+call*count
+                       << "u+row],step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration+1u);";
+            joined << "Variable owner=variable(ownerId);";
+            for(uint32_t c=0;c<width;++c) joined << "x_q[owner.q+" << c << "u*owner.stride]=ownedState[" << c << "];";
+            joined << epilogue->entry << "(row,ownedState);}" << epilogue->groupEnd << "}";
+            p.iterationJoin=Batch{uint32_t(p.kernels.size()),tail.first,tail.count};
+            p.kernels.push_back({"Advance owner iteration",joined.str()});
+        }
     }
     stages.insert(stages.end(), p.solve.begin()+colored+uint32_t(bool(epilogue)), p.solve.end());
     p.solve = std::move(stages);
@@ -408,6 +438,7 @@ void pruneKernels(CompiledPlan& p) {
     mark(p.local);
     mark(p.prepareCandidates);
     mark(p.candidateBounds);
+    if (p.iterationJoin) used[p.iterationJoin->kernel]=true;
     if (p.dynamicTopology) {
         used[p.resetTopologyKernel] = true;
         used[p.scanKernel] = true;
@@ -449,6 +480,7 @@ void pruneKernels(CompiledPlan& p) {
     remap(p.local);
     remap(p.prepareCandidates);
     remap(p.candidateBounds);
+    if (p.iterationJoin) p.iterationJoin->kernel=mapping[p.iterationJoin->kernel];
     p.kernels = std::move(kernels);
 }
 struct Cost {

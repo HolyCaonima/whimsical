@@ -94,6 +94,14 @@ struct FieldModeLayout {
 struct OwnerTransform {
     uint32_t first = 0, count = 0, stride = 1;
     std::string source, entry;
+    // Tail invocations also participate in these workgroup collectives.
+    std::string groupBegin, groupEnd;
+};
+// A pointwise producer before its final store. Its body publishes ownerId and
+// ownerValue in registers; a matching consumer can run before global storage.
+struct OwnerOutput {
+    uint32_t first = 0, count = 0, stride = 1, width = 0;
+    std::string source, body;
 };
 struct Kernel {
     std::string name, source; // local_size and main; runtime supplies the resource interface
@@ -101,6 +109,7 @@ struct Kernel {
     // accesses. Dispatch boundaries are synchronized by the execution schedule.
     std::vector<BufferRole> coherentBuffers;
     std::optional<OwnerTransform> ownerTransform;
+    std::optional<OwnerOutput> ownerOutput;
 };
 struct Batch {
     uint32_t kernel, first, count;
@@ -172,6 +181,8 @@ struct CompiledPlan {
     // Keeping them separate prevents later relation-domain passes from treating
     // tile metadata or state-copy records as relation IDs.
     std::vector<Batch> iteration;
+    // Replaces solve.back() -> solve.front() between iterations of a substep.
+    std::optional<Batch> iterationJoin;
     std::vector<Batch> prepareCandidates; // once per tick, before prediction
     std::vector<Batch> candidateBounds; // cached until relation parameters change
     // Closed regions execute the same substep/iteration schedule inside a workgroup.
