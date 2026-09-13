@@ -6,12 +6,12 @@ var fluid={id:'fluid',tab:'Fluid',eyebrow:'实验 07',title:'粒子流体',
     equation:'ρᵢ / ρ₀ = Σⱼ V·315/(64πh³)·max(0, 1 − rᵢⱼ²/h²)³ ≤ 1',
     hint:'I 推动水体，观察回流',
     legend:'<span class="teal">■</span>流体<span class="gold">■</span>容器',
-    panelTitle:'密度约束',strainLabel:'平均密度超限',
-    count:2000,spacing:0.11,radius:0.05,support:0.22,halfWidth:1.5,halfDepth:0.75};
-fluid.sizes={label:'粒子',options:[{label:'2,000 个',value:2000}],
+    panelTitle:'密度约束',strainLabel:'平均密度超限（采样）',
+    count:10000,spacing:0.065,radius:0.03,support:0.13,halfWidth:1.5,halfDepth:0.75};
+fluid.sizes={label:'粒子',options:[{label:'10,000 个',value:10000}],
     get:function(){return fluid.count;},set:function(){return '';}};
 fluid.actions=[];fluid.keys={};
-fluid.rows=[{id:'column',label:'初始水柱',kind:'enum',text:function(){return '10 × 20 × 10';},
+fluid.rows=[{id:'column',label:'初始水柱',kind:'enum',text:function(){return '20 × 25 × 20';},
     click:function(){Lab.reset();return '重新释放水柱';}}];
 fluid.define=function(){
     var X=Lab.X;
@@ -37,11 +37,11 @@ fluid.build=function(model){
     fluid.acceleration=new Float32Array(3*n);
     // A regular water column starts at rest; small deterministic offsets break
     // lattice symmetry without creating coincident particles or a dense random cloud.
-    for(var y=0;y<20;++y)for(var z=0;z<10;++z)for(var x=0;x<10;++x){
-        var i=(y*10+z)*10+x,at=3*i;
-        initial[at]=-1.32+x*fluid.spacing+0.002*Math.sin(i*1.7);
-        initial[at+1]=0.14+y*fluid.spacing+0.002*Math.cos(i*2.3);
-        initial[at+2]=(z-4.5)*fluid.spacing+0.002*Math.sin(i*0.9);
+    for(var y=0;y<25;++y)for(var z=0;z<20;++z)for(var x=0;x<20;++x){
+        var i=(y*20+z)*20+x,at=3*i;
+        initial[at]=-1.32+x*fluid.spacing+0.0012*Math.sin(i*1.7);
+        initial[at+1]=0.14+y*fluid.spacing+0.0012*Math.cos(i*2.3);
+        initial[at+2]=(z-9.5)*fluid.spacing+0.0012*Math.sin(i*0.9);
         fluid.acceleration[at+1]=-9.81;
     }
     var positions=X.defineDofs(model,{name:'fluid positions',space:Lab.space,count:n,initial:initial});
@@ -62,9 +62,9 @@ fluid.build=function(model){
     fluid.forceInput=true;fluid.kick=false;
     return initial;
 };
-fluid.layout=function(){return '2000';};
+fluid.layout=function(){return '10000';};
 fluid.camera=function(){return {target:[0,1.1,0],yaw:0.3,pitch:0.48,distance:7.6,fov:0.65};};
-fluid.note=function(){return '2,000 个粒子 · 2,000 条密度约束';};
+fluid.note=function(){return '10,000 个粒子 · 10,000 条密度约束';};
 fluid.families=function(){return [
     {name:'粒子密度上限',kind:'不等式',rows:fluid.count},
     {name:'容器半空间',kind:'不等式',rows:5*fluid.count},
@@ -103,23 +103,53 @@ fluid.inputs=function(writes){
     var step=fluid.kick;fluid.kick=false;return step;
 };
 fluid.beginMeasure=function(q){
-    // Display-only density telemetry uses the same polynomial, on a fixed sample.
-    // It never supplies neighbours, density state or corrections to the solver.
-    var n=fluid.count,h2=fluid.support*fluid.support;
-    var factor=315/(64*Math.PI)*Math.pow(fluid.spacing/fluid.support,3),i=0,total=0;
+    // Display-only index over an immutable snapshot. Each sampled density still
+    // includes every neighbour; this index never supplies data to the solver.
+    var n=fluid.count,h=fluid.support,h2=h*h,grid=fluid.measureGrid;
+    if(!grid||grid.count!==n){
+        var buckets=1;while(buckets<2*n)buckets*=2;
+        grid=fluid.measureGrid={count:n,mask:buckets-1,epoch:0,
+            heads:new Uint32Array(buckets),marks:new Uint32Array(buckets),
+            next:new Uint32Array(n),x:new Int32Array(n),y:new Int32Array(n),z:new Int32Array(n)};
+    }
+    var epoch=++grid.epoch,heads=grid.heads,marks=grid.marks,next=grid.next;
+    var gx=grid.x,gy=grid.y,gz=grid.z,mask=grid.mask;
+    function bucket(x,y,z){return (x*73856093^y*19349663^z*83492791)&mask;}
+    var factor=315/(64*Math.PI)*Math.pow(fluid.spacing/h,3),built=0,total=0;
+    var samples=Math.min(n,256),sample=0,cell=27,member=0,density=0;
+    var ax,ay,az,cx,cy,cz,bx,by,bz;
     return {step:function(){
         var deadline=Date.now()+2;
-        for(;i<n;++i){
-            var at=3*i,density=0;
-            for(var j=0;j<n;++j){
-                var bt=3*j,dx=q[at]-q[bt],dy=q[at+1]-q[bt+1],dz=q[at+2]-q[bt+2];
+        for(var work=0;;++work){
+            // Yield inside index construction and bucket traversal as well as
+            // between samples, including snapshots with heavily occupied cells.
+            if(work&&!(work&63)&&Date.now()>=deadline)return;
+            if(built<n){
+                var at=3*built,x=Math.floor(q[at]/h),y=Math.floor(q[at+1]/h),z=Math.floor(q[at+2]/h);
+                var key=bucket(x,y,z);
+                gx[built]=x;gy[built]=y;gz[built]=z;
+                next[built]=marks[key]===epoch?heads[key]:0;
+                heads[key]=++built;marks[key]=epoch;
+                continue;
+            }
+            if(member){
+                var j=member-1;member=next[j];
+                if(gx[j]!==bx||gy[j]!==by||gz[j]!==bz)continue;
+                var bt=3*j,dx=ax-q[bt],dy=ay-q[bt+1],dz=az-q[bt+2];
                 var shape=1-(dx*dx+dy*dy+dz*dz)/h2;
                 if(shape>0)density+=factor*shape*shape*shape;
+                continue;
             }
-            total+=Math.max(0,density-1);
-            if((i&7)===7&&Date.now()>=deadline){++i;return;}
+            if(cell===27){
+                if(sample)total+=Math.max(0,density-1);
+                if(sample===samples)return total/samples;
+                var i=Math.floor(sample++*n/samples),offset=3*i;
+                ax=q[offset];ay=q[offset+1];az=q[offset+2];
+                cx=gx[i];cy=gy[i];cz=gz[i];density=0;cell=0;
+            }
+            bx=cx+cell%3-1;by=cy+Math.floor(cell/3)%3-1;bz=cz+Math.floor(cell/9)-1;++cell;
+            var key=bucket(bx,by,bz);member=marks[key]===epoch?heads[key]:0;
         }
-        return total/n;
     }};
 };
 return fluid;

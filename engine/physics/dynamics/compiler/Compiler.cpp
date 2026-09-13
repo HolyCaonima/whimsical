@@ -1111,6 +1111,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             "void main(){uint i=invocation();if(i<" + std::to_string(writable.size()) +
             "u)x_activeDegrees[i]=0u;}"), 0, checked(writable.size())});
     }
+    std::vector<Batch> sumRefinement;
     for (const auto& domain : summed) {
         const auto& binding = p->bindings[domain.set].domains[domain.domain];
         const auto first = p->relations[domain.set].first + binding.first;
@@ -1119,11 +1120,23 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         for (const auto& [source, count] : domain.index)
             sumStages.push_back({kernel("Index summed expression", source), 0, count});
         if (!domain.activity.empty())
-            sumActivity.push_back({kernel("Count active sum members", domain.activity), first, binding.count});
-        p->solve.push_back({kernel("Solve summed relation", domain.solve), first, binding.count});
+            sumActivity.push_back({kernel(domain.scatter.empty() ? "Count active sum members" : "Linearize summed relation",
+                domain.activity), first, domain.activityCount ? domain.activityCount : binding.count});
+        p->solve.push_back({kernel("Solve summed relation", domain.solve), first,
+            domain.solveCount ? domain.solveCount : binding.count});
+        if (!domain.scatter.empty()) {
+            p->solve.push_back({kernel("Scatter summed linearization", domain.scatter), first, domain.scatterCount});
+            sumRefinement.push_back({kernel("Refine summed linear system", domain.refine), first, domain.solveCount});
+            sumRefinement.push_back(p->solve.back());
+        }
         if (!domain.update.empty())
             p->update.push_back({kernel("Commit summed relation", domain.update), first, binding.count});
     }
+    // Sparse linear sweeps reuse the same Jacobian and total tangent correction.
+    // They improve the block solve while keeping the nonlinear iteration and
+    // integration budgets supplied by the caller intact.
+    for (uint32_t sweep = 1; sweep < 4; ++sweep)
+        p->solve.insert(p->solve.end(), sumRefinement.begin(), sumRefinement.end());
     // Colored work changes the snapshot. Build indices and count dependencies
     // after that work, immediately before the common Jacobi solve/apply stage.
     sumStages.insert(sumStages.end(), sumActivity.begin(), sumActivity.end());

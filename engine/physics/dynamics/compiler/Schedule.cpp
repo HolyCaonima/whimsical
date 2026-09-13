@@ -104,7 +104,7 @@ void collapseVariableDispatches(CompiledPlan& p, const std::vector<KernelFunctio
     }
     store(p.buffers[size_t(BufferRole::VariableWork)], work);
 }
-void collapseRelationDispatches(CompiledPlan& p) {
+void collapseRelationDispatches(CompiledPlan& p, bool jacobi = true) {
     auto work = words(p.buffers[size_t(BufferRole::RelationWork)]);
     std::vector<Batch> collapsed;
     for (size_t first = 0; first < p.solve.size();) {
@@ -112,7 +112,7 @@ void collapseRelationDispatches(CompiledPlan& p) {
         while (end < p.solve.size() && p.solve[end].color == p.solve[first].color)
             ++end;
         const auto dispatch =
-            p.solve[first].color < 0 ? p.jacobiDispatchKernel : p.coloredDispatchKernel;
+            p.solve[first].color < 0 ? (jacobi ? p.jacobiDispatchKernel : UINT32_MAX) : p.coloredDispatchKernel;
         if (dispatch == UINT32_MAX || end == first + 1) {
             collapsed.insert(collapsed.end(), p.solve.begin() + first, p.solve.begin() + end);
         } else {
@@ -388,6 +388,11 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     // A summed relation traverses a variadic dependency domain. Fixed-endpoint
     // region/color-window fusion cannot consume that domain as one local pair.
     if (p.summedRelations) {
+        // The variadic Jacobi domain needs its own snapshot stages, but that
+        // does not invalidate independent variable work or the colored prefix.
+        collapseVariableDispatches(p, functions);
+        collapseRelationDispatches(p, false);
+        fuseColorWindows(p, functions);
         p.statistics.dispatches = dispatchCount(p);
         pruneKernels(p);
         return;
