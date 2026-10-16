@@ -483,6 +483,25 @@ std::string CompiledPlan::interface() const {
            << anyMode(relationFieldModes, UniformParameters) << "\n"
            << "#define DYNAMICS_UNIFORM_COMPLIANCE "
            << anyMode(relationFieldModes, UniformCompliance) << "\n";
+    // With fixed modes, a known mode word is its compiled mask and an indexed
+    // one keeps only the bits that differ between sets.
+    const auto modesOf = [&](const char* name, const std::vector<FieldModeLayout>& fields) {
+        uint32_t common = fields.empty() ? 0 : ~0u, any = 0;
+        for (const auto& field : fields) {
+            common &= field.mask;
+            any |= field.mask;
+        }
+        source << "uint " << name << "(uint word){return " << common << "u";
+        if (any != common)
+            source << "|(x_fieldModes[word]&" << (any & ~common) << "u)";
+        source << ";}\n";
+    };
+    source << "#ifdef DYNAMICS_FIXED_MODES\nuint fieldModes(uint word,uint compiled){return compiled;}\n";
+    modesOf("variableModes", variableFieldModes);
+    modesOf("relationModes", relationFieldModes);
+    source << "#else\nuint fieldModes(uint word,uint compiled){return x_fieldModes[word];}\n"
+              "uint variableModes(uint word){return x_fieldModes[word];}\n"
+              "uint relationModes(uint word){return x_fieldModes[word];}\n#endif\n";
     source << R"(
 layout(local_size_x=128) in;
 layout(push_constant) uniform Step {

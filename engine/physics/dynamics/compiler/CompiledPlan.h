@@ -87,6 +87,9 @@ struct RelationLayout {
     uint32_t first, count, type, parameters, compliance, history, multipliers, modes;
     uint32_t endpoints = 0;
 };
+// Kernels read mode words through fieldModes/variableModes/relationModes. Edits
+// only clear mode bits, so while every word still holds its compiled mask the
+// runtime may run kernels compiled with DYNAMICS_FIXED_MODES, which fold them.
 struct FieldModeLayout {
     uint32_t first = 0, mask = 0;
 };

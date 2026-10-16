@@ -321,7 +321,10 @@ struct Generator {
     OwnerOutput lineSearchOutput() const;
     std::string operatorReduce(uint32_t columns, bool degree = false) const;
     std::string operatorMembers(const std::string& body) const;
-    std::string ballMembers(const std::string& body, float scale) const;
+    std::string uniformMembers(const FieldModeLayout& modes, uint32_t required,
+                               const std::string& uniformBody, const std::string& body) const;
+    std::string ballMembers(const std::string& body, float scale, bool locate) const;
+    std::string ballIntervals() const;
     void prepareIncidence() {
         struct Entry { uint32_t member, slot; };
         std::map<uint32_t, std::vector<Entry>> entries;
@@ -432,7 +435,7 @@ std::string Generator::groupedAccess() const {
     // state must keep the declared tangent component order, including for B.
     s << "vec3 currentPoint(uint member){Variable v=variable(field" << fixed[0] << "(member));return vec3(";
     for(uint32_t c=0;c<3;++c)s << (c?",":"") << (c<T?"loadValue(v,"+u(c)+")":"0.0");
-    s << ");}\n";
+    s << ");}\n" << ballIntervals();
     return s.str();
 }
 
@@ -489,8 +492,8 @@ std::string Generator::operatorSource(StateStorage storage) const {
     s << "return vec3(";
     for (uint32_t c=0;c<3;++c) s << (c?",":"") << (c>=T?"0.0":isolatedCorrection?
         "rowValue(member,"+u(6+T+c)+")":"uintBitsToFloat(x_contributions[v.v+"+u(c)+"*v.stride])");
-    s << ");}\nvec3 metric(uint member,vec3 value){uint mode=x_fieldModes[" << layout.modes
-      << "u];if((mode&" << CompiledPlan::UniformEnabled << "u)!=0u){if((mode&"
+    s << ");}\nvec3 metric(uint member,vec3 value){uint mode=" << fieldModes(p.variableFieldModes[field.first.set])
+      << ";if((mode&" << CompiledPlan::UniformEnabled << "u)!=0u){if((mode&"
       << CompiledPlan::EnabledValue << "u)==0u)return vec3(0);if((mode&"
       << CompiledPlan::IdentityMetric << "u)!=0u)return value;}"
          "Variable v=mappedVariable(member);if(!variableEnabled(v))return vec3(0);if(identityMetric(v))return value;return vec3(";
@@ -526,42 +529,75 @@ std::string Generator::operatorSource(StateStorage storage) const {
     return s.str();
 }
 
-std::string Generator::ballMembers(const std::string& body, float scale) const {
+std::string Generator::ballMembers(const std::string& body, float scale, bool locate) const {
     // Every member lies within sqrt(header[16]) of the position it was indexed
     // at, so the cells meeting the ball of radius scale*R+delta around the
     // current anchor contain all members within scale*R. Each row of that
     // ball is clipped on the first axis; in a dense ordering the clipped row
     // is one contiguous interval. Team lanes follow the flattened sequence of
-    // all scanned intervals.
+    // all scanned intervals. When locate is set, a team locates one chunk of
+    // intervals at a time, one per lane; that costs registers in every path
+    // of the kernel, so rare fallbacks scan without it.
     const auto dims = uint32_t(support->coordinates.size());
     std::ostringstream s;
-    s << std::setprecision(9) << "{vec3 query=point(anchor),key=vec3(";
+    s << std::setprecision(9) << "{vec3 query=point(anchor);BallQuery q;q.key=vec3(";
     for(uint32_t c=0;c<3;++c)s << (c?",":"") << (c<dims?"query["+std::to_string(support->coordinates[c].second%T)+"]":"0.0");
-    s << ");float support2=" << scale*scale << "*uintBitsToFloat(x_sumData[" << header << "u]),width=" << cellScale
-      << "*sqrt(uintBitsToFloat(x_sumData[" << header+4 << "u])),reach=(sqrt(support2)+sqrt(uintBitsToFloat(x_sumData["
-      << header+16 << "u])))*1.0001+2e-6*max(max(abs(key.x),abs(key.y)),abs(key.z));"
-         "vec3 lower=clamp(floor((key-reach)/width),vec3(-262145.0),vec3(262145.0)),"
-         "upper=clamp(floor((key+reach)/width),vec3(-262145.0),vec3(262145.0));";
+    s << ");float support2=" << scale*scale << "*uintBitsToFloat(x_sumData[" << header << "u]);q.width=" << cellScale
+      << "*sqrt(uintBitsToFloat(x_sumData[" << header+4 << "u]));q.reach=(sqrt(support2)+sqrt(uintBitsToFloat(x_sumData["
+      << header+16 << "u])))*1.0001+2e-6*max(max(abs(q.key.x),abs(q.key.y)),abs(q.key.z));"
+         "vec3 lower=clamp(floor((q.key-q.reach)/q.width),vec3(-262145.0),vec3(262145.0)),"
+         "upper=clamp(floor((q.key+q.reach)/q.width),vec3(-262145.0),vec3(262145.0));";
     for(uint32_t c=dims;c<3;++c)s << "lower[" << c << "]=0.0;upper[" << c << "]=0.0;";
-    s << "uvec3 size=uvec3(";
+    s << "q.size=uvec3(";
     for(uint32_t c=0;c<3;++c)s << (c?",":"") << "x_sumData[" << header+13+c << "u]";
-    s << ");ivec3 origin=ivec3(";
+    s << ");q.origin=ivec3(";
     for(uint32_t c=0;c<3;++c)s << (c?",":"") << "int(x_sumData[" << header+7+c << "u]^0x80000000u)";
-    s << ");bool dense=size.x!=0u;vec3 span=upper-lower+1.0;bool full=x_sumData[" << header+2
-      << "u]!=0u||!dense&&!(span.x*span.y*span.z<=" << extent() << ".0);ivec3 lo=ivec3(lower),hi=ivec3(upper);"
-         "if(dense){lo=max(lo,origin);hi=min(hi,origin+ivec3(size)-1);}if(full){lo=ivec3(0);hi=ivec3(0);}uint seen=0u;"
-         "for(int z=lo.z;z<=hi.z;++z){float dz=max(0.0,max(float(z)*width-key.z,key.z-float(z+1)*width));"
-         "for(int y=lo.y;y<=hi.y;++y){float dy=max(0.0,max(float(y)*width-key.y,key.y-float(y+1)*width)),"
-         "rest=reach*reach-dy*dy-dz*dz;int xl=0,xh=0;if(!full){if(!(rest>=0.0))continue;float chord=sqrt(rest);"
-         "xl=int(max(floor((key.x-chord)/width),float(lo.x)));xh=int(min(floor((key.x+chord)/width),float(hi.x)));}"
-         "for(int x=xl;x<=xh;++x){ivec3 cell=ivec3(x,y,z);uint begin=0u,end=" << extent() << "u;"
-         "if(full){}else if(dense){uint base=uint(((z-origin.z)*int(size.y)+y-origin.y)*int(size.x)-origin.x);"
-         "begin=x_sumData[" << heads << "u+base+uint(xl)];end=x_sumData[" << bucketEnds << "u+base+uint(xh)];x=xh;}"
-         "else{uint slot=hashBucket(cell);begin=x_sumData[" << heads << "u+slot];end=x_sumData[" << bucketEnds << "u+slot];}"
-         "for(uint member=begin+(lane+REDUCTION_TEAM-seen%REDUCTION_TEAM)%REDUCTION_TEAM;member<end;member+=REDUCTION_TEAM){"
-         "if(!full&&!dense&&any(notEqual(groupedCell(member),cell)))continue;vec3 separation=query-point(member);"
-         "if(dot(separation,separation)>1.00001*support2||!accepts(anchor,member))continue;"
-         "uint entry=0xffffffffu;" << body << "}seen+=end-begin;}}}}";
+    s << ");q.dense=q.size.x!=0u;vec3 span=upper-lower+1.0;q.full=x_sumData[" << header+2
+      << "u]!=0u||!q.dense&&!(span.x*span.y*span.z<=" << extent() << ".0);q.lo=ivec3(lower);q.hi=ivec3(upper);"
+         "if(q.dense){q.lo=max(q.lo,q.origin);q.hi=min(q.hi,q.origin+ivec3(q.size)-1);}"
+         "uint count=ballIntervals(q),seen=0u;";
+    // Hashed buckets mix cells, so their members are checked against the
+    // cell; that rare fallback scans its intervals one by one.
+    const auto scan = [&](const std::string& check) {
+        return "for(uint member=range.x+(lane+REDUCTION_TEAM-seen%REDUCTION_TEAM)%REDUCTION_TEAM;member<range.y;"
+               "member+=REDUCTION_TEAM){" + check + "vec3 separation=query-point(member);"
+               "if(dot(separation,separation)>1.00001*support2||!accepts(anchor,member))continue;"
+               "uint entry=0xffffffffu;" + body + "}seen+=range.y-range.x;";
+    };
+    if (!locate) {
+        s << "for(uint index=0u;index<count;++index){uvec2 range=ballInterval(q,index);"
+          << scan("if(!q.dense&&!q.full&&any(notEqual(groupedCell(member),ballCell(q,index))))continue;") << "}}";
+        return s.str();
+    }
+    s << "if(q.dense||q.full){for(uint first=0u;first<count;first+=REDUCTION_TEAM){"
+         "\n#ifdef DYNAMICS_SUBGROUP32\nuvec2 located=first+lane<count?ballInterval(q,first+lane):uvec2(0u);\n#endif\n"
+         "for(uint index=first;index<min(count,first+REDUCTION_TEAM);++index){"
+         "\n#ifdef DYNAMICS_SUBGROUP32\nuvec2 range=subgroupShuffle(located,gl_SubgroupInvocationID-lane+index-first);"
+         "\n#else\nuvec2 range=ballInterval(q,index);\n#endif\n"
+      << scan("") << "}}}else for(uint index=0u;index<count;++index){uvec2 range=ballInterval(q,index);"
+      << scan("if(any(notEqual(groupedCell(member),ballCell(q,index))))continue;") << "}}";
+    return s.str();
+}
+
+std::string Generator::ballIntervals() const {
+    // Intervals of a ball query: one per clipped (z,y) row of a dense
+    // ordering, one per cell of a hashed index, or the whole member range.
+    std::ostringstream s;
+    s << "struct BallQuery{vec3 key;float width,reach;ivec3 lo,hi,origin;uvec3 size;bool dense,full;};\n"
+         "uint ballIntervals(BallQuery q){if(q.full)return 1u;if(any(lessThan(q.hi,q.lo)))return 0u;"
+         "return uint(q.hi.z-q.lo.z+1)*uint(q.hi.y-q.lo.y+1)*(q.dense?1u:uint(q.hi.x-q.lo.x+1));}\n"
+         "ivec3 ballCell(BallQuery q,uint index){uint ny=uint(q.hi.y-q.lo.y+1),nx=q.dense?1u:uint(q.hi.x-q.lo.x+1);"
+         "return q.lo+ivec3(index%nx,index/nx%ny,index/(nx*ny));}\n"
+         "uvec2 ballInterval(BallQuery q,uint index){if(q.full)return uvec2(0u," << extent() << "u);"
+         "ivec3 c=ballCell(q,index);float dz=max(0.0,max(float(c.z)*q.width-q.key.z,q.key.z-float(c.z+1)*q.width)),"
+         "dy=max(0.0,max(float(c.y)*q.width-q.key.y,q.key.y-float(c.y+1)*q.width)),rest=q.reach*q.reach-dy*dy-dz*dz;"
+         "if(!(rest>=0.0))return uvec2(0u);float chord=sqrt(rest);"
+         "int xl=int(max(floor((q.key.x-chord)/q.width),float(q.lo.x))),xh=int(min(floor((q.key.x+chord)/q.width),float(q.hi.x)));"
+         "if(q.dense){if(xl>xh)return uvec2(0u);"
+         "uint base=uint(((c.z-q.origin.z)*int(q.size.y)+c.y-q.origin.y)*int(q.size.x)-q.origin.x);"
+         "return uvec2(x_sumData[" << heads << "u+base+uint(xl)],x_sumData[" << bucketEnds << "u+base+uint(xh)]);}"
+         "if(c.x<xl||c.x>xh)return uvec2(0u);uint slot=hashBucket(c);"
+         "return uvec2(x_sumData[" << heads << "u+slot],x_sumData[" << bucketEnds << "u+slot]);}\n";
     return s.str();
 }
 
@@ -569,14 +605,19 @@ std::string Generator::operatorMembers(const std::string& body) const {
     if (traversal.orderedRanges) {
         // Consumers run after any requested row rebuild, so every row within
         // capacity is complete. Overflowing rows use the exact ball query.
+        // Both members of a word are loaded before either is visited; each
+        // visit is its own block, so a body's continue moves to the next one.
+        const auto visit = [&](const std::string& member, const std::string& position) {
+            return "do{uint member=" + member + ";vec3 separation=site-" + position +
+                ";if(dot(separation,separation)>1.00001*bound2)continue;uint entry=0xffffffffu;" + body + "}while(false);";
+        };
         std::ostringstream s;
         s << "uint listed=x_sumData[" << neighbourCounts << "u+anchor];if(listed<=" << NeighbourCapacity
           << "u){vec3 site=point(anchor);float bound2=uintBitsToFloat(x_sumData[" << header << "u]);"
              "for(uint word=lane;2u*word<listed;word+=REDUCTION_TEAM){uint pair=x_sumData[" << neighbourWord("anchor","word")
-          << "];for(uint slot=2u*word;slot<min(listed,2u*word+2u);++slot){uint member=anchor+bitfieldExtract(pair,"
-             "int(slot%2u)*16,16)-32768u;vec3 separation=site-point(member);"
-             "if(dot(separation,separation)>1.00001*bound2)continue;uint entry=0xffffffffu;" << body << "}}}else"
-          << ballMembers(body, 1);
+          << "];bool paired=2u*word+1u<listed;uint low=anchor+(pair&0xffffu)-32768u,high=paired?anchor+(pair>>16)-32768u:low;"
+             "vec3 lowPoint=point(low),highPoint=point(high);"
+          << visit("low","lowPoint") << "if(paired)" << visit("high","highPoint") << "}}else" << ballMembers(body, 1, false);
         return s.str();
     }
     const auto direct = "MemberCursor cursor=members(anchor,lane);uint member,entry;"
@@ -587,6 +628,15 @@ std::string Generator::operatorMembers(const std::string& body) const {
     return "uint count=x_sumData[" + u(lists) + "+cacheRow(anchor)];if(" + cached +
         "){for(uint entry=lane;entry<count;entry+=REDUCTION_TEAM){uint member=listedMember(anchor,entry);" +
         body + "}}else{" + direct + "}";
+}
+
+std::string Generator::uniformMembers(const FieldModeLayout& modes, uint32_t required,
+                                      const std::string& uniformBody, const std::string& body) const {
+    // A uniform field mode holds until an edit clears it. Testing it once per
+    // anchor keeps the general per-member path out of the uniform loop.
+    if ((modes.mask & required) != required) return operatorMembers(body);
+    return "if((" + fieldModes(modes) + "&" + u(required) + ")==" + u(required) + "){" +
+        operatorMembers(uniformBody) + "}else{" + operatorMembers(body) + "}";
 }
 
 std::string Generator::operatorReduce(uint32_t columns, bool degree) const {
@@ -610,8 +660,9 @@ std::string Generator::operatorReduce(uint32_t columns, bool degree) const {
 
 std::string Generator::operatorLinearize() const {
     std::ostringstream s;
-    s << operatorSource() << "shared float partial[" << 128*(T+2) << "];shared uint live[128/REDUCTION_TEAM];"
-         "void main(){uint local=sumLocal(),lane=local%REDUCTION_TEAM,team=local/REDUCTION_TEAM,anchor=sumInvocation()/REDUCTION_TEAM;"
+    const bool solveHere = structuralWeighting() || lineSearch;
+    s << operatorSource() << "shared float partial[" << 128*(T+2) << "];" << (solveHere ? "" : "shared uint live[128/REDUCTION_TEAM];")
+      << "void main(){uint local=sumLocal(),lane=local%REDUCTION_TEAM,team=local/REDUCTION_TEAM,anchor=sumInvocation()/REDUCTION_TEAM;"
          "bool valid=anchor<" << d.count << "u;if(sumInvocation()==0u){" << launchStores(indexLaunches,false)
       << launchStores(rowLaunches,false) << "}float total[" << T+2 << "];";
     for(uint32_t c=0;c<T+2;++c)s << "total[" << c << "]=0.0;";
@@ -620,27 +671,34 @@ std::string Generator::operatorLinearize() const {
     body << "vec3 g=delta*k;total[0]+=value;";
     if(cachedCoefficients)body << "if(entry!=0xffffffffu)x_sumData[coefficientWord(anchor,entry)]=floatBitsToUint(k);";
     for(uint32_t c=0;c<T;++c)body << "total[" << 1+c << "]+=g[" << c << "];";
-    body << "if(member!=anchor)total[" << T+1 << "]+=dot(g,metric(member,g))"
-         << (structuralWeighting() ? "*incidenceBound(member)" : "") << ";";
-    s << "if(valid){prepareTerm(anchor);vec3 a=point(anchor);" << operatorMembers(body.str()) << "}" << operatorReduce(T+2);
-    s << "if(lane==0u){live[team]=0u;if(valid){Relation r=relation(step.first+logicalMember(anchor));"
+    const auto weighted = [&](const std::string& metric) {
+        return body.str() + "if(member!=anchor)total[" + std::to_string(T+1) + "]+=dot(g," + metric + ")" +
+            (structuralWeighting() ? "*incidenceBound(member)" : "") + ";";
+    };
+    s << "if(valid){prepareTerm(anchor);vec3 a=point(anchor);"
+      << uniformMembers(p.variableFieldModes[d.fields[fixed[0]].first.set],
+                        CompiledPlan::UniformEnabled | CompiledPlan::EnabledValue | CompiledPlan::IdentityMetric,
+                        weighted("g"), weighted("metric(member,g)"))
+      << "}" << operatorReduce(T+2);
+    s << "if(lane==0u){" << (solveHere ? "" : "live[team]=0u;") << "if(valid){Relation r=relation(step.first+logicalMember(anchor));"
          "if(step.iteration==0u)storeMultiplier(r,0u,0.0);rowStore(anchor,4u,0.0);rowStore(anchor,0u,0.0);";
     for(uint32_t c=0;c<T;++c)s << "rowStore(anchor," << 6+c << "u,total[" << c+1 << "]);";
-    if (isolatedCorrection) for(uint32_t c=0;c<T;++c)s << "rowStore(anchor," << 6+T+c << "u,0.0);";
+    // The line-search transpose stores the displacement outright.
+    if (isolatedCorrection && !lineSearch) for(uint32_t c=0;c<T;++c)s << "rowStore(anchor," << 6+T+c << "u,0.0);";
     s << "if(relationEnabled(r)){";
     array(s,"x",n);array(s,"outerX",n+1);array(s,"c",1);
     s << "loadInputs(r,logicalMember(anchor)," << extent() << "u,x);for(uint k=0u;k<" << n << "u;++k)outerX[k]=x[k];"
          "outerX[" << n << "]=total[0];outerValue(outerX,c);if(isnan(c[0])||isinf(c[0]))invalidEvaluation();else{";
     if(t.kind!=RelationKind::Equality)s << "if(!(c[0]" << (t.kind==RelationKind::GreaterEqual?">=":"<=") << "0.0&&loadMultiplier(r,0u)==0.0))";
-    s << "{live[team]=1u;rowStore(anchor,0u,1.0);vec3 g=diagonal(anchor);"
-         "float alpha=loadCompliance(r,0u," << 2+t.parameters << "u)/(step.h*step.h);"
-         "rowStore(anchor,1u,total[" << T+1 << "]+dot(g,metric(anchor,g))"
-      << (structuralWeighting() ? "*incidenceBound(anchor)" : "") << "+alpha);"
-         "rowStore(anchor,2u,-c[0]-alpha*loadMultiplier(r,0u));rowStore(anchor,3u,loadMultiplier(r,0u));"
-      ;
-    if (structuralWeighting() || lineSearch) {
-        s << "float a[1],rhs[1],dl[1],nextLambda[1];uint degree=1u;"
-             "a[0]=rowValue(anchor,1u);rhs[0]=rowValue(anchor,2u);"
+    s << "{" << (solveHere ? "" : "live[team]=1u;") << "rowStore(anchor,0u,1.0);vec3 g=vec3(";
+    for(uint32_t c=0;c<3;++c)s << (c?",":"") << (c<T?"total["+std::to_string(c+1)+"]":"0.0");
+    s << ");float alpha=loadCompliance(r,0u," << 2+t.parameters << "u)/(step.h*step.h),"
+         "diagonalValue=total[" << T+1 << "]+dot(g,metric(anchor,g))" << (structuralWeighting() ? "*incidenceBound(anchor)" : "")
+      << "+alpha,residualValue=-c[0]-alpha*loadMultiplier(r,0u);"
+         "rowStore(anchor,1u,diagonalValue);rowStore(anchor,2u,residualValue);"
+      << (lineSearch ? "" : "rowStore(anchor,3u,loadMultiplier(r,0u));");
+    if (solveHere) {
+        s << "float a[1],rhs[1],dl[1],nextLambda[1];uint degree=1u;a[0]=diagonalValue;rhs[0]=residualValue;"
           << solveAndProject() << "rowStore(anchor,4u,dl[0]);}}}}}}";
         return s.str();
     }
@@ -694,14 +752,12 @@ std::string Generator::operatorGather(bool apply) const {
          "anchor=sumInvocation()/REDUCTION_TEAM;bool valid=anchor<" << d.count << "u;float total[" << T << "];";
     if (lineSearch) s << "vec2 energy=vec2(0);";
     for(uint32_t c=0;c<T;++c)s << "total[" << c << "]=0.0;";
-    s << "if(valid){prepareTerm(anchor);vec3 a=point(anchor),sum=vec3(0);float own=rowValue(anchor,4u);if(lane==0u&&own!=0.0)sum=diagonal(anchor)*own;"
-         "Relation r=relation(step.first+logicalMember(anchor));";
-    std::ostringstream body;
-    body << "if(member==anchor)continue;float dl=rowValue(member,4u);if(dl==0.0)continue;"
-         "vec3 g;";
-    if(t.history==0)body << "if((x_fieldModes[r.u]&" << CompiledPlan::UniformParameters << "u)!=0u)g=gradient(anchor,member,entry,a);else";
-    body << "{vec3 delta=a-point(member);float value,k;term(member,dot(delta,delta),value,k);g=delta*k;}sum+=g*dl;";
-    s << operatorMembers(body.str());
+    s << "if(valid){prepareTerm(anchor);vec3 a=point(anchor),sum=vec3(0);float own=rowValue(anchor,4u);if(lane==0u&&own!=0.0)sum=diagonal(anchor)*own;";
+    const std::string visit = "if(member==anchor)continue;float dl=rowValue(member,4u);if(dl==0.0)continue;";
+    const auto reverse = visit + "vec3 delta=a-point(member);float value,k;term(member,dot(delta,delta),value,k);sum+=delta*k*dl;";
+    s << (t.history==0 ? uniformMembers(p.relationFieldModes[set], CompiledPlan::UniformParameters,
+                                        visit + "sum+=gradient(anchor,member,entry,a)*dl;", reverse)
+                       : operatorMembers(reverse));
     for(uint32_t c=0;c<T;++c)s << "total[" << c << "]=sum[" << c << "];";
     s << "}" << operatorReduce(T) << "if(lane==0u&&valid){vec3 raw=vec3(";
     for(uint32_t c=0;c<3;++c)s << (c?",":"") << (c<T?"total["+std::to_string(c)+"]":"0.0");
@@ -718,7 +774,8 @@ std::string Generator::operatorGather(bool apply) const {
     }
     for(uint32_t c=0;c<T;++c) {
         s << "{uint at=v.v+" << c << "u*v.stride;float next=";
-        if (isolatedCorrection) s << "rowValue(anchor," << 6+T+c << "u)";
+        if (lineSearch) s << "0.0";
+        else if (isolatedCorrection) s << "rowValue(anchor," << 6+T+c << "u)";
         else s << "uintBitsToFloat(x_contributions[at])";
         s << "+sum[" << c << "];";
         if (apply) s << "inputValue[" << T+c << "]=next;x_contributions[at]=0u;";
@@ -774,8 +831,9 @@ OwnerOutput Generator::lineSearchOutput() const {
     s << "vec2 quadratic=stepPartial[0];float weight=0.0;if(any(isnan(quadratic))||any(isinf(quadratic))){"
          "if(invocation()==0u)invalidEvaluation();}else if(quadratic.y>0.0)weight=clamp(quadratic.x/quadratic.y,0.0,1.0);"
          "uint logical=invocation(),anchor=x_sumData[" << ranks << "u+logical];"
-         "Relation r=relation(step.first+logical);if(rowValue(anchor,0u)!=0.0)"
-         "storeMultiplier(r,0u,rowValue(anchor,3u)+weight*rowValue(anchor,4u));"
+         // Linearization stored the full step lambda+dl; dl is zero on inactive rows.
+         "Relation r=relation(step.first+logical);float dl=rowValue(anchor,4u);if(dl!=0.0)"
+         "storeMultiplier(r,0u,loadMultiplier(r,0u)+(weight-1.0)*dl);"
          "Variable v=logicalVariable(logical);uint ownerId=v.id;vec3 q=point(anchor);";
     array(s,"ownerValue",T);
     for(uint32_t c=0;c<T;++c)s << "ownerValue[" << c << "]=q[" << c << "];";
@@ -1040,7 +1098,7 @@ void Generator::prepareIndex() {
               << header+2 << "u]!=0u){if(lane==0u&&valid)x_sumData[" << neighbourCounts
               << "u+anchor]=0xffffffffu;return;}if(lane==0u){found[team]=0u;wide[team]=0u;}barrier();if(valid)"
               << ballMembers("uint at=atomicAdd(found[team],1u);if(at<" + u(NeighbourCapacity) +
-                             ")gathered[row+at]=member-anchor+32768u;", 1+NeighbourSkin)
+                             ")gathered[row+at]=member-anchor+32768u;", 1+NeighbourSkin, true)
               << "barrier();uint listed=found[team];if(valid)for(uint k=lane;k<min(listed," << NeighbourCapacity
               << "u);k+=REDUCTION_TEAM)if(gathered[row+k]>0xffffu)wide[team]=1u;barrier();if(!valid)return;"
                  "if(listed>" << NeighbourCapacity << "u||wide[team]!=0u)listed=0xffffffffu;"

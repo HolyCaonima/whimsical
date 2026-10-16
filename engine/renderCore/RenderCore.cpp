@@ -248,6 +248,13 @@ const rg::Program& GraphContext::compute(const std::vector<uint32_t>& code) {
 const rg::Program& GraphContext::compute(const std::string& name, const std::string& source) {
     return compute(impl_->compiler.compile(name, source));
 }
+std::vector<const rg::Program*> GraphContext::compute(
+    const std::vector<std::pair<std::string, std::string>>& sources) {
+    std::vector<const rg::Program*> programs;
+    for (const auto* code : impl_->compiler.compile(sources))
+        programs.push_back(&compute(*code));
+    return programs;
+}
 void GraphContext::upload(rg::ResourceRef target, std::vector<uint8_t> bytes) {
     impl_->writable();
     if (impl_->pool.registry()[target.id].kind != rg::Kind::Buffer || bytes.empty() || bytes.size() % 4)

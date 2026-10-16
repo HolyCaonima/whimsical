@@ -381,9 +381,8 @@ void lowerCandidateDomains(CompiledPlan& p) {
                    << d.header << "u],floatBitsToUint(r[0]));}"
                       "void main(){";
             if (p.relationFieldModes[d.set].mask & CompiledPlan::UniformParameters)
-                source << "Relation firstRelation=relation(" << d.first
-                       << "u);if((x_fieldModes[firstRelation.u]&2u)!=0u){"
-                          "if(invocation()==0u)reduceBound(0u);return;}";
+                source << "if((" << fieldModes(p.relationFieldModes[d.set])
+                       << "&2u)!=0u){if(invocation()==0u)reduceBound(0u);return;}";
             source << "for(uint i=invocation();i<" << d.count << "u;i+=step.count)reduceBound(i);}";
             add("Reduce candidate bound", source.str(), lanes, p.candidateBounds);
         }
@@ -485,7 +484,7 @@ void lowerCandidateDomains(CompiledPlan& p) {
         source << emitGlsl(d.bound.squaredRadius, "candidateRadius")
                << "float candidateResidual(uint id,float distanceSquared){";
         if (p.relationFieldModes[d.set].mask & CompiledPlan::UniformParameters)
-            source << "if((x_fieldModes[" << layout.modes << "u]&2u)!=0u&&x_candidates["
+            source << "if((" << fieldModes(p.relationFieldModes[d.set]) << "&2u)!=0u&&x_candidates["
                    << d.header + 1 << "u]==0u)return "
                    << (relationType.kind == RelationKind::GreaterEqual
                            ? "distanceSquared-uintBitsToFloat(x_candidates[" +

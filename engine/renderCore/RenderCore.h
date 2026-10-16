@@ -3,6 +3,7 @@
 #include "core/GpuProfile.h"
 #include <memory>
 #include <optional>
+#include <utility>
 
 namespace whimsical {
 class GpuProfiler;
@@ -73,6 +74,8 @@ class GraphContext {
     rg::RenderGraph& graph();
     const rg::Program& compute(const std::vector<uint32_t>& spirv);
     const rg::Program& compute(const std::string& name, const std::string& source);
+    // (name, source) pairs compiled together; programs keep the order of sources.
+    std::vector<const rg::Program*> compute(const std::vector<std::pair<std::string, std::string>>& sources);
     // Owned CPU bytes become transfer nodes; callers never manage staging lifetimes.
     // Buffer payloads are complete, four-byte-aligned shader storage values.
     void upload(rg::ResourceRef, std::vector<uint8_t> bytes);

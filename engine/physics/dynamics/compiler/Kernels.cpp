@@ -652,6 +652,9 @@ std::string globalKernel(const KernelFunction& function) {
            function.entry + "(x_" + work +
            "[step.first+lane],step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration); }\n";
 }
+std::string fieldModes(const FieldModeLayout& modes) {
+    return "fieldModes(" + std::to_string(modes.first) + "u," + std::to_string(modes.mask) + "u)";
+}
 std::string fieldAccess(bool localFields) {
     if (localFields)
         return R"(
@@ -664,20 +667,20 @@ float loadCompliance(Relation r,uint c,uint uniformOffset){return read_complianc
     return R"(
 #if DYNAMICS_UNIFORM_VARIABLE_ENABLED
 bool variableEnabled(Variable v){
-    uint modes=x_fieldModes[v.u];
+    uint modes=variableModes(v.u);
     return (modes&1u)!=0u?(modes&8u)!=0u:x_variableEnabled[v.id]!=0.0;
 }
 #else
 bool variableEnabled(Variable v){return x_variableEnabled[v.id]!=0.0;}
 #endif
 #if DYNAMICS_IDENTITY_METRIC
-bool identityMetric(Variable v){return (x_fieldModes[v.u]&2u)!=0u;}
+bool identityMetric(Variable v){return (variableModes(v.u)&2u)!=0u;}
 #else
 bool identityMetric(Variable v){return false;}
 #endif
 #if DYNAMICS_UNIFORM_RELATION_ENABLED
 bool relationEnabled(Relation r){
-    uint modes=x_fieldModes[r.u];
+    uint modes=relationModes(r.u);
     return (modes&1u)!=0u?(modes&8u)!=0u:read_relationEnabled(r.id)!=0.0;
 }
 #else
@@ -685,7 +688,7 @@ bool relationEnabled(Relation r){return read_relationEnabled(r.id)!=0.0;}
 #endif
 #if DYNAMICS_UNIFORM_PARAMETERS
 float loadParameter(Relation r,uint c){
-    return (x_fieldModes[r.u]&2u)!=0u?uintBitsToFloat(x_fieldModes[r.u+2u+c]):
+    return (relationModes(r.u)&2u)!=0u?uintBitsToFloat(x_fieldModes[r.u+2u+c]):
         read_parameters(r.p+c*r.stride);
 }
 #else
@@ -693,7 +696,7 @@ float loadParameter(Relation r,uint c){return read_parameters(r.p+c*r.stride);}
 #endif
 #if DYNAMICS_UNIFORM_COMPLIANCE
 float loadCompliance(Relation r,uint c,uint uniformOffset){
-    uint modes=x_fieldModes[r.u];
+    uint modes=relationModes(r.u);
     return (modes&4u)!=0u?((modes&16u)!=0u?0.0:
         uintBitsToFloat(x_fieldModes[r.u+uniformOffset+c])):read_compliance(r.a+c*r.stride);
 }

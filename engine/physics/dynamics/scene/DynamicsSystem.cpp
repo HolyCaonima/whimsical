@@ -254,8 +254,8 @@ bool DynamicsSystem::update(World& world, float dt) {
             try {
                 auto modelId = s.model->snapshot().model;
                 const auto count = bindingCount(world, e, b);
-                if (!b.initialized || b.sampledModel != modelId || b.sampledTick != s.samplesTick ||
-                    b.target.size() != count) {
+                const bool fresh = !b.initialized || b.target.size() != count;
+                if (fresh || b.sampledModel != modelId || b.sampledTick != s.samplesTick) {
                     // Read each source range once. A batch owns one mapping, applied
                     // to zipped variable streams without creating member entities.
                     struct Source {
@@ -275,23 +275,20 @@ bool DynamicsSystem::update(World& world, float dt) {
                     }
                     if (!available)
                         continue;
-                    std::vector<TransformPose> targets;
-                    targets.reserve(count);
-                    std::vector<double> input;
-                    input.reserve(b.mapping.inputs);
+                    std::vector<Formula::Column> columns;
+                    for (const auto& source : sources)
+                        for (uint32_t c = 0; c < source.width; ++c)
+                            columns.push_back(
+                                {source.values.data() + c, size_t(source.stride) * source.width});
+                    const auto outputs = b.mapping.evaluate(count, columns);
+                    b.target.resize(count);
                     for (uint32_t i = 0; i < count; ++i) {
-                        input.clear();
-                        for (const auto& source : sources) {
-                            auto first = source.values.begin() + size_t(i) * source.stride * source.width;
-                            input.insert(input.end(), first, first + source.width);
-                        }
-                        auto p = b.mapping.evaluate(input);
-                        targets.push_back({vec3(float(p[0]), float(p[1]), float(p[2])),
-                                           quat(float(p[3]), float(p[4]), float(p[5]), float(p[6])),
-                                           vec3(float(p[7]), float(p[8]), float(p[9]))});
+                        const auto* p = outputs.data() + size_t(i) * 10;
+                        b.target[i] = {vec3(p[0], p[1], p[2]), quat(p[3], p[4], p[5], p[6]),
+                                       vec3(p[7], p[8], p[9])};
                     }
-                    if (!b.initialized || b.target.size() != count)
-                        b.from = targets;
+                    if (fresh)
+                        b.from = b.target;
                     else if (b.renderInstances) {
                         const auto& current = world.get<Renderable>(e).appearance.instanceTransforms;
                         for (uint32_t i = 0; i < count; ++i) {
@@ -300,12 +297,15 @@ bool DynamicsSystem::update(World& world, float dt) {
                         }
                     } else
                         b.from[0] = storage_.registry.get<Transform>(e).local;
-                    b.target = std::move(targets);
                     b.age = 0;
                     b.initialized = true;
                     b.sampledModel = modelId;
                     b.sampledTick = s.samplesTick;
                 }
+                // A completion poll does not advance the blend: a new target starts from the
+                // shown pose, so only a binding's first pose has anything to publish.
+                if (dt == 0 && !fresh)
+                    continue;
                 b.age += dt;
                 float blend = b.interpolation > 0 ? std::min(1.f, b.age / b.interpolation) : 1.f;
                 blend = blend * blend * (3 - 2 * blend);

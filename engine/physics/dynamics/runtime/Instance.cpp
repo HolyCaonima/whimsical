@@ -76,7 +76,9 @@ struct Instance::Storage {
     std::array<rg::ResourceId, BufferCount> resources;
     rg::ResourceId readback, oldValues, oldVelocity, oldHistory, oldAcceleration, migration;
     std::unique_ptr<rc::GraphContext> execution;
-    std::vector<const rg::Program*> programs;
+    // programs starts with the fixed-mode variants and becomes generalPrograms
+    // once an edit clears a field mode.
+    std::vector<const rg::Program*> programs, generalPrograms;
     struct Invocation {
         uint32_t kernel;
         Constants constants;
@@ -159,21 +161,48 @@ struct Instance::Storage {
         VkPhysicalDeviceProperties2 properties{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
         properties.pNext = &subgroup;
         vkGetPhysicalDeviceProperties2(rc::VulkanAccess::device(core).physical, &properties);
-        const auto operations = VK_SUBGROUP_FEATURE_BASIC_BIT | VK_SUBGROUP_FEATURE_SHUFFLE_RELATIVE_BIT;
+        const auto operations = VK_SUBGROUP_FEATURE_BASIC_BIT | VK_SUBGROUP_FEATURE_SHUFFLE_BIT |
+            VK_SUBGROUP_FEATURE_SHUFFLE_RELATIVE_BIT;
         if (subgroup.subgroupSize == 32 && (subgroup.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) &&
             (subgroup.supportedOperations & operations) == operations)
             interface.insert(interface.find('\n') + 1,
                 "#extension GL_KHR_shader_subgroup_basic : require\n"
+                "#extension GL_KHR_shader_subgroup_shuffle : require\n"
                 "#extension GL_KHR_shader_subgroup_shuffle_relative : require\n"
                 "#define DYNAMICS_SUBGROUP32 1\n");
+        std::vector<std::pair<std::string, std::string>> sources, fixedSources;
         for (const auto& kernel : plan->kernels) {
             std::string qualifiers;
             for (auto role : kernel.coherentBuffers)
                 qualifiers += "#define DYNAMICS_COHERENT_" + std::to_string(uint32_t(role)) + "\n";
             auto source = interface;
             source.insert(source.find('\n') + 1, qualifiers);
-            programs.push_back(&execution->compute(kernel.name + ".comp", source + kernel.source));
+            sources.push_back({kernel.name + ".comp", source + kernel.source});
         }
+        programs = generalPrograms = execution->compute(sources);
+        std::vector<size_t> fixedKernels;
+        for (size_t k = 0; k < sources.size(); ++k) {
+            const auto& accesses = generalPrograms[k]->accesses;
+            if (std::any_of(accesses.begin(), accesses.end(), [&](const auto& access) {
+                    return access.reads && registry.binding(access.binding).id == id(BufferRole::FieldModes);
+                })) {
+                auto& source = sources[k].second;
+                source.insert(source.find('\n') + 1, "#define DYNAMICS_FIXED_MODES 1\n");
+                fixedSources.push_back(std::move(sources[k]));
+                fixedKernels.push_back(k);
+            }
+        }
+        const auto fixed = execution->compute(fixedSources);
+        for (size_t i = 0; i < fixed.size(); ++i)
+            programs[fixedKernels[i]] = fixed[i];
+    }
+    void releaseFixedModes() {
+        if (programs == generalPrograms)
+            return;
+        programs = generalPrograms;
+        sequenceAccesses.clear();
+        sequenceBarriers.clear();
+        sequenceLaunches = false;
     }
     rg::ResourceId id(BufferRole role) const {
         return resources[size_t(role)];
@@ -798,6 +827,7 @@ void Instance::apply(const ModelCommit& commit) {
             s.execution->uploadRange(
                 s.id(BufferRole::FieldModes), uint64_t((*modes)[set].first) * 4,
                 bytes(std::vector<uint32_t>{(*masks)[set]}));
+            s.releaseFixedModes();
         }
         auto& ranges = group.second;
         std::sort(ranges.begin(), ranges.end());

@@ -41,10 +41,17 @@ using Vector = std::vector<Scalar>;
 
 // One immutable local expression DAG per mathematical definition, never per instance.
 struct Formula {
+    // One input of a batch evaluation: point i reads first[i * stride].
+    struct Column {
+        const float* first;
+        size_t stride;
+    };
     uint32_t inputs = 0;
     std::vector<MathNode> nodes;
     std::vector<uint32_t> outputs;
     std::vector<double> evaluate(const std::vector<double>&) const;
+    // Evaluates count points at once and returns their outputs point by point.
+    std::vector<float> evaluate(uint32_t count, const std::vector<Column>& columns) const;
     std::vector<double> jacobian(const std::vector<double>&) const;
     void validate() const;
 };

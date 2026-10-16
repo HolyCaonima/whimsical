@@ -31,6 +31,8 @@ KernelFunction relationDispatchFunction(
     const std::vector<std::pair<uint32_t, KernelFunction>>&, bool jacobi, const std::string& name);
 std::string globalKernel(const KernelFunction&);
 std::string fieldAccess(bool local);
+// The mode word of one field set; fixed-mode kernels see its compiled mask.
+std::string fieldModes(const FieldModeLayout&);
 enum class StateStorage { Global, Region, Epoch, Owner };
 std::string stateAccess(StateStorage, uint32_t variableCount = 0, bool externalInputs = false);
 

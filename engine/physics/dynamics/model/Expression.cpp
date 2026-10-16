@@ -58,72 +58,93 @@ uint32_t arity(MathOp op) {
         return 2;
     }
 }
-std::vector<double> values(const Formula& f, const std::vector<double>& x) {
-    if (x.size() != f.inputs)
-        throw std::invalid_argument("Expression input dimension mismatch");
-    std::vector<double> v(f.nodes.size());
+// Evaluates every node for count points: node i of point l lands at v[i * stride + l],
+// and input(k, l) supplies input k of point l.
+template <class Input>
+void evaluateNodes(const Formula& f, uint32_t count, size_t stride, const Input& input, double* v) {
     for (size_t i = 0; i < f.nodes.size(); ++i) {
         const auto& n = f.nodes[i];
-        const auto a = arity(n.op) ? v[n.a] : 0, b = arity(n.op) > 1 ? v[n.b] : 0;
+        double* r = v + i * stride;
+        const auto operand = [&](uint32_t node) { return v + node * stride; };
+        const auto unary = [&](auto op) {
+            const double* a = operand(n.a);
+            for (uint32_t l = 0; l < count; ++l)
+                r[l] = op(a[l]);
+        };
+        const auto binary = [&](auto op) {
+            const double *a = operand(n.a), *b = operand(n.b);
+            for (uint32_t l = 0; l < count; ++l)
+                r[l] = op(a[l], b[l]);
+        };
         switch (n.op) {
         case MathOp::Constant:
-            v[i] = n.value;
+            std::fill(r, r + count, double(n.value));
             break;
         case MathOp::Input:
-            v[i] = x[n.a];
+            for (uint32_t l = 0; l < count; ++l)
+                r[l] = input(n.a, l);
             break;
         case MathOp::Add:
-            v[i] = a + b;
+            binary([](double a, double b) { return a + b; });
             break;
         case MathOp::Subtract:
-            v[i] = a - b;
+            binary([](double a, double b) { return a - b; });
             break;
         case MathOp::Multiply:
-            v[i] = a * b;
+            binary([](double a, double b) { return a * b; });
             break;
         case MathOp::Divide:
-            v[i] = a / b;
+            binary([](double a, double b) { return a / b; });
             break;
         case MathOp::Negate:
-            v[i] = -a;
+            unary([](double a) { return -a; });
             break;
         case MathOp::Sqrt:
-            v[i] = std::sqrt(a);
+            unary([](double a) { return std::sqrt(a); });
             break;
         case MathOp::Sin:
-            v[i] = std::sin(a);
+            unary([](double a) { return std::sin(a); });
             break;
         case MathOp::Cos:
-            v[i] = std::cos(a);
+            unary([](double a) { return std::cos(a); });
             break;
         case MathOp::Exp:
-            v[i] = std::exp(a);
+            unary([](double a) { return std::exp(a); });
             break;
         case MathOp::Log:
-            v[i] = std::log(a);
+            unary([](double a) { return std::log(a); });
             break;
         case MathOp::Abs:
-            v[i] = std::abs(a);
+            unary([](double a) { return std::abs(a); });
             break;
         case MathOp::Min:
-            v[i] = std::min(a, b);
+            binary([](double a, double b) { return std::min(a, b); });
             break;
         case MathOp::Max:
-            v[i] = std::max(a, b);
+            binary([](double a, double b) { return std::max(a, b); });
             break;
         case MathOp::Atan2:
-            v[i] = std::atan2(a, b);
+            binary([](double a, double b) { return std::atan2(a, b); });
             break;
         case MathOp::Less:
-            v[i] = a < b ? 1 : 0;
+            binary([](double a, double b) { return a < b ? 1.0 : 0.0; });
             break;
-        case MathOp::Select:
-            v[i] = a != 0 ? b : v[n.c];
+        case MathOp::Select: {
+            const double *a = operand(n.a), *b = operand(n.b), *c = operand(n.c);
+            for (uint32_t l = 0; l < count; ++l)
+                r[l] = a[l] != 0 ? b[l] : c[l];
             break;
+        }
         case MathOp::Sum:
             throw std::invalid_argument("A collection sum requires bound object members");
         }
     }
+}
+std::vector<double> values(const Formula& f, const std::vector<double>& x) {
+    if (x.size() != f.inputs)
+        throw std::invalid_argument("Expression input dimension mismatch");
+    std::vector<double> v(f.nodes.size());
+    evaluateNodes(f, 1, 1, [&](uint32_t k, uint32_t) { return x[k]; }, v.data());
     return v;
 }
 } // namespace
@@ -204,6 +225,25 @@ std::vector<double> Formula::evaluate(const std::vector<double>& x) const {
     std::vector<double> result;
     for (auto output : outputs)
         result.push_back(v[output]);
+    return result;
+}
+std::vector<float> Formula::evaluate(uint32_t count, const std::vector<Column>& columns) const {
+    if (columns.size() != inputs)
+        throw std::invalid_argument("Expression input dimension mismatch");
+    constexpr uint32_t lanes = 64;
+    std::vector<double> v(nodes.size() * lanes);
+    std::vector<float> result(size_t(count) * outputs.size());
+    auto* out = result.data();
+    for (uint32_t first = 0; first < count; first += lanes) {
+        const auto n = std::min(lanes, count - first);
+        evaluateNodes(
+            *this, n, lanes,
+            [&](uint32_t k, uint32_t l) { return double(columns[k].first[(first + l) * columns[k].stride]); },
+            v.data());
+        for (uint32_t l = 0; l < n; ++l)
+            for (auto output : outputs)
+                *out++ = float(v[output * lanes + l]);
+    }
     return result;
 }
 std::vector<double> Formula::jacobian(const std::vector<double>& x) const {

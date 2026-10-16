@@ -1,5 +1,6 @@
 #pragma once
 #include "Math.h"
+#include <limits>
 #include <stdexcept>
 
 namespace whimsical {
@@ -13,11 +14,13 @@ inline mat4 transformMatrix(const TransformPose& p) {
     return glm::translate(mat4(1), p.position) * glm::mat4_cast(p.rotation) * glm::scale(mat4(1), p.scale);
 }
 inline void validateTransformPose(const TransformPose& p) {
+    // MSVC's std::isfinite is an out-of-line CRT call; render instances validate every pose each tick.
+    const auto finite = [](float x) { return std::abs(x) <= std::numeric_limits<float>::max(); };
     float q = glm::dot(p.rotation, p.rotation);
-    if (!std::isfinite(q) || std::abs(q - 1) > .001f)
+    if (!finite(q) || std::abs(q - 1) > .001f)
         throw std::invalid_argument("Transform requires a unit rotation");
     for (int i = 0; i < 3; ++i)
-        if (!std::isfinite(p.position[i]) || !std::isfinite(p.scale[i]) || p.scale[i] <= 0)
+        if (!finite(p.position[i]) || !finite(p.scale[i]) || p.scale[i] <= 0)
             throw std::invalid_argument("Transform requires finite position and positive scale");
 }
 // FTransform-style composition: discard shear by composing TRS directly.
