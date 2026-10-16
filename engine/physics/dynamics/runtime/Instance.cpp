@@ -80,10 +80,12 @@ struct Instance::Storage {
     struct Invocation {
         uint32_t kernel;
         Constants constants;
+        uint32_t launch;
     };
     std::vector<Invocation> sequence;
     std::vector<rg::ShaderAccess> sequenceAccesses;
     std::vector<uint8_t> sequenceBarriers; // 0: none, 1: execution, 2: memory
+    bool sequenceLaunches = false;
     bool recordingSequence = false;
     std::string interface;
     std::vector<uint32_t> variableFieldMasks, relationFieldMasks;
@@ -256,24 +258,28 @@ struct Instance::Storage {
         execution->record({profile, tick});
         execution->submit();
     }
-    void dispatch(const rg::Program& program, const std::string& name, Constants constants) {
+    void dispatch(const rg::Program& program, const std::string& name, Constants constants,
+                  uint32_t launch = UINT32_MAX) {
         if (!constants.count)
             return;
         auto pass = execution->graph().add(name);
         for (const auto& access : program.accesses)
             if (access.writes)
                 pass.modify(registry.binding(access.binding), access.access);
-        pass.dispatch(program, extent(constants.count)).constants(bytes(constants));
+        if (launch == UINT32_MAX)
+            pass.dispatch(program, extent(constants.count));
+        else
+            pass.dispatch(program, id(BufferRole::Launches), uint64_t(launch) * 4);
+        pass.constants(bytes(constants));
     }
     void batch(const Batch& batch, float h, float time, uint64_t tick, uint32_t iteration) {
+        const Constants constants{batch.first, batch.count, h, time, uint32_t(tick), iteration, plan->policy.relaxation};
         if (recordingSequence) {
             if (batch.count)
-                sequence.push_back({batch.kernel,
-                    {batch.first, batch.count, h, time, uint32_t(tick), iteration, plan->policy.relaxation}});
+                sequence.push_back({batch.kernel, constants, batch.launch});
             return;
         }
-        dispatch(*programs[batch.kernel], plan->kernels[batch.kernel].name,
-                 {batch.first, batch.count, h, time, uint32_t(tick), iteration, plan->policy.relaxation});
+        dispatch(*programs[batch.kernel], plan->kernels[batch.kernel].name, constants, batch.launch);
     }
     void finishSequence() {
         recordingSequence = false;
@@ -284,13 +290,16 @@ struct Instance::Storage {
         if (sequenceBarriers.empty()) {
             std::vector<bool> included(programs.size());
             std::vector<bool> reads(registry.size()), writes(registry.size());
+            const auto launches = id(BufferRole::Launches).index;
             for (const auto& invocation : sequence) {
                 const auto& program = *programs[invocation.kernel];
                 if (!included[invocation.kernel]) {
                     included[invocation.kernel] = true;
                     rg::merge(sequenceAccesses, program.accesses);
                 }
-                bool hazard = false, memory = false;
+                const bool indirect = invocation.launch != UINT32_MAX;
+                sequenceLaunches = sequenceLaunches || indirect;
+                bool hazard = indirect && writes[launches], memory = hazard;
                 for (const auto& access : program.accesses) {
                     const auto resource = registry.binding(access.binding);
                     if (resource.id == id(BufferRole::Diagnostics))
@@ -310,26 +319,35 @@ struct Instance::Storage {
                     reads[index] = reads[index] || access.reads;
                     writes[index] = writes[index] || access.writes;
                 }
+                reads[launches] = reads[launches] || indirect;
             }
         }
         auto pass = execution->graph().add("Execute Dynamics schedule");
         for (const auto& access : sequenceAccesses)
             if (access.writes)
                 pass.modify(registry.binding(access.binding), access.access);
+        if (sequenceLaunches)
+            pass.read(id(BufferRole::Launches), rg::Access::Indirect);
         pass.shader(sequenceAccesses).record([this](const rg::PassContext& context) {
             vkCmdBindDescriptorSets(context.command, VK_PIPELINE_BIND_POINT_COMPUTE, context.layout,
                                     0, 1, &context.descriptors, 0, nullptr);
+            const auto launches = sequenceLaunches ? context.buffer(id(BufferRole::Launches)).handle : VK_NULL_HANDLE;
             uint32_t previousKernel = UINT32_MAX;
             for (size_t i = 0; i < sequence.size(); ++i) {
                 const auto& invocation = sequence[i];
                 const auto& program = *programs[invocation.kernel];
+                const bool indirect = invocation.launch != UINT32_MAX;
                 GpuScope scope(context.profiler(), context.command, plan->kernels[invocation.kernel].name.c_str());
                 if (sequenceBarriers[i]) {
                     VkMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
                     barrier.srcStageMask = barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+                    if (indirect)
+                        barrier.dstStageMask |= VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
                     if (sequenceBarriers[i] == 2) {
                         barrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
                         barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
+                        if (indirect)
+                            barrier.dstAccessMask |= VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
                     }
                     VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
                     dependency.memoryBarrierCount = 1;
@@ -343,8 +361,11 @@ struct Instance::Storage {
                 vkCmdPushConstants(context.command, context.layout, VK_SHADER_STAGE_ALL, 0,
                                     sizeof(Constants), &invocation.constants);
                 const auto size = extent(invocation.constants.count);
-                vkCmdDispatch(context.command, (size.x + program.localSize.x - 1) / program.localSize.x,
-                              (size.y + program.localSize.y - 1) / program.localSize.y, 1);
+                if (indirect)
+                    vkCmdDispatchIndirect(context.command, launches, uint64_t(invocation.launch) * 4);
+                else
+                    vkCmdDispatch(context.command, (size.x + program.localSize.x - 1) / program.localSize.x,
+                                  (size.y + program.localSize.y - 1) / program.localSize.y, 1);
             }
         });
     }
@@ -657,7 +678,7 @@ void Instance::step(const TickInput& input) {
             for (const auto& batch : s.plan->iteration)
                 s.batch(batch, h, time, input.tick, iteration);
             for (size_t stage=0;stage<s.plan->solve.size();++stage) {
-                if (s.plan->iterationJoin && stage==0 && iteration!=0) continue;
+                if (((s.plan->iterationJoin && stage==0) || s.plan->solve[stage].substep) && iteration!=0) continue;
                 const auto& batch=s.plan->iterationJoin && stage+1==s.plan->solve.size() &&
                     iteration+1<s.plan->policy.iterations ? *s.plan->iterationJoin : s.plan->solve[stage];
                 s.batch(batch, h, time, input.tick, iteration);

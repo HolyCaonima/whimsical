@@ -39,7 +39,7 @@ constexpr const char* Names[] = {"q",
                                  "scanScratch",
                                  "adjCursors",
                                  "regionRanges", "regionState", "localOffsets", "stateWrites",
-                                 "candidates", "activeDegrees", "epochData", "epochOutput", "sumData"};
+                                 "candidates", "activeDegrees", "epochData", "epochOutput", "sumData", "launches"};
 static_assert(sizeof(Names) / sizeof(*Names) == BufferCount);
 // Bounded transient input table; larger updates retain the direct upload path.
 constexpr uint32_t StateWriteCapacity = 4096;
@@ -50,7 +50,7 @@ bool integer(BufferRole r) {
            r == BufferRole::ScanScratch || r == BufferRole::AdjacencyCursors || r == BufferRole::RegionRanges ||
            r == BufferRole::RegionState || r == BufferRole::LocalOffsets || r == BufferRole::StateWrites ||
            r == BufferRole::Candidates || r == BufferRole::ActiveDegrees || r == BufferRole::FieldModes ||
-           r == BufferRole::EpochData || r == BufferRole::SumData;
+           r == BufferRole::EpochData || r == BufferRole::SumData || r == BufferRole::Launches;
 }
 uint32_t checked(size_t n) {
     if (n > UINT32_MAX)
@@ -1124,10 +1124,10 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         for (const auto& [source, count] : domain.bounds)
             p->candidateBounds.push_back({kernel("Bound summed expression", source), 0, count});
         uint32_t indexStage = 0;
-        for (const auto& [source, count] : domain.index) {
-            const auto program = kernel("Index summed expression " + std::to_string(indexStage), source);
+        for (const auto& stage : domain.index) {
+            const auto program = kernel("Index summed expression " + std::to_string(indexStage), stage.source);
             if (indexStage++ == 0) p->kernels[program].ownerTransform = domain.snapshot;
-            sumStages.push_back({program, 0, count});
+            sumStages.push_back({program, 0, stage.count, -1, stage.substep, stage.launch});
         }
         std::map<std::string,uint32_t> programs;
         for (const auto& step : domain.program) {

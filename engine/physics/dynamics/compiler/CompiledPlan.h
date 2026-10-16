@@ -55,6 +55,7 @@ enum class BufferRole : uint32_t {
     EpochData,
     EpochOutput,
     SumData,
+    Launches,
     Count
 };
 constexpr size_t BufferCount = size_t(BufferRole::Count);
@@ -102,6 +103,8 @@ struct OwnerTransform {
 struct OwnerOutput {
     uint32_t first = 0, count = 0, stride = 1, width = 0;
     std::string source, body;
+    // Runs on every invocation of the workgroup before the body.
+    std::string groupBegin;
 };
 struct Kernel {
     std::string name, source; // local_size and main; runtime supplies the resource interface
@@ -114,6 +117,11 @@ struct Kernel {
 struct Batch {
     uint32_t kernel, first, count;
     int32_t color = -1;
+    // A solve stage whose result stays valid for all iterations of a substep.
+    bool substep = false;
+    // Word of the Launches buffer holding the workgroup counts, written by the
+    // kernels that request or retire this work; UINT32_MAX dispatches count.
+    uint32_t launch = UINT32_MAX;
 };
 struct DeferredJacobiDomain {
     uint32_t set = 0, domain = 0;

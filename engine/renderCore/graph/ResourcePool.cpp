@@ -269,8 +269,11 @@ void ResourcePool::realize(uint32_t width, uint32_t height, const std::vector<Re
                               VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
                 slot.image = vk_.image(w, h, vulkanFormat(declaration.format), usage);
             } else {
+                // Likewise any buffer a shader can write may hold the arguments of a later
+                // dispatch, so that is not a declaration of its own either.
                 auto usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
-                             VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+                             VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                             VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
                 slot.buffer = vk_.buffer(
                     bytes, usage, hostRead(declaration) ? BufferMemory::Readback : BufferMemory::Device);
             }

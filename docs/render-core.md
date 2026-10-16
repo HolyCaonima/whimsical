@@ -84,7 +84,7 @@ if (execution.poll()) {
 }
 ```
 
-`dispatch(program, Extent3D)` 接收元素范围，工作组大小从 SPIR-V 读取。`dispatch(program, imageId)` 使用该图像的实际范围。shader 负责对向上取整后的多余线程做范围检查。
+`dispatch(program, Extent3D)` 接收元素范围，工作组大小从 SPIR-V 读取。`dispatch(program, imageId)` 使用该图像的实际范围。shader 负责对向上取整后的多余线程做范围检查。`dispatch(program, buffer, byteOffset)` 是 indirect dispatch：工作组数是 GPU 之前写在该 buffer 偏移处的三个 uint，x 为 0 时不启动任何工作组。它同时声明对该 buffer 的 `Access::Indirect` 读取，屏障由图推导；图分配的所有 buffer 都带 indirect 用途，不需要额外声明。
 
 `upload` 拥有 CPU 字节快照，以 transfer node 写入整个 buffer；shader buffer payload 必须四字节对齐。`readback` 同样是图节点，destination 声明 `handover=Host`；完成后 `readbackData` 返回 CPU 拷贝。底层 image readback 仍用于截图和 Entity ID 读取。
 

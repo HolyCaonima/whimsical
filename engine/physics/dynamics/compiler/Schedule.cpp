@@ -34,9 +34,11 @@ uint64_t dispatchCount(const CompiledPlan& p) {
     };
     if (!count(p.predict))
         return 0;
+    const auto substep = uint64_t(std::count_if(p.solve.begin(), p.solve.end(),
+                                                [](const Batch& b) { return b.count && b.substep; }));
     return p.policy.substeps *
-           (count(p.predict) + p.policy.iterations * (count(p.solve) + count(p.apply) + count(p.iteration)) +
-            count(p.recover) + count(p.update) - (p.iterationJoin ? p.policy.iterations-1 : 0));
+           (count(p.predict) + p.policy.iterations * (count(p.solve) - substep + count(p.apply) + count(p.iteration)) +
+            substep + count(p.recover) + count(p.update) - (p.iterationJoin ? p.policy.iterations-1 : 0));
 }
 struct Components {
     std::vector<uint32_t> parent, size;
@@ -281,9 +283,13 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
         source << "if(i<step.count){stateOwner=x_regionRanges[step.first+i];Variable owner=variable(stateOwner);";
         for (uint32_t c = 0; c < width; ++c)
             source << "ownedState[" << c << "]=x_q[owner.q+" << c << "u*owner.stride];";
+        // Calls only depend on each other through owner state; issue every
+        // independent table load before the first call.
         for (size_t call = 1; call < signature.size(); ++call)
-            source << functions[signature[call]].entry << "(x_regionRanges[step.first+i+"
-                   << call*count << "u],step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration);";
+            source << "uint call" << call << "=x_regionRanges[step.first+i+" << call*count << "u];";
+        for (size_t call = 1; call < signature.size(); ++call)
+            source << functions[signature[call]].entry << "(call" << call
+                   << ",step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration);";
         for (uint32_t c = 0; c < width; ++c)
             source << "x_q[owner.q+" << c << "u*owner.stride]=ownedState[" << c << "];";
         if (epilogue)
@@ -308,13 +314,15 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
             std::ostringstream joined;
             joined << output->source << epilogue->source;
             for (auto kernel : emitted) joined << functions[kernel].source;
-            joined << "void main(){" << epilogue->groupBegin << "if(invocation()<step.count){"
+            joined << "void main(){" << epilogue->groupBegin << output->groupBegin << "if(invocation()<step.count){"
                    << output->body << "stateOwner=ownerId;";
             for (uint32_t c=0;c<width;++c) joined << "ownedState[" << c << "]=ownerValue[" << c << "];";
             joined << "uint row=(ownerId-" << output->first << "u)/" << output->stride << "u;";
             for(size_t call=1;call<signature.size();++call)
-                joined << functions[signature[call]].entry << "(x_regionRanges[" << first+call*count
-                       << "u+row],step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration+1u);";
+                joined << "uint call" << call << "=x_regionRanges[" << first+call*count << "u+row];";
+            for(size_t call=1;call<signature.size();++call)
+                joined << functions[signature[call]].entry << "(call" << call
+                       << ",step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration+1u);";
             joined << "Variable owner=variable(ownerId);";
             for(uint32_t c=0;c<width;++c) joined << "x_q[owner.q+" << c << "u*owner.stride]=ownedState[" << c << "];";
             joined << epilogue->entry << "(row,ownedState);}" << epilogue->groupEnd << "}";

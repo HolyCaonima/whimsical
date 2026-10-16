@@ -48,6 +48,8 @@ struct RenderGraph::Impl {
         std::vector<uint8_t> constants;
         Extent3D elements, localSize;
         ResourceId dispatchExtent;
+        ResourceRef dispatchArguments;
+        uint64_t argumentOffset = 0;
         bool sideEffect = false;
         bool alive = true;
         std::function<void(const PassContext&)> record;

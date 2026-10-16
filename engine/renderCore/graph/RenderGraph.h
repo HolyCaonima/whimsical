@@ -41,6 +41,8 @@ class RenderGraph {
         Builder& bind(ResourceRef shaderSlot, ResourceRef resource);
         Builder& dispatch(const Program&, Extent3D elements);
         Builder& dispatch(const Program&, ResourceId extentOf);
+        // Workgroup counts are three uints the GPU left at a byte offset of a buffer.
+        Builder& dispatch(const Program&, ResourceRef arguments, uint64_t offset);
         Builder& constants(std::vector<uint8_t> bytes);
         // Native backends opt into renderCore/vulkan/GraphAccess.h for PassContext.
         Builder& record(std::function<void(const PassContext&)>);

@@ -25,7 +25,16 @@ struct SumDomain {
     std::string update;
     std::vector<uint32_t> appliedVariables;
     bool activeDegrees = true;
-    std::vector<std::pair<std::string, uint32_t>> bounds, index, assembly;
+    // Ordered candidate preparation. Substep stages run at the first iteration
+    // only, for consumers that stay exact under any motion since that build.
+    struct IndexStage {
+        std::string source;
+        uint32_t count;
+        bool substep = false;
+        uint32_t launch = UINT32_MAX;
+    };
+    std::vector<IndexStage> index;
+    std::vector<std::pair<std::string, uint32_t>> bounds, assembly;
 };
 // The colored prefix has already been selected. Non-sum Jacobi incidence is
 // used to prove whether an operator owns its cumulative correction field.

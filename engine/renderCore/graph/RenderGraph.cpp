@@ -51,6 +51,10 @@ AccessInfo accessInfo(Access access, Usage usage) {
         info.stage = VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT;
         info.access = VK_ACCESS_2_INDEX_READ_BIT;
         return info;
+    case Access::Indirect:
+        info.stage = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+        info.access = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+        return info;
     case Access::Build:
         info.stage = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
         // Build inputs are read as buffers, a refit also reads the structure it updates.
@@ -102,6 +106,7 @@ RenderGraph::Builder RenderGraph::add(std::string name) {
     pass.program.reset();
     pass.elements = pass.localSize = {};
     pass.dispatchExtent = {};
+    pass.dispatchArguments = {};
     pass.sideEffect = false;
     pass.alive = true;
     pass.record = nullptr;
@@ -239,6 +244,7 @@ RenderGraph::Builder& RenderGraph::Builder::dispatch(const Program& program, Ext
     graph_->impl_->passes_[pass_].elements = elements;
     graph_->impl_->passes_[pass_].localSize = program.localSize;
     graph_->impl_->passes_[pass_].dispatchExtent = {};
+    graph_->impl_->passes_[pass_].dispatchArguments = {};
     return shader(program.accesses);
 }
 RenderGraph::Builder& RenderGraph::Builder::dispatch(const Program& program, ResourceId extentOf) {
@@ -248,6 +254,15 @@ RenderGraph::Builder& RenderGraph::Builder::dispatch(const Program& program, Res
         throw std::invalid_argument("Dispatch extent must name an image resource");
     graph_->impl_->passes_[pass_].dispatchExtent = extentOf;
     return *this;
+}
+RenderGraph::Builder& RenderGraph::Builder::dispatch(const Program& program, ResourceRef arguments, uint64_t offset) {
+    dispatch(program, Extent3D{});
+    if (!arguments.id.valid() || arguments.id.index >= graph_->impl_->registry_.size() ||
+        graph_->impl_->registry_[arguments.id].kind != Kind::Buffer)
+        throw std::invalid_argument("Dispatch arguments must name a buffer resource");
+    graph_->impl_->passes_[pass_].dispatchArguments = arguments;
+    graph_->impl_->passes_[pass_].argumentOffset = offset;
+    return read(arguments, Access::Indirect);
 }
 RenderGraph::Builder& RenderGraph::Builder::record(std::function<void(const PassContext&)> body) {
     graph_->impl_->passes_[pass_].record = std::move(body);
@@ -654,8 +669,11 @@ void RenderGraph::Impl::execute(VkCommandBuffer command, GpuProfiler& profiler) 
             if (pass.dispatchExtent.valid())
                 size = {pool_->extentWidth(pass.dispatchExtent), pool_->extentHeight(pass.dispatchExtent), 1};
             const auto& local = pass.localSize;
-            vkCmdDispatch(command, (size.x + local.x - 1) / local.x,
-                          (size.y + local.y - 1) / local.y, (size.z + local.z - 1) / local.z);
+            if (pass.dispatchArguments.id.valid())
+                vkCmdDispatchIndirect(command, pool_->buffer(pass.dispatchArguments).handle, pass.argumentOffset);
+            else
+                vkCmdDispatch(command, (size.x + local.x - 1) / local.x,
+                              (size.y + local.y - 1) / local.y, (size.z + local.z - 1) / local.z);
         }
         if (pass.record)
             pass.record(context);

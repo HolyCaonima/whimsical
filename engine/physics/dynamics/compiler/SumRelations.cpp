@@ -20,6 +20,13 @@ uint32_t operands(MathOp op) {
     return op == MathOp::Select ? 3 : 2;
 }
 std::string u(uint32_t value) { return std::to_string(value) + "u"; }
+// Workgroup sum of the value pairs [begin,end) at source into target[0].
+std::string pairSum(const std::string& target, uint32_t source, const std::string& begin, const std::string& end) {
+    return "{uint lane=gl_LocalInvocationID.x;vec2 sum=vec2(0);for(uint i=" + begin + "+lane;i<" + end +
+        ";i+=128u)sum+=vec2(uintBitsToFloat(x_sumData[" + u(source) + "+i*2u]),uintBitsToFloat(x_sumData[" +
+        u(source+1) + "+i*2u]));" + target + "[lane]=sum;barrier();for(uint offset=64u;offset>0u;offset/=2u){"
+        "if(lane<offset)" + target + "[lane]+=" + target + "[lane+offset];barrier();}}";
+}
 void array(std::ostringstream& s, const std::string& name, uint32_t size) {
     s << "float " << name << "[" << std::max(1u, size) << "];\n";
 }
@@ -31,6 +38,18 @@ uint32_t append(CompiledPlan& p, const std::vector<uint32_t>& words) {
     if (!words.empty()) std::memcpy(b.initial.data() + first * 4, words.data(), words.size() * 4);
     b.words = first + words.size();
     return uint32_t(first);
+}
+// Workgroup counts of a dispatch requested on the GPU. Rows of 65535 groups
+// continue in y, as invocation() does; x stays zero until a request.
+uint32_t launchGroups(uint32_t count) { return uint32_t(std::min<uint64_t>((uint64_t(count)+127)/128, 65535)); }
+uint32_t appendLaunch(CompiledPlan& p, uint32_t count) {
+    auto& b = p.buffers[size_t(BufferRole::Launches)];
+    const auto first = uint32_t(b.initial.size() / 4);
+    const uint32_t grid[] = {0u, uint32_t(((uint64_t(count)+127)/128+65534)/65535), 1u};
+    b.initial.resize(b.initial.size() + sizeof(grid));
+    std::memcpy(b.initial.data() + first * 4, grid, sizeof(grid));
+    b.words = first + 3;
+    return first;
 }
 // The original binding domain also defines the extent of a sum. In particular,
 // a triangular binding produces a partial sum, including empty boundary sums.
@@ -133,7 +152,35 @@ struct Generator {
     bool isolatedCorrection = false;
     bool lineSearch = false;
     std::optional<OwnerTransform> snapshot;
-    uint32_t quadraticPartials = 0, quadraticCount = 0, lineSearchWeight = 0;
+    // Cell width in support radii. Stale-cell stencils need a halo over the
+    // certified motion; displacement-bounded queries clip to the exact ball.
+    float cellScale = 1.0502f;
+    static constexpr float CellScale = 1.0f;
+    // Ordered traversals keep per-row members within (1+skin)R of the listed
+    // positions. Rows are reused until some member drifts half the skin; the
+    // index is rebuilt at a substep once motion exceeds IndexMotion*R.
+    static constexpr float NeighbourSkin = 0.1f, IndexMotion = 0.1f;
+    static constexpr uint32_t NeighbourCapacity = 96, NeighbourTeam = 8;
+    uint32_t neighbours = 0, neighbourCounts = 0, listedPoints = 0;
+    // A word packs two members as 16-bit offsets from the row's own rank; rows
+    // that do not fit use the exact ball query. Each workgroup tile stores word
+    // chunks of one team width contiguously, so a warp step reads one line.
+    std::string neighbourWord(const std::string& row, const std::string& word) const {
+        const auto team = traversal.reductionLanes, rows = 128/team;
+        return "(" + u(neighbours) + "+(" + row + "/" + u(rows) + ")*" + u(NeighbourCapacity/2*rows) + "+(" + word +
+            "/" + u(team) + ")*128u+(" + row + "%" + u(rows) + ")*" + u(team) + "+" + word + "%" + u(team) + ")";
+    }
+    // The owner pass reduces the last stepPartialCount pairs at stepPartials.
+    uint32_t quadraticPartials = 0, quadraticCount = 0, stepPartials = 0, stepPartialCount = 0;
+    // (launch word, x groups) of the index stages and the row builder. A
+    // snapshot requesting their work stores the counts; the consumer that
+    // acknowledges the generation zeroes them.
+    std::vector<std::pair<uint32_t, uint32_t>> indexLaunches, rowLaunches;
+    std::string launchStores(const std::vector<std::pair<uint32_t, uint32_t>>& launches, bool request) const {
+        std::string s;
+        for (auto [word, groups] : launches) s += "x_launches[" + u(word) + "]=" + u(request ? groups : 0) + ";";
+        return s;
+    }
     uint32_t operatorRowWidth() const { return 6+2*T; }
     bool structuralWeighting() const {
         // Reciprocal candidates bound the number n_v of rows incident on v.
@@ -154,7 +201,8 @@ struct Generator {
             (width <= 4 ? "+entry*" + u(width) + "+column;" :
                 "+column*" + u(d.count*(Capacity + uint32_t(fixed.size()))) + "+entry;") + "}\n";
     }
-    std::vector<std::pair<std::string, uint32_t>> bounds, index, assembly;
+    std::vector<std::pair<std::string, uint32_t>> bounds, assembly;
+    std::vector<SumDomain::IndexStage> index;
 
     Generator(CompiledPlan& plan, uint32_t setId, uint32_t domain)
         : p(plan), d(p.bindings[setId].domains[domain]), t(*p.types[p.relations[setId].type]),
@@ -273,6 +321,7 @@ struct Generator {
     OwnerOutput lineSearchOutput() const;
     std::string operatorReduce(uint32_t columns, bool degree = false) const;
     std::string operatorMembers(const std::string& body) const;
+    std::string ballMembers(const std::string& body, float scale) const;
     void prepareIncidence() {
         struct Entry { uint32_t member, slot; };
         std::map<uint32_t, std::vector<Entry>> entries;
@@ -318,11 +367,8 @@ struct Generator {
     void exclusiveScan(uint32_t input, uint32_t output, uint32_t count);
     std::string groupedAccess() const;
     std::string skipUnchangedIndex() const {
-        // The operator consumer acknowledges a completed candidate generation.
-        // This keeps invalidation monotonic across all builder dispatches and
-        // removes a separate reset of the generation flag on every iteration.
-        return "if(x_sumData[" + u(header+3) + "]==" +
-            (factor ? "x_sumData[" + u(header+6) + "]" : "0u") + ")return;";
+        // Factor domains launch their index stages only on request.
+        return factor ? "" : "if(x_sumData[" + u(header+3) + "]==0u)return;";
     }
     std::string gridSource() const;
     std::string generate(const Formula&, bool update, bool activity = false, bool refine = false) const;
@@ -396,9 +442,10 @@ std::string Generator::operatorSource(StateStorage storage) const {
     s << stateAccess(storage,T) << access << gridSource() << linearAccess() << groupedAccess();
     const auto& field = d.fields[fixed[0]];
     const auto& layout = p.variables[field.first.set];
-    s << "Variable mappedVariable(uint member){uint i=" << field.first.index << "u+logicalMember(member)*" << field.stride
+    s << "Variable logicalVariable(uint logical){uint i=" << field.first.index << "u+logical*" << field.stride
       << "u;return Variable(" << layout.values << "u+i," << layout.velocity << "u+i," << layout.metric << "u+i,"
-      << layout.count << "u,0u," << layout.modes << "u," << layout.first << "u+i);}\n";
+      << layout.count << "u,0u," << layout.modes << "u," << layout.first << "u+i);}\n"
+         "Variable mappedVariable(uint member){return logicalVariable(logicalMember(member));}\n";
     // Row columns: activity, scalar diagonal, residual RHS, snapshot multiplier,
     // multiplier increment, active degree, fixed gradient, owned displacement.
     s << "uint rowWord(uint row,uint column){return " << operatorRows << "u+column*" << d.count << "u+row;}\n";
@@ -479,32 +526,61 @@ std::string Generator::operatorSource(StateStorage storage) const {
     return s.str();
 }
 
+std::string Generator::ballMembers(const std::string& body, float scale) const {
+    // Every member lies within sqrt(header[16]) of the position it was indexed
+    // at, so the cells meeting the ball of radius scale*R+delta around the
+    // current anchor contain all members within scale*R. Each row of that
+    // ball is clipped on the first axis; in a dense ordering the clipped row
+    // is one contiguous interval. Team lanes follow the flattened sequence of
+    // all scanned intervals.
+    const auto dims = uint32_t(support->coordinates.size());
+    std::ostringstream s;
+    s << std::setprecision(9) << "{vec3 query=point(anchor),key=vec3(";
+    for(uint32_t c=0;c<3;++c)s << (c?",":"") << (c<dims?"query["+std::to_string(support->coordinates[c].second%T)+"]":"0.0");
+    s << ");float support2=" << scale*scale << "*uintBitsToFloat(x_sumData[" << header << "u]),width=" << cellScale
+      << "*sqrt(uintBitsToFloat(x_sumData[" << header+4 << "u])),reach=(sqrt(support2)+sqrt(uintBitsToFloat(x_sumData["
+      << header+16 << "u])))*1.0001+2e-6*max(max(abs(key.x),abs(key.y)),abs(key.z));"
+         "vec3 lower=clamp(floor((key-reach)/width),vec3(-262145.0),vec3(262145.0)),"
+         "upper=clamp(floor((key+reach)/width),vec3(-262145.0),vec3(262145.0));";
+    for(uint32_t c=dims;c<3;++c)s << "lower[" << c << "]=0.0;upper[" << c << "]=0.0;";
+    s << "uvec3 size=uvec3(";
+    for(uint32_t c=0;c<3;++c)s << (c?",":"") << "x_sumData[" << header+13+c << "u]";
+    s << ");ivec3 origin=ivec3(";
+    for(uint32_t c=0;c<3;++c)s << (c?",":"") << "int(x_sumData[" << header+7+c << "u]^0x80000000u)";
+    s << ");bool dense=size.x!=0u;vec3 span=upper-lower+1.0;bool full=x_sumData[" << header+2
+      << "u]!=0u||!dense&&!(span.x*span.y*span.z<=" << extent() << ".0);ivec3 lo=ivec3(lower),hi=ivec3(upper);"
+         "if(dense){lo=max(lo,origin);hi=min(hi,origin+ivec3(size)-1);}if(full){lo=ivec3(0);hi=ivec3(0);}uint seen=0u;"
+         "for(int z=lo.z;z<=hi.z;++z){float dz=max(0.0,max(float(z)*width-key.z,key.z-float(z+1)*width));"
+         "for(int y=lo.y;y<=hi.y;++y){float dy=max(0.0,max(float(y)*width-key.y,key.y-float(y+1)*width)),"
+         "rest=reach*reach-dy*dy-dz*dz;int xl=0,xh=0;if(!full){if(!(rest>=0.0))continue;float chord=sqrt(rest);"
+         "xl=int(max(floor((key.x-chord)/width),float(lo.x)));xh=int(min(floor((key.x+chord)/width),float(hi.x)));}"
+         "for(int x=xl;x<=xh;++x){ivec3 cell=ivec3(x,y,z);uint begin=0u,end=" << extent() << "u;"
+         "if(full){}else if(dense){uint base=uint(((z-origin.z)*int(size.y)+y-origin.y)*int(size.x)-origin.x);"
+         "begin=x_sumData[" << heads << "u+base+uint(xl)];end=x_sumData[" << bucketEnds << "u+base+uint(xh)];x=xh;}"
+         "else{uint slot=hashBucket(cell);begin=x_sumData[" << heads << "u+slot];end=x_sumData[" << bucketEnds << "u+slot];}"
+         "for(uint member=begin+(lane+REDUCTION_TEAM-seen%REDUCTION_TEAM)%REDUCTION_TEAM;member<end;member+=REDUCTION_TEAM){"
+         "if(!full&&!dense&&any(notEqual(groupedCell(member),cell)))continue;vec3 separation=query-point(member);"
+         "if(dot(separation,separation)>1.00001*support2||!accepts(anchor,member))continue;"
+         "uint entry=0xffffffffu;" << body << "}seen+=end-begin;}}}}";
+    return s.str();
+}
+
 std::string Generator::operatorMembers(const std::string& body) const {
-    auto direct = "MemberCursor cursor=members(anchor,lane);uint member,entry;"
-        "while(nextMember(anchor,cursor,member,entry)){" + body + "}";
     if (traversal.orderedRanges) {
-        // A dense physical ordering maps adjacent cells on the first axis to
-        // one contiguous interval. Enumerate those intervals in coalesced
-        // teams; the relation never needs an explicit row of member IDs.
+        // Consumers run after any requested row rebuild, so every row within
+        // capacity is complete. Overflowing rows use the exact ball query.
         std::ostringstream s;
-        s << "if(x_sumData[" << header+2 << "u]==0u&&x_sumData[" << header+13 << "u]!=0u){"
-             "ivec3 center=groupedCell(anchor),origin=ivec3(";
-        for(uint32_t c=0;c<3;++c)s << (c?",":"") << "int(x_sumData[" << header+7+c << "u]^0x80000000u)";
-        s << "),size=ivec3(";
-        for(uint32_t c=0;c<3;++c)s << (c?",":"") << "x_sumData[" << header+13+c << "u]";
-        s << ");ivec3 relative=center-origin;vec3 query=point(anchor);"
-             "for(int z=" << (T==3?-1:0) << ";z<=" << (T==3?1:0) << ";++z)"
-             "for(int y=" << (T>=2?-1:0) << ";y<=" << (T>=2?1:0) << ";++y){"
-             "int cy=relative.y+y,cz=relative.z+z;if(cy<0||cy>=size.y||cz<0||cz>=size.z)continue;"
-             "uint base=uint((cz*size.y+cy)*size.x),lo=base+uint(max(relative.x-1,0)),"
-             "hi=base+uint(min(relative.x+1,size.x-1));"
-             "uint begin=x_sumData[" << heads << "u+lo],end=x_sumData[" << bucketEnds << "u+hi];"
-             "for(uint member=begin+lane;member<end;member+=REDUCTION_TEAM){"
-             "if(!accepts(anchor,member))continue;vec3 separation=query-point(member);"
-             "if(dot(separation,separation)>1.00001*uintBitsToFloat(x_sumData[" << header << "u]))continue;"
-             "uint entry=0xffffffffu;" << body << "}}}else{" << direct << "}";
-        direct=s.str();
+        s << "uint listed=x_sumData[" << neighbourCounts << "u+anchor];if(listed<=" << NeighbourCapacity
+          << "u){vec3 site=point(anchor);float bound2=uintBitsToFloat(x_sumData[" << header << "u]);"
+             "for(uint word=lane;2u*word<listed;word+=REDUCTION_TEAM){uint pair=x_sumData[" << neighbourWord("anchor","word")
+          << "];for(uint slot=2u*word;slot<min(listed,2u*word+2u);++slot){uint member=anchor+bitfieldExtract(pair,"
+             "int(slot%2u)*16,16)-32768u;vec3 separation=site-point(member);"
+             "if(dot(separation,separation)>1.00001*bound2)continue;uint entry=0xffffffffu;" << body << "}}}else"
+          << ballMembers(body, 1);
+        return s.str();
     }
+    const auto direct = "MemberCursor cursor=members(anchor,lane);uint member,entry;"
+        "while(nextMember(anchor,cursor,member,entry)){" + body + "}";
     if (!listedMembers) return direct;
     const auto cached = compactMembers ? "x_sumData["+u(lists+d.count)+"+anchor]!=0xffffffffu" :
         "count<="+u(memberCapacity);
@@ -536,8 +612,8 @@ std::string Generator::operatorLinearize() const {
     std::ostringstream s;
     s << operatorSource() << "shared float partial[" << 128*(T+2) << "];shared uint live[128/REDUCTION_TEAM];"
          "void main(){uint local=sumLocal(),lane=local%REDUCTION_TEAM,team=local/REDUCTION_TEAM,anchor=sumInvocation()/REDUCTION_TEAM;"
-         "bool valid=anchor<" << d.count << "u;if(sumInvocation()==0u)x_sumData[" << header+6 << "u]=x_sumData["
-      << header+3 << "u];float total[" << T+2 << "];";
+         "bool valid=anchor<" << d.count << "u;if(sumInvocation()==0u){" << launchStores(indexLaunches,false)
+      << launchStores(rowLaunches,false) << "}float total[" << T+2 << "];";
     for(uint32_t c=0;c<T+2;++c)s << "total[" << c << "]=0.0;";
     std::ostringstream body;
     body << "vec3 delta=a-point(member);float value,k;forwardTerm(dot(delta,delta),value,k);";
@@ -673,42 +749,34 @@ std::string Generator::operatorGather(bool apply) const {
 }
 
 void Generator::reduceQuadratic(SumDomain& out) {
-    uint32_t source = quadraticPartials, count = quadraticCount;
-    for (;;) {
-        constexpr uint32_t ValuesPerGroup = 1024;
-        const auto groups = (count+ValuesPerGroup-1)/ValuesPerGroup;
-        const auto target = append(p, std::vector<uint32_t>(groups == 1 ? 1 : 2ull*groups));
+    // Every owner workgroup reduces the last level itself; a dispatch costs
+    // more than a few strided loads per invocation.
+    constexpr uint32_t ValuesPerGroup = 4096;
+    stepPartials = quadraticPartials; stepPartialCount = quadraticCount;
+    while (stepPartialCount > ValuesPerGroup) {
+        const auto groups = (stepPartialCount+ValuesPerGroup-1)/ValuesPerGroup;
+        const auto target = append(p, std::vector<uint32_t>(2ull*groups));
         std::ostringstream s;
-        s << stateAccess(StateStorage::Global)
-          << "shared vec2 partial[128];void main(){uint group=invocation()/128u,lane=gl_LocalInvocationID.x;"
-             "vec2 sum=vec2(0);for(uint i=group*" << ValuesPerGroup << "u+lane;i<min("
-          << count << "u,(group+1u)*" << ValuesPerGroup << "u);i+=128u)sum+=vec2(uintBitsToFloat(x_sumData["
-          << source << "u+i*2u]),uintBitsToFloat(x_sumData[" << source+1 << "u+i*2u]));"
-             "partial[lane]=sum;barrier();"
-             "for(uint offset=64u;offset>0u;offset/=2u){if(lane<offset)partial[lane]+=partial[lane+offset];barrier();}"
-             "if(lane==0u&&group<" << groups << "u){";
-        if (groups == 1) {
-            lineSearchWeight = target;
-            s << "vec2 q=partial[0];float weight=0.0;if(any(isnan(q))||any(isinf(q)))invalidEvaluation();"
-                 "else if(q.y>0.0)weight=clamp(q.x/q.y,0.0,1.0);x_sumData[" << target
-              << "u]=floatBitsToUint(weight);";
-        } else
-            s << "x_sumData[" << target << "u+group*2u]=floatBitsToUint(partial[0].x);x_sumData["
-              << target+1 << "u+group*2u]=floatBitsToUint(partial[0].y);";
-        s << "}}";
-        out.program.push_back({groups == 1 ? "Minimize projected quadratic" : "Reduce projected quadratic",
-                               s.str(),groups*128,0});
-        if (groups == 1) break;
-        source = target; count = groups;
+        s << stateAccess(StateStorage::Global) << "shared vec2 partial[128];void main(){uint group=invocation()/128u;"
+          << pairSum("partial", stepPartials, "group*"+u(ValuesPerGroup),
+                     "min("+u(stepPartialCount)+",(group+1u)*"+u(ValuesPerGroup)+")")
+          << "if(gl_LocalInvocationID.x==0u){x_sumData[" << target << "u+group*2u]=floatBitsToUint(partial[0].x);"
+             "x_sumData[" << target+1 << "u+group*2u]=floatBitsToUint(partial[0].y);}}";
+        out.program.push_back({"Reduce projected quadratic", s.str(), groups*128, 0});
+        stepPartials = target; stepPartialCount = groups;
     }
 }
 
 OwnerOutput Generator::lineSearchOutput() const {
+    // Invocations follow logical owners: the owner program and its stores are
+    // indexed that way, only the row values go through the permutation.
     std::ostringstream s;
-    s << "uint anchor=invocation();float weight=uintBitsToFloat(x_sumData[" << lineSearchWeight << "u]);"
-         "Relation r=relation(step.first+logicalMember(anchor));if(rowValue(anchor,0u)!=0.0)"
+    s << "vec2 quadratic=stepPartial[0];float weight=0.0;if(any(isnan(quadratic))||any(isinf(quadratic))){"
+         "if(invocation()==0u)invalidEvaluation();}else if(quadratic.y>0.0)weight=clamp(quadratic.x/quadratic.y,0.0,1.0);"
+         "uint logical=invocation(),anchor=x_sumData[" << ranks << "u+logical];"
+         "Relation r=relation(step.first+logical);if(rowValue(anchor,0u)!=0.0)"
          "storeMultiplier(r,0u,rowValue(anchor,3u)+weight*rowValue(anchor,4u));"
-         "Variable v=mappedVariable(anchor);uint ownerId=v.id;vec3 q=point(anchor);";
+         "Variable v=logicalVariable(logical);uint ownerId=v.id;vec3 q=point(anchor);";
     array(s,"ownerValue",T);
     for(uint32_t c=0;c<T;++c)s << "ownerValue[" << c << "]=q[" << c << "];";
     s << "if(variableEnabled(v)){vec3 change=displacement(anchor)*weight;";
@@ -722,13 +790,15 @@ OwnerOutput Generator::lineSearchOutput() const {
     s << "}}";
     const auto& field=d.fields[fixed[0]];
     return {p.variables[field.first.set].first+field.first.index,d.count,field.stride,T,
-        operatorSource(StateStorage::Owner)+emitGlsl(t.spaces[fixed[0]]->retract,"applyCorrection"),s.str()};
+        operatorSource(StateStorage::Owner)+emitGlsl(t.spaces[fixed[0]]->retract,"applyCorrection")+
+        "shared vec2 stepPartial[128];",s.str(),pairSum("stepPartial",stepPartials,"0u",u(stepPartialCount))};
 }
 std::string Generator::lineSearchApply() const {
     const auto output=lineSearchOutput();
     std::ostringstream s;
     s << operatorSource() << emitGlsl(t.spaces[fixed[0]]->retract,"applyCorrection")
-      << "void main(){if(invocation()>=" << d.count << "u)return;" << output.body;
+      << "shared vec2 stepPartial[128];void main(){" << output.groupBegin << "if(invocation()>=" << d.count
+      << "u)return;" << output.body;
     for (uint32_t c=0;c<T;++c)s << "storeValue(v," << c << "u,ownerValue[" << c << "]);";
     return s.str()+"}";
 }
@@ -822,8 +892,8 @@ std::string Generator::gridSource() const {
             s << "loadValue(variable(field" << slot << "(member))," << column << "u)";
         }
     }
-    s << ");}\nbool cellOf(vec3 f,out ivec3 c){vec3 v=f/(1.0502*sqrt(uintBitsToFloat(x_sumData["
-      << header << "u])));if(any(isnan(v))||any(isinf(v))||any(greaterThan(abs(v),vec3(262144.0)))"
+    s << ");}\nbool cellOf(vec3 f,out ivec3 c){vec3 v=f/(" << std::setprecision(9) << cellScale
+      << "*sqrt(uintBitsToFloat(x_sumData[" << header << "u])));if(any(isnan(v))||any(isinf(v))||any(greaterThan(abs(v),vec3(262144.0)))"
          "||any(greaterThan(abs(f),vec3(1e15))))return false;c=ivec3(floor(v));return true;}\n"
          "uint memberCount(uint anchor){uint count=x_sumData[" << lists << "u+anchor*" << Capacity+1
       << "u];return count>" << Capacity << "u?" << extent() << "u:count;}\n"
@@ -843,9 +913,15 @@ void Generator::prepareIndex() {
         if (a >= splitInput || b < splitInput || b >= t.stateSize()) { support.reset(); return; }
         if (axis == 0) std::swap(a, b);
     }
-    header = append(p, std::vector<uint32_t>(factor ? 16 : 5));
+    // Factor header word 16 is the squared displacement bound since the build.
+    header = append(p, std::vector<uint32_t>(factor ? 17 : 5));
+    uint64_t occupiedCells = uint64_t(extent())*2;
+    if (traversal.orderedRanges) {
+        cellScale = CellScale;
+        occupiedCells = uint64_t(std::ceil(occupiedCells/double(cellScale*cellScale*cellScale)));
+    }
     buckets = 1;
-    while (uint64_t(buckets) < uint64_t(extent())*2) {
+    while (uint64_t(buckets) < occupiedCells) {
         if (buckets >= (1u<<30)) throw std::overflow_error("Sum index bucket capacity");
         buckets *= 2;
     }
@@ -863,6 +939,11 @@ void Generator::prepareIndex() {
     // and stream members instead of reserving Capacity entries for every row.
     if (traversal.orderedRanges) {
         listedMembers = false;
+        neighbourCounts = append(p, std::vector<uint32_t>(d.count));
+        listedPoints = append(p, std::vector<uint32_t>(size_t(extent())*4));
+        const auto rows = 128/traversal.reductionLanes;
+        neighbours = append(p, std::vector<uint32_t>(size_t((d.count+rows-1)/rows)*rows*NeighbourCapacity/2));
+        p.statistics.candidateQueueCapacity += uint64_t(d.count)*NeighbourCapacity;
     } else if (factor) {
         // Storage grows with the relation, rather than assigning a fixed-width
         // matrix to each row. A common arena admits long rows without changing
@@ -921,50 +1002,22 @@ void Generator::prepareIndex() {
           << "u]!=x_sumData[" << header << "u]);}";
         index.push_back({s.str(),1}); s.str(""); s.clear();
     }
-    s << source << (factor ? "shared uint movedGroup;" : "")
-      << "bool moved(vec3 f,uint at){vec3 previous=vec3(uintBitsToFloat(x_sumData[at]),"
-         "uintBitsToFloat(x_sumData[at+1u]),uintBitsToFloat(x_sumData[at+2u]));vec3 delta=f-previous;"
-         "return !(dot(delta,delta)<=0.000576*uintBitsToFloat(x_sumData[" << header << "u]));}"
-         "void main(){uint i=invocation();if(x_sumData[" << header+2 << "u]!=0u||x_sumData["
-      << header+1 << "u]!=0u||x_sumData[" << header+4 << "u]!=x_sumData[" << header
-      << "u]){";
-    if (factor) s << "if(i==0u)atomicExchange(x_sumData[" << header+3 << "u],x_sumData[" << header+6 << "u]+1u);";
-    s << "return;}bool changed=false;if(i<" << extent() << "u)changed=moved(feature(i,true),"
-      << cells+4 << "u+i*8u);";
-    if (!factor) s << "if(i<" << d.count << "u)changed=changed||moved(feature(i,false),"
-      << anchorFeatures << "u+i*3u);";
-    else s << "if(i<" << extent() << "u){vec3 f=currentPoint(i);uint at=" << packedState
-       << "u+x_sumData[" << ranks << "u+i]*4u;x_sumData[at]=floatBitsToUint(f.x);"
-         "x_sumData[at+1u]=floatBitsToUint(f.y);x_sumData[at+2u]=floatBitsToUint(f.z);}";
-    if (factor)
-        s << "if(gl_LocalInvocationID.x==0u)movedGroup=0u;barrier();"
-             "if(changed)atomicOr(movedGroup,1u);barrier();"
-             "if(gl_LocalInvocationID.x==0u&&movedGroup!=0u)atomicExchange(x_sumData[" << header+3
-          << "u],x_sumData[" << header+6 << "u]+1u);}";
-    else s << "if(changed)atomicOr(x_sumData[" << header+3 << "u],1u);}";
-    index.push_back({s.str(),std::max(d.count,extent())}); s.str(""); s.clear();
+    const auto invalidIndex = "x_sumData["+u(header+2)+"]!=0u||x_sumData["+u(header+1)+"]!=0u||x_sumData["+
+        u(header+4)+"]!=x_sumData["+u(header)+"]";
+    if (!factor) {
+        s << source << "bool moved(vec3 f,uint at){vec3 previous=vec3(uintBitsToFloat(x_sumData[at]),"
+             "uintBitsToFloat(x_sumData[at+1u]),uintBitsToFloat(x_sumData[at+2u]));vec3 delta=f-previous;"
+             "return !(dot(delta,delta)<=0.000576*uintBitsToFloat(x_sumData[" << header << "u]));}"
+             "void main(){uint i=invocation();if(" << invalidIndex << ")return;bool changed=false;if(i<"
+          << extent() << "u)changed=moved(feature(i,true)," << cells+4 << "u+i*8u);if(i<" << d.count
+          << "u)changed=changed||moved(feature(i,false)," << anchorFeatures << "u+i*3u);"
+             "if(changed)atomicOr(x_sumData[" << header+3 << "u],1u);}";
+        index.push_back({s.str(),std::max(d.count,extent())}); s.str(""); s.clear();
+    }
     if (factor) {
-        const auto& field = d.fields[fixed[0]];
-        s << "shared uint snapshotChanged;void snapshotCollection(uint member,float state[" << T << "]){"
-             "if(x_sumData[" << header+2 << "u]!=0u||x_sumData[" << header+1
-          << "u]!=0u||x_sumData[" << header+4 << "u]!=x_sumData[" << header
-          << "u]){atomicOr(snapshotChanged,1u);return;}uint old=" << cells+4 << "u+member*8u;vec3 delta=vec3(0);";
-        for (uint32_t c=0;c<T;++c) {
-            const auto component = support->coordinates[c].second%T;
-            s << "delta[" << c << "]=state[" << component << "]";
-            s << "-uintBitsToFloat(x_sumData[old+" << c << "u]);";
-        }
-        s << "if(!(dot(delta,delta)<=0.000576*uintBitsToFloat(x_sumData[" << header
-          << "u])))atomicOr(snapshotChanged,1u);uint at=" << packedState << "u+x_sumData[" << ranks << "u+member]*4u;";
-        for (uint32_t c=0;c<3;++c)
-            s << "x_sumData[at+" << c << "u]=floatBitsToUint(" << (c<T?"state["+std::to_string(c)+"]":"0.0") << ");";
-        s << "}";
-        snapshot = OwnerTransform{p.variables[field.first.set].first+field.first.index,
-                                  d.count,field.stride,s.str(),"snapshotCollection"};
-        snapshot->groupBegin = "if(gl_LocalInvocationID.x==0u)snapshotChanged=0u;barrier();";
-        snapshot->groupEnd = "barrier();if(gl_LocalInvocationID.x==0u&&snapshotChanged!=0u)atomicExchange(x_sumData["+
-            u(header+3)+"],x_sumData["+u(header+6)+"]+1u);";
-        s.str(""); s.clear();
+        // The snapshot is stage 0. Every later stage launches only on its
+        // requests, so it is generated once those stages are known.
+        index.push_back({{},extent()});
         // Prefix ordering amortizes its extra passes on large domains. Short
         // domains pack independent buckets with a single allocation per cell.
         if (traversal.orderedRanges || buckets >= 131072) prepareOrderedIndex();
@@ -972,6 +1025,81 @@ void Generator::prepareIndex() {
         ++p.statistics.candidateDomains;
         p.statistics.candidateRelations += uint64_t(d.count)*extent();
         prepareGroupedIndex();
+        if (traversal.orderedRanges) {
+            // The ordered index is exact for any later motion, so it is built
+            // once per substep. Rows are rebuilt from it whenever requested.
+            for (auto stage = index.begin()+1; stage != index.end(); ++stage) stage->substep = true;
+            s << "#define REDUCTION_TEAM " << NeighbourTeam << "u\n" << source
+              << "vec3 point(uint member){return groupedPoint(member);}shared uint found[" << 128/NeighbourTeam
+              << "],wide[" << 128/NeighbourTeam << "],gathered[" << 128/NeighbourTeam*NeighbourCapacity
+              << "];void main(){uint i=invocation(),lane=gl_LocalInvocationID.x"
+                 "%REDUCTION_TEAM,team=gl_LocalInvocationID.x/REDUCTION_TEAM,anchor=i/REDUCTION_TEAM,row=team*"
+              << NeighbourCapacity << "u;bool valid=anchor<" << d.count << "u;if(i<" << extent()
+              << "u){vec3 f=point(i);uint at=" << listedPoints << "u+i*4u;x_sumData[at]=floatBitsToUint(f.x);"
+                 "x_sumData[at+1u]=floatBitsToUint(f.y);x_sumData[at+2u]=floatBitsToUint(f.z);}if(x_sumData["
+              << header+2 << "u]!=0u){if(lane==0u&&valid)x_sumData[" << neighbourCounts
+              << "u+anchor]=0xffffffffu;return;}if(lane==0u){found[team]=0u;wide[team]=0u;}barrier();if(valid)"
+              << ballMembers("uint at=atomicAdd(found[team],1u);if(at<" + u(NeighbourCapacity) +
+                             ")gathered[row+at]=member-anchor+32768u;", 1+NeighbourSkin)
+              << "barrier();uint listed=found[team];if(valid)for(uint k=lane;k<min(listed," << NeighbourCapacity
+              << "u);k+=REDUCTION_TEAM)if(gathered[row+k]>0xffffu)wide[team]=1u;barrier();if(!valid)return;"
+                 "if(listed>" << NeighbourCapacity << "u||wide[team]!=0u)listed=0xffffffffu;"
+                 "else for(uint word=lane;2u*word<listed;word+=REDUCTION_TEAM)x_sumData[" << neighbourWord("anchor","word")
+              << "]=gathered[row+2u*word]|(2u*word+1u<listed?gathered[row+2u*word+1u]<<16:0u);"
+                 "if(lane==0u)x_sumData[" << neighbourCounts << "u+anchor]=listed;}";
+            index.push_back({s.str(),std::max(extent(),d.count*NeighbourTeam)}); s.str(""); s.clear();
+        }
+        for (auto stage = index.begin()+1; stage != index.end(); ++stage) {
+            stage->launch = appendLaunch(p, stage->count);
+            (traversal.orderedRanges && stage+1 == index.end() ? rowLaunches : indexLaunches)
+                .push_back({stage->launch, launchGroups(stage->count)});
+        }
+        // Every snapshot refreshes the packed state and reduces the motion of
+        // members from the positions they were indexed at. Neighbour rows also
+        // request a rebuild once a member drifts half the skin from the
+        // position it was listed at. Squared rebuild thresholds in support
+        // radii; the stale-cell stencil certifies 2.4%.
+        const float indexMotion = traversal.orderedRanges ? IndexMotion*IndexMotion : 0.000576f;
+        const float listMotion = 0.499f*NeighbourSkin*0.499f*NeighbourSkin;
+        auto motion = [&](const std::string& member, const std::function<std::string(uint32_t)>& component) {
+            std::ostringstream m;
+            m << std::setprecision(9) << "uint rank=x_sumData[" << ranks << "u+" << member << "],at="
+              << packedState << "u+rank*4u;";
+            for (uint32_t c=0;c<3;++c)
+                m << "x_sumData[at+" << c << "u]=floatBitsToUint(" << (c<T?component(c):"0.0") << ");";
+            m << "if(" << invalidIndex << "){atomicOr(snapshotChanged,1u);return;}uint old="
+              << cells+4 << "u+" << member << "*8u;vec3 delta=vec3(0);";
+            for (uint32_t c=0;c<T;++c)
+                m << "delta[" << c << "]=" << component(support->coordinates[c].second%T)
+                  << "-uintBitsToFloat(x_sumData[old+" << c << "u]);";
+            m << "float motion=dot(delta,delta),support2=uintBitsToFloat(x_sumData[" << header << "u]);if(!(motion<="
+              << indexMotion << "*support2))atomicOr(snapshotChanged,1u);atomicMax(snapshotReach,isnan(motion)||isinf(motion)?"
+                 "0x7f7fffffu:floatBitsToUint(motion));";
+            if (traversal.orderedRanges) {
+                m << "uint listed=" << listedPoints << "u+rank*4u;vec3 drift=vec3(0);";
+                for (uint32_t c=0;c<T;++c)
+                    m << "drift[" << c << "]=" << component(c) << "-uintBitsToFloat(x_sumData[listed+" << c << "u]);";
+                m << "if(!(dot(drift,drift)<=" << listMotion << "*support2))atomicOr(snapshotListed,1u);";
+            }
+            return m.str();
+        };
+        const auto groupBegin = std::string("if(gl_LocalInvocationID.x==0u){snapshotChanged=0u;snapshotReach=0u;"
+                                            "snapshotListed=0u;}barrier();");
+        const auto groupEnd = "barrier();if(gl_LocalInvocationID.x==0u){if(snapshotChanged!=0u){"+
+            launchStores(indexLaunches,true)+launchStores(rowLaunches,true)+"}if(snapshotReach!=0u)atomicMax(x_sumData["+
+            u(header+16)+"],snapshotReach);if(snapshotListed!=0u){"+launchStores(rowLaunches,true)+"}}";
+        const auto shared = "shared uint snapshotChanged,snapshotReach,snapshotListed;";
+        s << source << shared << "void snapshotMember(uint i){vec3 f=currentPoint(i);"
+          << motion("i",[](uint32_t c) { return "f["+std::to_string(c)+"]"; }) << "}void main(){uint i=invocation();"
+          << groupBegin << "if(i<" << extent() << "u)snapshotMember(i);" << groupEnd << "}";
+        index[0].source = s.str(); s.str(""); s.clear();
+        const auto& field = d.fields[fixed[0]];
+        s << shared << "void snapshotCollection(uint member,float state[" << T << "]){"
+          << motion("member",[](uint32_t c) { return "state["+std::to_string(c)+"]"; }) << "}";
+        snapshot = OwnerTransform{p.variables[field.first.set].first+field.first.index,
+                                  d.count,field.stride,s.str(),"snapshotCollection"};
+        snapshot->groupBegin = groupBegin;
+        snapshot->groupEnd = groupEnd;
         return;
     }
     s << "void main(){" << skipUnchangedIndex() << "uint i=invocation();if(i<"
@@ -1056,7 +1184,7 @@ void Generator::prepareBucketIndex() {
       << "u)x_sumData[" << heads << "u+i]=0xffffffffu;if(i==0u){";
     s << "x_sumData[" << header+2
       << "u]=x_sumData[" << header+1 << "u];x_sumData[" << header+4 << "u]=x_sumData["
-      << header << "u];x_sumData[" << header+5 << "u]=0u;}}";
+      << header << "u];x_sumData[" << header+5 << "u]=0u;x_sumData[" << header+16 << "u]=0u;}}";
     index.push_back({s.str(),buckets+1}); s.str(""); s.clear();
     s << source << "void main(){" << skipUnchangedIndex() << "uint member=invocation();if(member>="
       << extent() << "u||x_sumData[" << header+1 << "u]!=0u)return;vec3 f=feature(member,true);"
@@ -1093,7 +1221,7 @@ void Generator::prepareOrderedIndex() {
       << "u+i]=0u;x_sumData[" << header+13 << "u+i]=0u;}if(i==0u){";
     s << "x_sumData[" << header+2
       << "u]=x_sumData[" << header+1 << "u];x_sumData[" << header+4 << "u]=x_sumData["
-      << header << "u];}}";
+      << header << "u];x_sumData[" << header+16 << "u]=0u;}}";
     index.push_back({s.str(),buckets+1}); s.str(""); s.clear();
     s << source << "shared uvec3 minima[128],maxima[128];void main(){" << skipUnchangedIndex()
       << "uint i=invocation(),lane=gl_LocalInvocationID.x;bool valid=i<" << extent()

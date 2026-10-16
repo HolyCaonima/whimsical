@@ -52,6 +52,7 @@ enum class Access : uint8_t {
     Transfer, // copy, blit or clear
     Vertex,   // vertex attribute fetch
     Index,    // index fetch
+    Indirect, // dispatch arguments read by the command itself
     Build,    // acceleration structure build
     Trace,    // acceleration structure walked by a ray query
     Present,  // handed to the presentation engine
