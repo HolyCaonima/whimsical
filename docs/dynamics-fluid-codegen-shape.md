@@ -130,3 +130,53 @@ tick 2–300 平均包含编译后 GPU 从低频升起的前几个 tick。最终
 - `dynamics_run` 有 validation 错误时以非零退出；上述全部流体运行均正常退出。`Whimsical --smoke --validation` validation errors=0。
 - `git diff --check` 通过。
 - `captures/fluid-40k/`：`head_dynamics_run.exe`（HEAD 构建）、`final_dynamics_run.exe`（第 1–5 项）、`fixed_dynamics_run.exe`（加第 6 项，串行编译）、`par_dynamics_run.exe`（最终构建）、`prof_head.log` / `prof_final.log` / `prof_fixed.log`（profile）、`mk.py`（实验用的覆盖 kernel 生成脚本；依赖的临时 dump/override 钩子已从 runtime 删除，不能直接在最终构建上运行）。
+
+## 80k 一轮（`7dc699f` 之后）
+
+80,000 粒子，其余设置不变。只改了编译器（`SumRelations.cpp`、`FormulaGlsl.cpp`）；`lab.js` / `fluid.js`、JS 接口、physics IR、runtime 与 RenderCore 均未改动，没有新增测试。
+
+### 保留的变化
+
+- 掩码访问：每次成员访问提供 `delta`、`distance2` 和 `inside`，body 用 select 屏蔽支撑外的贡献，不再 `continue`，team 内各 lane 在成员之间保持收敛。原来的 `gradient()` 改为 `coefficient(anchor,entry,distance2)`，只返回系数，delta 与距离不再重复计算。
+- 行字预取：每个 lane 在访问当前字之前先读下一个字（相隔一个 128 字块），首字与计数一起读，行读取与成员位置读取的延迟得以重叠。
+- 线性化：乘子提前读入，`solveAndProject(multipliers)` 复用已读的值；统一参数时 `prepareTerm` 读第 0 行的不变参数（`parameterRow`），不再依赖 logical member 的读取；成员对角不再累加锚点自身项（其 delta 为 0）。
+- 转置：`sum+=delta*(inside&&dl!=0.0?k*dl:0.0)`，dl 为 0 时不再分支。
+- `isolatedCorrection` 计划不读 `x_contributions`，转置 apply 与线搜索输出中对它的清零是死存储，已删除。
+- 例外加入：`join` 所需的 built 计数和 listed 点由调用方与标志位一起读取。
+- 符号微分（`FormulaGlsl.cpp`）：零伴随保护只用于依赖 min/max 分支选择的值，以及 divide / sqrt / log / atan2 这类在有限值处奇异的偏导。其他零伴随来自为零的原始因子，乘积、exp、sin 的偏导若非有限，原始值也非有限，不需要 select。
+
+### 测量结果
+
+RTX 3080，Release，`captures/fluid-80k-s4/abx.ps1`（开启 profiler，300 tick，HEAD 构建与最终构建交替各 3 次，validation 开启）：
+
+| 取样 | HEAD（`7dc699f`） | 最终 |
+| --- | ---: | ---: |
+| 调度合计（profile 平均） | 7.706 / 8.024 / 7.964 ms | 6.403 / 6.452 / 6.231 ms |
+| tick 11–30 平均 | 7.968 / 8.351 / 8.429 ms | 6.798 / 6.885 / 7.038 ms |
+| 最后 30 tick 平均 | 6.983 / 7.249 / 7.275 ms | 5.781 / 5.865 / 5.572 ms |
+| 线性化（48 次） | 2.186 / 2.221 / 2.246 ms | 1.472 / 1.473 / 1.456 ms |
+| 转置并计算二次型（48 次） | 2.243 / 2.266 / 2.303 ms | 1.602 / 1.575 / 1.589 ms |
+| 所有者迭代推进（44 次） | 1.477 / 1.489 / 1.516 ms | 1.422 / 1.472 / 1.446 ms |
+
+调度合计约 −20%，线性化约 −34%，转置约 −30%。末帧密度超额均值 HEAD 0.00345–0.00348，最终 0.00348–0.00358；同一构建多次运行之间约有 ±0.0001 的混沌波动。P99 分别为 0.0171–0.0176 和 0.0175–0.0180。diag（invalid/singular）均为 0/0。
+
+### 没有保留的实验
+
+- 行字循环展开 2 倍：调度 6.52 / 6.59 ms，对照 6.35–6.49 ms，无收益。
+- 合并行重建与例外两个索引阶段：合并后约 0.92 ms，分开时约 0.52 + 0.40 ms，无收益；空的 launch 门控 dispatch 只需约 1 µs。
+- 消费者 team 4：线性化约 1.59 ms，转置约 1.67 ms，都比 team 2 慢。
+- 在生成代码中对微分乘积做 CSE：驱动已经做了，无变化。
+- 回退球查询把区间扁平化后再遍历：行构建约 0.70 ms，对照约 0.52 ms（+35%）。
+- 用 subgroup 做组内归约：在噪声范围内，无收益。
+
+### 剩余瓶颈
+
+- 线性化部分受指令发射限制（trace 中 sm/inst 约 61%）。上一轮的 `uvec4` 向量读取探针（线性化约 −10%，转置约 −3%）需要 runtime 为 `x_sumData` 提供第二种类型视图，仍未实现。
+- 所有者推进受带宽限制，约 183 B/粒子。
+- 与手写 PBF 的差距仍主要来自线搜索带来的每次迭代第三次全局 pass，以及全局行重建；只重建失效行、减少排序 dispatch 属于算法改变。
+
+### 验证
+
+- Release 构建 `dynamics_run`、`dynamics_tests`、`Whimsical` 通过；ctest 4/4 通过；`Whimsical --smoke --validation` validation errors=0；`git diff --check` 通过。
+- 编译警告 C4458（`prepareGroupedIndex` 中的 `input`）和 C4456（`Schedule.cpp`）在 HEAD 中已存在。
+- 用于测量的临时 dump/override 钩子已从 `Instance.cpp` 删除。

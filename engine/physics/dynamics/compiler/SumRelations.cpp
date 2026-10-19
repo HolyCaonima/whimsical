@@ -171,10 +171,11 @@ struct Generator {
     // A word packs two members as 16-bit offsets from the row's own rank; rows
     // that do not fit use the exact ball query. Each workgroup tile stores word
     // chunks of one team width contiguously, so a warp step reads one line.
+    static constexpr uint32_t NeighbourChunk = 128;
     std::string neighbourWord(const std::string& row, const std::string& word) const {
-        const auto team = traversal.reductionLanes, rows = 128/team;
+        const auto team = traversal.reductionLanes, rows = NeighbourChunk/team;
         return "(" + u(neighbours) + "+(" + row + "/" + u(rows) + ")*" + u(NeighbourCapacity/2*rows) + "+(" + word +
-            "/" + u(team) + ")*128u+(" + row + "%" + u(rows) + ")*" + u(team) + "+" + word + "%" + u(team) + ")";
+            "/" + u(team) + ")*" + u(NeighbourChunk) + "+(" + row + "%" + u(rows) + ")*" + u(team) + "+" + word + "%" + u(team) + ")";
     }
     // The owner pass reduces the last stepPartialCount pairs at stepPartials.
     uint32_t quadraticPartials = 0, quadraticCount = 0, stepPartials = 0, stepPartialCount = 0;
@@ -381,7 +382,8 @@ struct Generator {
     }
     std::string gridSource() const;
     std::string generate(const Formula&, bool update, bool activity = false, bool refine = false) const;
-    std::string solveAndProject() const;
+    // Multipliers names an array of loaded multipliers; by default they are read.
+    std::string solveAndProject(const std::string& multipliers = {}) const;
     std::string linearize() const;
     std::string cachedSolve(bool refine) const;
     std::string cachedGather() const;
@@ -476,9 +478,15 @@ std::string Generator::operatorSource(StateStorage storage) const {
     s << emitGlsl(operatorOuter,"outerValue");
     s << "float rowTermInput[" << factor->scalar.inputs << "];void prepareTerm(uint anchor){"
          "uint logical=logicalMember(anchor);Relation r=relation(step.first+logical);";
+    // Uniform parameters give every row the invariant values of the first,
+    // which do not wait for the logical member.
+    const auto& relationModes = p.relationFieldModes[set];
+    s << "uint parameterRow=" << ((relationModes.mask & CompiledPlan::UniformParameters) ?
+        "(" + fieldModes(relationModes) + "&" + u(CompiledPlan::UniformParameters) + ")!=0u?0u:logical;" :
+        std::string("logical;"));
     for (uint32_t c=0;c<parameterProgram.invariant.outputs.size();++c)
         s << "rowTermInput[" << parameterProgram.firstInvariant+c << "]=uintBitsToFloat(x_sumData["
-          << parameterValues+c*d.count << "u+logical]);";
+          << parameterValues+c*d.count << "u+parameterRow]);";
     for (uint32_t c=0;c<t.history;++c)
         s << "rowTermInput[" << t.stateSize()+t.parameters+c << "]=loadHistory(r," << c << "u);";
     s << "rowTermInput[" << n-2 << "]=step.h;rowTermInput[" << n-1 << "]=step.time;}"
@@ -526,12 +534,11 @@ std::string Generator::operatorSource(StateStorage storage) const {
     for (uint32_t c=0;c<T;++c) s << "offset[" << c << "]=int(code%3u)-1;code/=3u;";
     s << "uint key=bucket(c.center+offset);c.member=x_sumData[" << heads << "u+key];c.end=x_sumData["
       << bucketEnds << "u+key];c.cell+=REDUCTION_TEAM;}}\n";
-    s << "vec3 gradient(uint anchor,uint member,uint entry,vec3 center){";
-    s << "vec3 delta=center-point(member);float value,k;";
+    s << "float coefficient(uint anchor,uint entry,float distance2){float value,k;";
     if(cachedCoefficients) {
         s << "if(entry!=0xffffffffu)k=uintBitsToFloat(x_sumData[coefficientWord(anchor,entry)]);else ";
     }
-    s << "forwardTerm(dot(delta,delta),value,k);return delta*k;}\n";
+    s << "forwardTerm(distance2,value,k);return k;}\n";
     return s.str();
 }
 
@@ -566,9 +573,9 @@ std::string Generator::ballMembers(const std::string& body, float scale, bool lo
     // cell; that rare fallback scans its intervals one by one.
     const auto scan = [&](const std::string& check) {
         return "for(uint member=range.x+(lane+REDUCTION_TEAM-seen%REDUCTION_TEAM)%REDUCTION_TEAM;member<range.y;"
-               "member+=REDUCTION_TEAM){" + check + "vec3 separation=query-point(member);"
-               "if(dot(separation,separation)>1.00001*support2||!accepts(anchor,member))continue;"
-               "uint entry=0xffffffffu;" + body + "}seen+=range.y-range.x;";
+               "member+=REDUCTION_TEAM){" + check + "vec3 delta=query-point(member);float distance2=dot(delta,delta);"
+               "if(distance2>1.00001*support2||!accepts(anchor,member))continue;"
+               "uint entry=0xffffffffu;const bool inside=true;" + body + "}seen+=range.y-range.x;";
     };
     if (!locate) {
         s << "for(uint index=0u;index<count;++index){uvec2 range=ballInterval(q,index);"
@@ -608,32 +615,41 @@ std::string Generator::ballIntervals() const {
 }
 
 std::string Generator::operatorMembers(const std::string& body) const {
+    // A body sees delta = point(anchor)-point(member) and its squared length,
+    // and masks its contribution with inside instead of branching. Lanes of a
+    // team then stay converged across members; outside the support a body
+    // may evaluate non-finite values, so it selects, never multiplies.
     if (traversal.orderedRanges) {
         // Consumers run after any requested row rebuild, so every row within
         // capacity is complete. Overflowing rows use the exact ball query.
-        // Both members of a word are loaded before either is visited; each
-        // visit is its own block, so a body's continue moves to the next one.
-        const auto visit = [&](const std::string& member, const std::string& position) {
-            return "do{uint member=" + member + ";vec3 separation=site-" + position +
-                ";if(dot(separation,separation)>1.00001*bound2)continue;uint entry=0xffffffffu;" + body + "}while(false);";
+        // Both members of a word are visited; the second one of an odd row
+        // repeats the first and is outside. A lane loads its next word, one
+        // chunk further, before visiting the current one, which overlaps the
+        // row and member reads; its first word lies within the row and is
+        // read with the count.
+        const auto visit = [&](const std::string& member, const std::string& live) {
+            return "{uint member=" + member + ",entry=0xffffffffu;vec3 delta=site-point(member);"
+                "float distance2=dot(delta,delta);bool inside=" + live + "&&!(distance2>1.00001*bound2);" + body + "}";
         };
         std::ostringstream s;
-        s << "uint listed=x_sumData[" << neighbourCounts << "u+anchor];if(listed<=" << NeighbourCapacity
-          << "u){vec3 site=point(anchor);float bound2=uintBitsToFloat(x_sumData[" << header << "u]);"
-             "for(uint word=lane;2u*word<listed;word+=REDUCTION_TEAM){uint pair=x_sumData[" << neighbourWord("anchor","word")
-          << "];bool paired=2u*word+1u<listed;uint low=anchor+(pair&0xffffu)-32768u,high=paired?anchor+(pair>>16)-32768u:low;"
-             "vec3 lowPoint=point(low),highPoint=point(high);"
-          << visit("low","lowPoint") << "if(paired)" << visit("high","highPoint") << "}}else" << ballMembers(body, 1, false);
+        s << "uint listed=x_sumData[" << neighbourCounts << "u+anchor],wordAt=" << neighbourWord("anchor","lane")
+          << ",upcoming=x_sumData[wordAt];vec3 site=point(anchor);if(listed<=" << NeighbourCapacity
+          << "u){float bound2=uintBitsToFloat(x_sumData[" << header << "u]);"
+             "for(uint word=lane;2u*word<listed;word+=REDUCTION_TEAM){uint pair=upcoming;wordAt+=" << NeighbourChunk
+          << "u;if(2u*(word+REDUCTION_TEAM)<listed)upcoming=x_sumData[wordAt];"
+             "bool paired=2u*word+1u<listed;uint low=anchor+(pair&0xffffu)-32768u,high=paired?anchor+(pair>>16)-32768u:low;"
+          << visit("low","true") << visit("high","paired") << "}}else" << ballMembers(body, 1, false);
         return s.str();
     }
+    const auto visit = "vec3 delta=site-point(member);float distance2=dot(delta,delta);const bool inside=true;" + body;
     const auto direct = "MemberCursor cursor=members(anchor,lane);uint member,entry;"
-        "while(nextMember(anchor,cursor,member,entry)){" + body + "}";
-    if (!listedMembers) return direct;
+        "while(nextMember(anchor,cursor,member,entry)){" + visit + "}";
+    if (!listedMembers) return "{vec3 site=point(anchor);" + direct + "}";
     const auto cached = compactMembers ? "x_sumData["+u(lists+d.count)+"+anchor]!=0xffffffffu" :
         "count<="+u(memberCapacity);
-    return "uint count=x_sumData[" + u(lists) + "+cacheRow(anchor)];if(" + cached +
+    return "vec3 site=point(anchor);uint count=x_sumData[" + u(lists) + "+cacheRow(anchor)];if(" + cached +
         "){for(uint entry=lane;entry<count;entry+=REDUCTION_TEAM){uint member=listedMember(anchor,entry);" +
-        body + "}}else{" + direct + "}";
+        visit + "}}else{" + direct + "}";
 }
 
 std::string Generator::uniformMembers(const FieldModeLayout& modes, uint32_t required,
@@ -673,20 +689,23 @@ std::string Generator::operatorLinearize() const {
       << launchStores(rowLaunches,false) << "}float total[" << T+2 << "];";
     for(uint32_t c=0;c<T+2;++c)s << "total[" << c << "]=0.0;";
     std::ostringstream body;
-    body << "vec3 delta=a-point(member);float value,k;forwardTerm(dot(delta,delta),value,k);";
-    body << "vec3 g=delta*k;total[0]+=value;";
+    body << "float value,k;forwardTerm(distance2,value,k);";
     if(cachedCoefficients)body << "if(entry!=0xffffffffu)x_sumData[coefficientWord(anchor,entry)]=floatBitsToUint(k);";
+    body << "value=inside?value:0.0;k=inside?k:0.0;vec3 g=delta*k;total[0]+=value;";
     for(uint32_t c=0;c<T;++c)body << "total[" << 1+c << "]+=g[" << c << "];";
-    const auto weighted = [&](const std::string& metric) {
-        return body.str() + "if(member!=anchor)total[" + std::to_string(T+1) + "]+=dot(g," + metric + ")" +
+    // The anchor's own delta vanishes, so it adds nothing to the member diagonal.
+    const auto weighted = [&](const std::string& quadratic) {
+        return body.str() + "total[" + std::to_string(T+1) + "]+=" + quadratic +
             (structuralWeighting() ? "*incidenceBound(member)" : "") + ";";
     };
-    s << "if(valid){prepareTerm(anchor);vec3 a=point(anchor);"
+    // The row's scattered multiplier read overlaps the member traversal.
+    s << "Relation r;float multiplier[1];multiplier[0]=0.0;if(valid){prepareTerm(anchor);"
+         "r=relation(step.first+logicalMember(anchor));if(lane==0u&&step.iteration!=0u)multiplier[0]=loadMultiplier(r,0u);"
       << uniformMembers(p.variableFieldModes[d.fields[fixed[0]].first.set],
                         CompiledPlan::UniformEnabled | CompiledPlan::EnabledValue | CompiledPlan::IdentityMetric,
-                        weighted("g"), weighted("metric(member,g)"))
+                        weighted("k*k*distance2"), weighted("dot(g,metric(member,g))"))
       << "}" << operatorReduce(T+2);
-    s << "if(lane==0u){" << (solveHere ? "" : "live[team]=0u;") << "if(valid){Relation r=relation(step.first+logicalMember(anchor));"
+    s << "if(lane==0u){" << (solveHere ? "" : "live[team]=0u;") << "if(valid){"
          "if(step.iteration==0u)storeMultiplier(r,0u,0.0);rowStore(anchor,4u,0.0);rowStore(anchor,0u,0.0);";
     for(uint32_t c=0;c<T;++c)s << "rowStore(anchor," << 6+c << "u,total[" << c+1 << "]);";
     // The line-search transpose stores the displacement outright.
@@ -695,25 +714,25 @@ std::string Generator::operatorLinearize() const {
     array(s,"x",n);array(s,"outerX",n+1);array(s,"c",1);
     s << "loadInputs(r,logicalMember(anchor)," << extent() << "u,x);for(uint k=0u;k<" << n << "u;++k)outerX[k]=x[k];"
          "outerX[" << n << "]=total[0];outerValue(outerX,c);if(isnan(c[0])||isinf(c[0]))invalidEvaluation();else{";
-    if(t.kind!=RelationKind::Equality)s << "if(!(c[0]" << (t.kind==RelationKind::GreaterEqual?">=":"<=") << "0.0&&loadMultiplier(r,0u)==0.0))";
+    if(t.kind!=RelationKind::Equality)s << "if(!(c[0]" << (t.kind==RelationKind::GreaterEqual?">=":"<=") << "0.0&&multiplier[0]==0.0))";
     s << "{" << (solveHere ? "" : "live[team]=1u;") << "rowStore(anchor,0u,1.0);vec3 g=vec3(";
     for(uint32_t c=0;c<3;++c)s << (c?",":"") << (c<T?"total["+std::to_string(c+1)+"]":"0.0");
     s << ");float alpha=loadCompliance(r,0u," << 2+t.parameters << "u)/(step.h*step.h),"
          "diagonalValue=total[" << T+1 << "]+dot(g,metric(anchor,g))" << (structuralWeighting() ? "*incidenceBound(anchor)" : "")
-      << "+alpha,residualValue=-c[0]-alpha*loadMultiplier(r,0u);"
+      << "+alpha,residualValue=-c[0]-alpha*multiplier[0];"
          "rowStore(anchor,1u,diagonalValue);rowStore(anchor,2u,residualValue);"
-      << (lineSearch ? "" : "rowStore(anchor,3u,loadMultiplier(r,0u));");
+      << (lineSearch ? "" : "rowStore(anchor,3u,multiplier[0]);");
     if (solveHere) {
         s << "float a[1],rhs[1],dl[1],nextLambda[1];uint degree=1u;a[0]=diagonalValue;rhs[0]=residualValue;"
-          << solveAndProject() << "rowStore(anchor,4u,dl[0]);}}}}}}";
+          << solveAndProject("multiplier") << "rowStore(anchor,4u,dl[0]);}}}}}}";
         return s.str();
     }
     s <<
          "if(any(notEqual(g,vec3(0)))&&variableEnabled(mappedVariable(anchor)))"
          "atomicAdd(x_activeDegrees[mappedVariable(anchor).id],1u);}}}}}barrier();"
-         "if(valid&&live[team]!=0u){vec3 a=point(anchor);";
-    s << operatorMembers("if(member==anchor)continue;vec3 g=gradient(anchor,member,entry,a);"
-         "if(any(notEqual(g,vec3(0)))&&variableEnabled(mappedVariable(member)))atomicAdd(x_activeDegrees[mappedVariable(member).id],1u);") << "}}";
+         "if(valid&&live[team]!=0u){";
+    s << operatorMembers("if(inside&&member!=anchor){vec3 g=delta*coefficient(anchor,entry,distance2);"
+         "if(any(notEqual(g,vec3(0)))&&variableEnabled(mappedVariable(member)))atomicAdd(x_activeDegrees[mappedVariable(member).id],1u);}") << "}}";
     return s.str();
 }
 
@@ -726,14 +745,15 @@ std::string Generator::operatorSolve(bool refine) const {
     // Compact plans use the same refinements for cached and streamed rows.
     if (refine && listedMembers && !compactMembers)
         s << "if(valid&&x_sumData[" << lists << "u+anchor]>" << Capacity << "u)solveRow=false;";
-    s << "if(solveRow){prepareTerm(anchor);vec3 a=point(anchor);if(lane==0u){vec3 g=diagonal(anchor);";
+    s << "if(solveRow){prepareTerm(anchor);if(lane==0u){vec3 g=diagonal(anchor);";
     if (refine || !isolatedCorrection) s << "total[0]+=dot(g,displacement(anchor));";
     if(!refine)s << "if(any(notEqual(g,vec3(0)))&&variableEnabled(mappedVariable(anchor)))degree=max(degree,x_activeDegrees[mappedVariable(anchor).id]);";
     s << "}";
     std::ostringstream body;
-    body << "if(member==anchor)continue;vec3 g=gradient(anchor,member,entry,a);";
+    body << "if(inside&&member!=anchor){vec3 g=delta*coefficient(anchor,entry,distance2);";
     if (refine || !isolatedCorrection) body << "total[0]-=dot(g,displacement(member));";
     if(!refine)body << "if(any(notEqual(g,vec3(0)))&&variableEnabled(mappedVariable(member)))degree=max(degree,x_activeDegrees[mappedVariable(member).id]);";
+    body << "}";
     s << operatorMembers(body.str()) << "}" << operatorReduce(1,!refine) << "if(lane!=0u||!valid)return;rowStore(anchor,4u,0.0);"
          "if(!solveRow)return;";
     if(refine && !structuralWeighting())s << "degree=x_sumData[rowWord(anchor,5u)];";
@@ -758,11 +778,12 @@ std::string Generator::operatorGather(bool apply) const {
          "anchor=sumInvocation()/REDUCTION_TEAM;bool valid=anchor<" << d.count << "u;float total[" << T << "];";
     if (lineSearch) s << "vec2 energy=vec2(0);";
     for(uint32_t c=0;c<T;++c)s << "total[" << c << "]=0.0;";
-    s << "if(valid){prepareTerm(anchor);vec3 a=point(anchor),sum=vec3(0);float own=rowValue(anchor,4u);if(lane==0u&&own!=0.0)sum=diagonal(anchor)*own;";
-    const std::string visit = "if(member==anchor)continue;float dl=rowValue(member,4u);if(dl==0.0)continue;";
-    const auto reverse = visit + "vec3 delta=a-point(member);float value,k;term(member,dot(delta,delta),value,k);sum+=delta*k*dl;";
+    s << "if(valid){prepareTerm(anchor);vec3 sum=vec3(0);float own=rowValue(anchor,4u);if(lane==0u&&own!=0.0)sum=diagonal(anchor)*own;";
+    const std::string visit = "float dl=rowValue(member,4u);";
+    const std::string add = "sum+=delta*(inside&&dl!=0.0?k*dl:0.0);";
+    const auto reverse = visit + "float value,k;term(member,distance2,value,k);" + add;
     s << (t.history==0 ? uniformMembers(p.relationFieldModes[set], CompiledPlan::UniformParameters,
-                                        visit + "sum+=gradient(anchor,member,entry,a)*dl;", reverse)
+                                        visit + "float k=coefficient(anchor,entry,distance2);" + add, reverse)
                        : operatorMembers(reverse));
     for(uint32_t c=0;c<T;++c)s << "total[" << c << "]=sum[" << c << "];";
     s << "}" << operatorReduce(T) << "if(lane==0u&&valid){";
@@ -789,7 +810,7 @@ std::string Generator::operatorGather(bool apply) const {
         else if (isolatedCorrection) s << "rowValue(anchor," << 6+T+c << "u)";
         else s << "uintBitsToFloat(x_contributions[at])";
         s << "+sum[" << c << "];";
-        if (apply) s << "inputValue[" << T+c << "]=next;x_contributions[at]=0u;";
+        if (apply) s << "inputValue[" << T+c << "]=next;" << (isolatedCorrection ? "" : "x_contributions[at]=0u;");
         else {
             if (isolatedCorrection) s << "rowStore(anchor," << 6+T+c << "u,next);";
             else s << "x_contributions[at]=floatBitsToUint(next);";
@@ -855,7 +876,7 @@ OwnerOutput Generator::lineSearchOutput() const {
     s << "bool finiteValue=true;";
     for (uint32_t c=0;c<T;++c)s << "finiteValue=finiteValue&&!isnan(y[" << c << "])&&!isinf(y[" << c << "]);";
     s << "if(!finiteValue)invalidEvaluation();else{";
-    for (uint32_t c=0;c<T;++c)s << "ownerValue[" << c << "]=y[" << c << "];x_contributions[v.v+" << c << "u*v.stride]=0u;";
+    for (uint32_t c=0;c<T;++c)s << "ownerValue[" << c << "]=y[" << c << "];";
     s << "}}";
     const auto& field=d.fields[fixed[0]];
     return {p.variables[field.first.set].first+field.first.index,d.count,field.stride,T,
@@ -1143,10 +1164,11 @@ void Generator::prepareIndex() {
             // An exception joins the row of a regular member unless that row
             // listed it at the build. Built entries do not change until then;
             // where float contraction may decide the built test, they are read.
-            // Exceptions are few, so wide teams shorten their serial scans.
-            s << rowSource(ExceptionTeam) << "void join(uint row,uint member,vec3 origin,float bound2){uint built=x_sumData["
-              << builtCounts << "u+row];if(built>" << NeighbourCapacity << "u||!accepts(row,member))return;"
-                 "vec3 offset=listedPoint(row)-origin;float distance2=dot(offset,offset);if(distance2<=0.9999*bound2)return;"
+            // Exceptions are few, so wide teams shorten their serial scans, and
+            // a row's built count and listed point are read with its flag.
+            s << rowSource(ExceptionTeam) << "void join(uint row,uint member,vec3 origin,float bound2,uint built,vec3 listed){"
+                 "if(built>" << NeighbourCapacity << "u||!accepts(row,member))return;"
+                 "vec3 offset=listed-origin;float distance2=dot(offset,offset);if(distance2<=0.9999*bound2)return;"
                  "uint code=member+32768u-row;if(!(distance2>1.0001*bound2))for(uint word=0u;2u*word<built;++word){"
                  "uint pair=x_sumData[" << neighbourWord("row","word") << "];if((pair&0xffffu)==code||"
                  "(2u*word+1u<built&&(pair>>16)==code))return;}uint at=" << neighbourCounts << "u+row;"
@@ -1157,8 +1179,10 @@ void Generator::prepareIndex() {
                  "atomicAnd(x_sumData[word],~(0xffffu<<shift));atomicOr(x_sumData[word],code<<shift);}"
                  "void main(){" << teamIds << "uint slot=i/REDUCTION_TEAM;bool valid=slot<x_sumData[" << exceptions
               << "u];uint anchor=valid?x_sumData[" << exceptions+1 << "u+slot]:0u;vec3 origin=listedPoint(anchor);"
-              << listRow("if(member!=anchor&&x_sumData[" + u(listedPoints) + "+member*4u+3u]==0u)"
-                         "join(member,anchor,origin,1.00001*support2);") << "}";
+              << listRow("if(member!=anchor){uint at=" + u(listedPoints) + "+member*4u,built=x_sumData[" +
+                         u(builtCounts) + "+member];vec3 listed=vec3(uintBitsToFloat(x_sumData[at]),uintBitsToFloat("
+                         "x_sumData[at+1u]),uintBitsToFloat(x_sumData[at+2u]));if(x_sumData[at+3u]==0u)"
+                         "join(member,anchor,origin,1.00001*support2,built,listed);}") << "}";
             index.push_back({s.str(),exceptionCapacity*ExceptionTeam,false,exceptionLaunch}); s.str(""); s.clear();
         }
         for (auto stage = index.begin()+1; stage != index.end(); ++stage) {
@@ -1699,14 +1723,16 @@ std::string Generator::generate(const Formula& formula, bool update, bool activi
     return s.str();
 }
 
-std::string Generator::solveAndProject() const {
+std::string Generator::solveAndProject(const std::string& multipliers) const {
     std::ostringstream s;
     s << solveBlock(M);
     for(uint32_t row=0;row<M;++row) {
-        std::string candidate="loadMultiplier(r,"+u(row)+")+rhs["+std::to_string(row)+"]*step.relaxation/float(degree)";
+        const auto multiplier = multipliers.empty() ? "loadMultiplier(r,"+u(row)+")" :
+            multipliers+"["+std::to_string(row)+"]";
+        std::string candidate=multiplier+"+rhs["+std::to_string(row)+"]*step.relaxation/float(degree)";
         if(t.kind==RelationKind::GreaterEqual) candidate="max(0.0,"+candidate+")";
         if(t.kind==RelationKind::LessEqual) candidate="min(0.0,"+candidate+")";
-        s << "nextLambda[" << row << "]=" << candidate << ";dl[" << row << "]=nextLambda[" << row << "]-loadMultiplier(r," << row << "u);";
+        s << "nextLambda[" << row << "]=" << candidate << ";dl[" << row << "]=nextLambda[" << row << "]-" << multiplier << ";";
     }
     s << "for(uint k=0u;k<" << M << "u;++k)if(isnan(dl[k])||isinf(dl[k])||isnan(nextLambda[k])||isinf(nextLambda[k])){invalidEvaluation();return;}";
     for(uint32_t row=0;row<M;++row) s << "storeMultiplier(r," << row << "u,nextLambda[" << row << "]);";

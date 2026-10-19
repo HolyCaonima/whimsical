@@ -244,8 +244,10 @@ struct SymbolicJacobian {
     enum class Comparison { LessEqual, GreaterEqual };
     std::map<uint32_t, Comparison> comparisons;
     std::map<std::tuple<Comparison, uint32_t, uint32_t>, uint32_t> commonComparisons;
+    // Values depending on a min/max branch choice.
+    std::vector<uint8_t> selected;
 
-    explicit SymbolicJacobian(const Formula& formula) : nodes(formula.nodes) {
+    explicit SymbolicJacobian(const Formula& formula) : nodes(formula.nodes), selected(formula.nodes.size()) {
         for (uint32_t i = 0; i < nodes.size(); ++i) {
             const auto& n = nodes[i];
             common.emplace(NodeKey{n.op, n.a, n.b, n.c, bits(n.value)}, i);
@@ -256,6 +258,9 @@ struct SymbolicJacobian {
         if (auto found = common.find(key); found != common.end())
             return found->second;
         auto id = uint32_t(nodes.size());
+        const auto count = arity(node.op);
+        selected.push_back(node.op == MathOp::Select || (count > 0 && selected[node.a]) ||
+                           (count > 1 && selected[node.b]) || (count > 2 && selected[node.c]));
         nodes.push_back(node);
         common.emplace(key, id);
         return id;
@@ -278,6 +283,7 @@ struct SymbolicJacobian {
             return found->second;
         const auto id = uint32_t(nodes.size());
         nodes.push_back({MathOp::Less, a, b});
+        selected.push_back(0);
         comparisons.emplace(id, op);
         commonComparisons.emplace(key, id);
         return id;
@@ -389,9 +395,16 @@ std::unique_ptr<SymbolicJacobian> buildSymbolicJacobian(
             auto add = [&](uint32_t child, uint32_t term) {
                 // A zero adjoint must still suppress a singular derivative in an
                 // unselected branch. Encode that value selection in the DAG so
-                // CSE and liveness also apply to piecewise derivatives.
-                if (piecewise && n.op != MathOp::Add && n.op != MathOp::Subtract &&
-                    n.op != MathOp::Negate && n.op != MathOp::Min && n.op != MathOp::Max)
+                // CSE and liveness also apply to piecewise derivatives. Other
+                // zero adjoints come from a zero primal factor: a non-finite
+                // partial of a product, exp or sine then also makes the primal
+                // non-finite, so only partials that are singular at finite
+                // values keep the guard there.
+                const bool singular = n.op == MathOp::Divide || n.op == MathOp::Sqrt ||
+                    n.op == MathOp::Log || n.op == MathOp::Atan2;
+                if ((result->selected[d] && n.op != MathOp::Add && n.op != MathOp::Subtract &&
+                     n.op != MathOp::Negate && n.op != MathOp::Min && n.op != MathOp::Max) ||
+                    (singular && piecewise))
                     term = result->choose(d, term, ZeroDerivative);
                 adjoint[child] = result->sum(adjoint[child], term);
             };
