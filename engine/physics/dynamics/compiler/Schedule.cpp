@@ -278,15 +278,24 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
         for (size_t call = 1; call < signature.size(); ++call)
             for (auto owner : owners)
                 ranges.push_back(chains[owner][call-1].second);
+        // A table column affine in the owner index is emitted as its formula.
+        auto column = [&](size_t call, const std::string& row) {
+            const auto at = [&](uint32_t i) { return int64_t(ranges[first+call*count+i]); };
+            const auto base = at(0), stride = count > 1 ? at(1)-base : 0;
+            bool affine = stride >= 0;
+            for (uint32_t i = 0; affine && i < count; ++i) affine = at(i) == base+stride*i;
+            if (affine) return std::to_string(base) + "u+" + row + "*" + std::to_string(stride) + "u";
+            return "x_regionRanges[" + std::to_string(first+call*count) + "u+" + row + "]";
+        };
         source << "void main(){uint i=invocation();";
         if (epilogue) source << epilogue->groupBegin;
-        source << "if(i<step.count){stateOwner=x_regionRanges[step.first+i];Variable owner=variable(stateOwner);";
+        source << "if(i<step.count){stateOwner=" << column(0, "i") << ";Variable owner=variable(stateOwner);";
         for (uint32_t c = 0; c < width; ++c)
             source << "ownedState[" << c << "]=x_q[owner.q+" << c << "u*owner.stride];";
         // Calls only depend on each other through owner state; issue every
         // independent table load before the first call.
         for (size_t call = 1; call < signature.size(); ++call)
-            source << "uint call" << call << "=x_regionRanges[step.first+i+" << call*count << "u];";
+            source << "uint call" << call << "=" << column(call, "i") << ";";
         for (size_t call = 1; call < signature.size(); ++call)
             source << functions[signature[call]].entry << "(call" << call
                    << ",step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration);";
@@ -319,7 +328,7 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
             for (uint32_t c=0;c<width;++c) joined << "ownedState[" << c << "]=ownerValue[" << c << "];";
             joined << "uint row=(ownerId-" << output->first << "u)/" << output->stride << "u;";
             for(size_t call=1;call<signature.size();++call)
-                joined << "uint call" << call << "=x_regionRanges[" << first+call*count << "u+row];";
+                joined << "uint call" << call << "=" << column(call, "row") << ";";
             for(size_t call=1;call<signature.size();++call)
                 joined << functions[signature[call]].entry << "(call" << call
                        << ",step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration+1u);";

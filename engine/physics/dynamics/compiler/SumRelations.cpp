@@ -157,11 +157,17 @@ struct Generator {
     float cellScale = 1.0502f;
     static constexpr float CellScale = 1.0f;
     // Ordered traversals keep per-row members within (1+skin)R of the listed
-    // positions. Rows are reused until some member drifts half the skin; the
-    // index is rebuilt at a substep once motion exceeds IndexMotion*R.
+    // positions; the index is rebuilt at a substep once motion exceeds
+    // IndexMotion*R. Members within half the skin of their listed positions
+    // find each other in their built rows whenever they are within R. A member
+    // drifting further becomes an exception until the next build: every
+    // iteration lists its own row afresh and appends it to the rows of its
+    // current neighbours. The last traversal of an iteration restores the
+    // built counts. Too many exceptions request a full build.
     static constexpr float NeighbourSkin = 0.1f, IndexMotion = 0.1f;
-    static constexpr uint32_t NeighbourCapacity = 96, NeighbourTeam = 8;
-    uint32_t neighbours = 0, neighbourCounts = 0, listedPoints = 0;
+    static constexpr uint32_t NeighbourCapacity = 96, NeighbourTeam = 8, ExceptionTeam = 32;
+    uint32_t neighbours = 0, neighbourCounts = 0, builtCounts = 0, listedPoints = 0;
+    uint32_t exceptions = 0, exceptionCapacity = 0, exceptionLaunch = 0;
     // A word packs two members as 16-bit offsets from the row's own rank; rows
     // that do not fit use the exact ball query. Each workgroup tile stores word
     // chunks of one team width contiguously, so a warp step reads one line.
@@ -759,7 +765,12 @@ std::string Generator::operatorGather(bool apply) const {
                                         visit + "sum+=gradient(anchor,member,entry,a)*dl;", reverse)
                        : operatorMembers(reverse));
     for(uint32_t c=0;c<T;++c)s << "total[" << c << "]=sum[" << c << "];";
-    s << "}" << operatorReduce(T) << "if(lane==0u&&valid){vec3 raw=vec3(";
+    s << "}" << operatorReduce(T) << "if(lane==0u&&valid){";
+    // Exceptions join rows for one iteration, and this is its last traversal.
+    if (traversal.orderedRanges)
+        s << "uint built=x_sumData[" << builtCounts << "u+anchor];if(x_sumData[" << neighbourCounts
+          << "u+anchor]!=built)x_sumData[" << neighbourCounts << "u+anchor]=built;";
+    s << "vec3 raw=vec3(";
     for(uint32_t c=0;c<3;++c)s << (c?",":"") << (c<T?"total["+std::to_string(c)+"]":"0.0");
     s << "),sum=metric(anchor,raw);Variable v=mappedVariable(anchor);";
     if (lineSearch) {
@@ -998,7 +1009,12 @@ void Generator::prepareIndex() {
     if (traversal.orderedRanges) {
         listedMembers = false;
         neighbourCounts = append(p, std::vector<uint32_t>(d.count));
+        builtCounts = append(p, std::vector<uint32_t>(d.count));
+        // The fourth word of a listed point marks an exception.
         listedPoints = append(p, std::vector<uint32_t>(size_t(extent())*4));
+        // The snapshot sizes the exception launch along x alone.
+        exceptionCapacity = std::min(std::max(256u, d.count/8), 65535u*(128/ExceptionTeam));
+        exceptions = append(p, std::vector<uint32_t>(exceptionCapacity+1));
         const auto rows = 128/traversal.reductionLanes;
         neighbours = append(p, std::vector<uint32_t>(size_t((d.count+rows-1)/rows)*rows*NeighbourCapacity/2));
         p.statistics.candidateQueueCapacity += uint64_t(d.count)*NeighbourCapacity;
@@ -1076,6 +1092,11 @@ void Generator::prepareIndex() {
         // The snapshot is stage 0. Every later stage launches only on its
         // requests, so it is generated once those stages are known.
         index.push_back({{},extent()});
+        // Rows address members by rank offsets, so the index build that
+        // reorders the ranks requests them; otherwise only too many
+        // exceptions do.
+        const auto rowCount = std::max(extent(), d.count*NeighbourTeam);
+        if (traversal.orderedRanges) rowLaunches.push_back({appendLaunch(p, rowCount), launchGroups(rowCount)});
         // Prefix ordering amortizes its extra passes on large domains. Short
         // domains pack independent buckets with a single allocation per cell.
         if (traversal.orderedRanges || buckets >= 131072) prepareOrderedIndex();
@@ -1087,36 +1108,69 @@ void Generator::prepareIndex() {
             // The ordered index is exact for any later motion, so it is built
             // once per substep. Rows are rebuilt from it whenever requested.
             for (auto stage = index.begin()+1; stage != index.end(); ++stage) stage->substep = true;
-            s << "#define REDUCTION_TEAM " << NeighbourTeam << "u\n" << source
-              << "vec3 point(uint member){return groupedPoint(member);}shared uint found[" << 128/NeighbourTeam
-              << "],wide[" << 128/NeighbourTeam << "],gathered[" << 128/NeighbourTeam*NeighbourCapacity
-              << "];void main(){uint i=invocation(),lane=gl_LocalInvocationID.x"
-                 "%REDUCTION_TEAM,team=gl_LocalInvocationID.x/REDUCTION_TEAM,anchor=i/REDUCTION_TEAM,row=team*"
-              << NeighbourCapacity << "u;bool valid=anchor<" << d.count << "u;if(i<" << extent()
-              << "u){vec3 f=point(i);uint at=" << listedPoints << "u+i*4u;x_sumData[at]=floatBitsToUint(f.x);"
-                 "x_sumData[at+1u]=floatBitsToUint(f.y);x_sumData[at+2u]=floatBitsToUint(f.z);}if(x_sumData["
-              << header+2 << "u]!=0u){if(lane==0u&&valid)x_sumData[" << neighbourCounts
-              << "u+anchor]=0xffffffffu;return;}if(lane==0u){found[team]=0u;wide[team]=0u;}barrier();if(valid)"
-              << ballMembers("uint at=atomicAdd(found[team],1u);if(at<" + u(NeighbourCapacity) +
-                             ")gathered[row+at]=member-anchor+32768u;", 1+NeighbourSkin, true)
-              << "barrier();uint listed=found[team];if(valid)for(uint k=lane;k<min(listed," << NeighbourCapacity
-              << "u);k+=REDUCTION_TEAM)if(gathered[row+k]>0xffffu)wide[team]=1u;barrier();if(!valid)return;"
-                 "if(listed>" << NeighbourCapacity << "u||wide[team]!=0u)listed=0xffffffffu;"
-                 "else for(uint word=lane;2u*word<listed;word+=REDUCTION_TEAM)x_sumData[" << neighbourWord("anchor","word")
-              << "]=gathered[row+2u*word]|(2u*word+1u<listed?gathered[row+2u*word+1u]<<16:0u);"
-                 "if(lane==0u)x_sumData[" << neighbourCounts << "u+anchor]=listed;}";
-            index.push_back({s.str(),std::max(extent(),d.count*NeighbourTeam)}); s.str(""); s.clear();
+            exceptionLaunch = appendLaunch(p, exceptionCapacity*ExceptionTeam);
+            const auto rowSource = [&](uint32_t team) {
+                return "#define REDUCTION_TEAM " + u(team) + "\n" + source +
+                    "vec3 point(uint member){return groupedPoint(member);}vec3 listedPoint(uint member){uint at=" +
+                    u(listedPoints) + "+member*4u;return vec3(uintBitsToFloat(x_sumData[at]),uintBitsToFloat("
+                    "x_sumData[at+1u]),uintBitsToFloat(x_sumData[at+2u]));}shared uint found[" + u(128/team) +
+                    "],wide[" + u(128/team) + "],gathered[" + u(128/team*NeighbourCapacity) + "];";
+            };
+            const auto teamIds = "uint i=invocation(),lane=gl_LocalInvocationID.x%REDUCTION_TEAM,"
+                "team=gl_LocalInvocationID.x/REDUCTION_TEAM,row=team*" + u(NeighbourCapacity) + ";";
+            // A team lists the members within (1+skin)R of its anchor.
+            const auto listRow = [&](const std::string& visit) {
+                std::ostringstream r;
+                r << "if(lane==0u){found[team]=0u;wide[team]=0u;}barrier();if(valid)"
+                  << ballMembers("uint at=atomicAdd(found[team],1u);if(at<" + u(NeighbourCapacity) +
+                                 ")gathered[row+at]=member-anchor+32768u;" + visit, 1+NeighbourSkin, true)
+                  << "barrier();uint listed=found[team];if(valid)for(uint k=lane;k<min(listed," << NeighbourCapacity
+                  << "u);k+=REDUCTION_TEAM)if(gathered[row+k]>0xffffu)wide[team]=1u;barrier();if(!valid)return;"
+                     "if(listed>" << NeighbourCapacity << "u||wide[team]!=0u)listed=0xffffffffu;"
+                     "else for(uint word=lane;2u*word<listed;word+=REDUCTION_TEAM)x_sumData[" << neighbourWord("anchor","word")
+                  << "]=gathered[row+2u*word]|(2u*word+1u<listed?gathered[row+2u*word+1u]<<16:0u);"
+                     "if(lane==0u){x_sumData[" << neighbourCounts << "u+anchor]=listed;x_sumData[" << builtCounts
+                  << "u+anchor]=listed;}";
+                return r.str();
+            };
+            s << rowSource(NeighbourTeam) << "void main(){" << teamIds << "uint anchor=i/REDUCTION_TEAM;bool valid=anchor<" << d.count
+              << "u;if(i<" << extent() << "u){vec3 f=point(i);uint at=" << listedPoints << "u+i*4u;x_sumData[at]="
+                 "floatBitsToUint(f.x);x_sumData[at+1u]=floatBitsToUint(f.y);x_sumData[at+2u]=floatBitsToUint(f.z);"
+                 "x_sumData[at+3u]=0u;}if(i==0u){x_sumData[" << exceptions << "u]=0u;x_launches[" << exceptionLaunch
+              << "u]=0u;}if(x_sumData[" << header+2 << "u]!=0u){if(lane==0u&&valid){x_sumData[" << neighbourCounts
+              << "u+anchor]=0xffffffffu;x_sumData[" << builtCounts << "u+anchor]=0xffffffffu;}return;}" << listRow("") << "}";
+            index.push_back({s.str(),rowCount,false,rowLaunches[0].first}); s.str(""); s.clear();
+            // An exception joins the row of a regular member unless that row
+            // listed it at the build. Built entries do not change until then;
+            // where float contraction may decide the built test, they are read.
+            // Exceptions are few, so wide teams shorten their serial scans.
+            s << rowSource(ExceptionTeam) << "void join(uint row,uint member,vec3 origin,float bound2){uint built=x_sumData["
+              << builtCounts << "u+row];if(built>" << NeighbourCapacity << "u||!accepts(row,member))return;"
+                 "vec3 offset=listedPoint(row)-origin;float distance2=dot(offset,offset);if(distance2<=0.9999*bound2)return;"
+                 "uint code=member+32768u-row;if(!(distance2>1.0001*bound2))for(uint word=0u;2u*word<built;++word){"
+                 "uint pair=x_sumData[" << neighbourWord("row","word") << "];if((pair&0xffffu)==code||"
+                 "(2u*word+1u<built&&(pair>>16)==code))return;}uint at=" << neighbourCounts << "u+row;"
+                 "if(code>0xffffu){atomicMax(x_sumData[at],0xffffffffu);return;}uint count=x_sumData[at];"
+                 "for(;;){if(count>=" << NeighbourCapacity << "u){atomicMax(x_sumData[at],0xffffffffu);return;}"
+                 "uint seen=atomicCompSwap(x_sumData[at],count,count+1u);if(seen==count)break;count=seen;}"
+                 "uint word=" << neighbourWord("row","(count/2u)") << ",shift=count%2u*16u;"
+                 "atomicAnd(x_sumData[word],~(0xffffu<<shift));atomicOr(x_sumData[word],code<<shift);}"
+                 "void main(){" << teamIds << "uint slot=i/REDUCTION_TEAM;bool valid=slot<x_sumData[" << exceptions
+              << "u];uint anchor=valid?x_sumData[" << exceptions+1 << "u+slot]:0u;vec3 origin=listedPoint(anchor);"
+              << listRow("if(member!=anchor&&x_sumData[" + u(listedPoints) + "+member*4u+3u]==0u)"
+                         "join(member,anchor,origin,1.00001*support2);") << "}";
+            index.push_back({s.str(),exceptionCapacity*ExceptionTeam,false,exceptionLaunch}); s.str(""); s.clear();
         }
         for (auto stage = index.begin()+1; stage != index.end(); ++stage) {
+            if (stage->launch != UINT32_MAX) continue;
             stage->launch = appendLaunch(p, stage->count);
-            (traversal.orderedRanges && stage+1 == index.end() ? rowLaunches : indexLaunches)
-                .push_back({stage->launch, launchGroups(stage->count)});
+            indexLaunches.push_back({stage->launch, launchGroups(stage->count)});
         }
         // Every snapshot refreshes the packed state and reduces the motion of
-        // members from the positions they were indexed at. Neighbour rows also
-        // request a rebuild once a member drifts half the skin from the
-        // position it was listed at. Squared rebuild thresholds in support
-        // radii; the stale-cell stencil certifies 2.4%.
+        // members from the positions they were indexed at. A member drifting
+        // half the skin from the position it was listed at becomes an
+        // exception. Squared thresholds in support radii; the stale-cell
+        // stencil certifies 2.4%.
         const float indexMotion = traversal.orderedRanges ? IndexMotion*IndexMotion : 0.000576f;
         const float listMotion = 0.499f*NeighbourSkin*0.499f*NeighbourSkin;
         auto motion = [&](const std::string& member, const std::function<std::string(uint32_t)>& component) {
@@ -1137,14 +1191,17 @@ void Generator::prepareIndex() {
                 m << "uint listed=" << listedPoints << "u+rank*4u;vec3 drift=vec3(0);";
                 for (uint32_t c=0;c<T;++c)
                     m << "drift[" << c << "]=" << component(c) << "-uintBitsToFloat(x_sumData[listed+" << c << "u]);";
-                m << "if(!(dot(drift,drift)<=" << listMotion << "*support2))atomicOr(snapshotListed,1u);";
+                m << "if(!(dot(drift,drift)<=" << listMotion << "*support2)&&x_sumData[listed+3u]==0u){"
+                     "x_sumData[listed+3u]=1u;uint slot=atomicAdd(x_sumData[" << exceptions << "u],1u);if(slot<"
+                  << exceptionCapacity << "u){x_sumData[" << exceptions+1 << "u+slot]=rank;atomicMax(x_launches["
+                  << exceptionLaunch << "u],slot/" << 128/ExceptionTeam << "u+1u);}else atomicOr(snapshotListed,1u);}";
             }
             return m.str();
         };
         const auto groupBegin = std::string("if(gl_LocalInvocationID.x==0u){snapshotChanged=0u;snapshotReach=0u;"
                                             "snapshotListed=0u;}barrier();");
         const auto groupEnd = "barrier();if(gl_LocalInvocationID.x==0u){if(snapshotChanged!=0u){"+
-            launchStores(indexLaunches,true)+launchStores(rowLaunches,true)+"}if(snapshotReach!=0u)atomicMax(x_sumData["+
+            launchStores(indexLaunches,true)+"}if(snapshotReach!=0u)atomicMax(x_sumData["+
             u(header+16)+"],snapshotReach);if(snapshotListed!=0u){"+launchStores(rowLaunches,true)+"}}";
         const auto shared = "shared uint snapshotChanged,snapshotReach,snapshotListed;";
         s << source << shared << "void snapshotMember(uint i){vec3 f=currentPoint(i);"
@@ -1319,7 +1376,8 @@ void Generator::prepareOrderedIndex() {
       << "u+i];x_sumData[" << heads << "u+i]=begin;x_sumData[" << bucketEnds
       << "u+i]=begin+count;x_sumData[" << bucketCursors << "u+i]=begin;}";
     index.push_back({s.str(),buckets}); s.str(""); s.clear();
-    s << source << "void main(){" << skipUnchangedIndex() << "uint i=invocation();if(i>="
+    s << source << "void main(){" << skipUnchangedIndex() << "uint i=invocation();if(i==0u){"
+      << launchStores(rowLaunches,true) << "}if(i>="
       << extent() << "u)return;uint from=" << cells << "u+i*8u;ivec3 c=ivec3(0);uint entry=i;"
          "if(x_sumData[" << header+2 << "u]==0u){c=ivec3(x_sumData[from],x_sumData[from+1u],x_sumData[from+2u]);"
          "entry=atomicAdd(x_sumData[" << bucketCursors << "u+bucket(c)],1u);}uint to="
