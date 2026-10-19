@@ -7,11 +7,12 @@ var fluid={id:'fluid',tab:'Fluid',eyebrow:'实验 07',title:'粒子流体',
     hint:'I 推动水体，观察回流',
     legend:'<span class="teal">■</span>流体<span class="gold">■</span>容器',
     panelTitle:'密度约束',strainLabel:'平均密度超限（采样）',
-    count:40000,spacing:0.065,radius:0.03,support:0.13,halfWidth:3,halfDepth:1.5};
-fluid.sizes={label:'粒子',options:[{label:'40,000 个',value:40000}],
+    column:[40,50,40],spacing:0.065,radius:0.03,support:0.13,halfWidth:3,halfDepth:1.5};
+fluid.count=fluid.column[0]*fluid.column[1]*fluid.column[2];
+fluid.sizes={label:'粒子',options:[{label:'80,000 个',value:fluid.count}],
     get:function(){return fluid.count;},set:function(){return '';}};
 fluid.actions=[];fluid.keys={};
-fluid.rows=[{id:'column',label:'初始水柱',kind:'enum',text:function(){return '40 × 25 × 40';},
+fluid.rows=[{id:'column',label:'初始水柱',kind:'enum',text:function(){return fluid.column.join(' × ');},
     click:function(){Lab.reset();return '重新释放水柱';}}];
 fluid.define=function(){
     var X=Lab.X;
@@ -37,11 +38,12 @@ fluid.build=function(model){
     fluid.acceleration=new Float32Array(3*n);
     // A regular water column starts at rest; small deterministic offsets break
     // lattice symmetry without creating coincident particles or a dense random cloud.
-    for(var y=0;y<25;++y)for(var z=0;z<40;++z)for(var x=0;x<40;++x){
-        var i=(y*40+z)*40+x,at=3*i;
+    var nx=fluid.column[0],ny=fluid.column[1],nz=fluid.column[2];
+    for(var y=0;y<ny;++y)for(var z=0;z<nz;++z)for(var x=0;x<nx;++x){
+        var i=(y*nz+z)*nx+x,at=3*i;
         initial[at]=-fluid.halfWidth+0.18+x*fluid.spacing+0.0012*Math.sin(i*1.7);
         initial[at+1]=0.14+y*fluid.spacing+0.0012*Math.cos(i*2.3);
-        initial[at+2]=(z-19.5)*fluid.spacing+0.0012*Math.sin(i*0.9);
+        initial[at+2]=(z-(nz-1)/2)*fluid.spacing+0.0012*Math.sin(i*0.9);
         fluid.acceleration[at+1]=-9.81;
     }
     var positions=X.defineDofs(model,{name:'fluid positions',space:Lab.space,count:n,initial:initial});
@@ -62,9 +64,9 @@ fluid.build=function(model){
     fluid.forceInput=true;fluid.kick=false;
     return initial;
 };
-fluid.layout=function(){return '40000';};
+fluid.layout=function(){return String(fluid.count);};
 fluid.camera=function(){return {target:[0,1.1,0],yaw:0.3,pitch:0.48,distance:12,fov:0.65};};
-fluid.note=function(){return '40,000 个粒子 · 40,000 条密度约束';};
+fluid.note=function(){return '80,000 个粒子 · 80,000 条密度约束';};
 fluid.families=function(){return [
     {name:'粒子密度上限',kind:'不等式',rows:fluid.count},
     {name:'容器半空间',kind:'不等式',rows:5*fluid.count},
