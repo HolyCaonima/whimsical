@@ -34,7 +34,14 @@ std::string fieldAccess(bool local);
 // The mode word of one field set; fixed-mode kernels see its compiled mask.
 std::string fieldModes(const FieldModeLayout&);
 enum class StateStorage { Global, Region, Epoch, Owner };
-std::string stateAccess(StateStorage, uint32_t variableCount = 0, bool externalInputs = false);
+// Owner storage holds the owner state, and the multiplier rows of the relation
+// named by ownedRelation, in registers.
+std::string stateAccess(StateStorage, uint32_t variableCount = 0, bool externalInputs = false,
+                        uint32_t ownedRows = 1);
+// Runs pieces in order on one invocation per owner. The composite reads the
+// owner state unless the first piece defines it, and publishes it once.
+std::string ownerKernel(const std::string& owner, const std::vector<const OwnerPiece*>&, uint32_t width,
+                        uint32_t ownedRows = 1);
 
 // Preserve the semantic batch ordering; choose ownership and execution placement.
 // Layouts and work IDs remain stable across this lowering pass.

@@ -705,7 +705,7 @@ float loadCompliance(Relation r,uint c,uint uniformOffset){return read_complianc
 #endif
 )";
 }
-std::string stateAccess(StateStorage storage, uint32_t variableCount, bool externalInputs) {
+std::string stateAccess(StateStorage storage, uint32_t variableCount, bool externalInputs, uint32_t ownedRows) {
     const bool localState = storage == StateStorage::Region, epoch = storage == StateStorage::Epoch;
     struct FieldAccess {
         const char* name;
@@ -756,6 +756,18 @@ void storeContribution(Relation r,uint c,float value){x_contributions[r.c+c*r.cs
                  "void storeValue(Variable v,uint c,float value){ownedState[c]=value;}\n";
             continue;
         }
+        if (storage == StateStorage::Owner && i == 4) {
+            const auto rows = std::to_string(std::max(1u, ownedRows));
+            s << "uint ownedRelation=0xffffffffu;float ownedMultiplier[" << rows << "];bool ownedWritten[" << rows
+              << "];\n"
+                 "float globalMultiplier(Relation v,uint c){return " << address << ";}\n"
+                 "void publishMultiplier(Relation v,uint c,float value){" << address << "=value;}\n"
+                 "float loadMultiplier(Relation v,uint c){return v.id==ownedRelation?ownedMultiplier[c]:"
+                 "globalMultiplier(v,c);}\n"
+                 "void storeMultiplier(Relation v,uint c,float value){if(v.id==ownedRelation){"
+                 "ownedMultiplier[c]=value;ownedWritten[c]=true;}else publishMultiplier(v,c,value);}\n";
+            continue;
+        }
         if (epoch && i == 0) {
             s << "float loadValue(Variable v,uint c){return epochState[epochVariableOffset+c];}\n"
                  "void storeValue(Variable v,uint c,float value){epochState[epochVariableOffset+c]=value;}\n";
@@ -799,6 +811,30 @@ void storeEndpointValue(Variable v,uint c,uint slot,float value){
 float loadEndpointValue(Variable v,uint c,uint slot){return loadValue(v,c);}
 void storeEndpointValue(Variable v,uint c,uint slot,float value){storeValue(v,c,value);}
 )";
+    return s.str();
+}
+std::string ownerKernel(const std::string& owner, const std::vector<const OwnerPiece*>& pieces, uint32_t width,
+                        uint32_t ownedRows) {
+    std::ostringstream s;
+    s << stateAccess(StateStorage::Owner, width, false, ownedRows);
+    std::vector<const std::string*> sources;
+    for (auto piece : pieces)
+        if (std::none_of(sources.begin(), sources.end(), [&](auto source) { return *source == piece->source; })) {
+            sources.push_back(&piece->source);
+            s << piece->source;
+        }
+    s << "void main(){uint row=invocation();";
+    for (auto piece : pieces) s << piece->groupBegin;
+    s << "if(row<step.count){stateOwner=" << owner << ";Variable owner=variable(stateOwner);";
+    if (!pieces.front()->defines)
+        for (uint32_t c = 0; c < width; ++c)
+            s << "ownedState[" << c << "]=x_q[owner.q+" << c << "u*owner.stride];";
+    for (auto piece : pieces) s << "{" << piece->body << "}";
+    for (uint32_t c = 0; c < width; ++c)
+        s << "x_q[owner.q+" << c << "u*owner.stride]=ownedState[" << c << "];";
+    s << "}";
+    for (auto piece : pieces) s << piece->groupEnd;
+    s << "}";
     return s.str();
 }
 } // namespace whimsical::dynamics

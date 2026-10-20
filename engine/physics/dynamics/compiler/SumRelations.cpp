@@ -151,7 +151,7 @@ struct Generator {
     CollectionTraversalPlan traversal;
     bool isolatedCorrection = false;
     bool lineSearch = false;
-    std::optional<OwnerTransform> snapshot;
+    std::optional<OwnerPiece> snapshot;
     // Cell width in support radii. Stale-cell stencils need a halo over the
     // certified motion; displacement-bounded queries clip to the exact ball.
     float cellScale = 1.0502f;
@@ -319,13 +319,15 @@ struct Generator {
     }
     uint32_t extent() const { return axis == 0 ? d.left : d.right; }
     void analyzeOperator();
-    std::string operatorSource(StateStorage storage = StateStorage::Global) const;
+    std::string operatorSource() const;
+    // The operator functions over a state access layer; owner composites
+    // supply their own and pass none.
+    std::string operatorLibrary(const std::string& stateLayer) const;
     std::string operatorLinearize() const;
     std::string operatorSolve(bool refine) const;
     std::string operatorGather(bool apply = false) const;
     void reduceQuadratic(SumDomain&);
-    std::string lineSearchApply() const;
-    OwnerOutput lineSearchOutput() const;
+    OwnerPiece lineSearchPiece() const;
     std::string operatorReduce(uint32_t columns, bool degree = false) const;
     std::string operatorMembers(const std::string& body) const;
     std::string uniformMembers(const FieldModeLayout& modes, uint32_t required,
@@ -447,10 +449,13 @@ std::string Generator::groupedAccess() const {
     return s.str();
 }
 
-std::string Generator::operatorSource(StateStorage storage) const {
+std::string Generator::operatorSource() const {
+    return operatorLibrary(stateAccess(StateStorage::Global));
+}
+std::string Generator::operatorLibrary(const std::string& stateLayer) const {
     std::ostringstream s;
-    s << "#define REDUCTION_TEAM " << operatorTeam << "u\n";
-    s << stateAccess(storage,T) << access << gridSource() << linearAccess() << groupedAccess();
+    s << "#define REDUCTION_TEAM " << operatorTeam << "u\n" << stateLayer;
+    s << access << gridSource() << linearAccess() << groupedAccess();
     const auto& field = d.fields[fixed[0]];
     const auto& layout = p.variables[field.first.set];
     s << "Variable logicalVariable(uint logical){uint i=" << field.first.index << "u+logical*" << field.stride
@@ -856,19 +861,18 @@ void Generator::reduceQuadratic(SumDomain& out) {
     }
 }
 
-OwnerOutput Generator::lineSearchOutput() const {
-    // Invocations follow logical owners: the owner program and its stores are
-    // indexed that way, only the row values go through the permutation.
+OwnerPiece Generator::lineSearchPiece() const {
+    // Rows follow logical owners: the owner program and its stores are indexed
+    // that way, only the row values go through the permutation.
     std::ostringstream s;
     s << "vec2 quadratic=stepPartial[0];float weight=0.0;if(any(isnan(quadratic))||any(isinf(quadratic))){"
-         "if(invocation()==0u)invalidEvaluation();}else if(quadratic.y>0.0)weight=clamp(quadratic.x/quadratic.y,0.0,1.0);"
-         "uint logical=invocation(),anchor=x_sumData[" << ranks << "u+logical];"
+         "if(row==0u)invalidEvaluation();}else if(quadratic.y>0.0)weight=clamp(quadratic.x/quadratic.y,0.0,1.0);"
+         "uint anchor=x_sumData[" << ranks << "u+row];"
          // Linearization stored the full step lambda+dl; dl is zero on inactive rows.
-         "Relation r=relation(step.first+logical);float dl=rowValue(anchor,4u);if(dl!=0.0)"
+         "Relation r=relation(" << p.relations[set].first+d.first << "u+row);float dl=rowValue(anchor,4u);if(dl!=0.0)"
          "storeMultiplier(r,0u,loadMultiplier(r,0u)+(weight-1.0)*dl);"
-         "Variable v=logicalVariable(logical);uint ownerId=v.id;vec3 q=point(anchor);";
-    array(s,"ownerValue",T);
-    for(uint32_t c=0;c<T;++c)s << "ownerValue[" << c << "]=q[" << c << "];";
+         "Variable v=logicalVariable(row);vec3 q=point(anchor);";
+    for(uint32_t c=0;c<T;++c)s << "ownedState[" << c << "]=q[" << c << "];";
     s << "if(variableEnabled(v)){vec3 change=displacement(anchor)*weight;";
     array(s,"x",2*T); array(s,"y",T);
     for (uint32_t c=0;c<T;++c)s << "x[" << c << "]=q[" << c << "];x[" << T+c << "]=change[" << c << "];";
@@ -876,21 +880,14 @@ OwnerOutput Generator::lineSearchOutput() const {
     s << "bool finiteValue=true;";
     for (uint32_t c=0;c<T;++c)s << "finiteValue=finiteValue&&!isnan(y[" << c << "])&&!isinf(y[" << c << "]);";
     s << "if(!finiteValue)invalidEvaluation();else{";
-    for (uint32_t c=0;c<T;++c)s << "ownerValue[" << c << "]=y[" << c << "];";
+    for (uint32_t c=0;c<T;++c)s << "ownedState[" << c << "]=y[" << c << "];";
     s << "}}";
     const auto& field=d.fields[fixed[0]];
-    return {p.variables[field.first.set].first+field.first.index,d.count,field.stride,T,
-        operatorSource(StateStorage::Owner)+emitGlsl(t.spaces[fixed[0]]->retract,"applyCorrection")+
-        "shared vec2 stepPartial[128];",s.str(),pairSum("stepPartial",stepPartials,"0u",u(stepPartialCount))};
-}
-std::string Generator::lineSearchApply() const {
-    const auto output=lineSearchOutput();
-    std::ostringstream s;
-    s << operatorSource() << emitGlsl(t.spaces[fixed[0]]->retract,"applyCorrection")
-      << "shared vec2 stepPartial[128];void main(){" << output.groupBegin << "if(invocation()>=" << d.count
-      << "u)return;" << output.body;
-    for (uint32_t c=0;c<T;++c)s << "storeValue(v," << c << "u,ownerValue[" << c << "]);";
-    return s.str()+"}";
+    OwnerPiece piece{p.variables[field.first.set].first+field.first.index,d.count,field.stride,T,
+        operatorLibrary({})+emitGlsl(t.spaces[fixed[0]]->retract,"applyCorrection")+"shared vec2 stepPartial[128];",
+        s.str(),pairSum("stepPartial",stepPartials,"0u",u(stepPartialCount))};
+    piece.defines = true;
+    return piece;
 }
 
 void Generator::prepareTranspose() {
@@ -1198,24 +1195,29 @@ void Generator::prepareIndex() {
         const float indexMotion = traversal.orderedRanges ? IndexMotion*IndexMotion : 0.000576f;
         const float listMotion = 0.499f*NeighbourSkin*0.499f*NeighbourSkin;
         auto motion = [&](const std::string& member, const std::function<std::string(uint32_t)>& component) {
+            // The packed state is disjoint from every word read here. Loading
+            // first keeps the reads from waiting on the stores.
             std::ostringstream m;
             m << std::setprecision(9) << "uint rank=x_sumData[" << ranks << "u+" << member << "],at="
-              << packedState << "u+rank*4u;";
+              << packedState << "u+rank*4u,old=" << cells+4 << "u+" << member << "*8u;bool invalid=" << invalidIndex
+              << ";float support2=uintBitsToFloat(x_sumData[" << header << "u]);vec3 indexed=vec3(0);";
+            for (uint32_t c=0;c<T;++c)
+                m << "indexed[" << c << "]=uintBitsToFloat(x_sumData[old+" << c << "u]);";
+            if (traversal.orderedRanges) {
+                m << "uint listed=" << listedPoints << "u+rank*4u,listedFlag=x_sumData[listed+3u];vec3 drift=vec3(0);";
+                for (uint32_t c=0;c<T;++c)
+                    m << "drift[" << c << "]=" << component(c) << "-uintBitsToFloat(x_sumData[listed+" << c << "u]);";
+            }
             for (uint32_t c=0;c<3;++c)
                 m << "x_sumData[at+" << c << "u]=floatBitsToUint(" << (c<T?component(c):"0.0") << ");";
-            m << "if(" << invalidIndex << "){atomicOr(snapshotChanged,1u);return;}uint old="
-              << cells+4 << "u+" << member << "*8u;vec3 delta=vec3(0);";
+            m << "if(invalid){atomicOr(snapshotChanged,1u);return;}vec3 delta=vec3(0);";
             for (uint32_t c=0;c<T;++c)
-                m << "delta[" << c << "]=" << component(support->coordinates[c].second%T)
-                  << "-uintBitsToFloat(x_sumData[old+" << c << "u]);";
-            m << "float motion=dot(delta,delta),support2=uintBitsToFloat(x_sumData[" << header << "u]);if(!(motion<="
+                m << "delta[" << c << "]=" << component(support->coordinates[c].second%T) << "-indexed[" << c << "];";
+            m << "float motion=dot(delta,delta);if(!(motion<="
               << indexMotion << "*support2))atomicOr(snapshotChanged,1u);atomicMax(snapshotReach,isnan(motion)||isinf(motion)?"
                  "0x7f7fffffu:floatBitsToUint(motion));";
             if (traversal.orderedRanges) {
-                m << "uint listed=" << listedPoints << "u+rank*4u;vec3 drift=vec3(0);";
-                for (uint32_t c=0;c<T;++c)
-                    m << "drift[" << c << "]=" << component(c) << "-uintBitsToFloat(x_sumData[listed+" << c << "u]);";
-                m << "if(!(dot(drift,drift)<=" << listMotion << "*support2)&&x_sumData[listed+3u]==0u){"
+                m << "if(!(dot(drift,drift)<=" << listMotion << "*support2)&&listedFlag==0u){"
                      "x_sumData[listed+3u]=1u;uint slot=atomicAdd(x_sumData[" << exceptions << "u],1u);if(slot<"
                   << exceptionCapacity << "u){x_sumData[" << exceptions+1 << "u+slot]=rank;atomicMax(x_launches["
                   << exceptionLaunch << "u],slot/" << 128/ExceptionTeam << "u+1u);}else atomicOr(snapshotListed,1u);}";
@@ -1235,10 +1237,8 @@ void Generator::prepareIndex() {
         const auto& field = d.fields[fixed[0]];
         s << shared << "void snapshotCollection(uint member,float state[" << T << "]){"
           << motion("member",[](uint32_t c) { return "state["+std::to_string(c)+"]"; }) << "}";
-        snapshot = OwnerTransform{p.variables[field.first.set].first+field.first.index,
-                                  d.count,field.stride,s.str(),"snapshotCollection"};
-        snapshot->groupBegin = groupBegin;
-        snapshot->groupEnd = groupEnd;
+        snapshot = OwnerPiece{p.variables[field.first.set].first+field.first.index,d.count,field.stride,T,
+                              s.str(),"snapshotCollection(row,ownedState);",groupBegin,groupEnd};
         return;
     }
     s << "void main(){" << skipUnchangedIndex() << "uint i=invocation();if(i<"
@@ -2031,10 +2031,12 @@ std::vector<SumDomain> lowerSumRelations(CompiledPlan& p, const std::vector<uint
                     else if (step.action == Action::QuadraticTranspose) {
                         out.program.push_back({"Apply transpose and evaluate quadratic", generator.operatorGather(),count,0});
                         generator.reduceQuadratic(out);
-                    } else if (step.action == Action::LineSearchRetract)
-                        out.program.push_back({"Apply projected line search",generator.lineSearchApply(),generator.d.count,0,
-                                               generator.lineSearchOutput()});
-                    else
+                    } else if (step.action == Action::LineSearchRetract) {
+                        auto piece = generator.lineSearchPiece();
+                        out.program.push_back({"Apply projected line search",
+                            ownerKernel(u(piece.first)+"+row*"+u(piece.stride),{&piece},piece.width),
+                            generator.d.count,0,std::move(piece)});
+                    } else
                         out.program.push_back({step.action == Action::TransposeRetract ?
                             "Gather and apply summed operator" : "Gather summed linearization",
                             generator.operatorGather(step.action == Action::TransposeRetract), count, step.sweep});

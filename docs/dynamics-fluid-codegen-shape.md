@@ -180,3 +180,66 @@ RTX 3080，Release，`captures/fluid-80k-s4/abx.ps1`（开启 profiler，300 tic
 - Release 构建 `dynamics_run`、`dynamics_tests`、`Whimsical` 通过；ctest 4/4 通过；`Whimsical --smoke --validation` validation errors=0；`git diff --check` 通过。
 - 编译警告 C4458（`prepareGroupedIndex` 中的 `input`）和 C4456（`Schedule.cpp`）在 HEAD 中已存在。
 - 用于测量的临时 dump/override 钩子已从 `Instance.cpp` 删除。
+
+## 阶段 1：编译器内部的所有者 piece IR（`838c404` 之后）
+
+80,000 粒子，设置不变。只改了编译器（`CompiledPlan.h`、`Compiler.cpp`、`Kernels.cpp`、`Schedule.h/.cpp`、`SumRelations.h/.cpp`）；`lab.js` / `fluid.js`、JS 接口、physics IR、公式、参数、子步/迭代数、runtime（`Instance.cpp` 与 HEAD 一致）和 RenderCore 均未改动，没有新增测试。每 tick 的 dispatch 从 300 个减到 296 个。
+
+### IR：`OwnerPiece`
+
+在所有者 `first+stride*row` 上逐点执行的 kernel 都可以表示为一个 `OwnerPiece`：
+
+- `source`：基于所有者状态访问层的函数，访问层由组合 kernel 提供；
+- `body`：可以使用 `row`、`stateOwner` 和 `ownedState`；
+- `groupBegin` / `groupEnd`：workgroup 集合操作，越界的尾部 invocation 也参与；
+- `defines`：body 直接定义整个所有者状态，不读取旧值。
+
+`ownerKernel` 把同一所有者域上的多个 piece 组合到“每个所有者一个 invocation”上。所有者状态只读一次（第一个 piece 为 `defines` 时不读），也只发布一次，中间结果留在寄存器中。线搜索回缩、快照、关系链、recover、commit 都用 piece 表示。它取代了 `dynamics-ordered-traversal-sep13.md` 和 `dynamics-fluid-neighbour-rows.md` 中的 `OwnerOutput`：原来“本次迭代末尾接下次迭代前缀”的专门拼接，现在只是组合规则的一个实例。
+
+### 规则
+
+1. 组合（`fuseOwnedRelations`）。合法条件：
+   - 所有 piece 的宽度、数量和所有者映射（`owners[i]==first+stride*i`）完全一致；
+   - 中间没有 apply / iteration 阶段；
+   - 最后一个阶段每个子步只执行一次（发生了循环旋转，或者迭代数为 1）。
+
+   在这些条件下生成三种 kernel：
+   - 头部：关系链 + 快照；
+   - 迭代衔接：线搜索 + 关系链（`step.iteration+1u`）+ 快照；
+   - 尾部 “Finish owner substep”：线搜索 + recover + commit。
+
+   recover / commit 只有在一个共享 batch 包含全部所有者 ID 时才从中取出；commit 只取 RelationWork 中的 batch，summed commit 的 `first` 是关系 ID，会被跳过。
+2. 所有权寄存器提升。同一条关系链上的各关系拥有互不重叠的乘子行，所以在第一次调用前一起读入。读写通过 `ownedRelation` / `ownedMultiplier` 路由到寄存器，只把被写过的行（`ownedWritten`）写回。这样链内不再出现 store→load 的串行化。
+3. 迭代常量。每个子步只执行一次的头部就是第 0 次迭代的实例，迭代号用字面量 `0u` 传入。这样 `iteration==0` 的乘子分支被常量折叠，读取旧乘子成了死代码。
+4. 快照运动检查先读后写。打包状态写入的字与运动检查读取的字互不重叠，但同一个 SSBO 上的读写会被串行化；把读取提前，读取就不再等待写入。
+
+### 测量结果
+
+RTX 3080，Release，`abx.ps1`，开启 profiler，300 tick，HEAD（`838c404`）构建与最终构建交替各运行 5 次，validation 开启：
+
+| 取样 | HEAD（`838c404`） | 最终 |
+| --- | ---: | ---: |
+| 调度合计（profile 平均） | 6.457 / 6.370 / 6.432 / 6.274 / 6.350 ms | 6.429 / 6.276 / 6.176 / 6.209 / 6.187 ms |
+| 所有者迭代推进（44 次） | 1.533 / 1.488 / 1.440 / 1.434 / 1.450 ms | 1.438 / 1.381 / 1.378 / 1.369 / 1.370 ms |
+| 头部关系链（4 次） | 0.134 ms | 0.123 ms |
+| 线搜索 + commit + recover（各 4 次） | 0.049 + 0.018 + 0.024 ms | 尾部 0.058 + 剩余 recover（n=10）0.018 ms |
+| 线性化（48 次） | 1.482 ms | 1.503 ms |
+| 转置并计算二次型（48 次） | 1.604 ms | 1.606 ms |
+
+调度合计平均 6.377 → 6.255 ms（约 −1.9%），5 轮全部更快；所有者相关 kernel 合计约 −0.11 ms。线性化和转置的源码与 HEAD 逐字节相同，两者的差异属于噪声或缓存状态。末帧密度超额均值 HEAD 0.00347–0.00351，最终 0.00343–0.00360；P99 分别为 0.0174–0.0178 和 0.0171–0.0188；diag 均为 0/0。
+
+### 没有保留的实验
+
+- 在乘子读取中加 `iteration==0u?0.0:` select（代替字面量 `0u` 头部和写回脏位）：头部恢复正常，但迭代衔接 kernel 也要付出这个 select，推进阶段变慢。
+- 全局标量由最后到达的 workgroup 统一完成（R2）：投影二次型的部分和由 producer 用 fence 加同地址原子计数完成最终归约，消费者只读一个值。结果是转置 1.59 → 1.80 ms（producer 每次调用约 +4.4 µs），推进 1.37 → 1.67 ms（所有消费者 workgroup 读同一地址，形成 L2 热点，每次调用约 +7 µs），调度合计 6.25 → 6.79 ms。在这块 GPU 上，每个消费者 workgroup 冗余地做并行归约更便宜，因此已完全撤回，撤回后生成的 kernel 与撤回前逐字节一致。
+- 把 predict 组合进头部：runtime 以 `!plan->predict.empty()` 作为子步循环条件，`dispatchCount` 对空 predict 返回 0；组合后 predict 为空会破坏这个约定，需要修改 runtime，没有做。
+
+### 剩余瓶颈
+
+线性化、转置、推进以及 Index 12/13 的行维护，合计约占调度时间的 87%（5.44 / 6.26 ms）。它们是每次迭代的三个全局 pass 加上行重建：转置需要所有行的 dl，线搜索步长需要一次全局归约，这些全局依赖使阶段 1 的组合规则无法再合并它们。要减少 pass，需要在编译器中做方法选择（例如按问题结构选择不需要全局线搜索的局部投影形式），或者做缓存放置（按空间排序的所有者使用 workgroup 本地 tile）。这两项还没有开始，方法选择留待之后决定。
+
+### 验证
+
+- Release 构建全部目标通过；ctest 4/4 通过；流体 300 tick 运行（validation 开启）没有 VUID 消息，diag=0/0；`Whimsical --smoke --validation` 没有 VUID 消息；`git diff --check` 通过。
+- 编译警告 C4456（`Schedule.cpp` 中的 `writer`）和 C4458（`input`）在 HEAD 中已存在。
+- `captures/fluid-80k-s4/`：`base838.exe`（HEAD 构建）、`phase1b.exe`（最终构建）、`r2.exe`（R2 实验）、`logs/x-base838-*.log` / `logs/x-phase1b-*.log`（profile）。

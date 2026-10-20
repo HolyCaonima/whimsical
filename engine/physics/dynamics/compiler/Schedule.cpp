@@ -214,7 +214,7 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
         ++colored;
     if (colored < 2)
         return false;
-    const auto work = words(p.buffers[size_t(BufferRole::RelationWork)]);
+    auto work = words(p.buffers[size_t(BufferRole::RelationWork)]);
     using Call = std::pair<uint32_t, uint32_t>;
     std::vector<std::vector<Call>> chains(p.statistics.variables);
     for (size_t stage = 0; stage < colored; ++stage) {
@@ -253,26 +253,45 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
     for (const auto& [signature, owners] : recipes)
         if (p.spaces[signature[0]]->stateSize > 32 || signature.size() > RelationBudget)
             return false;
-    std::optional<OwnerTransform> epilogue;
-    if (recipes.size() == 1 && colored < p.solve.size()) {
-        const auto& candidate = p.kernels[p.solve[colored].kernel].ownerTransform;
-        const auto& owners = recipes.begin()->second;
-        bool sameDomain = candidate && candidate->count == owners.size();
-        for (uint32_t i = 0; sameDomain && i < owners.size(); ++i)
-            sameDomain = owners[i] == candidate->first + candidate->stride*i;
-        if (sameDomain) epilogue = candidate;
-    }
     auto ranges = words(p.buffers[size_t(BufferRole::RegionRanges)]);
+    auto variableWork = words(p.buffers[size_t(BufferRole::VariableWork)]);
+    // Moves ids out of the one work-list batch holding all of them and returns its kernel.
+    auto extract = [&](std::vector<Batch>& batches, BufferRole role, std::vector<uint32_t>& items,
+                       const std::vector<uint32_t>& ids) {
+        const std::set<uint32_t> wanted(ids.begin(), ids.end());
+        for (auto batch = batches.begin(); batch != batches.end(); ++batch) {
+            if (functions[batch->kernel].entry.empty() || functions[batch->kernel].work != role)
+                continue;
+            std::vector<uint32_t> rest;
+            for (uint32_t i = batch->first; i < batch->first + batch->count; ++i)
+                if (!wanted.count(items[i])) rest.push_back(items[i]);
+            if (rest.size() == batch->count)
+                continue;
+            if (batch->count - rest.size() != wanted.size())
+                return UINT32_MAX;
+            const auto kernel = batch->kernel;
+            if (rest.empty())
+                batches.erase(batch);
+            else {
+                batch->first = uint32_t(items.size());
+                batch->count = uint32_t(rest.size());
+                items.insert(items.end(), rest.begin(), rest.end());
+            }
+            return kernel;
+        }
+        return UINT32_MAX;
+    };
+    auto empty = [](const std::vector<Batch>& batches) {
+        return std::none_of(batches.begin(), batches.end(), [](const Batch& b) { return b.count != 0; });
+    };
+    const auto pieceCall = [](const KernelFunction& function, const std::string& id, const std::string& iteration) {
+        return function.entry + "(" + id + ",step.h,step.time,step.relaxation,1.0/(step.h*step.h)," + iteration + ");";
+    };
     std::vector<Batch> stages;
+    bool snapshotted = false;
+    std::optional<uint32_t> tailKernel;
     for (const auto& [signature, owners] : recipes) {
         const auto width = p.spaces[signature[0]]->stateSize;
-        std::ostringstream source;
-        source << stateAccess(StateStorage::Owner, width);
-        if (epilogue) source << epilogue->source;
-        std::set<uint32_t> emitted;
-        for (size_t call = 1; call < signature.size(); ++call)
-            if (emitted.insert(signature[call]).second)
-                source << functions[signature[call]].source;
         const auto first = uint32_t(ranges.size()), count = uint32_t(owners.size());
         ranges.insert(ranges.end(), owners.begin(), owners.end());
         for (size_t call = 1; call < signature.size(); ++call)
@@ -287,61 +306,101 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
             if (affine) return std::to_string(base) + "u+" + row + "*" + std::to_string(stride) + "u";
             return "x_regionRanges[" + std::to_string(first+call*count) + "u+" + row + "]";
         };
-        source << "void main(){uint i=invocation();";
-        if (epilogue) source << epilogue->groupBegin;
-        source << "if(i<step.count){stateOwner=" << column(0, "i") << ";Variable owner=variable(stateOwner);";
-        for (uint32_t c = 0; c < width; ++c)
-            source << "ownedState[" << c << "]=x_q[owner.q+" << c << "u*owner.stride];";
-        // Calls only depend on each other through owner state; issue every
-        // independent table load before the first call.
-        for (size_t call = 1; call < signature.size(); ++call)
-            source << "uint call" << call << "=" << column(call, "i") << ";";
-        for (size_t call = 1; call < signature.size(); ++call)
-            source << functions[signature[call]].entry << "(call" << call
-                   << ",step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration);";
-        for (uint32_t c = 0; c < width; ++c)
-            source << "x_q[owner.q+" << c << "u*owner.stride]=ownedState[" << c << "];";
-        if (epilogue)
-            source << epilogue->entry << "((stateOwner-" << epilogue->first << "u)/"
-                   << epilogue->stride << "u,ownedState);";
-        source << "}";
-        if (epilogue) source << epilogue->groupEnd;
-        source << "}";
-        stages.push_back({uint32_t(p.kernels.size()), first, count, p.solve[colored-1].color});
-        p.kernels.push_back({"Solve owned relation chain", source.str()});
-        // Compose the loop tail with the next iteration's pointwise prefix.
-        // The producer has not published its owner state yet, so the original
-        // numerical order can be retained without a global intermediate store.
-        const auto& tail=p.solve.back();
-        const auto& output=p.kernels[tail.kernel].ownerOutput;
-        auto empty=[](const auto& batches) { return std::none_of(batches.begin(),batches.end(),
-            [](const Batch& b) { return b.count!=0; }); };
-        if (recipes.size()==1 && epilogue && output && p.policy.iterations>1 &&
-            empty(p.apply) && empty(p.iteration) &&
-            output->first==epilogue->first && output->count==count &&
-            output->stride==epilogue->stride && output->width==width) {
-            std::ostringstream joined;
-            joined << output->source << epilogue->source;
-            for (auto kernel : emitted) joined << functions[kernel].source;
-            joined << "void main(){" << epilogue->groupBegin << output->groupBegin << "if(invocation()<step.count){"
-                   << output->body << "stateOwner=ownerId;";
-            for (uint32_t c=0;c<width;++c) joined << "ownedState[" << c << "]=ownerValue[" << c << "];";
-            joined << "uint row=(ownerId-" << output->first << "u)/" << output->stride << "u;";
-            for(size_t call=1;call<signature.size();++call)
-                joined << "uint call" << call << "=" << column(call, "row") << ";";
-            for(size_t call=1;call<signature.size();++call)
-                joined << functions[signature[call]].entry << "(call" << call
-                       << ",step.h,step.time,step.relaxation,1.0/(step.h*step.h),step.iteration+1u);";
-            joined << "Variable owner=variable(ownerId);";
-            for(uint32_t c=0;c<width;++c) joined << "x_q[owner.q+" << c << "u*owner.stride]=ownedState[" << c << "];";
-            joined << epilogue->entry << "(row,ownedState);}" << epilogue->groupEnd << "}";
-            p.iterationJoin=Batch{uint32_t(p.kernels.size()),tail.first,tail.count};
-            p.kernels.push_back({"Advance owner iteration",joined.str()});
+        auto matches = [&](const std::optional<OwnerPiece>& piece) {
+            bool same = piece && piece->width == width && piece->count == count;
+            for (uint32_t i = 0; same && i < count; ++i) same = owners[i] == piece->first + piece->stride*i;
+            return same;
+        };
+        auto rows = [&](size_t call) { return p.types[p.relationType(chains[owners[0]][call-1].second)]->rows; };
+        uint32_t ownedRows = 1;
+        std::string chainSource;
+        std::set<uint32_t> emitted;
+        for (size_t call = 1; call < signature.size(); ++call) {
+            ownedRows = std::max(ownedRows, rows(call));
+            if (emitted.insert(signature[call]).second) chainSource += functions[signature[call]].source;
         }
+        // Calls depend on each other only through owner state. The relations of
+        // one chain own disjoint multiplier rows; they stay in registers across
+        // the calls and are written back where a call stored them, so no load
+        // waits on an earlier call's store.
+        auto chain = [&](const std::string& iteration) {
+            std::ostringstream s;
+            for (size_t call = 1; call < signature.size(); ++call) {
+                s << "uint call" << call << "=" << column(call, "row") << ";Relation owned" << call << "=relation(call"
+                  << call << ");";
+                for (uint32_t c = 0; c < rows(call); ++c)
+                    s << "float multiplier" << call << "_" << c << "=globalMultiplier(owned" << call << "," << c << "u);";
+            }
+            for (size_t call = 1; call < signature.size(); ++call) {
+                s << "ownedRelation=call" << call << ";";
+                for (uint32_t c = 0; c < rows(call); ++c)
+                    s << "ownedMultiplier[" << c << "]=multiplier" << call << "_" << c << ";ownedWritten[" << c
+                      << "]=false;";
+                s << pieceCall(functions[signature[call]], "call" + std::to_string(call), iteration);
+                for (uint32_t c = 0; c < rows(call); ++c)
+                    s << "float next" << call << "_" << c << "=ownedMultiplier[" << c << "];bool written" << call << "_"
+                      << c << "=ownedWritten[" << c << "];";
+            }
+            s << "ownedRelation=0xffffffffu;";
+            for (size_t call = 1; call < signature.size(); ++call)
+                for (uint32_t c = 0; c < rows(call); ++c)
+                    s << "if(written" << call << "_" << c << ")publishMultiplier(owned" << call << "," << c << "u,next"
+                      << call << "_" << c << ");";
+            return OwnerPiece{0, count, 1, width, chainSource, s.str()};
+        };
+        auto compose = [&](const char* name, const std::vector<OwnerPiece>& pieces) {
+            std::vector<const OwnerPiece*> order;
+            for (const auto& piece : pieces) order.push_back(&piece);
+            p.kernels.push_back({name, ownerKernel(column(0, "row"), order, width, ownedRows)});
+            return uint32_t(p.kernels.size() - 1);
+        };
+        snapshotted = recipes.size() == 1 && colored < p.solve.size() && matches(p.kernels[p.solve[colored].kernel].owner);
+        // Rotate the loop: the last stage of one iteration composes with the head
+        // of the next. Its owner state is defined in registers, so the original
+        // numerical order holds without a global intermediate store.
+        const auto output = p.kernels[p.solve.back().kernel].owner;
+        const bool produced = recipes.size() == 1 && matches(output) && output->defines;
+        const bool rotated = produced && p.policy.iterations > 1 && empty(p.apply) && empty(p.iteration);
+        const bool single = rotated || p.policy.iterations == 1;
+        // A matching pointwise consumer of the chain shares its invocation. A
+        // head that runs once per substep is the instance of iteration zero.
+        std::vector<OwnerPiece> head{chain(single ? "0u" : "step.iteration")};
+        if (snapshotted) head.push_back(*p.kernels[p.solve[colored].kernel].owner);
+        if (rotated) {
+            auto joined = head;
+            joined.front() = chain("step.iteration+1u");
+            joined.insert(joined.begin(), *output);
+            p.iterationJoin = Batch{compose("Advance owner iteration", joined), p.solve.back().first, p.solve.back().count};
+        }
+        // Once the last stage runs once per substep, the pointwise recover and
+        // history commits of its owners follow it on the same invocation.
+        const bool last = recipes.size() == 1 && p.solve.size() == colored + uint32_t(snapshotted);
+        std::vector<OwnerPiece> tail;
+        if (produced) tail.push_back(*output);
+        auto& finish = last ? head : tail;
+        if ((last || produced) && single && empty(p.apply)) {
+            const auto recover = extract(p.recover, BufferRole::VariableWork, variableWork, owners);
+            if (recover != UINT32_MAX)
+                finish.push_back({0, count, 1, width, functions[recover].source,
+                                  pieceCall(functions[recover], "stateOwner", "0u")});
+            for (size_t call = 1; call < signature.size(); ++call) {
+                std::vector<uint32_t> relations;
+                for (auto owner : owners) relations.push_back(chains[owner][call-1].second);
+                const auto commit = extract(p.update, BufferRole::RelationWork, work, relations);
+                if (commit != UINT32_MAX)
+                    finish.push_back({0, count, 1, width, functions[commit].source,
+                                      pieceCall(functions[commit], column(call, "row"), "0u")});
+            }
+        }
+        if (tail.size() > 1) tailKernel = compose("Finish owner substep", tail);
+        stages.push_back({compose("Solve owned relation chain", head), first, count, p.solve[colored-1].color});
     }
-    stages.insert(stages.end(), p.solve.begin()+colored+uint32_t(bool(epilogue)), p.solve.end());
+    stages.insert(stages.end(), p.solve.begin()+colored+uint32_t(snapshotted), p.solve.end());
+    if (tailKernel) stages.back().kernel = *tailKernel;
     p.solve = std::move(stages);
     store(p.buffers[size_t(BufferRole::RegionRanges)], ranges);
+    store(p.buffers[size_t(BufferRole::VariableWork)], variableWork);
+    store(p.buffers[size_t(BufferRole::RelationWork)], work);
     return true;
 }
 void fuseColorWindows(CompiledPlan& p, const std::vector<KernelFunction>& functions) {
@@ -535,8 +594,11 @@ void lowerSchedule(CompiledPlan& p, const std::vector<KernelFunction>& functions
     if (p.summedRelations) {
         // The variadic Jacobi domain needs its own snapshot stages, but that
         // does not invalidate independent variable work or the colored prefix.
+        // Owner programs take their variables' pointwise work before the
+        // remaining variables collapse into shared dispatches.
+        const bool owned = fuseOwnedRelations(p, functions);
         collapseVariableDispatches(p, functions);
-        if (!fuseOwnedRelations(p, functions)) {
+        if (!owned) {
             collapseRelationDispatches(p, false);
             fuseColorWindows(p, functions);
         }

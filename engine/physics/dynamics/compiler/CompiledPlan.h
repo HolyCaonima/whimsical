@@ -93,29 +93,25 @@ struct RelationLayout {
 struct FieldModeLayout {
     uint32_t first = 0, mask = 0;
 };
-// A pointwise consumer of a complete owner state. The schedule may compose it
-// with the preceding owner program when their domains agree exactly.
-struct OwnerTransform {
-    uint32_t first = 0, count = 0, stride = 1;
-    std::string source, entry;
+// A kernel that is pointwise over owners first+stride*row. Pieces over one
+// domain compose on one invocation per owner: the owner state stays in
+// registers, so only the composite reads and publishes it. The source holds
+// functions over the owner state access, which the composite supplies.
+struct OwnerPiece {
+    uint32_t first = 0, count = 0, stride = 1, width = 0;
+    // The body sees row, stateOwner and ownedState.
+    std::string source, body;
     // Tail invocations also participate in these workgroup collectives.
     std::string groupBegin, groupEnd;
-};
-// A pointwise producer before its final store. Its body publishes ownerId and
-// ownerValue in registers; a matching consumer can run before global storage.
-struct OwnerOutput {
-    uint32_t first = 0, count = 0, stride = 1, width = 0;
-    std::string source, body;
-    // Runs on every invocation of the workgroup before the body.
-    std::string groupBegin;
+    // The body defines the whole owner state without reading it.
+    bool defines = false;
 };
 struct Kernel {
     std::string name, source; // local_size and main; runtime supplies the resource interface
     // Only kernels exchanging storage values between invocations require coherent
     // accesses. Dispatch boundaries are synchronized by the execution schedule.
     std::vector<BufferRole> coherentBuffers;
-    std::optional<OwnerTransform> ownerTransform;
-    std::optional<OwnerOutput> ownerOutput;
+    std::optional<OwnerPiece> owner;
 };
 struct Batch {
     uint32_t kernel, first, count;

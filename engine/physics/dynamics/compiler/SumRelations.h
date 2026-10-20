@@ -15,13 +15,13 @@ struct SumDomain {
     struct Step {
         std::string name, source;
         uint32_t count, sweep;
-        std::optional<OwnerOutput> ownerOutput;
+        std::optional<OwnerPiece> owner;
     };
     // UINT32_MAX is the shared snapshot preparation epoch; subsequent numbers
     // are ordered block sweeps. Compiler schedules domains without inventing
     // additional numerical work or inspecting a physical storage choice.
     std::vector<Step> program;
-    std::optional<OwnerTransform> snapshot;
+    std::optional<OwnerPiece> snapshot;
     std::string update;
     std::vector<uint32_t> appliedVariables;
     bool activeDegrees = true;

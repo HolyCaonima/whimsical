@@ -1145,7 +1145,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         uint32_t indexStage = 0;
         for (const auto& stage : domain.index) {
             const auto program = kernel("Index summed expression " + std::to_string(indexStage), stage.source);
-            if (indexStage++ == 0) p->kernels[program].ownerTransform = domain.snapshot;
+            if (indexStage++ == 0) p->kernels[program].owner = domain.snapshot;
             sumStages.push_back({program, 0, stage.count, -1, stage.substep, stage.launch});
         }
         std::map<std::string,uint32_t> programs;
@@ -1154,7 +1154,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
             if (found == programs.end())
                 found = programs.emplace(step.source,kernel(step.name,step.source)).first;
             const Batch batch{found->second,first,step.count};
-            p->kernels[batch.kernel].ownerOutput = step.ownerOutput;
+            p->kernels[batch.kernel].owner = step.owner;
             if (step.sweep == UINT32_MAX) sumActivity.push_back(batch);
             else if (step.sweep == 0) p->solve.push_back(batch);
             else sumRefinement[step.sweep].push_back(batch);
