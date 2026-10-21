@@ -243,3 +243,50 @@ RTX 3080，Release，`abx.ps1`，开启 profiler，300 tick，HEAD（`838c404`�
 - Release 构建全部目标通过；ctest 4/4 通过；流体 300 tick 运行（validation 开启）没有 VUID 消息，diag=0/0；`Whimsical --smoke --validation` 没有 VUID 消息；`git diff --check` 通过。
 - 编译警告 C4456（`Schedule.cpp` 中的 `writer`）和 C4458（`input`）在 HEAD 中已存在。
 - `captures/fluid-80k-s4/`：`base838.exe`（HEAD 构建）、`phase1b.exe`（最终构建）、`r2.exe`（R2 实验）、`logs/x-base838-*.log` / `logs/x-phase1b-*.log`（profile）。
+
+## 阶段 2：异常行、转置顺序和线搜索的行局部项（`d7ca44a` 之后）
+
+80,000 粒子，设置不变。只改了 `SumRelations.cpp`。`lab.js` / `fluid.js`、JS 接口、physics IR、公式、参数、子步/迭代数、runtime（`Instance.cpp` 与 HEAD 一致）和 RenderCore 均未改动，没有新增测试，dispatch 数不变。
+
+### 规则
+
+1. 异常由整个 workgroup 处理（`BallScan::Workgroup`）。每个异常占一个 128 lane 的 workgroup（`ExceptionTeam=128`，快照的 launch 请求随之变为 `slot+1`）。球查询的区间由各 lane 并行定位并写入共享内存，lane 0 求前缀和，之后各 lane 用二分查找把全部候选当作一个扁平序列分摊。原来 32 lane 的 team 一次扫一个区间，而稠密排序中一个区间只有约 30 个成员，team 大部分时间空闲。join 分两步：扫描时只收集成员，行完整后各 lane 并行对收集到的成员调用 join。超过行容量的成员在扫描中直接 join，所以溢出时仍然精确。哈希区间照旧检查单元。
+2. 转置反向遍历 workgroup。线性化刚按锚点顺序流过同样的行和成员记录，转置从末尾开始，先用上 L2 中还在的数据。超出 dispatch 的 group 回绕到无效锚点。
+3. 线搜索的行局部项在线性化中归约。步长分子中的 r·dl 和分母中的 α·dl² 只依赖本行，线性化已把它们放在寄存器里。现在由线性化写入每个 workgroup 的部分和，转置读取同一槽位，只加上位移的二次型 `dot(raw,sum)`。线搜索模式下，活动标志、对角和残差三列不再存储；转置尾部也不再读取它们，以及 logical→relation→compliance 这条依赖链。两处 workgroup 归约在 `DYNAMICS_SUBGROUP32` 下用 subgroup shuffle 加一个 barrier 完成，否则仍走共享内存树。为了让无效求解之后所有 invocation 仍能到达 barrier，`solveAndProject` 新增了不提前返回的形式。
+
+### 测量结果
+
+RTX 3080，Release，`s5/ab.ps1`，开启 profiler，120 tick，HEAD（`d7ca44a`）构建与最终构建交替各运行 4 次，validation 开启：
+
+| 取样 | HEAD（`d7ca44a`） | 最终 |
+| --- | ---: | ---: |
+| 调度合计（profile 平均） | 6.672 / 6.577 / 6.699 / 6.593 ms | 6.185 / 6.089 / 6.330 / 6.132 ms |
+| 线性化（48 次） | 1.530 / 1.489 / 1.480 / 1.452 ms | 1.499 / 1.453 / 1.542 / 1.462 ms |
+| 转置并计算二次型（48 次） | 1.600 / 1.569 / 1.666 / 1.579 ms | 1.417 / 1.377 / 1.382 / 1.380 ms |
+| 所有者迭代推进（44 次） | 1.363 / 1.361 / 1.358 / 1.365 ms | 1.366 / 1.364 / 1.453 / 1.374 ms |
+| Index 12：完整行构建（48 次） | 0.606 / 0.608 / 0.607 / 0.609 ms | 0.607 / 0.606 / 0.610 / 0.612 ms |
+| Index 13：异常（48 次） | 0.695 / 0.676 / 0.705 / 0.710 ms | 0.382 / 0.413 / 0.423 / 0.425 ms |
+
+调度合计平均 6.635 → 6.184 ms（约 −6.8%），4 轮全部更快。之前一组较安静的交替测量中，规则 1、2 使 HEAD 6.513 / 6.478 / 6.494 ms 变为 6.181 / 6.191 / 6.169 ms；规则 3 在此基础上再从 6.316（第一轮偏高）/ 6.168 / 6.173 ms 降到 6.088 / 6.031 / 6.024 ms，转置约 1.50 → 1.37 ms，线性化不变。末帧密度超额均值 HEAD 0.00350–0.00360，最终 0.00352–0.00363；P99 分别为 0.0182–0.0193 和 0.0185–0.0198；diag 均为 0/0。前 30 tick（每次迭代约 1,250 个异常）的超额均值 HEAD 0.00492–0.00517，最终 0.00471–0.00521。
+
+两个构建都偶尔把个别粒子弹出。约 22 次 HEAD 运行中 velMax 最高 14.3、maxY 最高 6.3；约 25 次最终构建运行中有一次 velMax 57.6、maxY 40，包围盒随之变大，那次运行的线性化和转置升到约 10 ms。三条规则都不改变数学，只是改变了浮点求和顺序，轨迹会混沌地分叉。这个尾部风险值得单独研究：一个逃逸粒子就会拖垮整个索引。
+
+### 没有保留的实验
+
+- `uvec4` 向量读取：四字记录按 16 字节对齐，粒子位置加 dl 用一次 `uvec4` 读取。转置 −8%，调度合计 6.158 → 5.965 ms（−3.1%）；`uvec2` 视图约 −1.5%。这需要在 `uint x_sumData[]` 的同一 binding 上再声明一个类型视图，而 binding 号由 RenderCore 的 `Registry` 分配，编译器无法自行声明。实验中 binding 号是写死的，已删除。要保留，需要 runtime 或 RenderCore 提供别名视图，等待决定。
+- 只对齐、仍用标量读取：没有收益（驱动不会合并相邻的标量读取），已删除。
+- 更小的皮肤：0.07R 时行缩短约 8%，但线性化和转置只快约 3%，异常增加，合计只少 0.03 ms；0.05R 更慢。
+- 把行不变量 h² 的倒数分级预计算：无变化，驱动已经外提了倒数。
+- 转置在开头预取 built count：无变化。
+- 同一轮的其他探针：完整行构建用 32 lane team 扁平扫描慢约 50%；推进按逻辑顺序布局、位移改成 AoS、链端点特化、调整异常容量都没有收益或更慢。
+
+### 剩余瓶颈
+
+线性化约 1.47 ms，转置约 1.39 ms，推进约 1.36 ms，行维护（Index 1–13）约 1.4 ms。推进受通用关系链中的依赖读取延迟限制；去掉墙约 −0.25 ms，去掉阻尼约 −0.15–0.2 ms。要继续缩小与手写 PBF 的差距，需要结构性改动，例如按空间顺序给自由度做物理重排或为关系链特化端点，或者引入上面的类型视图。
+
+### 验证
+
+- Release 构建全部目标通过；ctest 4/4 通过；`dynamics_tests` 通过（validation 开启，检查 `core.errors()==0`）；流体 120 tick 运行（validation 开启）没有 VUID 消息，diag=0/0；`Whimsical --smoke --validation` validation errors=0；`git diff --check` 通过。
+- 编译警告 C4458（`input`）在 HEAD 中已存在。
+- 用于探针的临时 override 钩子已从 `Instance.cpp` 删除，该文件与 HEAD 一致。
+- `captures/fluid-80k-s4/`：`headd7c.exe`（HEAD 构建）、`final.exe`（最终构建）、`k1.exe`（规则 1、2）、`k4.exe`（规则 1–3，含探针钩子）；`s5/`（探针源码与 `mk.py`）；`s5/logs/head-*.log` / `s5/logs/final-*.log`（profile）。
