@@ -9,6 +9,9 @@ struct KernelFunction {
     std::string entry, source;
     BufferRole work;
     bool writesContributions = false;
+    // Relation functions also expose their body over decoded endpoints:
+    // (Relation r, uint id0, Variable v0, ..., h, time, relaxation, inverseH2, iteration).
+    std::string endpointEntry;
 };
 KernelFunction variableFunction(
     const Space&, const char* operation, const std::string& name, bool directContributions = false);
@@ -39,9 +42,11 @@ enum class StateStorage { Global, Region, Epoch, Owner };
 std::string stateAccess(StateStorage, uint32_t variableCount = 0, bool externalInputs = false,
                         uint32_t ownedRows = 1);
 // Runs pieces in order on one invocation per owner. The composite reads the
-// owner state unless the first piece defines it, and publishes it once.
+// owner state unless the first piece defines it, and publishes it unless the
+// caller proves no reader before the next publication. An ordered composite
+// visits owners in the physical order of its pieces.
 std::string ownerKernel(const std::string& owner, const std::vector<const OwnerPiece*>&, uint32_t width,
-                        uint32_t ownedRows = 1);
+                        uint32_t ownedRows = 1, bool ordered = false, bool publish = true);
 
 // Preserve the semantic batch ordering; choose ownership and execution placement.
 // Layouts and work IDs remain stable across this lowering pass.

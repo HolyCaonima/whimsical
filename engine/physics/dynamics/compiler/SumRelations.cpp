@@ -30,8 +30,11 @@ std::string pairSum(const std::string& target, uint32_t source, const std::strin
 void array(std::ostringstream& s, const std::string& name, uint32_t size) {
     s << "float " << name << "[" << std::max(1u, size) << "];\n";
 }
-uint32_t append(CompiledPlan& p, const std::vector<uint32_t>& words) {
+// Alignment in words. Records start on a 32-byte sector, so a scattered record
+// read touches one sector; streamed chunks start on a line.
+uint32_t append(CompiledPlan& p, const std::vector<uint32_t>& words, uint32_t alignment = 1) {
     auto& b = p.buffers[size_t(BufferRole::SumData)];
+    b.initial.resize((b.initial.size() / 4 + alignment - 1) / alignment * alignment * 4);
     const auto first = b.initial.size() / 4;
     if (first + words.size() > UINT32_MAX) throw std::overflow_error("Sum metadata exceeds 32-bit addressing");
     b.initial.resize((first + words.size()) * 4);
@@ -146,6 +149,9 @@ struct Generator {
     uint32_t parameterValues = 0;
     float factorScale = 0;
     uint32_t operatorRows = 0, coefficients = 0, listEntries = 0, edgeCapacity = 0;
+    // The owned displacement is written in rank order and read per owner, so
+    // it is a record of four words per row rather than row columns.
+    uint32_t displacements = 0;
     uint32_t memberCapacity = Capacity;
     bool listedMembers = true, cachedCoefficients = false, compactMembers = false;
     CollectionTraversalPlan traversal;
@@ -189,6 +195,13 @@ struct Generator {
         return s;
     }
     uint32_t operatorRowWidth() const { return 6+2*T; }
+    // Slot -> logical member and back, self-contained so any owner piece over
+    // the domain can use them. Ordered ranges rebuild only at the first
+    // iteration of a substep, so their slots also address state that lives
+    // for one substep.
+    std::string slotOrder() const { return "x_sumData[" + u(grouped+3) + "+slot*4u]"; }
+    std::string rowSlot() const { return "x_sumData[" + u(ranks) + "+row]"; }
+    bool substepSlots() const { return traversal.orderedRanges; }
     bool structuralWeighting() const {
         // Reciprocal candidates bound the number n_v of rows incident on v.
         // Cauchy-Schwarz gives J B J^T <= diag(sum_v n_v J_iv B_v J_iv^T).
@@ -290,7 +303,8 @@ struct Generator {
             // Cached rows distribute consecutive entries across short teams;
             // streaming queries distribute the independent spatial cells.
             if (!listedMembers && !traversal.orderedRanges) operatorTeam = 32;
-            operatorRows = append(p, std::vector<uint32_t>(size_t(d.count)*operatorRowWidth()));
+            operatorRows = append(p, std::vector<uint32_t>(size_t(d.count)*(6+T)), 32);
+            displacements = append(p, std::vector<uint32_t>(size_t(d.count)*4), 8);
             cachedCoefficients = listedMembers && !lineSearch;
             if (cachedCoefficients) coefficients = append(p, std::vector<uint32_t>(edgeCapacity));
             if (lineSearch) {
@@ -391,7 +405,8 @@ struct Generator {
     // Multipliers names an array of loaded multipliers; by default they are read.
     // Unless exits, an invalid solve keeps the invocation running and the
     // stores of a valid one open a block the caller closes.
-    std::string solveAndProject(const std::string& multipliers = {}, bool exits = true) const;
+    std::string solveAndProject(const std::string& multipliers = {}, bool exits = true,
+                                const std::string& relation = "r") const;
     // Workgroup sum of energy, whose nonzero values are held by team leaders.
     std::string groupEnergy() const;
     std::string linearize() const;
@@ -479,7 +494,8 @@ std::string Generator::operatorLibrary(const std::string& stateLayer) const {
     // Each tile follows invocation order across the short reduction teams.
     s << "uint coefficientWord(uint row,uint entry){return " << coefficients << "u+edgeWord(row,entry);}\n";
     s << "uint stateWord(uint row,uint column){return column==4u?" << packedState+3
-      << "u+row*4u:rowWord(row,column);}\n"
+      << "u+row*4u:column>=" << 6+T << "u?" << displacements << "u+row*4u+column-" << 6+T
+      << "u:rowWord(row,column);}\n"
          "float rowValue(uint row,uint column){return uintBitsToFloat(x_sumData[stateWord(row,column)]);}\n"
          "void rowStore(uint row,uint column,float value){x_sumData[stateWord(row,column)]=floatBitsToUint(value);}\n";
     if (structuralWeighting()) {
@@ -728,22 +744,28 @@ std::string Generator::operatorLinearize() const {
         return body.str() + "total[" + std::to_string(T+1) + "]+=" + quadratic +
             (structuralWeighting() ? "*incidenceBound(member)" : "") + ";";
     };
-    // The row's scattered multiplier read overlaps the member traversal.
-    s << "Relation r;float multiplier[1];multiplier[0]=0.0;if(valid){prepareTerm(anchor);"
-         "r=relation(step.first+logicalMember(anchor));if(lane==0u&&step.iteration!=0u)multiplier[0]=loadMultiplier(r,0u);"
+    // The row's multiplier read overlaps the member traversal. Over substep
+    // slots, the line search stores multipliers by rank, as its owner pieces do.
+    s << "Relation r,rm;float multiplier[1];multiplier[0]=0.0;if(valid){prepareTerm(anchor);"
+         "r=relation(step.first+logicalMember(anchor));rm=" << (lineSearch && substepSlots() ? "relation(step.first+anchor)" : "r")
+      << ";if(lane==0u&&step.iteration!=0u)multiplier[0]=loadMultiplier(rm,0u);"
       << uniformMembers(p.variableFieldModes[d.fields[fixed[0]].first.set],
                         CompiledPlan::UniformEnabled | CompiledPlan::EnabledValue | CompiledPlan::IdentityMetric,
                         weighted("k*k*distance2"), weighted("dot(g,metric(member,g))"))
       << "}" << operatorReduce(T+2);
     s << "if(lane==0u){" << (solveHere ? "" : "live[team]=0u;") << "if(valid){"
-         "if(step.iteration==0u)storeMultiplier(r,0u,0.0);rowStore(anchor,4u,0.0);"
+         "if(step.iteration==0u)storeMultiplier(rm,0u,0.0);rowStore(anchor,4u,0.0);"
       << (lineSearch ? "" : "rowStore(anchor,0u,0.0);");
     for(uint32_t c=0;c<T;++c)s << "rowStore(anchor," << 6+c << "u,total[" << c+1 << "]);";
     // The line-search transpose stores the displacement outright.
     if (isolatedCorrection && !lineSearch) for(uint32_t c=0;c<T;++c)s << "rowStore(anchor," << 6+T+c << "u,0.0);";
     s << "if(relationEnabled(r)){";
     array(s,"x",n);array(s,"outerX",n+1);array(s,"c",1);
-    s << "loadInputs(r,logicalMember(anchor)," << extent() << "u,x);for(uint k=0u;k<" << n << "u;++k)outerX[k]=x[k];"
+    // The packed snapshot holds the anchor state; its owners need not publish
+    // the state between iterations.
+    s << "loadInputs(r,logicalMember(anchor)," << extent() << "u,x);{vec3 own=point(anchor);";
+    for(uint32_t c=0;c<T;++c)s << "x[" << input[fixed[0]]+c << "]=own[" << c << "];";
+    s << "}for(uint k=0u;k<" << n << "u;++k)outerX[k]=x[k];"
          "outerX[" << n << "]=total[0];outerValue(outerX,c);if(isnan(c[0])||isinf(c[0]))invalidEvaluation();else{";
     if(t.kind!=RelationKind::Equality)s << "if(!(c[0]" << (t.kind==RelationKind::GreaterEqual?">=":"<=") << "0.0&&multiplier[0]==0.0))";
     s << "{" << (solveHere ? "" : "live[team]=1u;") << (lineSearch ? "" : "rowStore(anchor,0u,1.0);") << "vec3 g=vec3(";
@@ -756,7 +778,7 @@ std::string Generator::operatorLinearize() const {
         // The step's linear term and compliance curvature are row-local; the
         // transpose adds the curvature of the displacement to these partials.
         s << "float a[1],rhs[1],dl[1],nextLambda[1];uint degree=1u;a[0]=diagonalValue;rhs[0]=residualValue;"
-          << solveAndProject("multiplier", false) << "rowStore(anchor,4u,dl[0]);"
+          << solveAndProject("multiplier", false, "rm") << "rowStore(anchor,4u,dl[0]);"
              "energy=vec2(residualValue*dl[0],alpha*dl[0]*dl[0]);}}}}}}" << groupEnergy()
           << "uint group=sumInvocation()/128u;if(local==0u&&group<" << quadraticCount << "u){x_sumData["
           << quadraticPartials << "u+group*2u]=floatBitsToUint(energy.x);x_sumData[" << quadraticPartials+1
@@ -909,14 +931,15 @@ void Generator::reduceQuadratic(SumDomain& out) {
 }
 
 OwnerPiece Generator::lineSearchPiece() const {
-    // Rows follow logical owners: the owner program and its stores are indexed
-    // that way, only the row values go through the permutation.
+    // The owner row is logical; the row values are stored at its slot, and so
+    // are the multipliers when slots are fixed for the substep they live in.
     std::ostringstream s;
     s << "vec2 quadratic=stepPartial[0];float weight=0.0;if(any(isnan(quadratic))||any(isinf(quadratic))){"
          "if(row==0u)invalidEvaluation();}else if(quadratic.y>0.0)weight=clamp(quadratic.x/quadratic.y,0.0,1.0);"
-         "uint anchor=x_sumData[" << ranks << "u+row];"
+         "uint anchor=slot;"
          // Linearization stored the full step lambda+dl; dl is zero on inactive rows.
-         "Relation r=relation(" << p.relations[set].first+d.first << "u+row);float dl=rowValue(anchor,4u);if(dl!=0.0)"
+         "Relation r=relation(" << p.relations[set].first+d.first << "u+" << (substepSlots() ? "slot" : "row")
+      << ");float dl=rowValue(anchor,4u);if(dl!=0.0)"
          "storeMultiplier(r,0u,loadMultiplier(r,0u)+(weight-1.0)*dl);"
          "Variable v=logicalVariable(row);vec3 q=point(anchor);";
     for(uint32_t c=0;c<T;++c)s << "ownedState[" << c << "]=q[" << c << "];";
@@ -934,6 +957,8 @@ OwnerPiece Generator::lineSearchPiece() const {
         operatorLibrary({})+emitGlsl(t.spaces[fixed[0]]->retract,"applyCorrection")+"shared vec2 stepPartial[128];",
         s.str(),pairSum("stepPartial",stepPartials,"0u",u(stepPartialCount))};
     piece.defines = true;
+    if (substepSlots()) piece.order = slotOrder();
+    piece.slot = rowSlot();
     return piece;
 }
 
@@ -1066,11 +1091,15 @@ void Generator::prepareIndex() {
         buckets *= 2;
     }
     heads = append(p, std::vector<uint32_t>(buckets + uint32_t(bool(factor))));
-    cells = append(p, std::vector<uint32_t>(size_t(extent())*8));
+    cells = append(p, std::vector<uint32_t>(size_t(extent())*8), 8);
     if (factor) {
-        grouped = append(p, std::vector<uint32_t>(size_t(extent())*4));
-        packedState = append(p, std::vector<uint32_t>(size_t(extent())*4));
-        ranks = append(p, std::vector<uint32_t>(extent()));
+        // Ranks are a permutation from the start: identity until the first build.
+        std::vector<uint32_t> identity(extent()), members(size_t(extent())*4);
+        std::iota(identity.begin(), identity.end(), 0u);
+        for (uint32_t i = 0; i < extent(); ++i) members[size_t(i)*4+3] = i;
+        grouped = append(p, members, 8);
+        packedState = append(p, std::vector<uint32_t>(size_t(extent())*4), 8);
+        ranks = append(p, identity);
         bucketEnds = append(p, std::vector<uint32_t>(buckets+1));
     }
     if (!factor) anchorFeatures = append(p, std::vector<uint32_t>(size_t(d.count)*3));
@@ -1078,15 +1107,16 @@ void Generator::prepareIndex() {
     // and stream members instead of reserving Capacity entries for every row.
     if (traversal.orderedRanges) {
         listedMembers = false;
-        neighbourCounts = append(p, std::vector<uint32_t>(d.count));
-        builtCounts = append(p, std::vector<uint32_t>(d.count));
+        neighbourCounts = append(p, std::vector<uint32_t>(d.count), 32);
+        builtCounts = append(p, std::vector<uint32_t>(d.count), 32);
         // The fourth word of a listed point marks an exception.
-        listedPoints = append(p, std::vector<uint32_t>(size_t(extent())*4));
+        listedPoints = append(p, std::vector<uint32_t>(size_t(extent())*4), 8);
         // The snapshot sizes the exception launch along x alone.
         exceptionCapacity = std::min(std::max(256u, d.count/8), 65535u*(128/ExceptionTeam));
         exceptions = append(p, std::vector<uint32_t>(exceptionCapacity+1));
         const auto rows = 128/traversal.reductionLanes;
-        neighbours = append(p, std::vector<uint32_t>(size_t((d.count+rows-1)/rows)*rows*NeighbourCapacity/2));
+        // A warp step reads one NeighbourChunk of a tile: one 128-byte line.
+        neighbours = append(p, std::vector<uint32_t>(size_t((d.count+rows-1)/rows)*rows*NeighbourCapacity/2), NeighbourChunk);
         p.statistics.candidateQueueCapacity += uint64_t(d.count)*NeighbourCapacity;
     } else if (factor) {
         // Storage grows with the relation, rather than assigning a fixed-width
@@ -1250,40 +1280,58 @@ void Generator::prepareIndex() {
             stage->launch = appendLaunch(p, stage->count);
             indexLaunches.push_back({stage->launch, launchGroups(stage->count)});
         }
-        // Every snapshot refreshes the packed state and reduces the motion of
-        // members from the positions they were indexed at. A member drifting
-        // half the skin from the position it was listed at becomes an
-        // exception. Squared thresholds in support radii; the stale-cell
-        // stencil certifies 2.4%.
+        // Every snapshot refreshes the packed state, reduces the distance of
+        // members from the cells they are indexed in, which bounds every later
+        // query, and requests a build once members moved far: from the
+        // positions they were indexed at, or for ordered ranges from those they
+        // were listed at. A member drifting half the skin from its listed
+        // position becomes an exception. Squared thresholds in support radii;
+        // the stale-cell stencil certifies 2.4%.
         const float indexMotion = traversal.orderedRanges ? IndexMotion*IndexMotion : 0.000576f;
         const float listMotion = 0.499f*NeighbourSkin*0.499f*NeighbourSkin;
-        auto motion = [&](const std::string& member, const std::function<std::string(uint32_t)>& component) {
+        auto motion = [&](const std::string& member, const std::string& rank,
+                          const std::function<std::string(uint32_t)>& component) {
             // The packed state is disjoint from every word read here. Loading
-            // first keeps the reads from waiting on the stores.
+            // first keeps the reads from waiting on the stores. Ordered ranks
+            // read their cell from the rank-ordered record an ordered owner
+            // reads anyway, and measure motion from the listed point.
+            const bool ordered = traversal.orderedRanges;
             std::ostringstream m;
-            m << std::setprecision(9) << "uint rank=x_sumData[" << ranks << "u+" << member << "],at="
-              << packedState << "u+rank*4u,old=" << cells+4 << "u+" << member << "*8u;bool invalid=" << invalidIndex
-              << ";float support2=uintBitsToFloat(x_sumData[" << header << "u]);vec3 indexed=vec3(0);";
-            for (uint32_t c=0;c<T;++c)
-                m << "indexed[" << c << "]=uintBitsToFloat(x_sumData[old+" << c << "u]);";
-            if (traversal.orderedRanges) {
+            m << std::setprecision(9) << "uint rank=" << rank << ",at=" << packedState << "u+rank*4u,cellAt="
+              << (ordered ? u(grouped) + "+rank*4u" : u(cells) + "+" + member + "*8u") << ";bool invalid=" << invalidIndex
+              << ";float support2=uintBitsToFloat(x_sumData[" << header << "u]);";
+            if (ordered) {
                 m << "uint listed=" << listedPoints << "u+rank*4u,listedFlag=x_sumData[listed+3u];vec3 drift=vec3(0);";
                 for (uint32_t c=0;c<T;++c)
                     m << "drift[" << c << "]=" << component(c) << "-uintBitsToFloat(x_sumData[listed+" << c << "u]);";
+            } else {
+                m << "vec3 indexed=vec3(0),delta=vec3(0);";
+                for (uint32_t c=0;c<T;++c)
+                    m << "indexed[" << c << "]=uintBitsToFloat(x_sumData[cellAt+" << 4+c << "u]);";
             }
             for (uint32_t c=0;c<3;++c)
                 m << "x_sumData[at+" << c << "u]=floatBitsToUint(" << (c<T?component(c):"0.0") << ");";
-            m << "if(invalid){atomicOr(snapshotChanged,1u);return;}vec3 delta=vec3(0);";
-            for (uint32_t c=0;c<T;++c)
-                m << "delta[" << c << "]=" << component(support->coordinates[c].second%T) << "-indexed[" << c << "];";
-            m << "float motion=dot(delta,delta);if(!(motion<="
-              << indexMotion << "*support2))atomicOr(snapshotChanged,1u);atomicMax(snapshotReach,isnan(motion)||isinf(motion)?"
-                 "0x7f7fffffu:floatBitsToUint(motion));";
-            if (traversal.orderedRanges) {
+            m << "if(invalid){atomicOr(snapshotChanged,1u);return;}vec3 outside=vec3(0);"
+                 "float width=" << cellScale << "*sqrt(uintBitsToFloat(x_sumData[" << header+4 << "u]));";
+            // Queries reach every cell within the support plus the largest
+            // distance of a member from the cell it is indexed in; a clamped
+            // border cell is unbounded outwards.
+            for (uint32_t c=0;c<T;++c) {
+                const auto value = component(support->coordinates[c].second%T);
+                if (!ordered) m << "delta[" << c << "]=" << value << "-indexed[" << c << "];";
+                m << "{int cell=int(x_sumData[cellAt+" << c << "u]);float lo=float(cell)*width;outside[" << c
+                  << "]=max(0.0,max(cell>-262144?lo-" << value << ":0.0,cell<262144?" << value << "-lo-width:0.0));}";
+            }
+            m << "float motion=" << (ordered ? "dot(drift,drift)" : "dot(delta,delta)") << ",reach=dot(outside,outside);"
+                 "if(!(motion<=" << indexMotion << "*support2)";
+            if (ordered) m << "||!(reach<=" << indexMotion << "*support2)";
+            m << ")atomicOr(snapshotChanged,1u);atomicMax(snapshotReach,isnan(reach)||isinf(reach)?"
+                 "0x7f7fffffu:floatBitsToUint(reach));";
+            if (ordered) {
                 m << "if(!(dot(drift,drift)<=" << listMotion << "*support2)&&listedFlag==0u){"
-                     "x_sumData[listed+3u]=1u;uint slot=atomicAdd(x_sumData[" << exceptions << "u],1u);if(slot<"
-                  << exceptionCapacity << "u){x_sumData[" << exceptions+1 << "u+slot]=rank;atomicMax(x_launches["
-                  << exceptionLaunch << "u],slot/" << 128/ExceptionTeam << "u+1u);}else atomicOr(snapshotListed,1u);}";
+                     "x_sumData[listed+3u]=1u;uint entry=atomicAdd(x_sumData[" << exceptions << "u],1u);if(entry<"
+                  << exceptionCapacity << "u){x_sumData[" << exceptions+1 << "u+entry]=rank;atomicMax(x_launches["
+                  << exceptionLaunch << "u],entry/" << 128/ExceptionTeam << "u+1u);}else atomicOr(snapshotListed,1u);}";
             }
             return m.str();
         };
@@ -1293,15 +1341,19 @@ void Generator::prepareIndex() {
             launchStores(indexLaunches,true)+"}if(snapshotReach!=0u)atomicMax(x_sumData["+
             u(header+16)+"],snapshotReach);if(snapshotListed!=0u){"+launchStores(rowLaunches,true)+"}}";
         const auto shared = "shared uint snapshotChanged,snapshotReach,snapshotListed;";
-        s << source << shared << "void snapshotMember(uint i){vec3 f=currentPoint(i);"
-          << motion("i",[](uint32_t c) { return "f["+std::to_string(c)+"]"; }) << "}void main(){uint i=invocation();"
-          << groupBegin << "if(i<" << extent() << "u)snapshotMember(i);" << groupEnd << "}";
+        // Members are visited in their indexed order, so the packed stores coalesce.
+        s << source << shared << "void snapshotMember(uint i,uint slot){vec3 f=currentPoint(i);"
+          << motion("i","slot",[](uint32_t c) { return "f["+std::to_string(c)+"]"; })
+          << "}void main(){uint slot=invocation();"
+          << groupBegin << "if(slot<" << extent() << "u)snapshotMember(" << slotOrder() << ",slot);" << groupEnd << "}";
         index[0].source = s.str(); s.str(""); s.clear();
         const auto& field = d.fields[fixed[0]];
-        s << shared << "void snapshotCollection(uint member,float state[" << T << "]){"
-          << motion("member",[](uint32_t c) { return "state["+std::to_string(c)+"]"; }) << "}";
+        s << shared << "void snapshotCollection(uint member,uint slot,float state[" << T << "]){"
+          << motion("member","slot",[](uint32_t c) { return "state["+std::to_string(c)+"]"; }) << "}";
         snapshot = OwnerPiece{p.variables[field.first.set].first+field.first.index,d.count,field.stride,T,
-                              s.str(),"snapshotCollection(row,ownedState);",groupBegin,groupEnd};
+                              s.str(),"snapshotCollection(row,slot,ownedState);",groupBegin,groupEnd};
+        if (substepSlots()) snapshot->order = slotOrder();
+        snapshot->slot = rowSlot();
         return;
     }
     s << "void main(){" << skipUnchangedIndex() << "uint i=invocation();if(i<"
@@ -1795,11 +1847,11 @@ std::string Generator::generate(const Formula& formula, bool update, bool activi
     return s.str();
 }
 
-std::string Generator::solveAndProject(const std::string& multipliers, bool exits) const {
+std::string Generator::solveAndProject(const std::string& multipliers, bool exits, const std::string& relation) const {
     std::ostringstream s;
     s << solveBlock(M);
     for(uint32_t row=0;row<M;++row) {
-        const auto multiplier = multipliers.empty() ? "loadMultiplier(r,"+u(row)+")" :
+        const auto multiplier = multipliers.empty() ? "loadMultiplier("+relation+","+u(row)+")" :
             multipliers+"["+std::to_string(row)+"]";
         std::string candidate=multiplier+"+rhs["+std::to_string(row)+"]*step.relaxation/float(degree)";
         if(t.kind==RelationKind::GreaterEqual) candidate="max(0.0,"+candidate+")";
@@ -1810,7 +1862,7 @@ std::string Generator::solveAndProject(const std::string& multipliers, bool exit
     if (exits) s << "for(uint k=0u;k<" << M << "u;++k)if(" << invalid << "){invalidEvaluation();return;}";
     else s << "bool solved=true;for(uint k=0u;k<" << M << "u;++k)solved=solved&&!(" << invalid
            << ");if(!solved)invalidEvaluation();else{";
-    for(uint32_t row=0;row<M;++row) s << "storeMultiplier(r," << row << "u,nextLambda[" << row << "]);";
+    for(uint32_t row=0;row<M;++row) s << "storeMultiplier(" << relation << "," << row << "u,nextLambda[" << row << "]);";
     return s.str();
 }
 

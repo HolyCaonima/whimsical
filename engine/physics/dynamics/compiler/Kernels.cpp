@@ -32,11 +32,8 @@ std::string endpointAccess(uint32_t slot, int32_t mode) {
         return "linearEndpoint(r," + index + ")";
     return "endpoint(r," + index + "," + std::to_string(mode) + ")";
 }
-void relationInputs(std::ostringstream& s, const RelationType& t, int32_t endpointMode,
-                    bool mappedEndpoints = false, bool loadInputs = true) {
-    const auto n = t.inputSize();
-    if (loadInputs)
-        local(s, "x", n);
+// Decodes the endpoint ids and variable records of relation r.
+void relationEndpoints(std::ostringstream& s, const RelationType& t, int32_t endpointMode, bool mappedEndpoints = false) {
     if (endpointMode > 0) {
         const auto map = endpointMode - 1;
         s << "uint endpointAt=r.e&0x7fffffffu;\n";
@@ -45,7 +42,6 @@ void relationInputs(std::ostringstream& s, const RelationType& t, int32_t endpoi
                  "x_endpoints[endpointAt+3u]," << map << "u);"
                  "uint endpointLeft=endpointMembers.x,endpointRight=endpointMembers.y;\n";
     }
-    uint32_t offset = 0;
     for (uint32_t e = 0; e < t.spaces.size(); ++e) {
         s << "uint id" << e << "=";
         if (endpointMode > 0) {
@@ -56,20 +52,30 @@ void relationInputs(std::ostringstream& s, const RelationType& t, int32_t endpoi
         } else
             s << endpointAccess(e, endpointMode);
         s << "; Variable v" << e << "=variable(id" << e << ");\n";
-        if (loadInputs)
-            for (uint32_t c = 0; c < t.spaces[e]->stateSize; ++c)
-                s << "x[" << offset + c << "]=loadEndpointValue(v" << e << "," << c << "u," << e << "u);\n";
+    }
+}
+// Loads the formula inputs of relation r from decoded endpoints.
+void endpointInputs(std::ostringstream& s, const RelationType& t) {
+    const auto n = t.inputSize();
+    local(s, "x", n);
+    uint32_t offset = 0;
+    for (uint32_t e = 0; e < t.spaces.size(); ++e) {
+        for (uint32_t c = 0; c < t.spaces[e]->stateSize; ++c)
+            s << "x[" << offset + c << "]=loadEndpointValue(v" << e << "," << c << "u," << e << "u);\n";
         offset += t.spaces[e]->stateSize;
     }
-    if (loadInputs)
-        for (uint32_t i = 0; i < t.parameters; ++i)
-            s << "x[" << offset + i << "]=loadParameter(r," << i << "u);\n";
+    for (uint32_t i = 0; i < t.parameters; ++i)
+        s << "x[" << offset + i << "]=loadParameter(r," << i << "u);\n";
     offset += t.parameters;
-    if (loadInputs) {
-        for (uint32_t i = 0; i < t.history; ++i)
-            s << "x[" << offset + i << "]=loadHistory(r," << i << "u);\n";
-        s << "x[" << n - 2 << "]=h; x[" << n - 1 << "]=time;\n";
-    }
+    for (uint32_t i = 0; i < t.history; ++i)
+        s << "x[" << offset + i << "]=loadHistory(r," << i << "u);\n";
+    s << "x[" << n - 2 << "]=h; x[" << n - 1 << "]=time;\n";
+}
+void relationInputs(std::ostringstream& s, const RelationType& t, int32_t endpointMode,
+                    bool mappedEndpoints = false, bool loadInputs = true) {
+    relationEndpoints(s, t, endpointMode, mappedEndpoints);
+    if (loadInputs)
+        endpointInputs(s, t);
 }
 } // namespace
 KernelFunction variableFunction(
@@ -261,8 +267,24 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
                 singleJacobian = std::move(composed);
         }
     }
-    s << "void " << name
-      << "(uint id,float h,float time,float relaxation,float inverseH2,uint iteration){Relation r=relation(id);\n";
+    // The body takes decoded endpoints; callers that know them statically
+    // pass them directly, the entry decodes them from the relation record.
+    s << "void " << name << "_endpoints(Relation r";
+    for (uint32_t e = 0; e < t.spaces.size(); ++e)
+        s << ",uint id" << e << ",Variable v" << e;
+    s << ",float h,float time,float relaxation,float inverseH2,uint iteration){\n";
+    const auto finish = [&](bool writesContributions) {
+        s << "void " << name << "(uint id,float h,float time,float relaxation,float inverseH2,uint iteration){"
+             "Relation r=relation(id);\n";
+        relationEndpoints(s, t, endpointMode);
+        s << name << "_endpoints(r";
+        for (uint32_t e = 0; e < t.spaces.size(); ++e)
+            s << ",id" << e << ",v" << e;
+        s << ",h,time,relaxation,inverseH2,iteration);}\n";
+        KernelFunction function{name, s.str(), BufferRole::RelationWork, writesContributions};
+        function.endpointEntry = name + "_endpoints";
+        return function;
+    };
     // A relation owns its multiplier rows and is scheduled exactly once per
     // iteration. Initialize them in its first solve to avoid a full-buffer pass.
     if (!update && !activityChecked)
@@ -272,7 +294,7 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
         for (uint32_t c = 0; c < D; ++c)
             s << "storeContribution(r," << c << "u,0.0);\n";
     s << "if(!relationEnabled(r))return;\n";
-    relationInputs(s, t, endpointMode);
+    endpointInputs(s, t);
     if (update) {
         local(s, "nextHistory", t.history);
         s << name << "_commitHistory(x,nextHistory);\n";
@@ -280,7 +302,7 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
         for (uint32_t c = 0; c < t.history; ++c)
             s << "storeHistory(r," << c << "u,nextHistory[" << c << "]);\n";
         s << "}\n";
-        return {name, s.str(), BufferRole::RelationWork};
+        return finish(false);
     }
     local(s, "c", M);
     if (!residualConstants)
@@ -566,7 +588,7 @@ KernelFunction relationFunction(const RelationType& t, const std::vector<bool>& 
         vo += T;
     }
     s << "}\n";
-    return {name, s.str(), BufferRole::RelationWork, jacobi};
+    return finish(jacobi);
 }
 KernelFunction relationActivityFunction(const RelationType& t, const std::vector<bool>& readOnly,
                                        int32_t endpointMode, const std::string& name, bool countDegrees,
@@ -814,7 +836,7 @@ void storeEndpointValue(Variable v,uint c,uint slot,float value){storeValue(v,c,
     return s.str();
 }
 std::string ownerKernel(const std::string& owner, const std::vector<const OwnerPiece*>& pieces, uint32_t width,
-                        uint32_t ownedRows) {
+                        uint32_t ownedRows, bool ordered, bool publish) {
     std::ostringstream s;
     s << stateAccess(StateStorage::Owner, width, false, ownedRows);
     std::vector<const std::string*> sources;
@@ -823,14 +845,22 @@ std::string ownerKernel(const std::string& owner, const std::vector<const OwnerP
             sources.push_back(&piece->source);
             s << piece->source;
         }
-    s << "void main(){uint row=invocation();";
+    const auto physical = std::find_if(pieces.begin(), pieces.end(), [&](auto piece) {
+        return !(ordered ? piece->order : piece->slot).empty();
+    });
+    s << "void main(){uint " << (ordered ? "slot" : "row") << "=invocation();";
     for (auto piece : pieces) s << piece->groupBegin;
-    s << "if(row<step.count){stateOwner=" << owner << ";Variable owner=variable(stateOwner);";
+    s << "if(" << (ordered ? "slot" : "row") << "<step.count){";
+    if (ordered)
+        s << "uint row=" << (*physical)->order << ";";
+    else if (physical != pieces.end())
+        s << "uint slot=" << (*physical)->slot << ";";
+    s << "stateOwner=" << owner << ";Variable owner=variable(stateOwner);";
     if (!pieces.front()->defines)
         for (uint32_t c = 0; c < width; ++c)
             s << "ownedState[" << c << "]=x_q[owner.q+" << c << "u*owner.stride];";
     for (auto piece : pieces) s << "{" << piece->body << "}";
-    for (uint32_t c = 0; c < width; ++c)
+    for (uint32_t c = 0; publish && c < width; ++c)
         s << "x_q[owner.q+" << c << "u*owner.stride]=ownedState[" << c << "];";
     s << "}";
     for (auto piece : pieces) s << piece->groupEnd;

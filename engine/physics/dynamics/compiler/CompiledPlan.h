@@ -105,6 +105,9 @@ struct OwnerPiece {
     std::string groupBegin, groupEnd;
     // The body defines the whole owner state without reading it.
     bool defines = false;
+    // A physical owner order: slot -> row, and row -> slot. The body may use
+    // slot; an ordered composite visits owners by slot instead of by row.
+    std::string order, slot;
 };
 struct Kernel {
     std::string name, source; // local_size and main; runtime supplies the resource interface

@@ -28,6 +28,43 @@ void store(BufferData& data, const std::vector<uint32_t>& values) {
     data.words = values.size();
     data.fills.clear();
 }
+// A column of values affine in the row, as its formula.
+std::optional<std::string> affineColumn(const std::vector<uint32_t>& values, const std::string& row) {
+    const auto base = int64_t(values[0]), stride = values.size() > 1 ? int64_t(values[1]) - base : 0;
+    if (stride < 0)
+        return {};
+    for (size_t i = 0; i < values.size(); ++i)
+        if (int64_t(values[i]) != base + stride * int64_t(i))
+            return {};
+    return std::to_string(base) + "u" + (stride ? "+" + row + "*" + std::to_string(stride) + "u" : "");
+}
+// Decoded endpoint arguments for a column of relations whose endpoint ids and
+// variable records are affine in the row. Flags, modes and storage addresses
+// of the endpoints then become facts of the program text.
+std::optional<std::string> endpointArguments(const CompiledPlan& p, const std::vector<uint32_t>& records,
+                                             const std::vector<uint32_t>& relations, const std::string& row) {
+    constexpr uint32_t RecordWords = 6;
+    std::string arguments;
+    std::vector<uint32_t> ids(relations.size()), column(relations.size());
+    for (uint32_t slot = 0; slot < p.types[p.relationType(relations[0])]->spaces.size(); ++slot) {
+        for (size_t i = 0; i < relations.size(); ++i)
+            ids[i] = p.endpoint(relations[i], slot);
+        const auto id = affineColumn(ids, row);
+        if (!id)
+            return {};
+        arguments += "," + *id + ",Variable(";
+        for (uint32_t c = 0; c < RecordWords; ++c) {
+            for (size_t i = 0; i < ids.size(); ++i)
+                column[i] = records[size_t(ids[i]) * RecordWords + c];
+            const auto value = affineColumn(column, row);
+            if (!value)
+                return {};
+            arguments += *value + ",";
+        }
+        arguments += *id + ")";
+    }
+    return arguments;
+}
 uint64_t dispatchCount(const CompiledPlan& p) {
     auto count = [](const std::vector<Batch>& batches) {
         return uint64_t(std::count_if(batches.begin(), batches.end(), [](const Batch& b) { return b.count; }));
@@ -38,7 +75,8 @@ uint64_t dispatchCount(const CompiledPlan& p) {
                                                 [](const Batch& b) { return b.count && b.substep; }));
     return p.policy.substeps *
            (count(p.predict) + p.policy.iterations * (count(p.solve) - substep + count(p.apply) + count(p.iteration)) +
-            substep + count(p.recover) + count(p.update) - (p.iterationJoin ? p.policy.iterations-1 : 0));
+            substep + count(p.recover) + count(p.update) -
+            (p.iterationJoin && !p.solve.front().substep ? p.policy.iterations-1 : 0));
 }
 struct Components {
     std::vector<uint32_t> parent, size;
@@ -303,8 +341,13 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
     const auto pieceCall = [](const KernelFunction& function, const std::string& id, const std::string& iteration) {
         return function.entry + "(" + id + ",step.h,step.time,step.relaxation,1.0/(step.h*step.h)," + iteration + ");";
     };
+    const auto records = words(p.buffers[size_t(BufferRole::Variables)]);
+    size_t summedDomains = 0;
+    for (const auto& binding : p.bindings)
+        for (const auto& domain : binding.domains)
+            summedDomains += domain.summedObject >= 0;
     std::vector<Batch> stages;
-    bool snapshotted = false;
+    bool snapshotted = false, reordered = false;
     std::optional<uint32_t> tailKernel;
     for (const auto& [signature, owners] : recipes) {
         const auto width = p.spaces[signature[0]]->stateSize;
@@ -328,6 +371,20 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
             return same;
         };
         auto rows = [&](size_t call) { return p.types[p.relationType(chainRow(owners[0], call-1))]->rows; };
+        // Calls whose endpoints are affine in the owner row skip the decode.
+        std::vector<std::optional<std::string>> endpoints(signature.size());
+        for (size_t call = 1; call < signature.size(); ++call) {
+            std::vector<uint32_t> relations;
+            for (auto owner : owners) relations.push_back(chainRow(owner, call-1));
+            endpoints[call] = endpointArguments(p, records, relations, "row");
+        }
+        auto relationCall = [&](const KernelFunction& function, size_t call, const std::string& id,
+                                const std::string& relation, const std::string& iteration) {
+            if (function.endpointEntry.empty() || !endpoints[call])
+                return pieceCall(function, id, iteration);
+            return function.endpointEntry + "(" + relation + *endpoints[call] +
+                ",step.h,step.time,step.relaxation,1.0/(step.h*step.h)," + iteration + ");";
+        };
         uint32_t ownedRows = 1;
         std::string chainSource;
         std::set<uint32_t> emitted;
@@ -339,20 +396,24 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
         // one chain own disjoint multiplier rows; they stay in registers across
         // the calls and are written back where a call stored them, so no load
         // waits on an earlier call's store.
-        auto chain = [&](const std::string& iteration) {
+        // Over a physical owner order, the multiplier rows of each owned relation
+        // are stored at its slot: they live within one substep of fixed slots.
+        auto chain = [&](const std::string& iteration, bool ordered) {
             std::ostringstream s;
             for (size_t call = 1; call < signature.size(); ++call) {
                 s << "uint call" << call << "=" << column(call, "row") << ";Relation owned" << call << "=relation(call"
-                  << call << ");";
+                  << call << ");Relation stored" << call << "=" << (ordered ? "relation(" + column(call, "slot") + ")" :
+                                                                   "owned" + std::to_string(call)) << ";";
                 for (uint32_t c = 0; c < rows(call); ++c)
-                    s << "float multiplier" << call << "_" << c << "=globalMultiplier(owned" << call << "," << c << "u);";
+                    s << "float multiplier" << call << "_" << c << "=globalMultiplier(stored" << call << "," << c << "u);";
             }
             for (size_t call = 1; call < signature.size(); ++call) {
                 s << "ownedRelation=call" << call << ";";
                 for (uint32_t c = 0; c < rows(call); ++c)
                     s << "ownedMultiplier[" << c << "]=multiplier" << call << "_" << c << ";ownedWritten[" << c
                       << "]=false;";
-                s << pieceCall(functions[signature[call]], "call" + std::to_string(call), iteration);
+                s << relationCall(functions[signature[call]], call, "call" + std::to_string(call),
+                                  "owned" + std::to_string(call), iteration);
                 for (uint32_t c = 0; c < rows(call); ++c)
                     s << "float next" << call << "_" << c << "=ownedMultiplier[" << c << "];bool written" << call << "_"
                       << c << "=ownedWritten[" << c << "];";
@@ -360,14 +421,14 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
             s << "ownedRelation=0xffffffffu;";
             for (size_t call = 1; call < signature.size(); ++call)
                 for (uint32_t c = 0; c < rows(call); ++c)
-                    s << "if(written" << call << "_" << c << ")publishMultiplier(owned" << call << "," << c << "u,next"
+                    s << "if(written" << call << "_" << c << ")publishMultiplier(stored" << call << "," << c << "u,next"
                       << call << "_" << c << ");";
             return OwnerPiece{0, count, 1, width, chainSource, s.str()};
         };
-        auto compose = [&](const char* name, const std::vector<OwnerPiece>& pieces) {
+        auto compose = [&](const char* name, const std::vector<OwnerPiece>& pieces, bool ordered = false) {
             std::vector<const OwnerPiece*> order;
             for (const auto& piece : pieces) order.push_back(&piece);
-            p.kernels.push_back({name, ownerKernel(column(0, "row"), order, width, ownedRows)});
+            p.kernels.push_back({name, ownerKernel(column(0, "row"), order, width, ownedRows, ordered, !ordered)});
             return uint32_t(p.kernels.size() - 1);
         };
         snapshotted = recipes.size() == 1 && colored < p.solve.size() && matches(p.kernels[p.solve[colored].kernel].owner);
@@ -378,15 +439,25 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
         const bool produced = recipes.size() == 1 && matches(output) && output->defines;
         const bool rotated = produced && p.policy.iterations > 1 && empty(p.apply) && empty(p.iteration);
         const bool single = rotated || p.policy.iterations == 1;
+        // The head and the join of a rotated loop visit the owners in the
+        // physical order of their collection index, so every per-iteration
+        // write is coalesced. One order then holds from the head's multiplier
+        // reset onwards: the index stages run before the head, after a
+        // snapshot of the predicted state. The only summed domain reads its
+        // owners from its own snapshot, so their state is published once, by
+        // the last stage of the substep.
+        const bool ordered = rotated && snapshotted && summedDomains == 1 && !output->order.empty() &&
+                             !p.kernels[p.solve[colored].kernel].owner->order.empty();
         // A matching pointwise consumer of the chain shares its invocation. A
         // head that runs once per substep is the instance of iteration zero.
-        std::vector<OwnerPiece> head{chain(single ? "0u" : "step.iteration")};
+        std::vector<OwnerPiece> head{chain(single ? "0u" : "step.iteration", ordered)};
         if (snapshotted) head.push_back(*p.kernels[p.solve[colored].kernel].owner);
         if (rotated) {
             auto joined = head;
-            joined.front() = chain("step.iteration+1u");
+            joined.front() = chain("step.iteration+1u", ordered);
             joined.insert(joined.begin(), *output);
-            p.iterationJoin = Batch{compose("Advance owner iteration", joined), p.solve.back().first, p.solve.back().count};
+            p.iterationJoin = Batch{compose("Advance owner iteration", joined, ordered), p.solve.back().first,
+                                    p.solve.back().count};
         }
         // Once the last stage runs once per substep, the pointwise recover and
         // history commits of its owners follow it on the same invocation.
@@ -405,13 +476,28 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
                 const auto commit = extract(p.update, BufferRole::RelationWork, work, relations);
                 if (commit != UINT32_MAX)
                     finish.push_back({0, count, 1, width, functions[commit].source,
-                                      pieceCall(functions[commit], column(call, "row"), "0u")});
+                                      relationCall(functions[commit], call, column(call, "row"),
+                                                   "relation(" + column(call, "row") + ")", "0u")});
             }
         }
         if (tail.size() > 1) tailKernel = compose("Finish owner substep", tail);
-        stages.push_back({compose("Solve owned relation chain", head), first, count, p.solve[colored-1].color});
+        stages.push_back({compose("Solve owned relation chain", head, ordered), first, count, p.solve[colored-1].color});
+        if (ordered) {
+            // The snapshot of the predicted state, the index, then the head.
+            auto headStage = stages.back();
+            headStage.substep = true;
+            stages.back() = p.solve[colored];
+            stages.back().substep = true;
+            for (auto stage = p.solve.begin()+colored+1; stage != p.solve.end(); ++stage)
+                if (stage->substep) stages.push_back(*stage);
+            stages.push_back(headStage);
+            for (auto stage = p.solve.begin()+colored+1; stage != p.solve.end(); ++stage)
+                if (!stage->substep) stages.push_back(*stage);
+            reordered = true;
+        }
     }
-    stages.insert(stages.end(), p.solve.begin()+colored+uint32_t(snapshotted), p.solve.end());
+    if (!reordered)
+        stages.insert(stages.end(), p.solve.begin()+colored+uint32_t(snapshotted), p.solve.end());
     if (tailKernel) stages.back().kernel = *tailKernel;
     p.solve = std::move(stages);
     store(p.buffers[size_t(BufferRole::RegionRanges)], ranges);
