@@ -126,7 +126,7 @@ struct Generator {
     uint32_t header = 0, heads = 0, cells = 0, buckets = 0, lists = 0, memberRecords = 0, anchorFeatures = 0;
     // The physical permutation belongs to the candidate relation. Public DOF
     // and relation IDs remain stable; all reduction consumers share this order.
-    uint32_t grouped = 0, packedState = 0, ranks = 0, bucketEnds = 0, bucketCursors = 0;
+    uint32_t grouped = 0, packedState = 0, ranks = 0, bucketEnds = 0;
     static constexpr uint32_t Capacity = 128;
     static constexpr uint32_t LinearTeam = 32;
     uint32_t operatorTeam = 8;
@@ -573,30 +573,26 @@ std::string Generator::ballMembers(const std::string& body, float scale, BallSca
     s << ");float support2=" << scale*scale << "*uintBitsToFloat(x_sumData[" << header << "u]);q.width=" << cellScale
       << "*sqrt(uintBitsToFloat(x_sumData[" << header+4 << "u]));q.reach=(sqrt(support2)+sqrt(uintBitsToFloat(x_sumData["
       << header+16 << "u])))*1.0001+2e-6*max(max(abs(q.key.x),abs(q.key.y)),abs(q.key.z));"
-         "vec3 lower=clamp(floor((q.key-q.reach)/q.width),vec3(-262145.0),vec3(262145.0)),"
-         "upper=clamp(floor((q.key+q.reach)/q.width),vec3(-262145.0),vec3(262145.0));";
+         "vec3 lower=clamp(floor((q.key-q.reach)/q.width),vec3(-262144.0),vec3(262144.0)),"
+         "upper=clamp(floor((q.key+q.reach)/q.width),vec3(-262144.0),vec3(262144.0));";
     for(uint32_t c=dims;c<3;++c)s << "lower[" << c << "]=0.0;upper[" << c << "]=0.0;";
     s << "q.size=uvec3(";
     for(uint32_t c=0;c<3;++c)s << (c?",":"") << "x_sumData[" << header+13+c << "u]";
     s << ");q.origin=ivec3(";
     for(uint32_t c=0;c<3;++c)s << (c?",":"") << "int(x_sumData[" << header+7+c << "u]^0x80000000u)";
-    s << ");q.dense=q.size.x!=0u;vec3 span=upper-lower+1.0;q.full=x_sumData[" << header+2
-      << "u]!=0u||!q.dense&&!(span.x*span.y*span.z<=" << extent() << ".0);q.lo=ivec3(lower);q.hi=ivec3(upper);"
-         "if(q.dense){q.lo=max(q.lo,q.origin);q.hi=min(q.hi,q.origin+ivec3(q.size)-1);}"
+    s << ");ivec3 bound=ivec3(";
+    for(uint32_t c=0;c<3;++c)s << (c?",":"") << "int(x_sumData[" << header+10+c << "u]^0x80000000u)";
+    // Rows of a wrapped axis are distinct only within one period.
+    s << ");q.lo=max(ivec3(lower),q.origin);q.hi=min(ivec3(upper),bound);q.split=bound.x-q.origin.x>=int(q.size.x)?1u:0u;"
+         "q.full=x_sumData[" << header+2 << "u]!=0u||q.hi.z-q.lo.z>=int(q.size.z)||q.hi.y-q.lo.y>=int(q.size.y);"
          "uint count=ballIntervals(q),seen=0u;";
-    // Hashed buckets mix cells, so their members are checked against the
-    // cell; that rare fallback scans its intervals one by one.
-    const auto scan = [&](const std::string& check) {
-        return "for(uint member=range.x+(lane+REDUCTION_TEAM-seen%REDUCTION_TEAM)%REDUCTION_TEAM;member<range.y;"
-               "member+=REDUCTION_TEAM){" + check + "vec3 delta=query-point(member);float distance2=dot(delta,delta);"
-               "if(distance2>1.00001*support2||!accepts(anchor,member))continue;"
-               "uint entry=0xffffffffu;const bool inside=true;" + body + "}seen+=range.y-range.x;";
-    };
-    const auto hashedCell = [](const std::string& index) {
-        return "if(!q.dense&&!q.full&&any(notEqual(groupedCell(member),ballCell(q," + index + "))))continue;";
-    };
+    const auto scan =
+        "for(uint member=range.x+(lane+REDUCTION_TEAM-seen%REDUCTION_TEAM)%REDUCTION_TEAM;member<range.y;"
+        "member+=REDUCTION_TEAM){vec3 delta=query-point(member);float distance2=dot(delta,delta);"
+        "if(distance2>1.00001*support2||!accepts(anchor,member))continue;"
+        "uint entry=0xffffffffu;const bool inside=true;" + body + "}seen+=range.y-range.x;";
     if (mode == BallScan::Serial) {
-        s << "for(uint index=0u;index<count;++index){uvec2 range=ballInterval(q,index);" << scan(hashedCell("index")) << "}}";
+        s << "for(uint index=0u;index<count;++index){uvec2 range=ballInterval(q,index);" << scan << "}}";
         return s.str();
     }
     if (mode == BallScan::Workgroup) {
@@ -607,41 +603,43 @@ std::string Generator::ballMembers(const std::string& body, float scale, BallSca
              "ballPrefix[chunk]=sum;}barrier();"
              "uint total=ballPrefix[chunk];for(uint candidate=lane;candidate<total;candidate+=128u){uint lo=0u,hi=chunk;"
              "while(hi-lo>1u){uint mid=(lo+hi)/2u;if(ballPrefix[mid]<=candidate)lo=mid;else hi=mid;}"
-             "uint member=ballRanges[lo].x+candidate-ballPrefix[lo];" << hashedCell("first+lo")
-          << "vec3 delta=query-point(member);float distance2=dot(delta,delta);"
+             "uint member=ballRanges[lo].x+candidate-ballPrefix[lo];"
+             "vec3 delta=query-point(member);float distance2=dot(delta,delta);"
              "if(distance2>1.00001*support2||!accepts(anchor,member))continue;"
              "uint entry=0xffffffffu;const bool inside=true;" << body << "}}}";
         return s.str();
     }
-    s << "if(q.dense||q.full){for(uint first=0u;first<count;first+=REDUCTION_TEAM){"
+    s << "for(uint first=0u;first<count;first+=REDUCTION_TEAM){"
          "\n#ifdef DYNAMICS_SUBGROUP32\nuvec2 located=first+lane<count?ballInterval(q,first+lane):uvec2(0u);\n#endif\n"
          "for(uint index=first;index<min(count,first+REDUCTION_TEAM);++index){"
          "\n#ifdef DYNAMICS_SUBGROUP32\nuvec2 range=subgroupShuffle(located,gl_SubgroupInvocationID-lane+index-first);"
          "\n#else\nuvec2 range=ballInterval(q,index);\n#endif\n"
-      << scan("") << "}}}else for(uint index=0u;index<count;++index){uvec2 range=ballInterval(q,index);"
-      << scan("if(any(notEqual(groupedCell(member),ballCell(q,index))))continue;") << "}}";
+      << scan << "}}}";
     return s.str();
 }
 
 std::string Generator::ballIntervals() const {
-    // Intervals of a ball query: one per clipped (z,y) row of a dense
-    // ordering, one per cell of a hashed index, or the whole member range.
+    // Intervals of a ball query: the clipped x range of each (z,y) row of the
+    // ordering, or the whole member range. A row of a wrapped axis is one row
+    // of the bucket table; a range crossing the wrap of x takes two parts.
+    // A wrapped bucket mixes cells, which the exact distance test separates.
     std::ostringstream s;
-    s << "struct BallQuery{vec3 key;float width,reach;ivec3 lo,hi,origin;uvec3 size;bool dense,full;};\n"
+    s << "struct BallQuery{vec3 key;float width,reach;ivec3 lo,hi,origin;uvec3 size;uint split;bool full;};\n"
          "uint ballIntervals(BallQuery q){if(q.full)return 1u;if(any(lessThan(q.hi,q.lo)))return 0u;"
-         "return uint(q.hi.z-q.lo.z+1)*uint(q.hi.y-q.lo.y+1)*(q.dense?1u:uint(q.hi.x-q.lo.x+1));}\n"
-         "ivec3 ballCell(BallQuery q,uint index){uint ny=uint(q.hi.y-q.lo.y+1),nx=q.dense?1u:uint(q.hi.x-q.lo.x+1);"
-         "return q.lo+ivec3(index%nx,index/nx%ny,index/(nx*ny));}\n"
+         "return uint(q.hi.z-q.lo.z+1)*uint(q.hi.y-q.lo.y+1)<<q.split;}\n"
          "uvec2 ballInterval(BallQuery q,uint index){if(q.full)return uvec2(0u," << extent() << "u);"
-         "ivec3 c=ballCell(q,index);float dz=max(0.0,max(float(c.z)*q.width-q.key.z,q.key.z-float(c.z+1)*q.width)),"
-         "dy=max(0.0,max(float(c.y)*q.width-q.key.y,q.key.y-float(c.y+1)*q.width)),rest=q.reach*q.reach-dy*dy-dz*dz;"
-         "if(!(rest>=0.0))return uvec2(0u);float chord=sqrt(rest);"
-         "int xl=int(max(floor((q.key.x-chord)/q.width),float(q.lo.x))),xh=int(min(floor((q.key.x+chord)/q.width),float(q.hi.x)));"
-         "if(q.dense){if(xl>xh)return uvec2(0u);"
-         "uint base=uint(((c.z-q.origin.z)*int(q.size.y)+c.y-q.origin.y)*int(q.size.x)-q.origin.x);"
-         "return uvec2(x_sumData[" << heads << "u+base+uint(xl)],x_sumData[" << bucketEnds << "u+base+uint(xh)]);}"
-         "if(c.x<xl||c.x>xh)return uvec2(0u);uint slot=hashBucket(c);"
-         "return uvec2(x_sumData[" << heads << "u+slot],x_sumData[" << bucketEnds << "u+slot]);}\n";
+         "uint part=index&q.split,row=index>>q.split,ny=uint(q.hi.y-q.lo.y+1);int y=q.lo.y+int(row%ny),z=q.lo.z+int(row/ny);"
+         "float dz=max(0.0,max(z>-262144?float(z)*q.width-q.key.z:0.0,z<262144?q.key.z-float(z+1)*q.width:0.0)),"
+         "dy=max(0.0,max(y>-262144?float(y)*q.width-q.key.y:0.0,y<262144?q.key.y-float(y+1)*q.width:0.0)),"
+         "rest=q.reach*q.reach-dy*dy-dz*dz;if(!(rest>=0.0))return uvec2(0u);float chord=sqrt(rest);"
+         "int xl=max(int(clamp(floor((q.key.x-chord)/q.width),-262144.0,262144.0)),q.lo.x),"
+         "xh=min(int(clamp(floor((q.key.x+chord)/q.width),-262144.0,262144.0)),q.hi.x);"
+         "if(xl>xh)return uvec2(0u);uint lx=uint(xl-q.origin.x),hx=uint(xh-q.origin.x),"
+         "wy=uint(y-q.origin.y),wz=uint(z-q.origin.z);if(wy>=q.size.y)wy%=q.size.y;if(wz>=q.size.z)wz%=q.size.z;"
+         "if(hx-lx>=q.size.x){lx=0u;hx=q.size.x-1u;}else if(hx>=q.size.x){lx%=q.size.x;hx%=q.size.x;}"
+         "if(lx>hx){if(part==0u)hx=q.size.x-1u;else lx=0u;}else if(part!=0u)return uvec2(0u);"
+         "uint base=(wz*q.size.y+wy)*q.size.x;"
+         "return uvec2(x_sumData[" << heads << "u+base+lx],x_sumData[" << bucketEnds << "u+base+hx]);}\n";
     return s.str();
 }
 
@@ -1005,9 +1003,12 @@ std::string Generator::gridSource() const {
           << "u],x_sumData[" << header+14 << "u],x_sumData[" << header+15
           << "u]);if(size.x==0u)return hashBucket(c);ivec3 origin=ivec3(int(x_sumData["
           << header+7 << "u]^0x80000000u),int(x_sumData[" << header+8
-          << "u]^0x80000000u),int(x_sumData[" << header+9 << "u]^0x80000000u));"
-             "ivec3 at=c-origin;if(any(lessThan(at,ivec3(0)))||any(greaterThanEqual(at,ivec3(size))))return "
-          << buckets << "u;return (uint(at.z)*size.y+uint(at.y))*size.x+uint(at.x);}\n";
+          << "u]^0x80000000u),int(x_sumData[" << header+9 << "u]^0x80000000u)),bound=ivec3(int(x_sumData["
+          << header+10 << "u]^0x80000000u),int(x_sumData[" << header+11
+          << "u]^0x80000000u),int(x_sumData[" << header+12 << "u]^0x80000000u));"
+             "if(any(lessThan(c,origin))||any(greaterThan(c,bound)))return "
+          << buckets << "u;uvec3 at=uvec3(c-origin);if(any(greaterThanEqual(at,size)))at%=size;"
+             "return (at.z*size.y+at.y)*size.x+at.x;}\n";
     } else s << candidateHash(buckets);
     // Queries chase member IDs in arbitrary order. Keep each member's key,
     // link and projected feature in one cache line, independently of user SoA.
@@ -1028,9 +1029,12 @@ std::string Generator::gridSource() const {
             s << "loadValue(variable(field" << slot << "(member))," << column << "u)";
         }
     }
+    // Distant members share the border cells. Clamping never separates two
+    // cells further, so a stencil still meets every member within reach; a
+    // ball query takes the border rows as unbounded.
     s << ");}\nbool cellOf(vec3 f,out ivec3 c){vec3 v=f/(" << std::setprecision(9) << cellScale
-      << "*sqrt(uintBitsToFloat(x_sumData[" << header << "u])));if(any(isnan(v))||any(isinf(v))||any(greaterThan(abs(v),vec3(262144.0)))"
-         "||any(greaterThan(abs(f),vec3(1e15))))return false;c=ivec3(floor(v));return true;}\n"
+      << "*sqrt(uintBitsToFloat(x_sumData[" << header << "u])));if(any(isnan(v))||any(isinf(v))"
+         "||any(greaterThan(abs(f),vec3(1e15))))return false;c=ivec3(clamp(floor(v),vec3(-262144.0),vec3(262144.0)));return true;}\n"
          "uint memberCount(uint anchor){uint count=x_sumData[" << lists << "u+anchor*" << Capacity+1
       << "u];return count>" << Capacity << "u?" << extent() << "u:count;}\n"
          "uint memberAt(uint anchor,uint k){uint at=" << lists << "u+anchor*" << Capacity+1
@@ -1068,7 +1072,6 @@ void Generator::prepareIndex() {
         packedState = append(p, std::vector<uint32_t>(size_t(extent())*4));
         ranks = append(p, std::vector<uint32_t>(extent()));
         bucketEnds = append(p, std::vector<uint32_t>(buckets+1));
-        bucketCursors = append(p, std::vector<uint32_t>(buckets));
     }
     if (!factor) anchorFeatures = append(p, std::vector<uint32_t>(size_t(d.count)*3));
     // Storage is a lowering decision. Large domains retain the spatial index
@@ -1443,28 +1446,37 @@ void Generator::prepareOrderedIndex() {
       << header+2 << "u]!=0u)return;uvec3 size=uvec3(";
     for (uint32_t c=0;c<3;++c)
         s << (c?",":"") << "x_sumData[" << header+10+c << "u]-x_sumData[" << header+7+c << "u]+1u";
-    s << ");if(size.x<=" << buckets << "u&&size.y<=" << buckets << "u/size.x&&size.z<="
-      << buckets << "u/(size.x*size.y)){";
+    // A box exceeding the bucket table wraps its longest axes, so that a few
+    // distant members do not take the ordering of the others. Capping the
+    // smallest axis at the cube root, then the middle one at the square root
+    // of what remains, keeps every box that fits and makes any box fit.
+    uint32_t cubeRoot = 1;
+    while (uint64_t(cubeRoot+1)*(cubeRoot+1)*(cubeRoot+1) <= buckets) ++cubeRoot;
+    s << ");uint big=size.x>=size.y?(size.x>=size.z?0u:2u):(size.y>=size.z?1u:2u),"
+         "small=size.x<size.y?(size.x<size.z?0u:2u):(size.y<size.z?1u:2u),middle=3u-big-small;"
+         "size[small]=min(size[small]," << cubeRoot << "u);uint square=" << buckets << "u/size[small],"
+         "side=uint(sqrt(float(square)));while(side*side>square)--side;while((side+1u)*(side+1u)<=square)++side;"
+         "size[middle]=min(size[middle],side);size[big]=min(size[big]," << buckets << "u/(size[middle]*size[small]));";
     for (uint32_t c=0;c<3;++c)s << "x_sumData[" << header+13+c << "u]=size[" << c << "];";
-    s << "}}";
+    s << "}";
     index.push_back({s.str(),1}); s.str(""); s.clear();
     s << source << "void main(){" << skipUnchangedIndex() << "uint i=invocation();if(i>="
       << extent() << "u||x_sumData[" << header+2 << "u]!=0u)return;uint at=" << cells
       << "u+i*8u;ivec3 c=ivec3(x_sumData[at],x_sumData[at+1u],x_sumData[at+2u]);"
-         "atomicAdd(x_sumData[" << heads << "u+bucket(c)],1u);}";
+         "x_sumData[at+3u]=atomicAdd(x_sumData[" << heads << "u+bucket(c)],1u);}";
     index.push_back({s.str(),extent()});
     exclusiveScan(heads,bucketEnds,buckets);
     s.str(""); s.clear();
     s << "void main(){" << skipUnchangedIndex() << "uint i=invocation();if(i>=" << buckets
       << "u)return;uint count=x_sumData[" << heads << "u+i],begin=x_sumData[" << bucketEnds
-      << "u+i];x_sumData[" << heads << "u+i]=begin;x_sumData[" << bucketEnds
-      << "u+i]=begin+count;x_sumData[" << bucketCursors << "u+i]=begin;}";
+      << "u+i];x_sumData[" << heads << "u+i]=begin;x_sumData[" << bucketEnds << "u+i]=begin+count;}";
     index.push_back({s.str(),buckets}); s.str(""); s.clear();
+    // A member takes the slot its count reserved within its bucket.
     s << source << "void main(){" << skipUnchangedIndex() << "uint i=invocation();if(i==0u){"
       << launchStores(rowLaunches,true) << "}if(i>="
       << extent() << "u)return;uint from=" << cells << "u+i*8u;ivec3 c=ivec3(0);uint entry=i;"
          "if(x_sumData[" << header+2 << "u]==0u){c=ivec3(x_sumData[from],x_sumData[from+1u],x_sumData[from+2u]);"
-         "entry=atomicAdd(x_sumData[" << bucketCursors << "u+bucket(c)],1u);}uint to="
+         "entry=x_sumData[" << heads << "u+bucket(c)]+x_sumData[from+3u];}uint to="
       << grouped << "u+entry*4u;vec3 f=currentPoint(i);x_sumData[to]=uint(c.x);x_sumData[to+1u]=uint(c.y);"
          "x_sumData[to+2u]=uint(c.z);x_sumData[to+3u]=i;to=" << packedState
       << "u+entry*4u;x_sumData[to]=floatBitsToUint(f.x);"

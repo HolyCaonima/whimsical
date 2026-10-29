@@ -65,9 +65,10 @@ std::string domainSource(const CompiledPlan& p, const Domain& d) {
          "bool cellOf(vec3 f,out ivec3 cell){"
          "float r=uintBitsToFloat(x_candidates[" << d.header << "u]);"
          "vec3 q=f/(1.4*sqrt(r));"
-         "if(any(isnan(q))||any(isinf(q))||any(greaterThan(abs(q),vec3(262144.0)))"
-         "||any(greaterThan(abs(f),vec3(1e15))))return false;"
-         "cell=ivec3(floor(q));return true;}\n"
+         // Distant features share the border cells; clamping never separates
+         // two cells further, so the cell stencil still meets every pair.
+         "if(any(isnan(q))||any(isinf(q))||any(greaterThan(abs(f),vec3(1e15))))return false;"
+         "cell=ivec3(clamp(floor(q),vec3(-262144.0),vec3(262144.0)));return true;}\n"
          "vec3 referenceFeature(uint member,bool left){uint at=(left?" << d.leftReferences
       << "u:" << d.references
       << "u)+member*3u;return vec3(uintBitsToFloat(x_candidates[at]),"
