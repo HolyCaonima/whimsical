@@ -6,7 +6,7 @@
 #include <cstdint>
 
 namespace whimsical {
-// An owning document value. Parsing uses a private Duktape heap, never the gameplay VM.
+// An owning document value with ECMAScript JSON.parse / JSON.stringify text semantics.
 class Json {
   public:
     using Object = std::map<std::string, Json>;

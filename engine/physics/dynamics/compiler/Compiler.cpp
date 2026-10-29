@@ -764,6 +764,10 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     if (p->summedRelations && (policy.mode == SolveMode::Colored || p->dynamicTopology))
         throw std::invalid_argument("Collection sums currently require static Hybrid or Jacobi execution");
     const bool activeSums = p->summedRelations && policy.weighting != JacobiWeighting::Static;
+    // Per-row walks below test this; it is a scan of the type's formulas.
+    std::vector<bool> summedTypes;
+    for (const auto& type : p->types)
+        summedTypes.push_back(type->summedObject() >= 0);
     for (uint32_t set = 0; set < p->relations.size(); ++set)
         for (uint32_t domain = 0; domain < p->bindings[set].domains.size(); ++domain)
             if (canDeferCandidateDomain(*p, set, p->bindings[set].domains[domain]))
@@ -783,7 +787,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         endpointScratch.resize(std::max(endpointScratch.size(), type->spaces.size()));
     BindingDomain::Cursor bindingCursor;
     auto writableEndpoints = [&](const InstanceRows::Row& instance, auto&& visit) {
-        if (p->types[instance.type]->summedObject() >= 0) return;
+        if (summedTypes[instance.type]) return;
         const auto& domain = p->bindings[instance.set].domain(instance.local);
         const auto members = bindingCursor.seek(domain, instance.local - domain.first);
         for (uint32_t endpoint = 0; endpoint < instance.arity; ++endpoint) {
@@ -810,7 +814,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
                 UINT32_MAX - uint32_t(p->types[type]->residual.nodes.size()), UINT32_MAX - p->activeTangent(type)});
         coloringOrder.reserve(instances.materializedSize());
         for (const auto& instance : instances) {
-            if (p->types[instance.type]->summedObject() >= 0) continue;
+            if (summedTypes[instance.type]) continue;
             if (model.data->relations[instance.set].dynamicEndpoints)
                 continue;
             uint32_t endpoints = 0;
@@ -1073,7 +1077,7 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
     }
     std::map<std::pair<int32_t, uint32_t>, std::vector<uint32_t>> groups;
     for (const auto& in : instances)
-        if (p->types[in.type]->summedObject() < 0)
+        if (!summedTypes[in.type])
             groups[{in.color < 0 ? int32_t(policy.colorBudget) : in.color, in.type}].push_back(in.id);
     std::map<std::pair<uint32_t, bool>, uint32_t> solveKernels;
     std::vector<Batch> sumActivity;

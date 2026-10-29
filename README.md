@@ -12,7 +12,7 @@
 
 - Windows x64。
 - 支持 Vulkan 1.3、ray query 和 acceleration structure 的显卡及驱动；当前渲染路径需要硬件光追支持。
-- 从源码构建需要 Visual Studio 2019 的 C++ 桌面开发工具与 Windows SDK，以及 Node.js 22+。
+- 从源码构建需要 Visual Studio 2022 的 C++ 桌面开发工具与 Windows SDK，以及 Node.js 22+。
 
 在仓库根目录执行：
 

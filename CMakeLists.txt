@@ -69,11 +69,11 @@ set_target_properties(onnxruntime PROPERTIES
   IMPORTED_LOCATION "${DEPS}/onnxruntime/lib/onnxruntime.dll"
   INTERFACE_INCLUDE_DIRECTORIES "${DEPS}/onnxruntime/include")
 add_library(whimsical_assets
-  engine/assets/Json.cpp engine/assets/Asset.cpp engine/assets/Project.cpp engine/assets/ContentMounts.cpp engine/assets/AssetManager.cpp)
+  engine/assets/Json.cpp engine/assets/ScriptJson.cpp engine/assets/Asset.cpp engine/assets/Project.cpp engine/assets/ContentMounts.cpp engine/assets/AssetManager.cpp)
 target_include_directories(whimsical_assets PUBLIC engine)
 target_compile_definitions(whimsical_assets PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(whimsical_assets PRIVATE /W4 /permissive- /utf-8)
-target_link_libraries(whimsical_assets PRIVATE duktape)
+target_link_libraries(whimsical_assets PUBLIC duktape)
 add_library(whimsical_animation
   engine/animation/SkinnedMesh.cpp
   engine/animation/Animation.cpp engine/animation/ai4animation/Controller.cpp
@@ -120,10 +120,17 @@ add_library(whimsical_rendercore
 target_include_directories(whimsical_rendercore PUBLIC engine)
 target_link_libraries(whimsical_rendercore PUBLIC whimsical_diagnostics PRIVATE volk)
 target_compile_options(whimsical_rendercore PRIVATE /W4 /permissive- /utf-8)
-target_compile_definitions(whimsical_rendercore PRIVATE
-  WHIMSICAL_ROOT="${CMAKE_SOURCE_DIR}"
-  WHIMSICAL_GLSLANG="${DEPS}/glslang/bin/glslang.exe"
-  WHIMSICAL_SHADER_CACHE="${CMAKE_BINARY_DIR}/shaders")
+target_compile_definitions(whimsical_rendercore PRIVATE WHIMSICAL_ROOT="${CMAKE_SOURCE_DIR}")
+# The prebuilt glslang libraries use the release C runtime. A DLL with that runtime
+# serves every configuration; its interface passes only C types.
+add_library(whimsical_glslang SHARED engine/renderCore/Glslang.cpp)
+set_target_properties(whimsical_glslang PROPERTIES MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+target_compile_definitions(whimsical_glslang PRIVATE _ITERATOR_DEBUG_LEVEL=0)
+target_include_directories(whimsical_glslang PRIVATE "${DEPS}/glslang/include")
+target_link_libraries(whimsical_glslang PRIVATE "${DEPS}/glslang/lib/glslang.lib"
+  "${DEPS}/glslang/lib/glslang-default-resource-limits.lib" "${DEPS}/glslang/lib/SPIRV-Tools-opt.lib"
+  "${DEPS}/glslang/lib/SPIRV-Tools.lib")
+target_link_libraries(whimsical_rendercore PRIVATE whimsical_glslang)
 # Dynamics definitions and planning are device-independent; execution consumes RenderCore.
 add_library(whimsical_dynamics_model engine/physics/dynamics/model/Expression.cpp engine/physics/dynamics/model/Model.cpp)
 target_include_directories(whimsical_dynamics_model PUBLIC engine)

@@ -1,4 +1,5 @@
 #include "ScriptBindings.h"
+#include "assets/ScriptJson.h"
 #include "Document.h"
 #include <cmath>
 #include <cstring>
@@ -19,16 +20,10 @@ std::string string(duk_context* c, int index) {
     return duk_get_string(c, index);
 }
 Json json(duk_context* c, int index) {
-    duk_dup(c, index);
-    duk_json_encode(c, -1);
-    auto result = Json::parse(string(c, -1));
-    duk_pop(c);
-    return result;
+    return scriptJson(c, index);
 }
 void push(duk_context* c, const Json& value) {
-    auto text = value.dump();
-    duk_push_lstring(c, text.data(), text.size());
-    duk_json_decode(c, -1);
+    pushScriptJson(c, value);
 }
 template <class T> std::vector<T> array(duk_context* c, int index) {
     index = duk_normalize_index(c, index);

@@ -1,4 +1,5 @@
 #include "ScriptRuntime.h"
+#include "assets/ScriptJson.h"
 #include "RuntimeHost.h"
 #include "RuntimeBindings.h"
 #include "core/CpuProfile.h"
@@ -32,17 +33,11 @@ static ScriptRuntime& runtime(duk_context* c) {
     return *r;
 }
 static void pushJson(duk_context* c, const Json& j) {
-    const auto text = j.dump();
-    duk_push_lstring(c, text.data(), text.size());
-    duk_json_decode(c, -1);
+    pushScriptJson(c, j);
 }
 
 static Json argumentJson(duk_context* c, int index) {
-    duk_dup(c, index);
-    duk_json_encode(c, -1);
-    auto result = Json::parse(duk_require_string(c, -1));
-    duk_pop(c);
-    return result;
+    return scriptJson(c, index);
 }
 static Json contentSourceJson(const ContentSourceRef& source) {
     return {{"mount", source->mount}, {"source", source->id},
@@ -349,9 +344,7 @@ static duk_ret_t callNative(duk_context* c) {
             if (duk_is_string(c, 0))
                 ref = assets(c).reference(AssetPath(duk_require_string(c, 0)));
             else {
-                duk_dup(c, 0);
-                duk_json_encode(c, -1);
-                ref = AssetRef::fromJson(Json::parse(duk_require_string(c, -1)));
+                ref = AssetRef::fromJson(argumentJson(c, 0));
             }
             auto rt = w.renderTargets.acquire(assets(c).load<RenderTargetAsset>(ref));
             duk_push_string(c, rt->handle.c_str());
@@ -367,9 +360,7 @@ static duk_ret_t callNative(duk_context* c) {
             PixelRegion region;
             std::string version;
             if (!duk_is_undefined(c, 1)) {
-                duk_dup(c, 1);
-                duk_json_encode(c, -1);
-                auto j = Json::parse(duk_require_string(c, -1));
+                auto j = argumentJson(c, 1);
                 if (j.contains("x"))
                     region.x = j.at("x").uint();
                 if (j.contains("y"))
@@ -436,11 +427,8 @@ static duk_ret_t callNative(duk_context* c) {
             runtime(c).log(duk_safe_to_string(c, 0));
             return 0;
         case Create: {
-            duk_dup(c, 0);
-            duk_json_encode(c, -1);
-            auto json = Json::parse(duk_require_string(c, -1));
+            auto json = argumentJson(c, 0);
             auto description = SceneEntity::fromJson(json);
-            duk_pop(c);
             duk_push_uint(c, ScenePersistence::createEntity(w, description, assets(c),
                                                             !json.contains("persistent") ||
                                                                 json.at("persistent").boolean()));
@@ -450,10 +438,7 @@ static duk_ret_t callNative(duk_context* c) {
         case AddComponent: {
             Entity e = duk_require_uint(c, 0);
             std::string type = duk_require_string(c, 1);
-            duk_dup(c, 2);
-            duk_json_encode(c, -1);
-            auto data = Json::parse(duk_require_string(c, -1));
-            duk_pop(c);
+            auto data = argumentJson(c, 2);
             auto description = SceneEntity::fromJson({{"components", {{type, data}}}});
             if (duk_get_current_magic(c) == SetComponent)
                 componentCatalog().update(w, e, type, description.components.values.at(type), assets(c));
@@ -463,10 +448,7 @@ static duk_ret_t callNative(duk_context* c) {
         }
         case AddComponents: {
             auto e = duk_require_uint(c, 0);
-            duk_dup(c, 1);
-            duk_json_encode(c, -1);
-            auto set = ComponentSet::fromJson(Json::parse(duk_require_string(c, -1)));
-            duk_pop(c);
+            auto set = ComponentSet::fromJson(argumentJson(c, 1));
             componentCatalog().attach(w, e, set, assets(c));
             return 0;
         }
@@ -533,11 +515,8 @@ static duk_ret_t callNative(duk_context* c) {
             return 1;
         case SetEntityData: {
             Entity e = duk_require_uint(c, 0);
-            duk_dup(c, 1);
-            duk_json_encode(c, -1);
-            auto data = Json::parse(duk_require_string(c, -1));
+            auto data = argumentJson(c, 1);
             (void)data.members();
-            duk_pop(c);
             w.edit<ScriptData>(e, [&](ScriptData& component) { component.value = std::move(data); });
             return 0;
         }
@@ -632,10 +611,7 @@ static duk_ret_t callNative(duk_context* c) {
             if (duk_is_string(c, 1))
                 ref = assets(c).reference(AssetPath(duk_require_string(c, 1)));
             else {
-                duk_dup(c, 1);
-                duk_json_encode(c, -1);
-                ref = AssetRef::fromJson(Json::parse(duk_require_string(c, -1)));
-                duk_pop(c);
+                ref = AssetRef::fromJson(argumentJson(c, 1));
             }
             w.render.setMaterial(duk_require_uint(c, 0), assets(c).load<MaterialAsset>(ref));
             return 0;
@@ -658,12 +634,9 @@ static duk_ret_t callNative(duk_context* c) {
             pushJson(c, w.resources.data);
             return 1;
         case SetSceneData: {
-            duk_dup(c, 0);
-            duk_json_encode(c, -1);
-            auto data = Json::parse(duk_require_string(c, -1));
+            auto data = argumentJson(c, 0);
             (void)data.members();
             w.resources.data = std::move(data);
-            duk_pop(c);
             return 0;
         }
         case SceneObject:

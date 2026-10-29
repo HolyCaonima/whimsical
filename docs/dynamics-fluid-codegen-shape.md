@@ -351,3 +351,29 @@ RTX 3080，Release，`captures/fluid-opt/ab.ps1`，开启 profiler，150 tick，
 - 编译警告 C4458（`input`）在 HEAD 中已存在。
 - 探针（kernel dump/override 钩子、`PROBE_INDEX_MOTION`）已删除，`Instance.cpp` 与 HEAD 一致。
 - `captures/fluid-opt/`：`bin/head.exe`（HEAD 构建）、`bin/final.exe`（最终构建）、`bin/wrap.exe`（只做规则 1）；`ab.ps1` / `run.ps1` / `driver.js`（含逃逸注入）；`logs/final-*.log`（profile）、`logs/esc*-head-1.log` / `logs/fesc*-final-1.log` / `logs/far-*.log`（逃逸）。
+
+## 编译速度（`182257d` 之后）
+
+80k 流体从 `compile` 到第一次结果约 1.5 s → 约 0.45 s。拆分（HEAD）：CPU 计划编译约 370 ms，glslang 约 1050 ms（23 个一般版本与 8 个固定模式版本两批），管线创建约 75 ms。
+
+### 保留的变化
+
+- `fuseOwnedRelations`：所有者链改为按所有者索引的一张表（两遍计数），不再为 80k 个所有者各分配一个 vector；配方签名复用缓冲；`extract` 的成员判断用按 id 的位表代替 `std::set`。约 160 → 45 ms。
+- `Compiler.cpp`：`RelationType::summedObject()` 每次都扫描公式节点，逐行遍历（着色优先级、着色、分组）改为读每个类型预先求好的结果。着色与分组约 −40 ms。
+- 生成的 kernel 源码与 HEAD 逐字节相同。CPU 计划编译约 370 → 185 ms。
+- RenderCore `ShaderCompiler`：不再每个程序启动一次 glslang.exe（单次启动约 200 ms），改为进程内多线程编译，批量接口不变。预编译 glslang 库使用 release CRT，因此放在 `whimsical_glslang` DLL 中（强制 `/MD`、`_ITERATOR_DEBUG_LEVEL=0`），边界只传 C 类型，Debug 与 Release 都可用。31 个 kernel 的 SPIR-V 与 `glslang --target-env vulkan1.2 -V` 的输出逐字节一致。
+- 预编译 glslang 库由比 VS2019 新的 STL 构建（VS2019 链接时缺 `__std_find_trivial_1`），工程按开发者决定切换到 Visual Studio 2022（`tools/build.ps1`、README、engine.md）。
+
+### 验证
+
+- VS2022 Release 全量构建通过；ctest 4/4 通过；Debug `dynamics_tests` 通过。
+- 80k 流体 300 tick：diag 0/0，末帧密度超额均值 0.0035，与之前处于同一水平。
+
+## 打开 100k 流体例子的耗时
+
+`Whimsical --project Projects/ConstraintLab` 从 `Lab.rebuild` 到第一次结果约 12.4 s → 约 1.56 s。原来约 11.5 s 花在 JSON 文本上：`X.describe` 生成的 11.6 MB 模型文档（主要是 300k 个初始坐标）以及 `stage` 的 100k 个实例变换，经过 `Json::dump` → duktape 解码 → JS 对象 → duktape 编码 → `Json::parse`，而 `Json::parse` / `dump` 每次都新建一个 duktape heap 再遍历。
+
+- `Json::parse` / `dump` 改为原生实现，语义与 ECMAScript `JSON.parse` / `JSON.stringify` 相同（数字按 Number::toString 的最短表示输出）。仓库中 376 个 JSON / asset 文件（头部与 JSON 负载）加一个 300k 浮点和边界数字的样本，新旧实现输出逐字节一致，同样的输入同样报错；120 MB 上 parse 1276 → 73 ms，dump 700 → 36 ms。
+- 新增 `assets/ScriptJson`：脚本值与 `Json` 直接互转，不经文本，语义同 `JSON.stringify`（undefined、函数在对象中省略、在数组中为 null，非有限数为 null）。`Engine.create` / `addComponent` / `setComponent` 等脚本桥、Dynamics 的 `describe` / `state` / `plan` 都改用它。
+- 剩余（单次）：`build` 0.13 s，`describe` 0.13 s，`Engine.create`（含计划编译）0.37 s，`stage` 0.71 s（主要是 JS 里构造 100k 个初始实例变换），GPU 编译到第一个 tick 约 0.2 s。
+- 验证：ctest 4/4；`Whimsical --smoke --validation` 与 ConstraintLab `--validation` 均为 validation errors=0。

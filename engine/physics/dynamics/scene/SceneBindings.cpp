@@ -1,4 +1,5 @@
 #include "SceneBindings.h"
+#include "assets/ScriptJson.h"
 #include "DynamicsSystem.h"
 #include "core/World.h"
 #include <cstring>
@@ -46,9 +47,7 @@ duk_ret_t call(duk_context* c) {
         auto e = integer(c, 0);
         switch (duk_get_current_magic(c)) {
         case 0: {
-            auto text = system.state(e).dump();
-            duk_push_lstring(c, text.data(), text.size());
-            duk_json_decode(c, -1);
+            pushScriptJson(c, system.state(e));
             return 1;
         }
         case 1: {
@@ -78,9 +77,7 @@ duk_ret_t call(duk_context* c) {
             system.patch(e, modelField(duk_get_string(c, 1)), integer(c, 2), integer(c, 3), floats(c, 4));
             break;
         case 5: {
-            auto text = system.plan(e).dump();
-            duk_push_lstring(c, text.data(), text.size());
-            duk_json_decode(c, -1);
+            pushScriptJson(c, system.plan(e));
             return 1;
         }
         }

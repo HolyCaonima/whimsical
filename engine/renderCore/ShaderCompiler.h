@@ -1,6 +1,5 @@
 #pragma once
 #include <cstdint>
-#include <filesystem>
 #include <map>
 #include <string>
 #include <utility>
@@ -24,6 +23,5 @@ class ShaderCompiler {
   private:
     mutable std::mutex mutex_;
     std::map<std::string, std::vector<uint32_t>> programs_;
-    std::filesystem::path directory_;
 };
 } // namespace whimsical::rc

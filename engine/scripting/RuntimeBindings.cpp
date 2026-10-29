@@ -1,4 +1,5 @@
 #include "RuntimeBindings.h"
+#include "assets/ScriptJson.h"
 #include "RuntimeHost.h"
 #include "scene/ScenePersistence.h"
 
@@ -12,16 +13,10 @@ template <class T> T& stored(duk_context* c, const char* name) {
     return *value;
 }
 Json json(duk_context* c, int index) {
-    duk_dup(c, index);
-    duk_json_encode(c, -1);
-    auto value = Json::parse(duk_require_string(c, -1));
-    duk_pop(c);
-    return value;
+    return scriptJson(c, index);
 }
 void push(duk_context* c, const Json& value) {
-    auto text = value.dump();
-    duk_push_lstring(c, text.data(), text.size());
-    duk_json_decode(c, -1);
+    pushScriptJson(c, value);
 }
 AssetRef reference(duk_context* c, AssetManager& assets, int index) {
     return duk_is_string(c, index) ? assets.reference(AssetPath(duk_require_string(c, index)))

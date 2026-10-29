@@ -4,7 +4,7 @@
 
 ## 开发环境与运行诊断
 
-需要 Windows x64、Visual Studio 2019 C++ desktop workload / Windows SDK、Node.js 22+。支持 Vulkan 1.3、ray query 和 acceleration structure 的 GPU 是运行要求；没有将光追自动替换成传统光照。
+需要 Windows x64、Visual Studio 2022 C++ desktop workload / Windows SDK、Node.js 22+。支持 Vulkan 1.3、ray query 和 acceleration structure 的 GPU 是运行要求；没有将光追自动替换成传统光照。
 
 ```powershell
 node tools/bootstrap.mjs

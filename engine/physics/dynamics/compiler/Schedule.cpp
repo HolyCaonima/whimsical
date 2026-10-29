@@ -215,8 +215,8 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
     if (colored < 2)
         return false;
     auto work = words(p.buffers[size_t(BufferRole::RelationWork)]);
-    using Call = std::pair<uint32_t, uint32_t>;
-    std::vector<std::vector<Call>> chains(p.statistics.variables);
+    // Each owner's calls in stage order, as one table indexed by owner.
+    std::vector<uint32_t> rowOwners, chainFirst(p.statistics.variables + 1);
     for (size_t stage = 0; stage < colored; ++stage) {
         const auto& batch = p.solve[stage];
         if (batch.kernel >= functions.size() || functions[batch.kernel].entry.empty())
@@ -234,19 +234,33 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
             }
             if (owner == NoRegion)
                 return false;
-            chains[owner].emplace_back(batch.kernel, id);
+            rowOwners.push_back(owner);
+            ++chainFirst[owner + 1];
         }
     }
+    for (size_t owner = 1; owner < chainFirst.size(); ++owner)
+        chainFirst[owner] += chainFirst[owner - 1];
+    std::vector<std::pair<uint32_t, uint32_t>> calls(rowOwners.size());
+    {
+        auto next = chainFirst;
+        size_t at = 0;
+        for (size_t stage = 0; stage < colored; ++stage)
+            for (uint32_t row = 0; row < p.solve[stage].count; ++row)
+                calls[next[rowOwners[at++]]++] = {p.solve[stage].kernel, work[p.solve[stage].first + row]};
+    }
+    const auto chainRow = [&](uint32_t owner, size_t call) { return calls[chainFirst[owner] + call].second; };
     // Identical call signatures share one unrolled program and columnar work
     // table. Neither relation names nor parameter values enter the signature.
     std::map<std::vector<uint32_t>, std::vector<uint32_t>> recipes;
-    for (uint32_t owner = 0; owner < chains.size(); ++owner) {
-        if (chains[owner].empty())
+    std::vector<uint32_t> key;
+    for (uint32_t owner = 0; owner + 1 < chainFirst.size(); ++owner) {
+        if (chainFirst[owner] == chainFirst[owner + 1])
             continue;
-        std::vector<uint32_t> signature{p.variables[p.variableSet(owner)].space};
-        for (auto [kernel, row] : chains[owner])
-            signature.push_back(kernel);
-        recipes[signature].push_back(owner);
+        key.assign(1, p.variables[p.variableSet(owner)].space);
+        for (auto call = chainFirst[owner]; call < chainFirst[owner + 1]; ++call)
+            key.push_back(calls[call].first);
+        const auto found = recipes.find(key);
+        (found == recipes.end() ? recipes[key] : found->second).push_back(owner);
     }
     if (recipes.size() >= colored)
         return false;
@@ -258,16 +272,18 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
     // Moves ids out of the one work-list batch holding all of them and returns its kernel.
     auto extract = [&](std::vector<Batch>& batches, BufferRole role, std::vector<uint32_t>& items,
                        const std::vector<uint32_t>& ids) {
-        const std::set<uint32_t> wanted(ids.begin(), ids.end());
+        std::vector<bool> wanted(role == BufferRole::VariableWork ? p.statistics.variables : p.statistics.relations);
+        for (auto id : ids)
+            wanted[id] = true;
         for (auto batch = batches.begin(); batch != batches.end(); ++batch) {
             if (functions[batch->kernel].entry.empty() || functions[batch->kernel].work != role)
                 continue;
             std::vector<uint32_t> rest;
             for (uint32_t i = batch->first; i < batch->first + batch->count; ++i)
-                if (!wanted.count(items[i])) rest.push_back(items[i]);
+                if (!wanted[items[i]]) rest.push_back(items[i]);
             if (rest.size() == batch->count)
                 continue;
-            if (batch->count - rest.size() != wanted.size())
+            if (batch->count - rest.size() != ids.size())
                 return UINT32_MAX;
             const auto kernel = batch->kernel;
             if (rest.empty())
@@ -296,7 +312,7 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
         ranges.insert(ranges.end(), owners.begin(), owners.end());
         for (size_t call = 1; call < signature.size(); ++call)
             for (auto owner : owners)
-                ranges.push_back(chains[owner][call-1].second);
+                ranges.push_back(chainRow(owner, call-1));
         // A table column affine in the owner index is emitted as its formula.
         auto column = [&](size_t call, const std::string& row) {
             const auto at = [&](uint32_t i) { return int64_t(ranges[first+call*count+i]); };
@@ -311,7 +327,7 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
             for (uint32_t i = 0; same && i < count; ++i) same = owners[i] == piece->first + piece->stride*i;
             return same;
         };
-        auto rows = [&](size_t call) { return p.types[p.relationType(chains[owners[0]][call-1].second)]->rows; };
+        auto rows = [&](size_t call) { return p.types[p.relationType(chainRow(owners[0], call-1))]->rows; };
         uint32_t ownedRows = 1;
         std::string chainSource;
         std::set<uint32_t> emitted;
@@ -385,7 +401,7 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
                                   pieceCall(functions[recover], "stateOwner", "0u")});
             for (size_t call = 1; call < signature.size(); ++call) {
                 std::vector<uint32_t> relations;
-                for (auto owner : owners) relations.push_back(chains[owner][call-1].second);
+                for (auto owner : owners) relations.push_back(chainRow(owner, call-1));
                 const auto commit = extract(p.update, BufferRole::RelationWork, work, relations);
                 if (commit != UINT32_MAX)
                     finish.push_back({0, count, 1, width, functions[commit].source,
