@@ -623,9 +623,9 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
         p->variables.push_back(layout);
         p->variableFieldModes.push_back({modes, modeMask});
         field(buffer(BufferRole::VariableEnabled), set.enabled, uniformVariableEnabled);
-        for (uint32_t i = 0; i < set.count; ++i) {
-            // Metrics are symmetric positive semidefinite. Reject negative diagonal or
-            // asymmetric input instead of silently turning model errors into damping.
+        // A uniform field has one matrix shared by every row.
+        const auto metricRows = set.inverseMetric.isUniform() ? std::min(1u, set.count) : set.count;
+        for (uint32_t i = 0; i < metricRows; ++i) {
             for (uint32_t a = 0; a < set.space->tangentSize; ++a)
                 for (uint32_t b = 0; b < set.space->tangentSize; ++b) {
                     float v = set.inverseMetric.at(i, a * set.space->tangentSize + b);
@@ -634,6 +634,8 @@ PlanRef Compiler::compile(const ModelSnapshot& model, const SolverPolicy& policy
                         throw std::invalid_argument(
                             "Inverse metric must be symmetric with nonnegative diagonal: " + set.name);
                 }
+        }
+        for (uint32_t i = 0; i < set.count; ++i) {
             variableMeta.insert(variableMeta.end(), {layout.values + i, layout.velocity + i,
                                                      layout.metric + i, set.count, set.readOnly ? 1u : 0u,
                                                      layout.modes});

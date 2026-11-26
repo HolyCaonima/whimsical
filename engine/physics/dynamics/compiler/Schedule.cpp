@@ -28,15 +28,24 @@ void store(BufferData& data, const std::vector<uint32_t>& values) {
     data.words = values.size();
     data.fills.clear();
 }
-// A column of values affine in the row, as its formula.
-std::optional<std::string> affineColumn(const std::vector<uint32_t>& values, const std::string& row) {
+// Owner and call columns are either affine addresses or a stored index map.
+struct ScheduleColumn {
+    uint32_t base, stride;
+    bool indirect = false;
+    std::string at(const std::string& row) const {
+        auto index = std::to_string(base) + "u";
+        if (stride) index += "+" + row + "*" + std::to_string(stride) + "u";
+        return indirect ? "x_regionRanges[" + index + "]" : index;
+    }
+};
+std::optional<ScheduleColumn> affineColumn(const std::vector<uint32_t>& values) {
     const auto base = int64_t(values[0]), stride = values.size() > 1 ? int64_t(values[1]) - base : 0;
     if (stride < 0)
         return {};
     for (size_t i = 0; i < values.size(); ++i)
         if (int64_t(values[i]) != base + stride * int64_t(i))
             return {};
-    return std::to_string(base) + "u" + (stride ? "+" + row + "*" + std::to_string(stride) + "u" : "");
+    return ScheduleColumn{uint32_t(base), uint32_t(stride)};
 }
 // Decoded endpoint arguments for a column of relations whose endpoint ids and
 // variable records are affine in the row. Flags, modes and storage addresses
@@ -45,23 +54,28 @@ std::optional<std::string> endpointArguments(const CompiledPlan& p, const std::v
                                              const std::vector<uint32_t>& relations, const std::string& row) {
     constexpr uint32_t RecordWords = 6;
     std::string arguments;
-    std::vector<uint32_t> ids(relations.size()), column(relations.size());
+    std::vector<uint32_t> ids(relations.size()), column;
     for (uint32_t slot = 0; slot < p.types[p.relationType(relations[0])]->spaces.size(); ++slot) {
         for (size_t i = 0; i < relations.size(); ++i)
             ids[i] = p.endpoint(relations[i], slot);
-        const auto id = affineColumn(ids, row);
+        const auto id = affineColumn(ids);
         if (!id)
             return {};
-        arguments += "," + *id + ",Variable(";
+        const auto address = id->at(row);
+        arguments += "," + address + ",Variable(";
+        // Within one set the six descriptor columns are affine by construction.
+        // A monotone id sequence lies in that set if its two ends do.
+        const bool oneSet = p.variableSet(ids.front()) == p.variableSet(ids.back());
+        column.resize(oneSet ? std::min(size_t(2), ids.size()) : ids.size());
         for (uint32_t c = 0; c < RecordWords; ++c) {
-            for (size_t i = 0; i < ids.size(); ++i)
+            for (size_t i = 0; i < column.size(); ++i)
                 column[i] = records[size_t(ids[i]) * RecordWords + c];
-            const auto value = affineColumn(column, row);
+            const auto value = affineColumn(column);
             if (!value)
                 return {};
-            arguments += *value + ",";
+            arguments += value->at(row) + ",";
         }
-        arguments += *id + ")";
+        arguments += address + ")";
     }
     return arguments;
 }
@@ -352,19 +366,13 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
     for (const auto& [signature, owners] : recipes) {
         const auto width = p.spaces[signature[0]]->stateSize;
         const auto first = uint32_t(ranges.size()), count = uint32_t(owners.size());
-        ranges.insert(ranges.end(), owners.begin(), owners.end());
-        for (size_t call = 1; call < signature.size(); ++call)
-            for (auto owner : owners)
-                ranges.push_back(chainRow(owner, call-1));
-        // A table column affine in the owner index is emitted as its formula.
-        auto column = [&](size_t call, const std::string& row) {
-            const auto at = [&](uint32_t i) { return int64_t(ranges[first+call*count+i]); };
-            const auto base = at(0), stride = count > 1 ? at(1)-base : 0;
-            bool affine = stride >= 0;
-            for (uint32_t i = 0; affine && i < count; ++i) affine = at(i) == base+stride*i;
-            if (affine) return std::to_string(base) + "u+" + row + "*" + std::to_string(stride) + "u";
-            return "x_regionRanges[" + std::to_string(first+call*count) + "u+" + row + "]";
+        auto lowerColumn = [&](const std::vector<uint32_t>& values) {
+            if (auto affine = affineColumn(values)) return *affine;
+            const auto offset = uint32_t(ranges.size());
+            ranges.insert(ranges.end(), values.begin(), values.end());
+            return ScheduleColumn{offset, 1, true};
         };
+        std::vector<ScheduleColumn> columns{lowerColumn(owners)};
         auto matches = [&](const std::optional<OwnerPiece>& piece) {
             bool same = piece && piece->width == width && piece->count == count;
             for (uint32_t i = 0; same && i < count; ++i) same = owners[i] == piece->first + piece->stride*i;
@@ -375,7 +383,9 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
         std::vector<std::optional<std::string>> endpoints(signature.size());
         for (size_t call = 1; call < signature.size(); ++call) {
             std::vector<uint32_t> relations;
+            relations.reserve(count);
             for (auto owner : owners) relations.push_back(chainRow(owner, call-1));
+            columns.push_back(lowerColumn(relations));
             endpoints[call] = endpointArguments(p, records, relations, "row");
         }
         auto relationCall = [&](const KernelFunction& function, size_t call, const std::string& id,
@@ -401,8 +411,8 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
         auto chain = [&](const std::string& iteration, bool ordered) {
             std::ostringstream s;
             for (size_t call = 1; call < signature.size(); ++call) {
-                s << "uint call" << call << "=" << column(call, "row") << ";Relation owned" << call << "=relation(call"
-                  << call << ");Relation stored" << call << "=" << (ordered ? "relation(" + column(call, "slot") + ")" :
+                s << "uint call" << call << "=" << columns[call].at("row") << ";Relation owned" << call << "=relation(call"
+                  << call << ");Relation stored" << call << "=" << (ordered ? "relation(" + columns[call].at("slot") + ")" :
                                                                    "owned" + std::to_string(call)) << ";";
                 for (uint32_t c = 0; c < rows(call); ++c)
                     s << "float multiplier" << call << "_" << c << "=globalMultiplier(stored" << call << "," << c << "u);";
@@ -428,7 +438,7 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
         auto compose = [&](const char* name, const std::vector<OwnerPiece>& pieces, bool ordered = false) {
             std::vector<const OwnerPiece*> order;
             for (const auto& piece : pieces) order.push_back(&piece);
-            p.kernels.push_back({name, ownerKernel(column(0, "row"), order, width, ownedRows, ordered, !ordered)});
+            p.kernels.push_back({name, ownerKernel(columns[0].at("row"), order, width, ownedRows, ordered, !ordered)});
             return uint32_t(p.kernels.size() - 1);
         };
         snapshotted = recipes.size() == 1 && colored < p.solve.size() && matches(p.kernels[p.solve[colored].kernel].owner);
@@ -476,8 +486,8 @@ bool fuseOwnedRelations(CompiledPlan& p, const std::vector<KernelFunction>& func
                 const auto commit = extract(p.update, BufferRole::RelationWork, work, relations);
                 if (commit != UINT32_MAX)
                     finish.push_back({0, count, 1, width, functions[commit].source,
-                                      relationCall(functions[commit], call, column(call, "row"),
-                                                   "relation(" + column(call, "row") + ")", "0u")});
+                                      relationCall(functions[commit], call, columns[call].at("row"),
+                                                   "relation(" + columns[call].at("row") + ")", "0u")});
             }
         }
         if (tail.size() > 1) tailKernel = compose("Finish owner substep", tail);
